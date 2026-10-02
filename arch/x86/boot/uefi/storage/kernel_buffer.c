@@ -1,6 +1,7 @@
 #include "kernel_buffer.h"
 #include "lib/memory/buffer_capacity.h"
 #include "lib/memory/address_ranges.h"
+#include "arch/x86/configs/boot_profile.h"
 
 // ====== nessuna lettura scrittura o rilascio su intervalli ambigui ====== //
 
@@ -15,7 +16,8 @@ EFI_STATUS boot_adopt_kernel_file_buffer(EFI_SYSTEM_TABLE *table, EFI_FILE_PREFI
     services = (EFI_BOOT_SERVICES_PREFIX *)table->BootServices;
     if (!services || services->Hdr.HeaderSize < sizeof(*services)) return EFI_UNSUPPORTED;
     if (!buffer) return EFI_OUT_OF_RESOURCES;
-    if (!os_buffer_extent_is_valid(base, bytes, ELF_MAX_FILE_BYTES) || (base & 7))
+    if (!os_buffer_extent_is_valid(base, bytes, ELF_MAX_FILE_BYTES) || (base & 7) ||
+        base < X86_BOOT_PAGE_BYTES || base > X86_BOOT_LOW_ADDRESS_LIMIT - bytes)
         return EFI_DEVICE_ERROR;
     if (os_address_ranges_overlap(base, bytes, (UINT64)(UINTN)kernel, sizeof(*kernel)) ||
         os_address_ranges_overlap(base, bytes, (UINT64)(UINTN)report, sizeof(*report)) ||

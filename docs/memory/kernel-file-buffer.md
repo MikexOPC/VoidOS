@@ -14,6 +14,9 @@ Gli output sovrapposti o numericamente invalidi non diventano risorse
 possedute e non vengono passati a Read o FreePool. Restano anomalie di
 firmware non conforme, per cui non si puo garantire recupero della memoria.
 I controlli numerici non provano l'accessibilita di puntatori arbitrari.
+L'intero buffer deve restare nella meta canonica bassa del profilo a
+quattro livelli, fuori dalla pagina zero. E una restrizione del nostro
+profilo, non una regola generale di AllocatePool.
 
 ## Durata e rilascio
 
@@ -40,7 +43,8 @@ x64, complessivamente 16 byte; il budget del file resta 64 MiB.
 
 `test/storage/kernel_buffer_test.c` esegue il loader reale contro un
 modello di firmware. Copre NULL, overflow, disallineamento, alias completi
-e parziali con tredici output; verifica assenza di Read e FreePool sui
+e parziali con sedici output, inclusi indirizzi fuori profilo;
+verifica assenza di Read e FreePool sui
 risultati rifiutati. Prova errori ripetuti di pool e pagine nello stesso
 cleanup, nuovo caricamento su owner occupato, rilascio successivo e
 assenza di doppi rilasci. Verifica anche la conservazione del buffer

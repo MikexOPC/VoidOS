@@ -161,7 +161,9 @@ static int check_bad_outputs(void)
     void *targets[] = {0, (void *)(UINTN)(~0ULL - 7), content_pool + 1,
         &report, &kernel, &table, &services, &root, &file, &console, &mode,
         (UINT8 *)&report + sizeof(report) - 8,
-        (UINT8 *)&kernel + sizeof(kernel) - 8};
+        (UINT8 *)&kernel + sizeof(kernel) - 8,
+        (void *)(UINTN)8, (void *)(UINTN)(1ULL << 47),
+        (void *)(UINTN)0xffff800000001000ULL};
     UINTN index;
     for (index = 0; index < sizeof(targets) / sizeof(targets[0]); ++index) {
         EFI_STATUS expected = index ? EFI_DEVICE_ERROR : EFI_OUT_OF_RESOURCES;

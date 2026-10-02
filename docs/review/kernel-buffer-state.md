@@ -5,7 +5,8 @@ FreePool fallito e output AllocatePool non verificato prima della lettura.
 Il proprietario kernel conserva ora puntatore e dimensione su errore.
 Anche la validazione con rilascio immediato richiede un owner del chiamante.
 
-Il loader rifiuta tredici output invalidi prima di Read e FreePool.
+Il loader rifiuta sedici output invalidi prima di Read e FreePool,
+inclusi intervalli fuori dal profilo canonico basso e nella pagina zero.
 I test eseguono il codice C reale con un modello indipendente dei pool
 e delle pagine vive: coprono errori combinati, ritentativi, owner occupato
 e assenza di doppio rilascio. Le fasi successive richiedono che il buffer
@@ -18,11 +19,11 @@ BOOT_KERNEL_IMAGE cresce di 16 byte, senza modificare il contratto v2.
 
 | Artefatto in arch/x86/boot/uefi/build/ | SHA256 |
 | --- | --- |
-| esp/EFI/BOOT/BOOTX64.EFI | 6EFEA65A9C372BDFF176D91347E13FE2836A11DA0C18C72DC2905331A7643272 |
-| buffer-build.log | DACB7D5C94B7390CDD05F5F216B330E6D607C4265DC889C1B3A2BE16F06D8D40 |
-| buffer-firmware.log | 640CEEC75EB6455B8824ED06BA0E881FED87C526E0310D48FC6F7DA1EF4A9FD9 |
+| esp/EFI/BOOT/BOOTX64.EFI | 63FA34841137E1F087CD64DF2E9B539567D81ADFC55108699E99E27C687B4363 |
+| buffer-build.log | 682380BD9390DC39F195F0E8DA232CF079915F5C351E3124D755DA2C42CC01A9 |
+| buffer-firmware.log | 198E072313F5906B2AD2B3FA1598AD08E594C6883363E7E01B8922FF8AE85FFC |
 
-Log seriali: `firmware-test-a972863855a7443a8641215e1c71b704/<scenario>/serial.log`.
+Log seriali: `firmware-test-033967ad75254844a15f97bfc060b757/<scenario>/serial.log`.
 I log grezzi restano locali in build/, ignorati da Git.
 
 Un firmware che rifiuta ogni rilascio puo comunque lasciare risorse vive;

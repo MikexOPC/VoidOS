@@ -1,5 +1,6 @@
 #include "kernel_image.h"
 #include "lib/memory/buffer_capacity.h"
+#include "arch/x86/configs/boot_profile.h"
 
 // ====== buffer temporaneo posseduto anche dopo un errore di FreePool ====== //
 
@@ -11,7 +12,10 @@ EFI_STATUS boot_release_kernel_file_buffer(EFI_BOOT_SERVICES_PREFIX *services, B
         return kernel->FileBufferBytes ? EFI_INVALID_PARAMETER : EFI_SUCCESS;
     if (!os_buffer_extent_is_valid((UINT64)(UINTN)kernel->FileBuffer,
                                    kernel->FileBufferBytes, ELF_MAX_FILE_BYTES) ||
-        ((UINTN)kernel->FileBuffer & 7)) return EFI_INVALID_PARAMETER;
+        ((UINTN)kernel->FileBuffer & 7) ||
+        (UINT64)(UINTN)kernel->FileBuffer < X86_BOOT_PAGE_BYTES ||
+        (UINT64)(UINTN)kernel->FileBuffer > X86_BOOT_LOW_ADDRESS_LIMIT - kernel->FileBufferBytes)
+        return EFI_INVALID_PARAMETER;
     if (!services || services->Hdr.HeaderSize < sizeof(*services) || !services->FreePool)
         return EFI_UNSUPPORTED;
     status = services->FreePool(kernel->FileBuffer);
