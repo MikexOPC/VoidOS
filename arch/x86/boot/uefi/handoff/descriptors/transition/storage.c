@@ -3,6 +3,7 @@
 #include "lib/memory/address_ranges.h"
 #include "memory/regions.h"
 #include "handoff/transition/capsule.h"
+#include "memory/ownership.h"
 
 // ====== intervallo numerico prima di qualsiasi accesso alle pagine ====== //
 
@@ -15,16 +16,16 @@ static int valid_owner(const BOOT_DESCRIPTOR_STORAGE *owner)
                                        BOOT_DESCRIPTOR_PAGES * 4096);
 }
 
-// ====== profilo virtuale con guard page senza allocazione fisica ====== //
+// ====== risorse in identita raggiungibili prima e dopo CR3 ====== //
 
 static void make_layout(BOOT_DESCRIPTOR_LAYOUT *layout, const BOOT_DESCRIPTOR_STORAGE *owner)
 {
     UINT32 index;
-    layout->LinearBase = X86_BOOT_DESCRIPTOR_VIRTUAL;
-    layout->PrivilegeStack = X86_BOOT_PRIVILEGE_VIRTUAL;
-    layout->ExceptionStack = X86_BOOT_EXCEPTION_VIRTUAL;
+    layout->LinearBase = owner->PhysicalBase;
+    layout->PrivilegeStack = owner->PhysicalBase + 2 * 4096;
+    layout->ExceptionStack = owner->PhysicalBase + 7 * 4096;
     for (index = 0; index < 32; ++index)
-        layout->Targets[index] = owner->PhysicalBase + BOOT_CAPSULE_PAGE_OFFSET +
+        layout->Targets[index] = owner->CodeBase +
                                  BOOT_CAPSULE_VECTOR_OFFSET + index * BOOT_CAPSULE_VECTOR_STRIDE;
 }
 
@@ -73,7 +74,7 @@ EFI_STATUS boot_allocate_descriptor_storage(EFI_SYSTEM_TABLE *system_table,
     UINT64 address = 0, limit;
     UINTN byte;
     EFI_STATUS status;
-    if (!owner || owner->PhysicalBase || owner->Pages || owner->Ready || !system_table ||
+    if (!owner || owner->PhysicalBase || owner->Pages || owner->Ready || owner->CodeBase || !system_table ||
         !handoff || handoff->Descriptors) return EFI_INVALID_PARAMETER;
     if (system_table->Hdr.Signature != EFI_SYSTEM_TABLE_SIGNATURE ||
         system_table->Hdr.HeaderSize < sizeof(*system_table)) return EFI_INVALID_PARAMETER;
@@ -95,9 +96,19 @@ EFI_STATUS boot_allocate_descriptor_storage(EFI_SYSTEM_TABLE *system_table,
     owner->PhysicalBase = address;
     owner->Pages = BOOT_DESCRIPTOR_PAGES;
     for (byte = 0; byte < BOOT_DESCRIPTOR_PAGES * 4096; ++byte) ((UINT8 *)(UINTN)address)[byte] = 0;
-    if (!boot_prepare_capsule((UINT8 *)(UINTN)(address + BOOT_CAPSULE_PAGE_OFFSET), 4096)) return EFI_DEVICE_ERROR;
+    address = 0;
+    status = services->AllocatePages(0, 1, 1, &address);
+    if (status != EFI_SUCCESS) return status;
+    if (address < 4096 || (address & 4095) || address > limit - 4096 ||
+        os_address_ranges_overlap(address, 4096, owner->PhysicalBase, owner->Pages * 4096) ||
+        aliases(address, 4096, system_table, handoff, owner, &plan)) return EFI_DEVICE_ERROR;
+    owner->CodeBase = address;
+    status = boot_refresh_final_map(services, handoff->Memory);
+    if (status == EFI_SUCCESS) status = boot_check_code_range(&handoff->Memory->Snapshot, address);
+    if (status != EFI_SUCCESS) return status;
+    if (!boot_prepare_capsule((UINT8 *)(UINTN)address, 4096)) return EFI_DEVICE_ERROR;
     make_layout(&layout, owner);
-    if (!boot_prepare_descriptor_bundle((BOOT_DESCRIPTOR_BUNDLE *)(UINTN)address, &layout)) return EFI_DEVICE_ERROR;
+    if (!boot_prepare_descriptor_bundle((BOOT_DESCRIPTOR_BUNDLE *)(UINTN)owner->PhysicalBase, &layout)) return EFI_DEVICE_ERROR;
     owner->Ready = 1;
     return EFI_SUCCESS;
 }
@@ -108,7 +119,10 @@ EFI_STATUS boot_check_descriptor_storage(const BOOT_DESCRIPTOR_STORAGE *owner)
 {
     BOOT_DESCRIPTOR_LAYOUT layout;
     if (!valid_owner(owner) || owner->Ready != 1) return EFI_INVALID_PARAMETER;
-    if (!boot_validate_capsule((const UINT8 *)(UINTN)(owner->PhysicalBase + BOOT_CAPSULE_PAGE_OFFSET), 4096))
+    if (!owner->CodeBase || (owner->CodeBase & 4095) || owner->CodeBase > X86_BOOT_LOW_ADDRESS_LIMIT - 4096 ||
+        os_address_ranges_overlap(owner->CodeBase, 4096, owner->PhysicalBase, owner->Pages * 4096) ||
+        os_address_ranges_overlap(owner->CodeBase, 4096, (UINT64)(UINTN)owner, sizeof(*owner)) ||
+        !boot_validate_capsule((const UINT8 *)(UINTN)owner->CodeBase, 4096))
         return EFI_DEVICE_ERROR;
     make_layout(&layout, owner);
     return boot_validate_descriptor_bundle((const BOOT_DESCRIPTOR_BUNDLE *)(UINTN)owner->PhysicalBase, &layout) ?
@@ -121,7 +135,7 @@ EFI_STATUS boot_release_descriptor_storage(EFI_BOOT_SERVICES_PREFIX *services, B
 {
     EFI_STATUS status;
     if (!owner) return EFI_INVALID_PARAMETER;
-    if (!owner->Pages) return owner->PhysicalBase || owner->Ready ? EFI_INVALID_PARAMETER : EFI_SUCCESS;
+    if (!owner->Pages) return owner->PhysicalBase || owner->Ready || owner->CodeBase ? EFI_INVALID_PARAMETER : EFI_SUCCESS;
     if (!valid_owner(owner)) return EFI_INVALID_PARAMETER;
     if (services && os_address_ranges_overlap(owner->PhysicalBase, BOOT_DESCRIPTOR_PAGES * 4096,
         (UINT64)(UINTN)services, services->Hdr.HeaderSize < sizeof(*services) ? sizeof(*services) : services->Hdr.HeaderSize))
@@ -129,6 +143,16 @@ EFI_STATUS boot_release_descriptor_storage(EFI_BOOT_SERVICES_PREFIX *services, B
     boot_invalidate_descriptor_bundle((BOOT_DESCRIPTOR_BUNDLE *)(UINTN)owner->PhysicalBase);
     owner->Ready = 0;
     if (!services || services->Hdr.HeaderSize < sizeof(*services) || !services->FreePages) return EFI_UNSUPPORTED;
+    if (owner->CodeBase) {
+        if ((owner->CodeBase & 4095) || owner->CodeBase < 4096 || owner->CodeBase > X86_BOOT_LOW_ADDRESS_LIMIT - 4096 ||
+            os_address_ranges_overlap(owner->CodeBase, 4096, owner->PhysicalBase, owner->Pages * 4096) ||
+            os_address_ranges_overlap(owner->CodeBase, 4096, (UINT64)(UINTN)owner, sizeof(*owner)) ||
+            os_address_ranges_overlap(owner->CodeBase, 4096, (UINT64)(UINTN)services, services->Hdr.HeaderSize))
+            return EFI_INVALID_PARAMETER;
+        status = services->FreePages(owner->CodeBase, 1);
+        if (status != EFI_SUCCESS) return status;
+        owner->CodeBase = 0;
+    }
     status = services->FreePages(owner->PhysicalBase, owner->Pages);
     if (status == EFI_SUCCESS) owner->PhysicalBase = owner->Pages = 0;
     return status;
@@ -140,8 +164,7 @@ EFI_STATUS boot_map_descriptor_storage(BOOT_MAPPING_PLAN *plan, const BOOT_DESCR
 {
     BOOT_MAPPING_PLAN draft;
     UINT32 index;
-    const UINT64 offsets[] = {0, 4096, 5 * 4096};
-    const UINT64 virtuals[] = {X86_BOOT_DESCRIPTOR_VIRTUAL, X86_BOOT_PRIVILEGE_VIRTUAL, X86_BOOT_EXCEPTION_VIRTUAL};
+    const UINT64 offsets[] = {0, 2 * 4096, 7 * 4096};
     EFI_STATUS status;
     if (!plan || !owner || os_address_ranges_overlap((UINT64)(UINTN)plan, sizeof(*plan),
         (UINT64)(UINTN)owner, sizeof(*owner))) return EFI_INVALID_PARAMETER;
@@ -149,22 +172,27 @@ EFI_STATUS boot_map_descriptor_storage(BOOT_MAPPING_PLAN *plan, const BOOT_DESCR
         owner->PhysicalBase, owner->Pages * 4096)) return EFI_INVALID_PARAMETER;
     status = boot_validate_mapping_plan(plan);
     if (status != EFI_SUCCESS || !valid_owner(owner) || owner->Ready != 1) return EFI_INVALID_PARAMETER;
+    if (!owner->CodeBase || (owner->CodeBase & 4095) || owner->CodeBase > X86_BOOT_LOW_ADDRESS_LIMIT - 4096 ||
+        os_address_ranges_overlap(owner->CodeBase, 4096, owner->PhysicalBase, owner->Pages * 4096) ||
+        os_address_ranges_overlap(owner->CodeBase, 4096, (UINT64)(UINTN)owner, sizeof(*owner)) ||
+        os_address_ranges_overlap(owner->CodeBase, 4096, (UINT64)(UINTN)plan, sizeof(*plan))) return EFI_INVALID_PARAMETER;
     if (plan->Count > BOOT_MAPPING_LIMIT - 4) return EFI_OUT_OF_RESOURCES;
-    if (!boot_capsule_check_addresses(owner->PhysicalBase + BOOT_CAPSULE_PAGE_OFFSET,
+    if (!boot_capsule_check_addresses(owner->CodeBase,
                                       plan->Entry, plan->StackTop, BOOT_INFO_VIRTUAL, X86_BOOT_STACK_BYTES))
         return EFI_INVALID_PARAMETER;
     draft = *plan;
-    draft.CapsuleBase = owner->PhysicalBase + BOOT_CAPSULE_PAGE_OFFSET;
+    draft.CapsuleBase = owner->CodeBase;
+    draft.DescriptorBase = owner->PhysicalBase;
     draft.Mappings[draft.Count + 3] = draft.Mappings[draft.Count - 1];
     for (index = 0; index < 3; ++index) {
         BOOT_MAPPING *mapping = &draft.Mappings[draft.Count - 1 + index];
         mapping->PhysicalBase = owner->PhysicalBase + offsets[index];
-        mapping->VirtualBase = virtuals[index];
+        mapping->VirtualBase = mapping->PhysicalBase;
         mapping->Pages = index ? 4 : 1;
         mapping->Flags = 6;
     }
-    draft.Mappings[draft.Count + 2].PhysicalBase = owner->PhysicalBase + BOOT_CAPSULE_PAGE_OFFSET;
-    draft.Mappings[draft.Count + 2].VirtualBase = owner->PhysicalBase + BOOT_CAPSULE_PAGE_OFFSET;
+    draft.Mappings[draft.Count + 2].PhysicalBase = owner->CodeBase;
+    draft.Mappings[draft.Count + 2].VirtualBase = owner->CodeBase;
     draft.Mappings[draft.Count + 2].Pages = 1;
     draft.Mappings[draft.Count + 2].Flags = 5;
     draft.Count += 4;

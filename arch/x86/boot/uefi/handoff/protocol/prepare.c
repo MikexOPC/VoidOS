@@ -56,6 +56,8 @@ EFI_STATUS boot_prepare_start_info(const BOOT_MAPPING_PLAN *plan,
         UINT32 mapping_index;
         UINT64 page = tables->Pages[index];
         if (!page || (page & 4095) || page > limit - 4096) return EFI_INVALID_PARAMETER;
+        if (plan->DescriptorBase && page < plan->DescriptorBase + X86_BOOT_TRANSITION_DATA_PAGES * 4096 &&
+            plan->DescriptorBase < page + 4096) return EFI_INVALID_PARAMETER;
         for (previous = 0; previous < index; ++previous)
             if (page == tables->Pages[previous]) return EFI_INVALID_PARAMETER;
         for (mapping_index = 0; mapping_index < plan->Count; ++mapping_index) {

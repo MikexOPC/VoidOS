@@ -17,7 +17,8 @@ fn relative_handlers_stay_inside_capsule() {
         assert_eq!(base + 10 + displacement, 576);
     }
     assert_eq!(byte(579), 0xfd);
-    assert_eq!(byte(580), 256);
+    assert_eq!(byte(580), 0xcc);
+    assert_eq!(byte(831), 256);
     assert_eq!(byte(u32::MAX), 256);
 }
 
@@ -57,4 +58,15 @@ fn reproducible_relocations_keep_targets_in_owned_page() {
             assert!(base + offset < base + 4096);
         }
     }
+}
+
+// ====== rifiuto dei profili CPU non gestiti senza modificare registri ====== //
+
+#[test]
+fn activation_rejects_pcid_cet_la57_and_bad_roots() {
+    let check = profile::boot_activation_check_state;
+    assert_eq!(check(0x20, 0x100000, 40), 1);
+    for bit in [12, 17, 23, 24] { assert_eq!(check(0x20 | (1 << bit), 0x100000, 40), 0); }
+    for bits in [0, 31, 53, u32::MAX] { assert_eq!(check(0x20, 0x100000, bits), 0); }
+    for root in [0, 4095, 4097, 1 << 40, u64::MAX] { assert_eq!(check(0x20, root, 40), 0); }
 }

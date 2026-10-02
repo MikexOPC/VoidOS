@@ -91,6 +91,8 @@ EFI_STATUS boot_verify_table_contents(const BOOT_MAPPING_PLAN *plan,
     for (index = 0; index < tables->Count; ++index) {
         UINT64 address = tables->Pages[index];
         if (!address || (address & 4095) || address > limit - 4096) return EFI_INVALID_PARAMETER;
+        if (plan->DescriptorBase && address < plan->DescriptorBase + X86_BOOT_TRANSITION_DATA_PAGES * 4096 &&
+            plan->DescriptorBase < address + 4096) return EFI_INVALID_PARAMETER;
         for (previous = 0; previous < index; ++previous)
             if (address == tables->Pages[previous]) return EFI_INVALID_PARAMETER;
         for (mapping_index = 0; mapping_index < plan->Count; ++mapping_index) {

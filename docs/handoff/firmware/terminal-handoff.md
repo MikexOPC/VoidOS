@@ -4,7 +4,7 @@
 alla mappa persistente R/NX e al contratto versione 2. `BOOT_EXIT_HANDOFF`
 contiene prestiti di kernel, stack, capacita CPU, tabelle, pagina del
 contratto e proprietario della mappa, oltre al prestito opzionale Descriptors
-delle dieci pagine per descrittori, stack ausiliari e codice persistente.
+delle undici pagine EfiLoaderData e della pagina distinta EfiLoaderCode.
 Non e un nuovo proprietario.
 
 Gli oggetti devono essere distinti, validi, vivi e non modificati da altri
@@ -20,7 +20,7 @@ prima di scrivere lo stato o chiamare il firmware.
 `boot_validate_exit_handoff` ricostruisce il piano completo e verifica
 il grafo delle tabelle. Controlla copertura EfiLoaderData senza attributo
 runtime per kernel, stack, tabelle, contratto e buffer della mappa. Quando
-Descriptors e presente verifica anche blocco, codice, dieci pagine, quattro mappature
+Descriptors e presente verifica anche blocco, codice, due allocazioni, quattro mappature
 e guardie non presenti. Il controllo degli alias dello stato comprende
 il nuovo owner e le sue pagine; anche ogni nuova fotografia dei tentativi
 terminali deve coprirli.
@@ -30,8 +30,8 @@ Richiede Ready e firma validi, con EnabledFeatures ancora zero.
 
 Questa verifica non alloca, non modifica il contratto e non usa servizi
 firmware. Il percorso reale UEFI la esegue dopo la preparazione della
-mappa; segnala successo solo dopo il controllo e poi effettua ancora
-il cleanup e il ritorno al firmware.
+mappa. La build diagnostica effettua poi cleanup e ritorno al firmware;
+`-BootKernel` usa invece la sequenza reale e la transizione persistente.
 
 ## Fotografia di ciascun tentativo
 
@@ -66,8 +66,9 @@ puo risiedere nel buffer o nei metadati della mappa.
 
 Con Exited, mappa e contratto descrivono la fotografia del tentativo
 riuscito e tutte le risorse restano possedute e vive. EnabledFeatures
-rimane zero: l'uscita non attiva NXE, WP o CR3. Il futuro codice di
-transizione dovra attivarli, verificarli e completare il contratto.
+rimane zero: l'uscita non attiva NXE, WP o CR3. Il codice di
+[attivazione](../transition/activation.md) verifica NXE/WP, pubblica i relativi
+bit, cambia CR3 e rilegge la root prima della CALL al kernel.
 
 Un errore durante la sequenza invalida il contratto senza perdere i
 proprietari. Un errore iniziale di preflight non modifica la bozza.
@@ -76,8 +77,8 @@ chiamate firmware o modifiche dello stato gia registrato.
 
 In Available il chiamante puo ancora effettuare il normale cleanup.
 In Restricted o Exited sono vietati il normale ritorno all'ingresso UEFI,
-la console e i rilasci firmware. Il futuro chiamante deve avere gia un
-percorso autonomo per continuare o arrestare la CPU.
+la console e i rilasci firmware. Il chiamante `-BootKernel` arresta la CPU
+in Restricted e usa il codice persistente in Exited.
 
 ## Verifiche e limite attuale
 
@@ -93,10 +94,9 @@ Quattro ulteriori regressioni verificano stato dentro contratto,
 pagina delle tabelle, buffer della mappa e tabella dei servizi:
 nessuna chiamata firmware e nessuna modifica dei byte originali.
 
-QEMU verifica il preflight reale nei due scenari positivi e mantiene
-CR3 invariato. ExitBootServices resta simulato nei test host: per usarlo
-nel boot reale servono ancora codice e trampoline persistenti e
-attivazione delle [strutture proprie gia preparate](../descriptors/storage.md).
-Questa verifica non certifica hardware fisico.
+I dieci scenari QEMU diagnostici mantengono CR3 invariato. Il test kernel
+separato verifica ExitBootServices reale, stato Exited e LastStatus zero
+letti dal monitor, nuova root e ingresso ELF, oltre a tre fault di memoria.
+Hardware fisico non e ancora verificato.
 
 [UEFI 2.11: GetMemoryMap e ExitBootServices](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html).

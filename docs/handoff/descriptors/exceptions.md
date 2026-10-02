@@ -33,13 +33,14 @@ i cui vettori 32..255 non fanno parte della tabella.
 `boot_prepare_idt_draft` costruisce e verifica la bozza, poi stampa il
 successo. La bozza occupa 528 byte sullo stack EFI corrente, senza nuove
 allocazioni firmware. Vive fino al ritorno di `efi_main`. Nessuna LIDT
-viene eseguita nel bootloader ordinario: resta attiva la IDT firmware.
+viene eseguita nella build diagnostica: resta attiva la IDT firmware.
 L'assembly e nel PE EFI e i suoi indirizzi vengono rilocati dal loader UEFI.
 
 Il boot prepara ora anche [descrittori e stack persistenti](storage.md),
 con mappature verificate nel grafo inattivo. Gli ingressi sono ora anche
 copiati nel [blocco di codice persistente](../transition/capsule.md).
-Prima del cambio CR3 serve ancora il tratto iniziale del trampoline. Le bozze sullo
+La build `-BootKernel` usa il [trampoline completo](../transition/activation.md),
+che carica i descrittori persistenti prima del cambio CR3. Le bozze sullo
 stack EFI non sono utilizzabili dopo quel cambio. Il contratto v2 resta invariato.
 
 ## Verifiche ripetibili
@@ -71,7 +72,9 @@ argomento in RCX, IF=0 e DF=0. Il destinatario resta codice di test EFI.
 La prova usa le mappature firmware: non dimostra ExitBootServices,
 cambio CR3, ingresso nel kernel o funzionamento su hardware fisico.
 Lo stack alternativo appartiene ancora all'immagine caricata dal firmware.
-Attivazione del profilo persistente e diagnostica autonoma restano passi successivi.
+Il test kernel separato verifica #PF dopo uscita UEFI e CR3 per WP, guardia
+e NX. IST1 forza SS a zero e salva il precedente SS=16 nel frame.
+La diagnostica autonoma resta da costruire: gli handler arrestano senza stampare.
 
 Riferimento: [Intel SDM volume 3A](https://cdrdv2-public.intel.com/825758/253668-sdm-vol-3a.pdf),
 sezioni 6.13, 6.14.1, 6.14.2 e 6.14.5.

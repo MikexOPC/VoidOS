@@ -17,6 +17,8 @@ static EFI_STATUS allocate_table(EFI_BOOT_SERVICES_PREFIX *services,
     status = services->AllocatePages(0, 2, 1, &physical);
     if (status != EFI_SUCCESS)
         return status;
+    if (plan->DescriptorBase && os_address_ranges_overlap(physical, 4096, plan->DescriptorBase, X86_BOOT_TRANSITION_DATA_PAGES * 4096))
+        return EFI_DEVICE_ERROR;
     /* Un alias non prova una nuova proprieta: non azzerare ne liberare
        memoria viva. Su firmware non conforme la risorsa resta ambigua
        e puo restare allocata; FreePages potrebbe danneggiare altri owner. */

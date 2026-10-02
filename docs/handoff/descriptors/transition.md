@@ -54,8 +54,10 @@ Nel boot ordinario resta attiva la preparazione delle bozze precedenti.
 Il percorso ordinario alloca ora anche il blocco in [pagine persistenti](storage.md),
 con due stack, guardie non mappate e verifica di copertura. Ricostruisce
 il grafo inattivo e aggiorna il preflight. Il [codice persistente](../transition/capsule.md)
-contiene ora gli ingressi copiati e il tratto finale del trampoline.
-Restano tratto iniziale di attivazione, uscita UEFI e salto al kernel.
+contiene gli ingressi copiati e il trampoline completo. La build diagnostica
+conserva il cleanup; `-BootKernel` esegue [uscita UEFI e ingresso ELF](../transition/activation.md)
+con descrittori e paging propri. La validazione del blocco resta precedente
+a LTR: dopo l'attivazione il descrittore TSS diventa busy.
 Il profilo con IST1 comune a tutti i vettori e limitato all'arresto terminale:
 non risolve eccezioni annidate o NMI sullo stesso stack. Il kernel ibrido
 richiedera un proprio profilo di eccezioni e durata delle risorse.

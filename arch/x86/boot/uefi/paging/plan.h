@@ -22,6 +22,7 @@ typedef struct {
     UINT64 Entry;
     UINT64 StackTop;
     UINT64 CapsuleBase;
+    UINT64 DescriptorBase;
     UINT32 Count;
     BOOT_MAPPING Mappings[BOOT_MAPPING_LIMIT];
 } BOOT_MAPPING_PLAN;

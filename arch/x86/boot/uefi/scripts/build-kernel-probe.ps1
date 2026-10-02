@@ -1,15 +1,19 @@
-param([Parameter(Mandatory)][string]$ToolchainBin)
+param([Parameter(Mandatory)][string]$ToolchainBin, [string]$OutputDirectory,
+      [ValidateSet('none', 'contract-write', 'stack-guard', 'execute-data')][string]$Fault = 'none')
 $ErrorActionPreference = 'Stop'
 $bootRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = (Resolve-Path (Join-Path $bootRoot '..\..\..\..')).Path
-$output = Join-Path $bootRoot 'build'
+$output = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $bootRoot 'build' }
+New-Item -ItemType Directory -Force -Path $output | Out-Null
 . (Join-Path $PSScriptRoot 'status.ps1')
 
 # ====== compilazione del solo kernel diagnostico ====== #
 
 Write-BootSection 'kernel C diagnostico'
+[string[]]$probeFlags = @()
+if ($Fault -ne 'none') { $probeFlags = @('/DBOOT_PROBE_FAULT=' + (@('none','contract-write','stack-guard','execute-data').IndexOf($Fault))) }
 & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O1 /c `
-    ('/I' + $bootRoot) ('/I' + $projectRoot) (Join-Path $bootRoot 'test\kernel\entry.c') ("/Fo$output\kernel_probe.obj")
+    @probeFlags ('/I' + $bootRoot) ('/I' + $projectRoot) (Join-Path $bootRoot 'test\kernel\entry.c') ("/Fo$output\kernel_probe.obj")
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione kernel diagnostico fallita.' }
 & (Join-Path $ToolchainBin 'link.exe') /nologo /machine:x64 /subsystem:native `
     /entry:kernel_probe_entry /nodefaultlib /incremental:no /dynamicbase:no /fixed /base:0x100000000 `
@@ -36,13 +40,15 @@ if ($pe -gt 65536 -or (Read-Number 0 2) -ne 0x5a4d -or
 $optional = $pe + 24
 $optionalSize = Read-Number ($pe + 20) 2
 $count = Read-Number ($pe + 6) 2
-if ($count -ne 3 -or $optionalSize -ne 240 -or
+$expectedCount = if ($Fault -eq 'execute-data') { 4 } else { 3 }
+if ($count -ne $expectedCount -or $optionalSize -ne 240 -or
     (Read-Number $optional 2) -ne 0x20b -or
     (Read-Number ($optional + 24) 8) -ne 0x100000000 -or
     (Read-Number ($optional + 32) 4) -ne 4096 -or
     (Read-Number ($optional + 108) 4) -ne 16) { throw 'Profilo PE diagnostico inatteso.' }
 for ($i = 0; $i -lt 16; $i++) {
-    if ($i -ne 6 -and (Read-Number ($optional + 112 + $i * 8) 8) -ne 0) {
+    if ($i -ne 6 -and !($Fault -eq 'execute-data' -and $i -eq 3) -and
+        (Read-Number ($optional + 112 + $i * 8) 8) -ne 0) {
         throw 'Il probe deve essere privo di import, relocation, TLS e directory runtime.'
     }
 }
@@ -60,8 +66,8 @@ for ($i = 0; $i -lt $count; $i++) {
     $rawSize = Read-Number ($header + 16) 4
     $rawOffset = Read-Number ($header + 20) 4
     $characteristics = Read-Number ($header + 36) 4
-    $expectedName = if ($i -eq 0) { '.text' } elseif ($i -eq 1) { '.rdata' } else { '.data' }
-    $expectedPermissions = if ($i -eq 0) { [uint32]0x60000000 } elseif ($i -eq 1) { [uint32]0x40000000 } else { [uint32]3221225472 }
+    $expectedName = if ($i -eq 0) { '.text' } elseif ($i -eq 1) { '.rdata' } elseif ($i -eq 2) { '.data' } else { '.pdata' }
+    $expectedPermissions = if ($i -eq 0) { [uint32]0x60000000 } elseif ($i -eq 2) { [uint32]3221225472 } else { [uint32]0x40000000 }
     if ($name -ne $expectedName -or ($characteristics -band [uint32]3758096384) -ne $expectedPermissions -or
         $virtualSize -eq 0 -or $virtualSize -gt 4096 -or $rawSize -gt 4096 -or
         $rawOffset -gt $bytes.Length -or $rawSize -gt $bytes.Length - $rawOffset -or
@@ -72,7 +78,7 @@ for ($i = 0; $i -lt $count; $i++) {
     if ($i -eq 2 -and $rawSize -ne 0) { throw 'Il marker deve essere BSS azzerata.' }
     $memorySize = [Math]::Max($virtualSize, $rawSize)
     $fileOffset = 4096 * ($i + 1)
-    $flags = if ($i -eq 0) { 5 } elseif ($i -eq 1) { 4 } else { 6 }
+    $flags = if ($i -eq 0) { 5 } elseif ($i -eq 2) { 6 } else { 4 }
     $sections += @{ Address=$address; Offset=$fileOffset; RawOffset=$rawOffset;
         FileBytes=$rawSize; MemoryBytes=$memorySize; Flags=$flags }
     if ($i -eq 1) {
@@ -82,6 +88,15 @@ for ($i = 0; $i -lt $count; $i++) {
         if ($debugBytes -ne 0 -and ($debugRva -lt $sectionRva -or
             $debugRva + [uint64]$debugBytes -gt $sectionRva + $virtualSize)) {
             throw 'Directory debug fuori dai dati in sola lettura.'
+        }
+    }
+    if ($i -eq 3) {
+        $exceptionRva = Read-Number ($optional + 136) 4
+        $exceptionBytes = Read-Number ($optional + 140) 4
+        $sectionRva = $address - 0x100000000
+        if (!$exceptionBytes -or $exceptionRva -lt $sectionRva -or
+            $exceptionRva + [uint64]$exceptionBytes -gt $sectionRva + $virtualSize) {
+            throw 'Directory unwind del solo probe NX fuori da .pdata.'
         }
     }
     $previousEnd = $address + 4096

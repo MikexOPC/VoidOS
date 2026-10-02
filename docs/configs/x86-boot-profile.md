@@ -14,6 +14,8 @@ allocazioni o stato modificabile.
 | Inizio stack | `0x0000700000001000` |
 | Stack | 16 pagine, 64 KiB |
 | Budget delle tabelle inattive | 128 pagine, massimo 512 KiB |
+| Dati della transizione | 11 pagine contigue, 44 KiB, due guardie possedute |
+| Codice della transizione | 1 pagina EfiLoaderCode distinta, 4 KiB |
 
 I budget indicano limiti; le tabelle vengono allocate solo quando servono.
 Gli indirizzi sono virtuali e non impongono allocazioni fisiche a quelle
@@ -34,6 +36,8 @@ non ogni valore accettato dagli assert e un profilo gia supportato.
 CPUID continua a rilevare NX, long mode e larghezza degli indirizzi fisici.
 La lettura dei registri continua a controllare il paging attivo del
 firmware. Il profilo non attiva NXE, WP, CR3 o altre funzioni hardware.
+Il percorso `-BootKernel` attiva questi stati nel trampoline persistente;
+il valore di undici pagine e vincolato al layout corrente, non parametrico.
 
 La build compila l'header nei consumatori C e C++ e verifica il piano,
 le tabelle, il contratto e il probe. I test firmware restano in

@@ -14,6 +14,7 @@
 #include "handoff/firmware/terminal/handoff.h"
 #include "handoff/descriptors/prepare.h"
 #include "handoff/descriptors/exceptions.h"
+#include "handoff/transition/activation.h"
 
 // ====== verifica del piano senza aumentare lo stack di ingresso ====== //
 
@@ -42,6 +43,7 @@ static EFI_STATUS prepare_descriptors(EFI_SYSTEM_TABLE *system_table, const BOOT
     BOOT_EXIT_HANDOFF handoff = {kernel, stack, caps, tables, page, memory, 0};
     EFI_STATUS status = boot_allocate_descriptor_storage(system_table, &handoff, owner);
     if (status == EFI_SUCCESS) status = boot_prepare_descriptor_handoff(system_table, &handoff, owner, tables);
+    if (status == EFI_SUCCESS) status = boot_prepare_activation(&handoff);
     return status;
 }
 
@@ -260,7 +262,29 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log_hex(system_table->ConOut, L"Pagine descrittori e stack persistenti: ", descriptor_storage.Pages);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
-    status = boot_log(system_table->ConOut, BOOT_WARN, L"Avvio del kernel non ancora implementato.");
+#ifdef BOOT_RUN_KERNEL
+    {
+        BOOT_EXIT_HANDOFF handoff = {&loaded, &stack, &capabilities, &tables, &start_page, &final_map, &descriptor_storage};
+        BOOT_EXIT_STATE exit_state = {0};
+        status = boot_prepare_activation(&handoff);
+        if (status != EFI_SUCCESS) goto cleanup_kernel;
+        status = boot_log_hex(system_table->ConOut, L"ACTIVATION_CODE: ", descriptor_storage.CodeBase);
+        if (status == EFI_SUCCESS) status = boot_log_hex(system_table->ConOut, L"ACTIVATION_ROOT: ", tables.Root);
+        if (status == EFI_SUCCESS) status = boot_log_hex(system_table->ConOut, L"ACTIVATION_DATA: ", descriptor_storage.PhysicalBase);
+        if (status == EFI_SUCCESS) status = boot_log_hex(system_table->ConOut, L"ACTIVATION_EXIT_STATE: ", (UINT64)(UINTN)&exit_state);
+        if (status == EFI_SUCCESS) status = boot_log(system_table->ConOut, BOOT_INFO, L"KERNEL_HANDOFF_READY");
+        if (status != EFI_SUCCESS) goto cleanup_kernel;
+        status = boot_exit_memory_handoff(image, (EFI_BOOT_SERVICES_EXIT_PREFIX *)system_table->BootServices,
+                                          &handoff, &exit_state);
+        if (exit_state.Phase == BOOT_SERVICES_EXITED)
+            x86_enter_transition(descriptor_storage.PhysicalBase + BOOT_ACTIVATION_CONTEXT_OFFSET,
+                                  descriptor_storage.CodeBase + BOOT_ACTIVATION_OFFSET);
+        if (exit_state.Phase == BOOT_SERVICES_RESTRICTED) x86_stop_transition();
+        goto cleanup_kernel;
+    }
+#else
+    status = boot_log(system_table->ConOut, BOOT_WARN, L"Percorso diagnostico: cleanup senza attivazione del kernel.");
+#endif
 
 cleanup_kernel:
     had_kernel_pages = loaded.Pages.Count != 0;

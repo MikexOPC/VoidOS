@@ -1,4 +1,4 @@
-param([string]$ToolchainBin)
+param([string]$ToolchainBin, [switch]$BootKernel)
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'status.ps1')
 try {
@@ -57,6 +57,7 @@ try {
     $flags = @('/nologo', '/TC', '/std:c11', '/W4', '/WX', '/GS-', '/Zl', '/Od', '/c', ('/I' + $bootRoot), ('/I' + $projectRoot), ('/I' + $compilerInclude))
     Invoke-Checked (Join-Path $ToolchainBin 'ml64.exe') @('/nologo', '/W3', '/WX', '/c', "/Fo$output\capsule_entries.obj", (Join-Path $bootRoot 'handoff\transition\assembly\capsule\entry.asm'))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'handoff\transition\capsule.c'), "/Fo$output\capsule.obj"))
+    Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'handoff\transition\activation.c'), "/Fo$output\activation.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'test\handoff\transition\capsule_test.c'), "/Fo$output\capsule_test.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $projectRoot 'lib\memory\address_ranges.c'), "/Fo$output\address_ranges.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $projectRoot 'lib\memory\test\address_ranges_test.c'), "/Fo$output\address_ranges_test.obj"))
@@ -94,6 +95,11 @@ try {
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'test\paging\preparation_test.c'), "/Fo$output\preparation_test.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'paging\preparation.c'), "/Fo$output\paging_preparation.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'entry.c'), "/Fo$output\entry.obj"))
+    $firmwareEntry = "$output\entry.obj"
+    if ($BootKernel) {
+        Invoke-Checked $compiler ($flags + @('/DBOOT_RUN_KERNEL=1', (Join-Path $bootRoot 'entry.c'), "/Fo$output\entry_kernel.obj"))
+        $firmwareEntry = "$output\entry_kernel.obj"
+    }
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'file_probe.c'), "/Fo$output\file_probe.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'console\log.c'), "/Fo$output\log.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'storage\kernel_file.c'), "/Fo$output\kernel_file.obj"))
@@ -123,7 +129,7 @@ try {
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'test\paging\tables_test.c'), "/Fo$output\tables_test.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'paging\plan.c'), "/Fo$output\paging_plan.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'test\paging\plan_test.c'), "/Fo$output\plan_test.obj"))
-    Invoke-Checked $linker @('/nologo', '/machine:x64', '/subsystem:efi_application', '/entry:efi_main', "$output\processor_query.obj", '/nodefaultlib', '/incremental:no', '/dynamicbase:no', '/fixed:no', "/out:$esp\BOOTX64.EFI", "$output\entry.obj", "$output\file_probe.obj", "$output\log.obj", "$output\kernel_file.obj", "$output\elf_validate.obj", "$output\segment_bounds.obj", "$output\cpu_capabilities.obj", "$output\x86_processor.lib", "$output\os_memory.lib", "$output\paging_preparation.obj", "$output\start_info.obj", "$output\start_page.obj", "$output\elf_load.obj", "$output\handoff_segments.obj", "$output\memory_map.obj", "$output\map_refresh.obj", "$output\final_storage.obj", "$output\final_map.obj", "$output\memory_handoff.obj", "$output\terminal_handoff.obj", "$output\exit_services.obj", "$output\memory_regions.obj", "$output\kernel_image.obj", "$output\kernel_buffer.obj", "$output\handoff_stack.obj", "$output\handoff_resources.obj", "$output\memory_ownership.obj", "$output\paging_plan.obj", "$output\paging_tables.obj", "$output\table_contents.obj", "$output\x86_descriptors.lib", "$output\descriptor_bundle.obj", "$output\descriptor_storage.obj", "$output\descriptor_preparation.obj", "$output\gdt_prepare.obj", "$output\idt_prepare.obj", "$output\exception_entries.obj", "$output\capsule.obj", "$output\capsule_entries.obj", "$output\capsule_profile.obj")
+    Invoke-Checked $linker @('/nologo', '/machine:x64', '/subsystem:efi_application', '/entry:efi_main', "$output\processor_query.obj", '/nodefaultlib', '/incremental:no', '/dynamicbase:no', '/fixed:no', "/out:$esp\BOOTX64.EFI", $firmwareEntry, "$output\file_probe.obj", "$output\log.obj", "$output\kernel_file.obj", "$output\elf_validate.obj", "$output\segment_bounds.obj", "$output\cpu_capabilities.obj", "$output\x86_processor.lib", "$output\os_memory.lib", "$output\paging_preparation.obj", "$output\start_info.obj", "$output\start_page.obj", "$output\elf_load.obj", "$output\handoff_segments.obj", "$output\memory_map.obj", "$output\map_refresh.obj", "$output\final_storage.obj", "$output\final_map.obj", "$output\memory_handoff.obj", "$output\terminal_handoff.obj", "$output\exit_services.obj", "$output\memory_regions.obj", "$output\kernel_image.obj", "$output\kernel_buffer.obj", "$output\handoff_stack.obj", "$output\handoff_resources.obj", "$output\memory_ownership.obj", "$output\paging_plan.obj", "$output\paging_tables.obj", "$output\table_contents.obj", "$output\x86_descriptors.lib", "$output\descriptor_bundle.obj", "$output\descriptor_storage.obj", "$output\descriptor_preparation.obj", "$output\gdt_prepare.obj", "$output\idt_prepare.obj", "$output\exception_entries.obj", "$output\activation.obj", "$output\capsule.obj", "$output\capsule_entries.obj", "$output\capsule_profile.obj")
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'test\entry_test.c'), "/Fo$output\tests.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'test\file_test.c'), "/Fo$output\file_test.obj"))
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'test\elf_test.c'), "/Fo$output\elf_test.obj"))
@@ -142,10 +148,14 @@ try {
     Invoke-Checked $compiler ($flags + @((Join-Path $bootRoot 'test\kernel\entry_test.c'), "/Fo$output\kernel_probe_test.obj"))
     $testId = [Guid]::NewGuid().ToString('N')
     $testDll = Join-Path $output "uefi_tests_$testId.dll"
-    Invoke-Checked $linker @('/nologo', '/machine:x64', '/dll', '/noentry', '/nodefaultlib', '/incremental:no', "/out:$testDll", "$output\capsule_test.obj", "$output\gdt_test.obj", "$output\idt_test.obj", "$output\tss_test.obj", "$output\descriptor_bundle_test.obj", "$output\descriptor_storage_test.obj", "$output\exception_entries_test.obj", "$output\map_validation_test.obj", "$output\final_storage_test.obj", "$output\final_map_test.obj", "$output\memory_handoff_test.obj", "$output\address_ranges_test.obj", "$output\shared_interface_test.obj", "$output\map_refresh_test.obj", "$output\exit_services_test.obj", "$output\start_page_test.obj", "$output\start_info_test.obj", "$output\kernel_probe.obj", "$output\kernel_probe_test.obj", "$output\tests.obj", "$output\file_test.obj", "$output\entry.obj", "$output\file_probe.obj", "$output\elf_validate.obj", "$output\segment_bounds.obj", "$output\cpu_capabilities.obj", "$output\x86_processor.lib", "$output\os_memory.lib", "$output\paging_preparation.obj", "$output\start_info.obj", "$output\start_page.obj", "$output\elf_test.obj", "$output\log.obj", "$output\log_test.obj", "$output\kernel_file.obj", "$output\kernel_file_test.obj", "$output\kernel_buffer_test.obj", "$output\elf_load.obj", "$output\load_test.obj", "$output\handoff_segments.obj", "$output\handoff_test.obj", "$output\memory_map.obj", "$output\map_refresh.obj", "$output\final_storage.obj", "$output\final_map.obj", "$output\memory_handoff.obj", "$output\terminal_handoff.obj", "$output\exit_services.obj", "$output\map_test.obj", "$output\memory_regions.obj", "$output\regions_test.obj", "$output\kernel_memory_mock.obj", "$output\stack_test.obj", "$output\resources_test.obj", "$output\plan_test.obj", "$output\tables_test.obj", "$output\preparation_test.obj", "$output\cpu_tests.obj", "$output\paging_state_test.obj", "$output\processor_mock.obj", "$output\kernel_image.obj", "$output\kernel_buffer.obj", "$output\handoff_stack.obj", "$output\handoff_resources.obj", "$output\memory_ownership.obj", "$output\paging_plan.obj", "$output\paging_tables.obj", "$output\table_contents.obj", "$output\x86_descriptors.lib", "$output\descriptor_bundle.obj", "$output\descriptor_storage.obj", "$output\descriptor_preparation.obj", "$output\gdt_prepare.obj", "$output\idt_prepare.obj", "$output\exception_entries.obj", "$output\capsule.obj", "$output\capsule_entries.obj", "$output\capsule_profile.obj")
+    Invoke-Checked $linker @('/nologo', '/machine:x64', '/dll', '/noentry', '/nodefaultlib', '/incremental:no', "/out:$testDll", "$output\capsule_test.obj", "$output\gdt_test.obj", "$output\idt_test.obj", "$output\tss_test.obj", "$output\descriptor_bundle_test.obj", "$output\descriptor_storage_test.obj", "$output\exception_entries_test.obj", "$output\map_validation_test.obj", "$output\final_storage_test.obj", "$output\final_map_test.obj", "$output\memory_handoff_test.obj", "$output\address_ranges_test.obj", "$output\shared_interface_test.obj", "$output\map_refresh_test.obj", "$output\exit_services_test.obj", "$output\start_page_test.obj", "$output\start_info_test.obj", "$output\kernel_probe.obj", "$output\kernel_probe_test.obj", "$output\tests.obj", "$output\file_test.obj", "$output\entry.obj", "$output\file_probe.obj", "$output\elf_validate.obj", "$output\segment_bounds.obj", "$output\cpu_capabilities.obj", "$output\x86_processor.lib", "$output\os_memory.lib", "$output\paging_preparation.obj", "$output\start_info.obj", "$output\start_page.obj", "$output\elf_test.obj", "$output\log.obj", "$output\log_test.obj", "$output\kernel_file.obj", "$output\kernel_file_test.obj", "$output\kernel_buffer_test.obj", "$output\elf_load.obj", "$output\load_test.obj", "$output\handoff_segments.obj", "$output\handoff_test.obj", "$output\memory_map.obj", "$output\map_refresh.obj", "$output\final_storage.obj", "$output\final_map.obj", "$output\memory_handoff.obj", "$output\terminal_handoff.obj", "$output\exit_services.obj", "$output\map_test.obj", "$output\memory_regions.obj", "$output\regions_test.obj", "$output\kernel_memory_mock.obj", "$output\stack_test.obj", "$output\resources_test.obj", "$output\plan_test.obj", "$output\tables_test.obj", "$output\preparation_test.obj", "$output\cpu_tests.obj", "$output\paging_state_test.obj", "$output\processor_mock.obj", "$output\kernel_image.obj", "$output\kernel_buffer.obj", "$output\handoff_stack.obj", "$output\handoff_resources.obj", "$output\memory_ownership.obj", "$output\paging_plan.obj", "$output\paging_tables.obj", "$output\table_contents.obj", "$output\x86_descriptors.lib", "$output\descriptor_bundle.obj", "$output\descriptor_storage.obj", "$output\descriptor_preparation.obj", "$output\gdt_prepare.obj", "$output\idt_prepare.obj", "$output\exception_entries.obj", "$output\activation.obj", "$output\capsule.obj", "$output\capsule_entries.obj", "$output\capsule_profile.obj")
     [IO.File]::WriteAllText((Join-Path $esp 'boot-check.txt'), "OS boot check`r`n", [Text.Encoding]::ASCII)
     Copy-Item -LiteralPath "$output\kernel_probe.elf" -Destination (Join-Path $esp 'kernel.elf')
-    Write-BootStatus INFO 'kernel.elf contiene il probe C: caricabile, salto ancora disabilitato.'
+    if ($BootKernel) {
+        Write-BootStatus INFO 'kernel.elf contiene il probe C che verra chiamato dopo ExitBootServices.'
+    } else {
+        Write-BootStatus INFO 'kernel.elf contiene il probe C: caricabile, attivazione disabilitata in questa build diagnostica.'
+    }
     Write-BootStatus OK 'Compilazione e collegamento completati.'
 
     # ====== esecuzione test C ====== #
@@ -283,14 +293,15 @@ try {
         throw 'Immagine non conforme: controllare formato, entry point, import e rilocazioni.'
     }
     Write-BootStatus OK "Immagine verificata: $esp\BOOTX64.EFI ($($bytes.Length) byte)"
-    Write-BootStatus WARN 'Le tabelle restano inattive; il salto al kernel non e ancora implementato.'
+    if ($BootKernel) {
+        Write-BootStatus INFO 'Percorso ExitBootServices e CR3 abilitato: verificare con test/kernel/firmware_test.ps1.'
+    } else {
+        Write-BootStatus WARN 'Percorso diagnostico con tabelle inattive; -BootKernel abilita il kernel diagnostico.'
+    }
 } catch {
     Write-BootStatus FAIL $_.Exception.Message
     throw
 }
-
-
-
 
 
 

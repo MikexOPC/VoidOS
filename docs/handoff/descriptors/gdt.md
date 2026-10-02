@@ -37,14 +37,15 @@ di `efi_main`, poi stampa il successo. La bozza vive fino al ritorno al
 firmware. Non usa AllocatePages e non viene aggiunta al contratto v2.
 Non si puo usare questa bozza dopo un cambio CR3. Il boot prepara anche
 una [GDT estesa persistente](storage.md), con operandi e mappature proprie,
-che resta inattiva in attesa del trampoline.
+che resta inattiva nella build diagnostica. La build `-BootKernel` la
+carica nel [trampoline persistente](../transition/activation.md), con CS=8,
+DS/ES/SS=16 e selettore TSS=24 prima del cambio CR3.
 
 Sono ora presenti anche [IDT e ingressi terminali](exceptions.md), preparati
 ma inattivi nel boot ordinario. [TSS/IST](tss.md) sono verificati nel probe
 separato e preparati nelle nuove pagine persistenti del percorso ordinario;
-mancano caricamento dei descrittori nel passaggio finale e trampoline.
-Questa bozza e un prerequisito verificabile,
-non una transizione hardware pronta all'uso.
+il percorso completo carica questi descrittori nel passaggio finale.
+La bozza iniziale resta distinta dalle risorse persistenti caricate dalla CPU.
 
 ## Test
 

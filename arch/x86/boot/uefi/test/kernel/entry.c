@@ -22,6 +22,13 @@ BOOT_U64 kernel_probe_entry(const BOOT_START_INFO *info) {
         info->MemoryMapBytes % info->MemoryDescriptorBytes ||
         info->MemoryMapBytes / info->MemoryDescriptorBytes > 4096 ||
         info->MemoryDescriptorVersion != 1 || info->MemoryReserved) return 7;
+#if BOOT_PROBE_FAULT == 1
+    *(volatile BOOT_U64 *)(void *)info = 0;
+#elif BOOT_PROBE_FAULT == 2
+    probe_marker = *(volatile BOOT_U64 *)(info->StackBase - 4096);
+#elif BOOT_PROBE_FAULT == 3
+    ((void (*)(void))(info->StackBase))();
+#endif
     probe_marker = BOOT_PROBE_SUCCESS;
     return probe_marker;
 }

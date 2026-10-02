@@ -5,7 +5,7 @@
 #include "paging/tables.h"
 #include "bundle.h"
 
-#define BOOT_DESCRIPTOR_PAGES 10U
+#define BOOT_DESCRIPTOR_PAGES X86_BOOT_TRANSITION_DATA_PAGES
 struct BOOT_EXIT_HANDOFF;
 
 // ====== un owner per descrittori due stack e pagina di codice separata ====== //
@@ -14,6 +14,7 @@ typedef struct {
     UINT64 PhysicalBase;
     UINTN Pages;
     UINT32 Ready;
+    UINT64 CodeBase;
 } BOOT_DESCRIPTOR_STORAGE;
 
 EFI_STATUS boot_allocate_descriptor_storage(EFI_SYSTEM_TABLE *system_table,

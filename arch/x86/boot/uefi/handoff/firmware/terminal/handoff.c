@@ -29,7 +29,8 @@ static EFI_STATUS check_state_bindings(const BOOT_EXIT_HANDOFF *handoff, const B
         const BOOT_DESCRIPTOR_STORAGE *owner = handoff->Descriptors;
         if (owner->Pages > BOOT_DESCRIPTOR_PAGES ||
             state_overlaps(state, (UINT64)(UINTN)owner, sizeof(*owner)) ||
-            state_overlaps(state, owner->PhysicalBase, owner->Pages * 4096)) return EFI_INVALID_PARAMETER;
+            state_overlaps(state, owner->PhysicalBase, owner->Pages * 4096) ||
+            state_overlaps(state, owner->CodeBase, owner->CodeBase ? 4096 : 0)) return EFI_INVALID_PARAMETER;
     }
     if (handoff->Memory && state_overlaps(state, (UINT64)(UINTN)handoff->Memory->Snapshot.Buffer,
                                          handoff->Memory->Snapshot.Capacity)) return EFI_INVALID_PARAMETER;
@@ -101,6 +102,8 @@ EFI_STATUS boot_check_exit_resources(const BOOT_EXIT_HANDOFF *handoff, BOOT_MAPP
     if (status == EFI_SUCCESS) status = boot_check_loader_range(map, mapping.PhysicalBase, mapping.Pages);
     if (status == EFI_SUCCESS && handoff->Descriptors)
         status = boot_check_loader_range(map, handoff->Descriptors->PhysicalBase, BOOT_DESCRIPTOR_PAGES);
+    if (status == EFI_SUCCESS && handoff->Descriptors)
+        status = boot_check_code_range(map, handoff->Descriptors->CodeBase);
     return status;
 }
 

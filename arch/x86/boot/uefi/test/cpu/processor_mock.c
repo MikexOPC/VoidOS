@@ -30,7 +30,8 @@ EFI_STATUS boot_read_paging_state(const BOOT_PAGING_CAPABILITIES *capabilities, 
         return EFI_INVALID_PARAMETER;
     state->Cr0 = (1ULL << 31) | (1ULL << 16) | 1;
     state->Cr3 = kernel_mock_scenario == 39 && kernel_mock_page_allocations > 3 ? 0x801000 : 0x800000;
-    state->Cr4 = (1ULL << 5) | (kernel_mock_scenario == 38 ? (1ULL << 12) : 0);
+    state->Cr4 = (1ULL << 5) | (kernel_mock_scenario == 38 ? (1ULL << 12) : 0) |
+                 (kernel_mock_scenario == 79 ? (1ULL << 17) : 0);
     state->Efer = (1ULL << 8) | (1ULL << 10) | (1ULL << 11);
     return boot_decode_paging_state(capabilities, state);
 }

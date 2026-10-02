@@ -38,10 +38,12 @@ GDT in memoria. #GP usa il selettore inesistente 0x28 e conserva tale
 error code sullo stack IST1.
 
 I due stack statici e il TSS appartengono solo all'immagine sacrificabile
-di test. Il boot ordinario prepara separatamente [dieci pagine persistenti](storage.md),
-40 KiB comprendenti descrittori, due stack e codice, senza eseguire LTR. La prova
-usa ancora il paging firmware e non copre un errore sulla guard page,
-double fault, NMI annidato o cambio CR3. Uno stesso IST riutilizzato da
+di test. Il boot prepara separatamente [due allocazioni persistenti](storage.md),
+48 KiB comprendenti descrittori, due stack, guardie e codice. La build
+diagnostica non esegue LTR; `-BootKernel` lo esegue nella transizione reale.
+Il probe isolato usa ancora il paging firmware; il test kernel separato
+copre cambio CR3 e #PF con IST1, incluse guardia e NX. Restano esclusi
+double fault e NMI annidati. Uno stesso IST riutilizzato da
 eccezioni annidate puo sovrascrivere un frame: il futuro profilo definitivo
 dovra distinguere le eccezioni che richiedono stack separati.
 

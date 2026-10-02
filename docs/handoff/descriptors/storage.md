@@ -1,98 +1,72 @@
 # Risorse persistenti dei descrittori
 
-Il boot ordinario prepara un blocco GDT/TSS/IDT in pagine possedute,
-costruisce le sue mappature e aggiorna il preflight. Le tabelle restano
-inattive: questa fase non esegue LGDT, LIDT, LTR o cambio CR3.
+Il boot prepara GDT/TSS/IDT, contesto, stack e codice in pagine possedute.
+La build diagnostica le verifica e libera; `build.ps1 -BootKernel` le
+conserva e usa il [percorso di attivazione](../transition/activation.md).
 
 ## Proprieta e disposizione
 
-`BOOT_DESCRIPTOR_STORAGE` possiede dieci pagine contigue EfiLoaderData:
-40 KiB, comprendenti il blocco di 704 byte, due stack di 16 KiB e una
-pagina di codice separata.
-L'owner vive nel chiamante; `BOOT_EXIT_HANDOFF.Descriptors` lo prende
-in prestito. Tutte le risorse devono vivere fino al loro ultimo utilizzo.
+`BOOT_DESCRIPTOR_STORAGE` possiede undici pagine contigue EfiLoaderData
+piu una pagina distinta EfiLoaderCode: 48 KiB. Il chiamante possiede
+l'owner; `BOOT_EXIT_HANDOFF.Descriptors` lo prende in prestito.
+Nel nuovo grafo gli intervalli sono in identita.
 
-| Risorsa | Offset fisico dalla base | Indirizzo virtuale | Pagine |
+| Risorsa | Offset fisico dalla base dati | Pagine | Permessi |
 | --- | --- | --- | --- |
-| GDT, TSS, IDT e operandi | 0 | 0x0000400000000000 | 1 |
-| Guardia RSP0 | Nessuna pagina | 0x0000400000001000 | 1 non mappata |
-| Stack RSP0 | 4096 | 0x0000400000002000 | 4 |
-| Guardia IST1 | Nessuna pagina | 0x0000400000006000 | 1 non mappata |
-| Stack IST1 | 20480 | 0x0000400000007000 | 4 |
-| Codice persistente | 36864 | Identico al fisico | 1 R/X |
+| Descrittori di 704 byte, contesto a offset 1024 | 0 | 1 | RW/NX |
+| Guardia RSP0 | 4096 | 1 posseduta | Non mappata |
+| Stack RSP0 | 8192 | 4 | RW/NX |
+| Guardia IST1 | 24576 | 1 posseduta | Non mappata |
+| Stack IST1 | 28672 | 4 | RW/NX |
+| Codice | Allocazione CodeBase distinta | 1 | R/X |
 
-I tre intervalli dei dati sono supervisor, RW/NX. La decima pagina e
-[codice persistente R/X](../transition/capsule.md) mappato in identita. Le guardie non hanno
-foglie presenti e non consumano RAM. La finestra virtuale occupa undici
-pagine. NX e WP saranno effettivi con la futura attivazione CPU prevista
-dal profilo; il boot corrente verifica solo le tabelle preparate.
+Le guardie consumano RAM ma non hanno foglie nel nuovo grafo. Prima del
+cambio CR3 permessi e guardie dipendono dal paging firmware. Non vengono
+creati alias scrivibili del codice nel nuovo grafo.
 
 ## Allocazione e pubblicazione
 
-`boot_allocate_descriptor_storage` verifica prima il vecchio preflight,
-poi richiede dieci pagine. Prima di adottarle controlla allineamento,
-limite fisico CPU, profilo canonico basso, alias con owner, metadati,
-risorse vive e firmware. La fotografia precedente della mappa respinge
-intervalli sovrapposti a memoria diversa da ConventionalMemory, compresa
-l'immagine EFI. I controlli numerici non provano da soli l'accessibilita:
-questa richiede comunque un firmware conforme al contratto UEFI.
+L'allocatore verifica preflight, allineamento, limite fisico, profilo
+canonico basso e alias con owner, metadati, risorse e firmware prima di
+adottare ogni allocazione. Una risposta firmware ambigua non viene
+adottata, azzerata o liberata: potrebbe appartenere a un altro proprietario.
+Non si puo garantire recupero attraverso firmware non conforme.
 
-Un indirizzo ambiguo restituito dal firmware non viene adottato, azzerato
-o liberato: potrebbe appartenere a un altro proprietario. Non si puo
-garantire il recupero di risorse attraverso un firmware non conforme.
-Una nuova allocazione valida viene registrata, azzerata e preparata;
-Ready viene pubblicato solo dopo la verifica del blocco.
+Prima di copiare il codice aggiorna GetMemoryMap e verifica copertura
+EfiLoaderCode senza runtime, XP, RP o RO. Ready viene pubblicato dopo
+verifica di codice e blocco. Questi controlli presuppongono un firmware
+che rispetti le proprie mappature.
 
-`boot_map_descriptor_storage` inserisce i quattro intervalli in una bozza
-del piano e la pubblica solo dopo la validazione. Duplicati, sovrapposizioni
-e mappature nelle guardie sono respinti senza modificare il piano originale.
+Il mapper aggiunge tre intervalli RW/NX e una pagina R/X a una bozza;
+la pubblica solo dopo verifica. Duplicati, alias e foglie nelle guardie
+sono respinti senza cambiare il piano originale. DescriptorBase protegge
+anche le guardie da alias delle tabelle; CapsuleBase identifica il codice.
 
-`boot_prepare_descriptor_handoff` invalida il contratto e ricostruisce
-l'intero grafo inattivo dopo aver aggiunto tutte le risorse al piano.
-Cosi l'allocatore delle tabelle protegge tutte le dieci pagine, anche
-quelle che non ha ancora mappato. Dopo gli ultimi rilasci e allocazioni
-aggiorna GetMemoryMap, controlla grafo e copertura EfiLoaderData e
-rigenera il contratto v2 con root e fotografia aggiornate.
-Il preflight terminale comprende le stesse risorse quando Descriptors
-e presente. Su errore le firme vengono revocate e gli owner restano
-disponibili al chiamante per il cleanup.
+Il preparatore ricostruisce il grafo inattivo, aggiorna fotografia e
+contratto v2. Il preflight terminale ricontrolla grafo, blocco, codice,
+copertura EfiLoaderData/EfiLoaderCode e guardie a ciascun tentativo.
 
 ## Rilascio e costi
 
-`boot_release_descriptor_storage` invalida il blocco prima di FreePages.
-Cancella base e conteggio solo dopo successo; un errore conserva l'owner
-per un nuovo tentativo. Un owner vuoto rende il rilascio idempotente.
-Questo percorso richiede servizi firmware disponibili e descrittori
-ancora inattivi: invalidare la firma non scarica GDTR, IDTR o TR.
+Il rilascio revoca Ready e firma, poi libera prima il codice. Se fallisce
+conserva entrambe le allocazioni. Se fallisce il successivo rilascio dati
+conserva soltanto quell'owner. Ogni base viene cancellata dopo successo;
+un owner vuoto e idempotente. Il cleanup richiede firmware disponibile
+e descrittori inattivi: invalidare una firma non scarica GDTR, IDTR o TR.
 
-L'ingresso EFI corrente esegue il cleanup e ritorna al firmware. Se
-FreePages fallisce definitivamente puo restare memoria allocata: l'owner
-locale non viene conservato dopo il ritorno. La ritentabilita dell'API
-non garantisce da sola recupero da ogni guasto firmware.
+Nel percorso diagnostico un errore permanente di FreePages puo lasciare
+memoria allocata dopo il ritorno EFI, quando l'owner locale non e conservato.
+Dopo ExitBootServices questo cleanup non viene chiamato.
+Le allocazioni consumano 48 KiB; le tabelle aggiuntive dipendono dai percorsi
+gia presenti. Non e una misura del picco totale del bootloader.
 
-Il costo aggiunto e 40 KiB di dati, stack e codice. Le nuove mappature possono
-richiedere fino a sei pagine di tabelle, 24 KiB, secondo i percorsi gia
-presenti. Le guardie non aggiungono pagine fisiche. Non e una misura
-del picco totale del bootloader.
+## Verifiche
 
-## Verifiche e prossimi limiti
+La build verifica alias, corruzione, rollback, mapping e rilascio
+ritentabile delle due allocazioni, oltre a diciannove scenari dell'ingresso
+EFI con guasti di allocazione, fotografia, attributi e profilo CPU.
+Il [test kernel QEMU](../transition/activation.md) verifica l'utilizzo reale
+dopo uscita UEFI e cambio CR3. Hardware fisico e NMI annidati restano esclusi.
 
-La build esegue test di proprieta, invalidazione, rilascio ritentabile,
-alias, mapping e rollback, oltre a tredici scenari dell'ingresso EFI con
-guasti in allocazione, ricostruzione, fotografia e rilascio.
-
-```powershell
-& .\arch\x86\boot\uefi\scripts\build.ps1
-& .\arch\x86\boot\uefi\test\firmware_test.ps1
-& .\arch\x86\boot\uefi\test\handoff\descriptors\exception_firmware_test.ps1
-```
-
-Gli ingressi assembly del blocco persistente sono ora copiati e mappati.
-E presente anche il tratto finale del trampoline; mancano il tratto
-iniziale che attiva descrittori e paging,
-ExitBootServices reale e salto al kernel. Il probe CPU separato usa il
-paging firmware; non prova questa futura sequenza. IST1 condiviso e
-limitato all'arresto terminale, senza garanzie per eccezioni annidate.
-
-Riferimenti: [servizi memoria UEFI 2.11](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html)
-e [Intel SDM volume 3A](https://cdrdv2-public.intel.com/825758/253668-sdm-vol-3a.pdf).
+Riferimenti: [servizi UEFI](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html)
+e [Intel SDM 3A](https://cdrdv2-public.intel.com/825758/253668-sdm-vol-3a.pdf).

@@ -5,7 +5,7 @@
 
 // ====== copertura anche su descrittori adiacenti e non ordinati ====== //
 
-EFI_STATUS boot_check_loader_range(const BOOT_MEMORY_MAP *map, UINT64 base, UINTN pages)
+static EFI_STATUS check_range(const BOOT_MEMORY_MAP *map, UINT64 base, UINTN pages, UINT32 type)
 {
     UINT64 end, cursor = base;
     UINTN index, steps, count;
@@ -29,7 +29,8 @@ EFI_STATUS boot_check_loader_range(const BOOT_MEMORY_MAP *map, UINT64 base, UINT
             region_end = region.PhysicalBase + region.Pages * 4096;
             if (region.PhysicalBase > cursor || region_end <= cursor)
                 continue;
-            if (region.FirmwareType != EFI_LOADER_DATA_TYPE || (region.Attributes & EFI_RUNTIME_ATTRIBUTE))
+            if (region.FirmwareType != type || (region.Attributes & EFI_RUNTIME_ATTRIBUTE) ||
+                (type == 1 && (region.Attributes & ((1ULL << 14) | (1ULL << 13) | (1ULL << 17)))))
                 return EFI_LOAD_ERROR;
             cursor = region_end < end ? region_end : end;
             found = 1;
@@ -39,4 +40,16 @@ EFI_STATUS boot_check_loader_range(const BOOT_MEMORY_MAP *map, UINT64 base, UINT
             return EFI_LOAD_ERROR;
     }
     return cursor == end ? EFI_SUCCESS : EFI_LOAD_ERROR;
+}
+
+// ====== dati posseduti e codice leggibile scrivibile eseguibile nel firmware ====== //
+
+EFI_STATUS boot_check_loader_range(const BOOT_MEMORY_MAP *map, UINT64 base, UINTN pages)
+{
+    return check_range(map, base, pages, EFI_LOADER_DATA_TYPE);
+}
+
+EFI_STATUS boot_check_code_range(const BOOT_MEMORY_MAP *map, UINT64 base)
+{
+    return check_range(map, base, 1, 1);
 }

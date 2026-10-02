@@ -4,11 +4,10 @@
 
 // ====== codice autonomo senza riferimenti esterni dopo la copia ====== //
 
-#define BOOT_CAPSULE_BYTES 580U
+#define BOOT_CAPSULE_BYTES 831U
 #define BOOT_CAPSULE_VECTOR_OFFSET 64U
 #define BOOT_CAPSULE_VECTOR_STRIDE 16U
 #define BOOT_CAPSULE_STOP_OFFSET 576U
-#define BOOT_CAPSULE_PAGE_OFFSET (9U * 4096U)
 
 extern const UINT8 x86_boot_capsule_begin[];
 extern const UINT8 x86_boot_capsule_end[];
