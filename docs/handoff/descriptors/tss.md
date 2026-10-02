@@ -29,7 +29,9 @@ descrittore, decodifica indipendente di RSP0/IST1, campi riservati,
 
 Il [probe QEMU delle eccezioni](exceptions.md) ora prepara anche un TSS,
 due stack statici di 16 KiB e una GDT estesa a 40 byte nell'immagine di test.
-Il selettore TSS e 24. Dopo LGDT/LIDT, LTR carica il TSS; ogni gate del
+Il selettore TSS e 24. Dopo LGDT/LIDT, LTR carica il TSS. Il
+probe viene ora preparato dal [blocco coerente della transizione](transition.md),
+senza modifiche manuali ai descrittori. Ogni gate del
 probe usa IST1. #DE, #UD e #GP arrivano allo stop con RSP nello stack
 alternativo, IF=0 e HLT=1. Il monitor verifica TR=24 e il bit busy nella
 GDT in memoria. #GP usa il selettore inesistente 0x28 e conserva tale

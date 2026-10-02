@@ -23,7 +23,8 @@ $code = Join-Path $QemuDirectory 'share\edk2-x86_64-code.fd'
 $template = Join-Path $QemuDirectory 'share\edk2-i386-vars.fd'
 $production = Join-Path $output 'esp\EFI\BOOT\BOOTX64.EFI'
 foreach ($required in @($qemu, $code, $template, $production,
-                        "$output\log.obj", "$output\exception_entries.obj", "$output\x86_descriptors.lib")) {
+                        "$output\log.obj", "$output\exception_entries.obj", "$output\descriptor_bundle.obj",
+                        "$output\x86_descriptors.lib")) {
     if (!(Test-Path -LiteralPath $required -PathType Leaf)) { throw "File mancante: $required" }
 }
 $productionHash = (Get-FileHash -LiteralPath $production -Algorithm SHA256).Hash
@@ -53,7 +54,7 @@ foreach ($vector in @(0, 6, 13)) {
     Invoke-Checked (Join-Path $ToolchainBin 'link.exe') @('/nologo', '/machine:x64',
         '/subsystem:efi_application', '/entry:efi_main', '/nodefaultlib', '/incremental:no',
         '/dynamicbase:no', '/fixed:no', "/out:$image", "$scenarioRoot\probe.obj", "$testRoot\trigger.obj",
-        "$output\exception_entries.obj", "$output\x86_descriptors.lib", "$output\os_memory.lib", "$output\log.obj")
+        "$output\exception_entries.obj", "$output\descriptor_bundle.obj", "$output\x86_descriptors.lib", "$output\os_memory.lib", "$output\log.obj")
     Write-BootStatus INFO "Probe vettore $vector SHA256: $((Get-FileHash -LiteralPath $image).Hash)"
     $variables = Join-Path $scenarioRoot 'vars.fd'
     Copy-Item -LiteralPath $template -Destination $variables

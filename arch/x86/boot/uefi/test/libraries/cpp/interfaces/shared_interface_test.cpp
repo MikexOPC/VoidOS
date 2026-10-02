@@ -4,6 +4,7 @@
 #include "arch/x86/lib/processor/processor_access.h"
 #include "arch/x86/lib/descriptors/gdt.h"
 #include "arch/x86/lib/descriptors/idt.h"
+#include "arch/x86/boot/uefi/handoff/descriptors/transition/bundle.h"
 #include "arch/x86/configs/boot_profile.h"
 
 static_assert(sizeof(uint32_t) == 4 && sizeof(uint64_t) == 8, "Unexpected integer ABI");
@@ -21,6 +22,16 @@ extern "C" __declspec(dllexport) int run_shared_interface_tests(void)
     X86_BOOT_IDT idt;
     X86_IDT_POINTER interrupt_pointer;
     uint64_t targets[32];
+    BOOT_DESCRIPTOR_BUNDLE bundle;
+    BOOT_DESCRIPTOR_LAYOUT layout;
+    layout.LinearBase = 0x100000;
+    layout.PrivilegeStack = 0x200000;
+    layout.ExceptionStack = 0x300000;
+    for (uint32_t vector = 0; vector < 32; ++vector) layout.Targets[vector] = 0x400000 + vector;
+    if (!boot_prepare_descriptor_bundle(&bundle, &layout) ||
+        !boot_validate_descriptor_bundle(&bundle, &layout)) return 9;
+    boot_invalidate_descriptor_bundle(&bundle);
+    if (boot_validate_descriptor_bundle(&bundle, &layout)) return 10;
     for (uint32_t vector = 0; vector < 32; ++vector) targets[vector] = 4096 + vector;
     if (!x86_prepare_boot_idt(&idt, &interrupt_pointer, 4096, targets) ||
         !x86_validate_boot_idt(&idt, &interrupt_pointer, 4096, targets)) return 8;
