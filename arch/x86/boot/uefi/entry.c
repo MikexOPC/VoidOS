@@ -13,6 +13,7 @@
 #include "memory/final/mapping.h"
 #include "handoff/firmware/terminal/handoff.h"
 #include "handoff/descriptors/prepare.h"
+#include "handoff/descriptors/exceptions.h"
 
 // ====== verifica del piano senza aumentare lo stack di ingresso ====== //
 
@@ -49,6 +50,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     BOOT_FINAL_MEMORY_MAP final_map = {0};
     BOOT_PAGING_STATE paging_before, paging_after;
     BOOT_GDT_DRAFT descriptor_draft;
+    BOOT_IDT_DRAFT exception_draft;
     int had_kernel_pages;
 
     if (!system_table)
@@ -225,6 +227,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     status = boot_log(system_table->ConOut, BOOT_OK, L"Preflight uscita UEFI verificato; servizi firmware ancora attivi.");
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_prepare_gdt_draft(system_table->ConOut, &descriptor_draft);
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_prepare_idt_draft(system_table->ConOut, &exception_draft);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log(system_table->ConOut, BOOT_WARN, L"Avvio del kernel non ancora implementato.");
 

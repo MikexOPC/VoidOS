@@ -38,8 +38,9 @@ firmware. Non usa AllocatePages e non viene aggiunta al contratto v2.
 Non si puo usare questa posizione dopo un cambio di CR3: il futuro
 trampoline dovra possedere e mappare la propria GDT e il relativo operando.
 
-Mancano ancora TSS/IST, IDT, handler delle eccezioni, caricamento dei
-selettori e trampoline. Questa bozza e un prerequisito verificabile,
+Sono ora presenti anche [IDT e ingressi terminali](exceptions.md), preparati
+ma inattivi nel boot ordinario. Mancano ancora TSS/IST, caricamento dei
+descrittori nel passaggio finale e trampoline. Questa bozza e un prerequisito verificabile,
 non una transizione hardware pronta all'uso.
 
 ## Test
@@ -51,6 +52,8 @@ nulli, indirizzi fuori profilo e 24 sovrapposizioni degli output.
 Il consumatore C++ verifica anche l'interfaccia della libreria C.
 Nei due scenari QEMU validi la nuova fase deve precedere il cleanup.
 Queste prove non verificano l'esecuzione di LGDT o un cambio di CS.
+La prova separata descritta in exceptions.md esegue LGDT/LIDT e verifica
+CS=8 dopo eccezioni reali, usando ancora le mappature firmware.
 
 Riferimento: [Intel SDM volume 3A](https://cdrdv2-public.intel.com/825758/253668-sdm-vol-3a.pdf),
 sezioni 3.4.5, 3.5.1 e 3.5.2: descrittori e tabelle in IA-32e mode.

@@ -3,6 +3,7 @@
 #include "arch/x86/lib/processor/paging_validation.h"
 #include "arch/x86/lib/processor/processor_access.h"
 #include "arch/x86/lib/descriptors/gdt.h"
+#include "arch/x86/lib/descriptors/idt.h"
 #include "arch/x86/configs/boot_profile.h"
 
 static_assert(sizeof(uint32_t) == 4 && sizeof(uint64_t) == 8, "Unexpected integer ABI");
@@ -17,6 +18,12 @@ extern "C" __declspec(dllexport) int run_shared_interface_tests(void)
 {
     X86_BOOT_GDT gdt;
     X86_GDT_POINTER pointer;
+    X86_BOOT_IDT idt;
+    X86_IDT_POINTER interrupt_pointer;
+    uint64_t targets[32];
+    for (uint32_t vector = 0; vector < 32; ++vector) targets[vector] = 4096 + vector;
+    if (!x86_prepare_boot_idt(&idt, &interrupt_pointer, 4096, targets) ||
+        !x86_validate_boot_idt(&idt, &interrupt_pointer, 4096, targets)) return 8;
     if (!x86_prepare_boot_gdt(&gdt, &pointer, 4096) ||
         !x86_validate_boot_gdt(&gdt, &pointer, 4096)) return 7;
     if (!os_address_ranges_overlap(4096, 8192, 8192, 4096) ||
