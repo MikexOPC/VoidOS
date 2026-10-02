@@ -37,8 +37,9 @@ viene eseguita nel bootloader ordinario: resta attiva la IDT firmware.
 L'assembly e nel PE EFI e i suoi indirizzi vengono rilocati dal loader UEFI.
 
 Il boot prepara ora anche [descrittori e stack persistenti](storage.md),
-con mappature verificate nel grafo inattivo. Prima del cambio CR3 servono
-ancora codice persistente degli ingressi e trampoline. Le bozze sullo
+con mappature verificate nel grafo inattivo. Gli ingressi sono ora anche
+copiati nel [blocco di codice persistente](../transition/capsule.md).
+Prima del cambio CR3 serve ancora il tratto iniziale del trampoline. Le bozze sullo
 stack EFI non sono utilizzabili dopo quel cambio. Il contratto v2 resta invariato.
 
 ## Verifiche ripetibili
@@ -55,7 +56,7 @@ Per la prova CPU separata, dopo la build:
 & .\arch\x86\boot\uefi\test\handoff\descriptors\exception_firmware_test.ps1
 ```
 
-Lo script crea tre immagini EFI di test in build/, senza sostituire quella
+Lo script crea quattro immagini EFI di test in build/, senza sostituire quella
 ordinaria. In QEMU/EDK2 carica GDT, IDT e [TSS](tss.md), disabilita gli interrupt mascherabili
 e provoca divisione per zero (#DE), UD2 (#UD) e caricamento di un selettore
 oltre il limite GDT (#GP). Il monitor verifica CS=8, limiti GDT/IDT,
@@ -64,6 +65,9 @@ il bit busy nella GDT e RSP nel nuovo stack IST1. Per #GP verifica
 anche l'error code 0x28 in cima allo stack. Ogni VM termina dopo il controllo;
 il probe non ritorna al firmware dopo aver cambiato i descrittori.
 
+Gli handler vengono copiati in una pagina EfiLoaderCode allocata dal probe;
+il quarto scenario verifica il tratto finale del trampoline, stack ABI,
+argomento in RCX, IF=0 e DF=0. Il destinatario resta codice di test EFI.
 La prova usa le mappature firmware: non dimostra ExitBootServices,
 cambio CR3, ingresso nel kernel o funzionamento su hardware fisico.
 Lo stack alternativo appartiene ancora all'immagine caricata dal firmware.

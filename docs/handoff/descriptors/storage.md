@@ -6,8 +6,9 @@ inattive: questa fase non esegue LGDT, LIDT, LTR o cambio CR3.
 
 ## Proprieta e disposizione
 
-`BOOT_DESCRIPTOR_STORAGE` possiede nove pagine contigue EfiLoaderData:
-36 KiB, comprendenti il blocco di 704 byte e due stack di 16 KiB.
+`BOOT_DESCRIPTOR_STORAGE` possiede dieci pagine contigue EfiLoaderData:
+40 KiB, comprendenti il blocco di 704 byte, due stack di 16 KiB e una
+pagina di codice separata.
 L'owner vive nel chiamante; `BOOT_EXIT_HANDOFF.Descriptors` lo prende
 in prestito. Tutte le risorse devono vivere fino al loro ultimo utilizzo.
 
@@ -18,8 +19,10 @@ in prestito. Tutte le risorse devono vivere fino al loro ultimo utilizzo.
 | Stack RSP0 | 4096 | 0x0000400000002000 | 4 |
 | Guardia IST1 | Nessuna pagina | 0x0000400000006000 | 1 non mappata |
 | Stack IST1 | 20480 | 0x0000400000007000 | 4 |
+| Codice persistente | 36864 | Identico al fisico | 1 R/X |
 
-I tre intervalli mappati sono supervisor, RW/NX. Le guardie non hanno
+I tre intervalli dei dati sono supervisor, RW/NX. La decima pagina e
+[codice persistente R/X](../transition/capsule.md) mappato in identita. Le guardie non hanno
 foglie presenti e non consumano RAM. La finestra virtuale occupa undici
 pagine. NX e WP saranno effettivi con la futura attivazione CPU prevista
 dal profilo; il boot corrente verifica solo le tabelle preparate.
@@ -27,7 +30,7 @@ dal profilo; il boot corrente verifica solo le tabelle preparate.
 ## Allocazione e pubblicazione
 
 `boot_allocate_descriptor_storage` verifica prima il vecchio preflight,
-poi richiede nove pagine. Prima di adottarle controlla allineamento,
+poi richiede dieci pagine. Prima di adottarle controlla allineamento,
 limite fisico CPU, profilo canonico basso, alias con owner, metadati,
 risorse vive e firmware. La fotografia precedente della mappa respinge
 intervalli sovrapposti a memoria diversa da ConventionalMemory, compresa
@@ -40,13 +43,13 @@ garantire il recupero di risorse attraverso un firmware non conforme.
 Una nuova allocazione valida viene registrata, azzerata e preparata;
 Ready viene pubblicato solo dopo la verifica del blocco.
 
-`boot_map_descriptor_storage` inserisce i tre intervalli in una bozza
+`boot_map_descriptor_storage` inserisce i quattro intervalli in una bozza
 del piano e la pubblica solo dopo la validazione. Duplicati, sovrapposizioni
 e mappature nelle guardie sono respinti senza modificare il piano originale.
 
 `boot_prepare_descriptor_handoff` invalida il contratto e ricostruisce
 l'intero grafo inattivo dopo aver aggiunto tutte le risorse al piano.
-Cosi l'allocatore delle tabelle protegge tutte le nove pagine, anche
+Cosi l'allocatore delle tabelle protegge tutte le dieci pagine, anche
 quelle che non ha ancora mappato. Dopo gli ultimi rilasci e allocazioni
 aggiorna GetMemoryMap, controlla grafo e copertura EfiLoaderData e
 rigenera il contratto v2 con root e fotografia aggiornate.
@@ -67,8 +70,8 @@ FreePages fallisce definitivamente puo restare memoria allocata: l'owner
 locale non viene conservato dopo il ritorno. La ritentabilita dell'API
 non garantisce da sola recupero da ogni guasto firmware.
 
-Il costo aggiunto e 36 KiB di dati e stack. Le nuove mappature possono
-richiedere fino a tre pagine di tabelle, 12 KiB, secondo i percorsi gia
+Il costo aggiunto e 40 KiB di dati, stack e codice. Le nuove mappature possono
+richiedere fino a sei pagine di tabelle, 24 KiB, secondo i percorsi gia
 presenti. Le guardie non aggiungono pagine fisiche. Non e una misura
 del picco totale del bootloader.
 
@@ -84,9 +87,9 @@ guasti in allocazione, ricostruzione, fotografia e rilascio.
 & .\arch\x86\boot\uefi\test\handoff\descriptors\exception_firmware_test.ps1
 ```
 
-Gli ingressi assembly appartengono ancora all'immagine EFI: il nuovo
-grafo non ne mappa il codice. Servono codice di transizione posseduto
-e mappato, trampoline, attivazione dei descrittori e del paging,
+Gli ingressi assembly del blocco persistente sono ora copiati e mappati.
+E presente anche il tratto finale del trampoline; mancano il tratto
+iniziale che attiva descrittori e paging,
 ExitBootServices reale e salto al kernel. Il probe CPU separato usa il
 paging firmware; non prova questa futura sequenza. IST1 condiviso e
 limitato all'arresto terminale, senza garanzie per eccezioni annidate.

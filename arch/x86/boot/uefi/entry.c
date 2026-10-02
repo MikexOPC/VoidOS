@@ -254,7 +254,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
         goto cleanup_kernel;
     }
     status = boot_log(system_table->ConOut, BOOT_OK,
-        L"Descrittori e due stack RW/NX verificati; guard page assenti, CR3 invariato e preflight aggiornato.");
+        L"Descrittori e due stack RW/NX, codice persistente R/X verificati; guard page assenti, CR3 invariato.");
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log_hex(system_table->ConOut, L"Root finale delle tabelle inattive: ", tables.Root);
     if (status != EFI_SUCCESS) goto cleanup_kernel;

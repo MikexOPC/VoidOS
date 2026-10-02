@@ -4,7 +4,8 @@
 alla mappa persistente R/NX e al contratto versione 2. `BOOT_EXIT_HANDOFF`
 contiene prestiti di kernel, stack, capacita CPU, tabelle, pagina del
 contratto e proprietario della mappa, oltre al prestito opzionale Descriptors
-delle nove pagine per descrittori e stack ausiliari. Non e un nuovo proprietario.
+delle dieci pagine per descrittori, stack ausiliari e codice persistente.
+Non e un nuovo proprietario.
 
 Gli oggetti devono essere distinti, validi, vivi e non modificati da altri
 durante la chiamata. Il codice viene eseguito con il paging del firmware;
@@ -19,7 +20,7 @@ prima di scrivere lo stato o chiamare il firmware.
 `boot_validate_exit_handoff` ricostruisce il piano completo e verifica
 il grafo delle tabelle. Controlla copertura EfiLoaderData senza attributo
 runtime per kernel, stack, tabelle, contratto e buffer della mappa. Quando
-Descriptors e presente verifica anche blocco, nove pagine, tre mappature
+Descriptors e presente verifica anche blocco, codice, dieci pagine, quattro mappature
 e guardie non presenti. Il controllo degli alias dello stato comprende
 il nuovo owner e le sue pagine; anche ogni nuova fotografia dei tentativi
 terminali deve coprirli.

@@ -3,7 +3,7 @@
 #include "storage/kernel_image.h"
 #include "handoff/stack.h"
 
-#define BOOT_MAPPING_LIMIT (ELF_MAX_LOAD_SEGMENTS + 6)
+#define BOOT_MAPPING_LIMIT (ELF_MAX_LOAD_SEGMENTS + 7)
 #define BOOT_MAP_VIRTUAL X86_BOOT_MAP_VIRTUAL
 #define BOOT_INFO_VIRTUAL X86_BOOT_INFO_VIRTUAL
 #define BOOT_STACK_GUARD X86_BOOT_STACK_GUARD
@@ -21,6 +21,7 @@ typedef struct {
 typedef struct {
     UINT64 Entry;
     UINT64 StackTop;
+    UINT64 CapsuleBase;
     UINT32 Count;
     BOOT_MAPPING Mappings[BOOT_MAPPING_LIMIT];
 } BOOT_MAPPING_PLAN;

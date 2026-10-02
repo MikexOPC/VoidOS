@@ -10,7 +10,7 @@ static UINTN sizing_calls;
 static UINT64 final_buffer;
 static UINTN table_count;
 static UINT8 table_live[64];
-static __declspec(align(4096)) UINT8 descriptor_pages[9 * 4096];
+static __declspec(align(4096)) UINT8 descriptor_pages[10 * 4096];
 static int descriptor_live;
 
 // ====== oracolo di proprieta separato dal conteggio dei tentativi ====== //
@@ -30,7 +30,7 @@ EFI_STATUS EFIAPI test_allocate_pages(UINT32 type, UINT32 memory, UINTN count, U
         descriptor_live = 0;
         for (index = 0; index < 64; ++index) table_live[index] = 0;
     }
-    if (!type && memory == 2 && count == 9) {
+    if (!type && memory == 2 && count == 10) {
         if (kernel_mock_scenario == 60) return EFI_OUT_OF_RESOURCES;
         if (kernel_mock_scenario == 61) { *address = 0; return EFI_SUCCESS; }
         if (kernel_mock_scenario == 62) { *address = (UINT64)pages[0]; return EFI_SUCCESS; }
@@ -74,7 +74,7 @@ EFI_STATUS EFIAPI test_allocate_pages(UINT32 type, UINT32 memory, UINTN count, U
 EFI_STATUS EFIAPI test_free_pages(UINT64 address, UINTN count)
 {
     ++kernel_mock_page_frees;
-    if (count == 9 && address == (UINT64)descriptor_pages) {
+    if (count == 10 && address == (UINT64)descriptor_pages) {
         if (kernel_mock_scenario == 68) return EFI_DEVICE_ERROR;
         if (!descriptor_live) return EFI_INVALID_PARAMETER;
         descriptor_live = 0;
@@ -121,12 +121,12 @@ EFI_STATUS EFIAPI test_get_memory_map(UINTN *size, void *buffer, UINTN *key,
     }
     if (descriptor_live) {
         bases[count] = (UINT64)descriptor_pages;
-        sizes[count] = 9;
+        sizes[count] = 10;
         types[count++] = kernel_mock_scenario == 67 ? 7 : 2;
     }
     if (kernel_mock_scenario == 72) {
         bases[count] = (UINT64)descriptor_pages;
-        sizes[count] = 9;
+        sizes[count] = 10;
         types[count++] = 1;
     }
     needed = count * 48;

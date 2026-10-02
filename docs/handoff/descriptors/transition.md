@@ -53,8 +53,9 @@ integri e passi allo stack IST1 anche dopo la revoca della firma.
 Nel boot ordinario resta attiva la preparazione delle bozze precedenti.
 Il percorso ordinario alloca ora anche il blocco in [pagine persistenti](storage.md),
 con due stack, guardie non mappate e verifica di copertura. Ricostruisce
-il grafo inattivo e aggiorna il preflight. Restano codice persistente degli
-ingressi, trampoline, attivazione, uscita UEFI e salto al kernel.
+il grafo inattivo e aggiorna il preflight. Il [codice persistente](../transition/capsule.md)
+contiene ora gli ingressi copiati e il tratto finale del trampoline.
+Restano tratto iniziale di attivazione, uscita UEFI e salto al kernel.
 Il profilo con IST1 comune a tutti i vettori e limitato all'arresto terminale:
 non risolve eccezioni annidate o NMI sullo stesso stack. Il kernel ibrido
 richiedera un proprio profilo di eccezioni e durata delle risorse.

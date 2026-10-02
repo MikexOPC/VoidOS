@@ -41,7 +41,7 @@ Invoke-Checked (Join-Path $ToolchainBin 'ml64.exe') @('/nologo', '/W3', '/WX', '
 
 # ====== errori CPU veri con e senza error code ====== #
 
-foreach ($vector in @(0, 6, 13)) {
+foreach ($vector in @(0, 6, 13, 32)) {
     $scenarioRoot = Join-Path $testRoot "vector-$vector"
     $esp = Join-Path $scenarioRoot 'esp'
     $bootDirectory = Join-Path $esp 'EFI\BOOT'
@@ -54,7 +54,7 @@ foreach ($vector in @(0, 6, 13)) {
     Invoke-Checked (Join-Path $ToolchainBin 'link.exe') @('/nologo', '/machine:x64',
         '/subsystem:efi_application', '/entry:efi_main', '/nodefaultlib', '/incremental:no',
         '/dynamicbase:no', '/fixed:no', "/out:$image", "$scenarioRoot\probe.obj", "$testRoot\trigger.obj",
-        "$output\exception_entries.obj", "$output\descriptor_bundle.obj", "$output\x86_descriptors.lib", "$output\os_memory.lib", "$output\log.obj")
+        "$output\exception_entries.obj", "$output\descriptor_bundle.obj", "$output\x86_descriptors.lib", "$output\os_memory.lib", "$output\log.obj", "$output\capsule.obj", "$output\capsule_entries.obj", "$output\capsule_profile.obj")
     Write-BootStatus INFO "Probe vettore $vector SHA256: $((Get-FileHash -LiteralPath $image).Hash)"
     $variables = Join-Path $scenarioRoot 'vars.fd'
     Copy-Item -LiteralPath $template -Destination $variables
@@ -116,6 +116,26 @@ foreach ($vector in @(0, 6, 13)) {
         $stack = [regex]::Match($log, 'EXCEPTION_STACK: 0x([0-9A-F]{16})')
         $flags = [regex]::Match($registers, 'RFL=([0-9A-Fa-f]{8})')
         $frame = [regex]::Match($registers, '(?m)^[0-9A-Fa-f]{16}:\s+0x([0-9A-Fa-f]{16})')
+        if ($vector -eq 32) {
+            $top = [regex]::Match($log, 'CAPSULE_STACK_TOP: 0x([0-9A-F]{16})')
+            $contract = [regex]::Match($log, 'CAPSULE_CONTRACT: 0x([0-9A-F]{16})')
+            $tailStop = [regex]::Match($log, 'CAPSULE_STOP: 0x([0-9A-F]{16})')
+            $rdx = [regex]::Match($registers, 'RDX=([0-9A-Fa-f]{16})')
+            if (!$top.Success -or !$contract.Success -or !$tailStop.Success -or !$rdx.Success -or
+                !$rax.Success -or !$rip.Success -or !$rsp.Success -or !$flags.Success -or
+                [Convert]::ToUInt64($rsp.Groups[1].Value, 16) -ne [Convert]::ToUInt64($top.Groups[1].Value, 16) - 40 -or
+                $rax.Groups[1].Value -ne $rsp.Groups[1].Value -or
+                $rdx.Groups[1].Value -ne $contract.Groups[1].Value -or
+                [Convert]::ToUInt64($rip.Groups[1].Value, 16) -ne [Convert]::ToUInt64($tailStop.Groups[1].Value, 16) + 2 -or
+                ([Convert]::ToUInt64($flags.Groups[1].Value, 16) -band 1536) -ne 0 -or
+                $registers -notmatch 'HLT=1' -or $registers -notmatch 'TR =0018' -or
+                $registers -notmatch ('(?im)^' + $access.Groups[1].Value + ':\s+0x8b\b') -or
+                !$frame.Success -or [Convert]::ToUInt64($frame.Groups[1].Value, 16) -ne 0) {
+                throw "Trampoline copiato: stack, argomento o flag errati: $scenarioRoot"
+            }
+            Write-BootStatus OK 'Trampoline copiato: ingresso raggiunto, stack ABI, argomento, IF=0 e DF=0 verificati.'
+            continue
+        }
         if (!$stop.Success -or !$rax.Success -or !$rip.Success -or !$rsp.Success -or !$stack.Success -or
             [Convert]::ToUInt64($rsp.Groups[1].Value, 16) -lt [Convert]::ToUInt64($stack.Groups[1].Value, 16) -or
             [Convert]::ToUInt64($rsp.Groups[1].Value, 16) -ge [Convert]::ToUInt64($stack.Groups[1].Value, 16) + 16384 -or
@@ -143,4 +163,4 @@ if ((Get-FileHash -LiteralPath $production -Algorithm SHA256).Hash -ne $producti
     throw 'Immagine bootloader modificata dal test'
 }
 Write-BootStatus INFO "Log: $testRoot"
-Write-BootStatus OK '3/3 eccezioni CPU reali verificate; bootloader ordinario invariato.'
+Write-BootStatus OK '3/3 eccezioni in codice copiato e 1/1 trampoline verificati; bootloader ordinario invariato.'

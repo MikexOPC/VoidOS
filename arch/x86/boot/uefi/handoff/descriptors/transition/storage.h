@@ -5,10 +5,10 @@
 #include "paging/tables.h"
 #include "bundle.h"
 
-#define BOOT_DESCRIPTOR_PAGES 9U
+#define BOOT_DESCRIPTOR_PAGES 10U
 struct BOOT_EXIT_HANDOFF;
 
-// ====== un owner per pagina descrittori e due stack fisicamente contigui ====== //
+// ====== un owner per descrittori due stack e pagina di codice separata ====== //
 
 typedef struct {
     UINT64 PhysicalBase;

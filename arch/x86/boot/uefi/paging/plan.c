@@ -8,6 +8,7 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
     UINT32 index, previous;
     UINT64 total = 0;
     int executable_entry = 0;
+    UINT32 capsule_count = 0;
     if (!plan || plan->Count < 2 || plan->Count > BOOT_MAPPING_LIMIT ||
         plan->StackTop != X86_BOOT_STACK_TOP)
         return EFI_INVALID_PARAMETER;
@@ -22,6 +23,11 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
             (mapping->Flags & 3) == 3)
             return EFI_INVALID_PARAMETER;
         bytes = mapping->Pages * 4096;
+        if (plan->CapsuleBase && mapping->VirtualBase == plan->CapsuleBase) {
+            if (mapping->PhysicalBase != plan->CapsuleBase || mapping->Pages != 1 || mapping->Flags != 5)
+                return EFI_INVALID_PARAMETER;
+            ++capsule_count;
+        }
         if (os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_BOOT_DESCRIPTOR_VIRTUAL,
                                        X86_BOOT_DESCRIPTOR_WINDOW_BYTES)) {
             int descriptor = mapping->VirtualBase == X86_BOOT_DESCRIPTOR_VIRTUAL && mapping->Pages == 1;
@@ -38,6 +44,7 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
                 return EFI_INVALID_PARAMETER;
         } else {
             UINT64 budget_bytes = bytes;
+            if (plan->CapsuleBase && mapping->VirtualBase == plan->CapsuleBase) budget_bytes = 0;
             if (os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_BOOT_DESCRIPTOR_VIRTUAL,
                                            X86_BOOT_DESCRIPTOR_WINDOW_BYTES)) budget_bytes = 0;
             if (mapping->VirtualBase == BOOT_INFO_VIRTUAL) {
@@ -58,7 +65,7 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
                  BOOT_STACK_GUARD < mapping->VirtualBase + bytes))
                 return EFI_INVALID_PARAMETER;
             total += budget_bytes;
-            if ((mapping->Flags & 1) && plan->Entry >= mapping->VirtualBase &&
+            if (mapping->VirtualBase != plan->CapsuleBase && (mapping->Flags & 1) && plan->Entry >= mapping->VirtualBase &&
                 plan->Entry < mapping->VirtualBase + bytes)
                 executable_entry = 1;
         }
@@ -70,7 +77,7 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
                 return EFI_INVALID_PARAMETER;
         }
     }
-    return executable_entry ? EFI_SUCCESS : EFI_INVALID_PARAMETER;
+    return executable_entry && capsule_count == (plan->CapsuleBase ? 1U : 0U) ? EFI_SUCCESS : EFI_INVALID_PARAMETER;
 }
 
 // ====== conversione del contratto ancora vivo in piano numerico ====== //

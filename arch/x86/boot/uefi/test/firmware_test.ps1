@@ -156,7 +156,7 @@ foreach ($scenario in @('valid', 'kernel-probe', 'missing', 'altered', 'kernel-m
                 $idtSection = $log.IndexOf("# ============ descrittori eccezioni x64 ============ #`r`n`r`n")
                 $idtSuccess = $log.IndexOf('[  OK  ] IDT, IDTR e 32 ingressi terminali verificati; eccezioni ancora gestite dal firmware.')
                 $persistentSection = $log.IndexOf("# ============ descrittori e stack persistenti ============ #`r`n`r`n")
-                $persistentSuccess = $log.IndexOf('[  OK  ] Descrittori e due stack RW/NX verificati; guard page assenti, CR3 invariato e preflight aggiornato.')
+                $persistentSuccess = $log.IndexOf('[  OK  ] Descrittori e due stack RW/NX, codice persistente R/X verificati; guard page assenti, CR3 invariato.')
                 $pagingSection = $log.IndexOf("# ============ stato paging e CR3 firmware ============ #`r`n`r`n")
                 $pagingSuccess = $log.IndexOf('[  OK  ] Paging attivo a quattro livelli verificato; CR3 letto senza modifiche.')
                 $cr3Before = [regex]::Match($log, '\[ INFO \] CR3 firmware: 0x([0-9A-F]{16})')
