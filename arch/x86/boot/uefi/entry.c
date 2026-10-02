@@ -29,8 +29,20 @@ static EFI_STATUS check_exit_handoff(const BOOT_KERNEL_IMAGE *kernel, const BOOT
                                     const BOOT_PAGING_CAPABILITIES *caps, const BOOT_PAGE_TABLES *tables,
                                     BOOT_START_PAGE *page, BOOT_FINAL_MEMORY_MAP *memory)
 {
-    BOOT_EXIT_HANDOFF handoff = {kernel, stack, caps, tables, page, memory};
+    BOOT_EXIT_HANDOFF handoff = {kernel, stack, caps, tables, page, memory, 0};
     return boot_validate_exit_handoff(&handoff);
+}
+
+// ====== risorse persistenti prima del futuro salto al kernel ====== //
+
+static EFI_STATUS prepare_descriptors(EFI_SYSTEM_TABLE *system_table, const BOOT_KERNEL_IMAGE *kernel,
+    const BOOT_KERNEL_STACK *stack, const BOOT_PAGING_CAPABILITIES *caps, BOOT_PAGE_TABLES *tables,
+    BOOT_START_PAGE *page, BOOT_FINAL_MEMORY_MAP *memory, BOOT_DESCRIPTOR_STORAGE *owner)
+{
+    BOOT_EXIT_HANDOFF handoff = {kernel, stack, caps, tables, page, memory, 0};
+    EFI_STATUS status = boot_allocate_descriptor_storage(system_table, &handoff, owner);
+    if (status == EFI_SUCCESS) status = boot_prepare_descriptor_handoff(system_table, &handoff, owner, tables);
+    return status;
 }
 
 // ====== ingresso applicazione UEFI ====== //
@@ -51,6 +63,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     BOOT_PAGING_STATE paging_before, paging_after;
     BOOT_GDT_DRAFT descriptor_draft;
     BOOT_IDT_DRAFT exception_draft;
+    BOOT_DESCRIPTOR_STORAGE descriptor_storage = {0};
     int had_kernel_pages;
 
     if (!system_table)
@@ -230,6 +243,23 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_prepare_idt_draft(system_table->ConOut, &exception_draft);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_section(system_table->ConOut, L"descrittori e stack persistenti");
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = prepare_descriptors(system_table, &loaded, &stack, &capabilities, &tables,
+                                 &start_page, &final_map, &descriptor_storage);
+    if (status == EFI_SUCCESS) status = boot_read_paging_state(&capabilities, &paging_after);
+    if (status == EFI_SUCCESS) status = boot_compare_paging_state(&paging_before, &paging_after);
+    if (status != EFI_SUCCESS) {
+        boot_log(system_table->ConOut, BOOT_FAIL, L"preparazione risorse descrittori fallita.");
+        goto cleanup_kernel;
+    }
+    status = boot_log(system_table->ConOut, BOOT_OK,
+        L"Descrittori e due stack RW/NX verificati; guard page assenti, CR3 invariato e preflight aggiornato.");
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_log_hex(system_table->ConOut, L"Root finale delle tabelle inattive: ", tables.Root);
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_log_hex(system_table->ConOut, L"Pagine descrittori e stack persistenti: ", descriptor_storage.Pages);
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log(system_table->ConOut, BOOT_WARN, L"Avvio del kernel non ancora implementato.");
 
 cleanup_kernel:
@@ -257,6 +287,10 @@ cleanup_kernel:
         boot_log(system_table->ConOut, BOOT_FAIL, L"rilascio pagina contratto fallito.");
     if (status == EFI_SUCCESS)
         status = cleanup_status;
+    cleanup_status = boot_release_descriptor_storage((EFI_BOOT_SERVICES_PREFIX *)system_table->BootServices, &descriptor_storage);
+    if (cleanup_status != EFI_SUCCESS)
+        boot_log(system_table->ConOut, BOOT_FAIL, L"rilascio risorse descrittori fallito.");
+    if (status == EFI_SUCCESS) status = cleanup_status;
     cleanup_status = boot_release_stack((EFI_BOOT_SERVICES_PREFIX *)system_table->BootServices, &stack);
     if (cleanup_status != EFI_SUCCESS)
         boot_log(system_table->ConOut, BOOT_FAIL, L"rilascio stack kernel fallito.");
@@ -267,7 +301,7 @@ cleanup_kernel:
         boot_log(system_table->ConOut, BOOT_FAIL, L"rilascio risorse kernel fallito.");
     if (status == EFI_SUCCESS)
         status = cleanup_status;
-    if (had_kernel_pages && !loaded.Pages.Count && !loaded.FileBuffer && !stack.Pages && !tables.Count && !start_page.Pages && !final_map.Pages) {
+    if (had_kernel_pages && !loaded.Pages.Count && !loaded.FileBuffer && !stack.Pages && !tables.Count && !start_page.Pages && !final_map.Pages && !descriptor_storage.Pages) {
         cleanup_status = boot_log(system_table->ConOut, BOOT_OK, L"Pagine kernel rilasciate prima del ritorno al firmware.");
         if (status == EFI_SUCCESS)
             status = cleanup_status;

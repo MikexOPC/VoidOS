@@ -3,7 +3,8 @@
 `handoff/firmware/terminal/handoff.*` collega la sequenza ExitBootServices
 alla mappa persistente R/NX e al contratto versione 2. `BOOT_EXIT_HANDOFF`
 contiene prestiti di kernel, stack, capacita CPU, tabelle, pagina del
-contratto e proprietario della mappa. Non e un nuovo proprietario.
+contratto e proprietario della mappa, oltre al prestito opzionale Descriptors
+delle nove pagine per descrittori e stack ausiliari. Non e un nuovo proprietario.
 
 Gli oggetti devono essere distinti, validi, vivi e non modificati da altri
 durante la chiamata. Il codice viene eseguito con il paging del firmware;
@@ -17,7 +18,11 @@ prima di scrivere lo stato o chiamare il firmware.
 
 `boot_validate_exit_handoff` ricostruisce il piano completo e verifica
 il grafo delle tabelle. Controlla copertura EfiLoaderData senza attributo
-runtime per kernel, stack, tabelle, contratto e buffer della mappa.
+runtime per kernel, stack, tabelle, contratto e buffer della mappa. Quando
+Descriptors e presente verifica anche blocco, nove pagine, tre mappature
+e guardie non presenti. Il controllo degli alias dello stato comprende
+il nuovo owner e le sue pagine; anche ogni nuova fotografia dei tentativi
+terminali deve coprirli.
 Confronta la bozza del contratto con questi oggetti: root, ingresso,
 stack, indirizzo virtuale, capacita, byte usati e formato dei descrittori.
 Richiede Ready e firma validi, con EnabledFeatures ancora zero.
@@ -89,7 +94,8 @@ nessuna chiamata firmware e nessuna modifica dei byte originali.
 
 QEMU verifica il preflight reale nei due scenari positivi e mantiene
 CR3 invariato. ExitBootServices resta simulato nei test host: per usarlo
-nel boot reale servono ancora il trampoline e le strutture proprie per
-segmentazione ed eccezioni. Questa verifica non certifica hardware fisico.
+nel boot reale servono ancora codice e trampoline persistenti e
+attivazione delle [strutture proprie gia preparate](../descriptors/storage.md).
+Questa verifica non certifica hardware fisico.
 
 [UEFI 2.11: GetMemoryMap e ExitBootServices](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html).

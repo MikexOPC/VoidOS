@@ -35,13 +35,15 @@ GDT arbitrarie. La base numerica non dimostra che le pagine siano mappate.
 `handoff/descriptors/prepare.c` prepara e ricontrolla la bozza sullo stack
 di `efi_main`, poi stampa il successo. La bozza vive fino al ritorno al
 firmware. Non usa AllocatePages e non viene aggiunta al contratto v2.
-Non si puo usare questa posizione dopo un cambio di CR3: il futuro
-trampoline dovra possedere e mappare la propria GDT e il relativo operando.
+Non si puo usare questa bozza dopo un cambio CR3. Il boot prepara anche
+una [GDT estesa persistente](storage.md), con operandi e mappature proprie,
+che resta inattiva in attesa del trampoline.
 
 Sono ora presenti anche [IDT e ingressi terminali](exceptions.md), preparati
 ma inattivi nel boot ordinario. [TSS/IST](tss.md) sono verificati nel probe
-separato; mancano ancora la loro integrazione persistente, caricamento dei
-descrittori nel passaggio finale e trampoline. Questa bozza e un prerequisito verificabile,
+separato e preparati nelle nuove pagine persistenti del percorso ordinario;
+mancano caricamento dei descrittori nel passaggio finale e trampoline.
+Questa bozza e un prerequisito verificabile,
 non una transizione hardware pronta all'uso.
 
 ## Test

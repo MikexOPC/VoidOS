@@ -132,7 +132,7 @@ static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL
                          BOOT_START_PAGE *page, BOOT_FINAL_MEMORY_MAP *owner)
 {
     EFI_BOOT_SERVICES_EXIT_PREFIX services = {0};
-    BOOT_EXIT_HANDOFF handoff = {kernel, stack, caps, &tables, page, owner};
+    BOOT_EXIT_HANDOFF handoff = {kernel, stack, caps, &tables, page, owner, 0};
     BOOT_START_INFO saved = *(BOOT_START_INFO *)contract;
     BOOT_MEMORY_MAP snapshot = owner->Snapshot;
     UINT64 root_entry = arena[0][0];

@@ -22,6 +22,13 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
             (mapping->Flags & 3) == 3)
             return EFI_INVALID_PARAMETER;
         bytes = mapping->Pages * 4096;
+        if (os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_BOOT_DESCRIPTOR_VIRTUAL,
+                                       X86_BOOT_DESCRIPTOR_WINDOW_BYTES)) {
+            int descriptor = mapping->VirtualBase == X86_BOOT_DESCRIPTOR_VIRTUAL && mapping->Pages == 1;
+            int auxiliary_stack = (mapping->VirtualBase == X86_BOOT_PRIVILEGE_VIRTUAL ||
+                                   mapping->VirtualBase == X86_BOOT_EXCEPTION_VIRTUAL) && mapping->Pages == 4;
+            if ((!descriptor && !auxiliary_stack) || mapping->Flags != 6) return EFI_INVALID_PARAMETER;
+        }
         if (mapping->PhysicalBase > ~0ULL - bytes ||
             bytes > X86_BOOT_LOW_ADDRESS_LIMIT - mapping->VirtualBase)
             return EFI_INVALID_PARAMETER;
@@ -31,6 +38,8 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
                 return EFI_INVALID_PARAMETER;
         } else {
             UINT64 budget_bytes = bytes;
+            if (os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_BOOT_DESCRIPTOR_VIRTUAL,
+                                           X86_BOOT_DESCRIPTOR_WINDOW_BYTES)) budget_bytes = 0;
             if (mapping->VirtualBase == BOOT_INFO_VIRTUAL) {
                 if (mapping->Pages != 1 || mapping->Flags != 4)
                     return EFI_INVALID_PARAMETER;

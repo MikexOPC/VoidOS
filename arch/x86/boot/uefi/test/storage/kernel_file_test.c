@@ -95,7 +95,8 @@ static EFI_STATUS EFIAPI get_info(EFI_FILE_PREFIX *self, EFI_GUID *guid, UINTN *
 
 static EFI_STATUS EFIAPI allocate_pool(UINT32 type, UINTN size, void **result)
 {
-    if (type == 2 && size == (kernel_mock_page_allocations + 8) * 48 && size <= sizeof(map_pool)) {
+    if (type == 2 && size == (kernel_mock_page_allocations + 8 + (kernel_mock_scenario == 72 ? 1U : 0U)) * 48 &&
+        size <= sizeof(map_pool)) {
         *result = map_pool;
         return EFI_SUCCESS;
     }
@@ -316,7 +317,7 @@ __declspec(dllexport) int run_kernel_tests(void)
         return 445;
     prepare(0);
     if (efi_main(&image_token, &table) != EFI_SUCCESS || success_messages != 1 ||
-        failure_messages || sections != 14 || frees != 1 || root_closes != 2 ||
+        failure_messages || sections != 15 || frees != 1 || root_closes != 2 ||
         kernel_mock_page_allocations <= 3 || kernel_mock_page_frees != kernel_mock_page_allocations)
         return 446;
     prepare(8);
@@ -395,8 +396,25 @@ __declspec(dllexport) int run_kernel_tests(void)
     for (test = 0; test < sizeof(cleanup_cases) / sizeof(cleanup_cases[0]); ++test) {
         prepare(cleanup_cases[test]);
         expected = cleanup_cases[test] == 46 ? EFI_OUT_OF_RESOURCES : EFI_DEVICE_ERROR;
-        if (efi_main(&image_token, &table) != expected || failure_messages != 1 || kernel_mock_page_allocations <= 3 ||
-            kernel_mock_page_frees != kernel_mock_page_allocations) return 471 + cleanup_cases[test];
+        if (efi_main(&image_token, &table) != expected ||
+            failure_messages != ((cleanup_cases[test] == 35) ? 2U : 1U) ||
+            kernel_mock_page_allocations <= 3 || kernel_mock_page_frees != kernel_mock_page_allocations +
+            ((cleanup_cases[test] == 35) ? 1U : 0U)) return 471 + cleanup_cases[test];
     }
     return validation_cleanup_error ? 490 : 0;
+}
+
+// ====== riuso del fixture completo per guasti delle nuove risorse ====== //
+
+EFI_STATUS test_run_descriptor_scenario(int scenario)
+{
+    prepare(0);
+    kernel_mock_scenario = scenario;
+    kernel_mock_bad_address = ((UINT64)(UINTN)&services) & ~4095ULL;
+    return efi_main(&image_token, &table);
+}
+
+UINT32 test_descriptor_phase(void)
+{
+    return (UINT32)sections;
 }

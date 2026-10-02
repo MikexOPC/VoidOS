@@ -36,9 +36,10 @@ allocazioni firmware. Vive fino al ritorno di `efi_main`. Nessuna LIDT
 viene eseguita nel bootloader ordinario: resta attiva la IDT firmware.
 L'assembly e nel PE EFI e i suoi indirizzi vengono rilocati dal loader UEFI.
 
-Prima del cambio CR3 servono proprieta e mappature persistenti per IDT,
-GDT, ingressi, operandi e stack. Queste bozze sullo stack EFI non sono
-utilizzabili dopo quel cambio. Il contratto kernel v2 resta invariato.
+Il boot prepara ora anche [descrittori e stack persistenti](storage.md),
+con mappature verificate nel grafo inattivo. Prima del cambio CR3 servono
+ancora codice persistente degli ingressi e trampoline. Le bozze sullo
+stack EFI non sono utilizzabili dopo quel cambio. Il contratto v2 resta invariato.
 
 ## Verifiche ripetibili
 
@@ -66,7 +67,7 @@ il probe non ritorna al firmware dopo aver cambiato i descrittori.
 La prova usa le mappature firmware: non dimostra ExitBootServices,
 cambio CR3, ingresso nel kernel o funzionamento su hardware fisico.
 Lo stack alternativo appartiene ancora all'immagine caricata dal firmware.
-Integrazione persistente di TSS/IST e diagnostica autonoma restano passi successivi.
+Attivazione del profilo persistente e diagnostica autonoma restano passi successivi.
 
 Riferimento: [Intel SDM volume 3A](https://cdrdv2-public.intel.com/825758/253668-sdm-vol-3a.pdf),
 sezioni 6.13, 6.14.1, 6.14.2 e 6.14.5.

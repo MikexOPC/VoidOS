@@ -38,7 +38,8 @@ GDT in memoria. #GP usa il selettore inesistente 0x28 e conserva tale
 error code sullo stack IST1.
 
 I due stack statici e il TSS appartengono solo all'immagine sacrificabile
-di test: non aumentano la RAM allocata dal bootloader ordinario. La prova
+di test. Il boot ordinario prepara separatamente [nove pagine persistenti](storage.md),
+36 KiB comprendenti descrittori e due stack, senza eseguire LTR. La prova
 usa ancora il paging firmware e non copre un errore sulla guard page,
 double fault, NMI annidato o cambio CR3. Uno stesso IST riutilizzato da
 eccezioni annidate puo sovrascrivere un frame: il futuro profilo definitivo

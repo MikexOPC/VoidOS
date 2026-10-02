@@ -25,6 +25,12 @@ static EFI_STATUS check_state_bindings(const BOOT_EXIT_HANDOFF *handoff, const B
         (handoff->Memory && state_overlaps(state, (UINT64)(UINTN)handoff->Memory, sizeof(*handoff->Memory))))
         return EFI_INVALID_PARAMETER;
     if (handoff->Page && state_overlaps(state, handoff->Page->PhysicalBase, 4096)) return EFI_INVALID_PARAMETER;
+    if (handoff->Descriptors) {
+        const BOOT_DESCRIPTOR_STORAGE *owner = handoff->Descriptors;
+        if (owner->Pages > BOOT_DESCRIPTOR_PAGES ||
+            state_overlaps(state, (UINT64)(UINTN)owner, sizeof(*owner)) ||
+            state_overlaps(state, owner->PhysicalBase, owner->Pages * 4096)) return EFI_INVALID_PARAMETER;
+    }
     if (handoff->Memory && state_overlaps(state, (UINT64)(UINTN)handoff->Memory->Snapshot.Buffer,
                                          handoff->Memory->Snapshot.Capacity)) return EFI_INVALID_PARAMETER;
     if (handoff->Stack) {
@@ -52,7 +58,7 @@ static EFI_STATUS check_state_bindings(const BOOT_EXIT_HANDOFF *handoff, const B
 
 // ====== ricostruzione del piano senza allocazioni o modifiche alle tabelle ====== //
 
-static EFI_STATUS check_resources(const BOOT_EXIT_HANDOFF *handoff, BOOT_MAPPING_PLAN *plan)
+EFI_STATUS boot_check_exit_resources(const BOOT_EXIT_HANDOFF *handoff, BOOT_MAPPING_PLAN *plan)
 {
     const BOOT_PAGING_CAPABILITIES *caps;
     BOOT_START_PAGE reserved;
@@ -83,11 +89,18 @@ static EFI_STATUS check_resources(const BOOT_EXIT_HANDOFF *handoff, BOOT_MAPPING
     plan->Mappings[plan->Count] = plan->Mappings[plan->Count - 1];
     plan->Mappings[plan->Count - 1] = mapping;
     ++plan->Count;
+    if (handoff->Descriptors) {
+        status = boot_check_descriptor_storage(handoff->Descriptors);
+        if (status == EFI_SUCCESS) status = boot_map_descriptor_storage(plan, handoff->Descriptors);
+        if (status != EFI_SUCCESS) return status;
+    }
     status = boot_verify_table_contents(plan, handoff->Tables, caps->PhysicalBits);
     if (status == EFI_SUCCESS) status = boot_check_resources(map, handoff->Kernel, handoff->Stack);
     if (status == EFI_SUCCESS) status = boot_check_table_resources(map, handoff->Tables, caps->PhysicalBits);
     if (status == EFI_SUCCESS) status = boot_check_loader_range(map, handoff->Page->PhysicalBase, 1);
     if (status == EFI_SUCCESS) status = boot_check_loader_range(map, mapping.PhysicalBase, mapping.Pages);
+    if (status == EFI_SUCCESS && handoff->Descriptors)
+        status = boot_check_loader_range(map, handoff->Descriptors->PhysicalBase, BOOT_DESCRIPTOR_PAGES);
     return status;
 }
 
@@ -100,7 +113,7 @@ EFI_STATUS boot_validate_exit_handoff(const BOOT_EXIT_HANDOFF *handoff)
     const BOOT_MEMORY_MAP *map;
     EFI_STATUS status;
     if (!handoff || !handoff->Page || handoff->Page->Ready != 1) return EFI_INVALID_PARAMETER;
-    status = check_resources(handoff, &plan);
+    status = boot_check_exit_resources(handoff, &plan);
     if (status != EFI_SUCCESS) return status;
     info = (const BOOT_START_INFO *)(UINTN)handoff->Page->PhysicalBase;
     map = &handoff->Memory->Snapshot;
@@ -126,7 +139,7 @@ static EFI_STATUS check_snapshot(const BOOT_MEMORY_MAP *map, void *context)
     boot_invalidate_start_info(info);
     handoff->Page->Ready = 0;
     if (map != &handoff->Memory->Snapshot) return EFI_INVALID_PARAMETER;
-    status = check_resources(handoff, &plan);
+    status = boot_check_exit_resources(handoff, &plan);
     if (status == EFI_SUCCESS)
         status = boot_prepare_start_info(&plan, handoff->Tables, handoff->Capabilities, info);
     if (status == EFI_SUCCESS) status = boot_attach_memory_snapshot(info, map);

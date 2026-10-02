@@ -155,6 +155,8 @@ foreach ($scenario in @('valid', 'kernel-probe', 'missing', 'altered', 'kernel-m
                 $gdtSuccess = $log.IndexOf('[  OK  ] GDT ring 0 e operando GDTR verificati; descrittori ancora inattivi.')
                 $idtSection = $log.IndexOf("# ============ descrittori eccezioni x64 ============ #`r`n`r`n")
                 $idtSuccess = $log.IndexOf('[  OK  ] IDT, IDTR e 32 ingressi terminali verificati; eccezioni ancora gestite dal firmware.')
+                $persistentSection = $log.IndexOf("# ============ descrittori e stack persistenti ============ #`r`n`r`n")
+                $persistentSuccess = $log.IndexOf('[  OK  ] Descrittori e due stack RW/NX verificati; guard page assenti, CR3 invariato e preflight aggiornato.')
                 $pagingSection = $log.IndexOf("# ============ stato paging e CR3 firmware ============ #`r`n`r`n")
                 $pagingSuccess = $log.IndexOf('[  OK  ] Paging attivo a quattro livelli verificato; CR3 letto senza modifiche.')
                 $cr3Before = [regex]::Match($log, '\[ INFO \] CR3 firmware: 0x([0-9A-F]{16})')
@@ -178,7 +180,9 @@ foreach ($scenario in @('valid', 'kernel-probe', 'missing', 'altered', 'kernel-m
                     $finalMapSection -gt $contractSuccess -and $finalMapSuccess -gt $finalMapSection -and
                     $exitPreflight -gt $finalMapSuccess -and $gdtSection -gt $exitPreflight -and
                     $gdtSuccess -gt $gdtSection -and $idtSection -gt $gdtSuccess -and
-                    $idtSuccess -gt $idtSection -and $releaseSuccess -gt $idtSuccess -and $returnMatch.Index -gt $releaseSuccess
+                    $idtSuccess -gt $idtSection -and $persistentSection -gt $idtSuccess -and
+                    $persistentSuccess -gt $persistentSection -and $releaseSuccess -gt $persistentSuccess -and
+                    $returnMatch.Index -gt $releaseSuccess
             }
             if ($scenario -eq 'cpu-no-nx') {
                 $cpuSection = $log.IndexOf("# ============ capacita paging CPU ============ #`r`n`r`n")
@@ -217,5 +221,4 @@ if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash -ne $imageHash) {
 }
 Write-BootStatus OK '10/10 scenari firmware verificati sulla stessa immagine EFI.'
 Write-BootStatus INFO "Log: $testRoot"
-
 
