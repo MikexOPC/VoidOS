@@ -1,7 +1,9 @@
 param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install,
-    [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none')
+    [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
+    [ValidateSet('none','opcode','selector','divide','stack')][string]$TestCpuFault = 'none')
 $ErrorActionPreference = 'Stop'
-if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
+if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
+if ($TestCpuFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
 if (!$ToolchainBin) {
@@ -11,6 +13,9 @@ if (!$ToolchainBin) {
 }
 $output = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $project 'kernel/build' }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
+
+# ====== ogni compilazione deve terminare senza errori ===== #
+
 function Invoke-Compiler([string]$program, [string[]]$arguments) {
     & $program @arguments
     if ($LASTEXITCODE -ne 0) { throw "Compilazione fallita: $program" }
@@ -23,20 +28,37 @@ if ($TestWindowFault -ne 'none') {
     $flags += ('/DKERNEL_TEST_WINDOW_FAULT=' + $mode)
 }
 $objects = @()
+if ($TestCpuFault -ne 'none') {
+    $mode = switch ($TestCpuFault) { 'opcode' {1} 'selector' {2} 'divide' {3} 'stack' {4} }
+    $flags += ('/DKERNEL_TEST_CPU_FAULT=' + $mode)
+}
 foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
-    'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c')) {
+    'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
+    'arch/x86/kernel/exceptions/terminal.c')) {
     $object = Join-Path $output (([IO.Path]::GetFileNameWithoutExtension($source)) + '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
     $objects += $object
 }
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/io.obj'),
     (Join-Path $project 'arch/x86/kernel/assembly/platform/io.asm'))
+Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/exception-entry.obj'),
+    (Join-Path $project 'arch/x86/kernel/exceptions/assembly/entry/terminal.asm'))
+$objects += ($output + '/exception-entry.obj')
+if ($TestCpuFault -ne 'none') {
+    Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/cpu-fault.obj'),
+        (Join-Path $project 'kernel/test/exceptions/assembly/fault/probe.asm'))
+    $objects += ($output + '/cpu-fault.obj')
+}
 if ($TestWindowFault -ne 'none') {
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/fault.obj'),
         (Join-Path $project 'kernel/test/mm/window/assembly/fault/probe.asm'))
     $objects += ($output + '/fault.obj')
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/exceptions/rust/frame/validation.rs'),
+    '-o',($output + '/exception-frame.obj'))
+$objects += ($output + '/exception-frame.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/mm/rust/regions/validation.rs'),
     '-o',($output + '/validation.obj'))

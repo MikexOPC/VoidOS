@@ -14,13 +14,17 @@ $objects = @()
 foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c','kernel/boot/contract.c',
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/test/mm/physical/allocator_test.c',
     'kernel/diagnostics/log.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','kernel/test/mm/window/page_test.c',
-    'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c')) {
+    'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
+    'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c')) {
     $object = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($source) + '.obj')
     & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O2 /c ('/I' + $project) (Join-Path $project $source) ('/Fo' + $object)
     if ($LASTEXITCODE -ne 0) { throw 'Compilazione test C fallita.' }
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/kernel/exceptions/rust/frame/validation.rs') -o ($output + '/exception-frame.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione frame eccezioni fallita.' }
+$objects += ($output + '/exception-frame.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'kernel/mm/rust/regions/validation.rs') -o ($output + '/validation.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione Rust fallita.' }
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/mm/window/rust/layout/validation.rs') -o ($output + '/window-layout.obj')
@@ -60,3 +64,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test bounds oggetti fallita.' }
 & ($output + '/object-bounds-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test bounds oggetti Rust falliti.' }
 Write-BootStatus OK 'Pool oggetti: ownership, allineamento, OOM e 1024 operazioni verificati; regressione kernel e 11 test Rust superati.'
+$exceptionSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Exceptions { [DllImport(@"' + $dll + '")] public static extern int run_exception_tests(); }'
+$exceptionType = Add-Type -TypeDefinition $exceptionSource -PassThru
+$result = $exceptionType.GetMethod('run_exception_tests').Invoke($null, @())
+if ($result -ne 0) { throw "Test IDT fallito: $result" }
+& $rustc --edition=2024 --test -D warnings (Join-Path $PSScriptRoot 'exceptions/rust/frame/validation_test.rs') -o ($output + '/exception-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione test frame fallita.' }
+& ($output + '/exception-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Test frame Rust falliti.' }
+Write-BootStatus OK 'IDT: tutti i 512 byte dei gate e i 10 byte IDTR verificati; 3 test Rust del frame superati.'

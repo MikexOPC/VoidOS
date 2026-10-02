@@ -6,6 +6,7 @@
 #include "arch/x86/kernel/platform.h"
 #include "arch/x86/mm/window/page.h"
 #include "arch/x86/mm/window/access.h"
+#include "arch/x86/kernel/exceptions/terminal.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
@@ -13,6 +14,9 @@ static X86_PAGE_WINDOW page_window;
 static KERNEL_OBJECT_POOL object_pool;
 #ifdef KERNEL_TEST_WINDOW_FAULT
 void x86_window_fault(BOOT_U64 address, BOOT_U32 mode);
+#endif
+#ifdef KERNEL_TEST_CPU_FAULT
+void x86_cpu_fault(BOOT_U32 mode);
 #endif
 
 // ====== blocco contiguo azzerato e verifica di ogni pagina dopo riuso ===== //
@@ -120,6 +124,7 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
 {
     if (!kernel_capture_contract(info, root, entry, &boot_context)) kernel_panic("BOOT_CONTRACT_INVALID");
     if (!kernel_log(0, "KERNEL_CONTRACT_OK")) kernel_panic("SERIAL_UNAVAILABLE");
+    if (!kernel_section("IDT eccezioni kernel") || !x86_exception_initialize()) kernel_panic("KERNEL_IDT_FAILED");
     kernel_section("inventario memoria");
     if (!kernel_inventory_memory(boot_context.MemoryMap, boot_context.Info.MemoryMapBytes,
                                  boot_context.Info.MemoryDescriptorBytes, &memory_inventory))
@@ -146,6 +151,11 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
     x86_window_fault(X86_KERNEL_PAGE_WINDOW + X86_KERNEL_WINDOW_BYTES - 4096, KERNEL_TEST_WINDOW_FAULT);
 #endif
     kernel_panic("EXPECTED_WINDOW_FAULT_MISSING");
+#elif defined(KERNEL_TEST_CPU_FAULT)
+    {
+        x86_cpu_fault(KERNEL_TEST_CPU_FAULT);
+        kernel_panic("EXPECTED_CPU_FAULT_MISSING");
+    }
 #elif defined(KERNEL_TEST_PANIC)
     kernel_panic("INTENTIONAL_TEST_PANIC");
 #else
