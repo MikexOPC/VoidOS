@@ -306,7 +306,7 @@ __declspec(dllexport) int run_kernel_tests(void)
         return 445;
     prepare(0);
     if (efi_main(&image_token, &table) != EFI_SUCCESS || success_messages != 1 ||
-        failure_messages || sections != 12 || frees != 1 || root_closes != 2 ||
+        failure_messages || sections != 13 || frees != 1 || root_closes != 2 ||
         kernel_mock_page_allocations <= 3 || kernel_mock_page_frees != kernel_mock_page_allocations)
         return 446;
     prepare(8);

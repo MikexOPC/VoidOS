@@ -2,6 +2,7 @@
 #include "lib/memory/buffer_capacity.h"
 #include "arch/x86/lib/processor/paging_validation.h"
 #include "arch/x86/lib/processor/processor_access.h"
+#include "arch/x86/lib/descriptors/gdt.h"
 #include "arch/x86/configs/boot_profile.h"
 
 static_assert(sizeof(uint32_t) == 4 && sizeof(uint64_t) == 8, "Unexpected integer ABI");
@@ -14,6 +15,10 @@ static_assert((UINT64_C(0x800018) & X86_PAGING_ROOT_MASK) == UINT64_C(0x800000),
 
 extern "C" __declspec(dllexport) int run_shared_interface_tests(void)
 {
+    X86_BOOT_GDT gdt;
+    X86_GDT_POINTER pointer;
+    if (!x86_prepare_boot_gdt(&gdt, &pointer, 4096) ||
+        !x86_validate_boot_gdt(&gdt, &pointer, 4096)) return 7;
     if (!os_address_ranges_overlap(4096, 8192, 8192, 4096) ||
         os_address_ranges_overlap(4096, 4096, 8192, 4096))
         return 1;
