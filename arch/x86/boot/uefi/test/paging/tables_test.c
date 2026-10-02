@@ -139,7 +139,7 @@ __declspec(dllexport) int run_table_tests(void)
         tables.Count != 1 || boot_release_page_tables(&services, &tables) != EFI_SUCCESS || frees != 1)
         return 63;
     allocations = frees = 0;
-    plan.Count = BOOT_MAPPING_LIMIT;
+    plan.Count = ELF_MAX_LOAD_SEGMENTS + 2;
     plan.Entry = 0x1ff000;
     for (scenario = 0; scenario < ELF_MAX_LOAD_SEGMENTS; ++scenario) {
         plan.Mappings[scenario].PhysicalBase = 0x10000000ULL + scenario * 0x800000ULL;

@@ -1,4 +1,5 @@
 #include "page.h"
+#include "lib/memory/address_ranges.h"
 
 // ====== inserimento prima dello stack con rollback del piano ====== //
 
@@ -45,6 +46,10 @@ EFI_STATUS boot_allocate_start_page(EFI_BOOT_SERVICES_PREFIX *services, const BO
     if (status != EFI_SUCCESS) return status;
     status = services->AllocatePages(0, 2, 1, &address);
     if (status != EFI_SUCCESS) return status;
+    if (os_address_ranges_overlap(address, 4096, (UINT64)(UINTN)page, sizeof(*page)) ||
+        os_address_ranges_overlap(address, 4096, (UINT64)(UINTN)plan, sizeof(*plan)) ||
+        os_address_ranges_overlap(address, 4096, (UINT64)(UINTN)services, services->Hdr.HeaderSize))
+        return EFI_DEVICE_ERROR;
     for (index = 0; index < plan->Count; ++index) {
         const BOOT_MAPPING *mapping = &plan->Mappings[index];
         UINT64 end = mapping->PhysicalBase + mapping->Pages * 4096;

@@ -9,6 +9,7 @@ allocazioni o stato modificabile.
 | Pagina | 4 KiB |
 | Intervallo virtuale utilizzato | Meta inferiore canonica a 48 bit |
 | Contratto di ingresso | `0x0000600000000000` |
+| Mappa persistente | Finestra da `0x0000500000000000`, massimo 1 MiB |
 | Pagina di guardia dello stack | `0x0000700000000000`, non mappata |
 | Inizio stack | `0x0000700000001000` |
 | Stack | 16 pagine, 64 KiB |

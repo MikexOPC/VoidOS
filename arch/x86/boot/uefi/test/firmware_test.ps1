@@ -21,6 +21,8 @@ foreach ($required in @($image, $qemu, $code, $template)) {
 }
 $testRoot = Join-Path $bootRoot ('build\firmware-test-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testRoot | Out-Null
+$imageHash = (Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash
+Write-BootStatus INFO "EFI SHA256: $imageHash"
 
 # ====== scenari con volumi separati ====== #
 
@@ -31,7 +33,11 @@ foreach ($scenario in @('valid', 'kernel-probe', 'missing', 'altered', 'kernel-m
     $esp = Join-Path $scenarioRoot 'esp'
     $bootDirectory = Join-Path $esp 'EFI\BOOT'
     New-Item -ItemType Directory -Path $bootDirectory | Out-Null
-    Copy-Item -LiteralPath $image -Destination (Join-Path $bootDirectory 'BOOTX64.EFI')
+    $scenarioImage = Join-Path $bootDirectory 'BOOTX64.EFI'
+    Copy-Item -LiteralPath $image -Destination $scenarioImage
+    if ((Get-FileHash -LiteralPath $scenarioImage -Algorithm SHA256).Hash -ne $imageHash) {
+        throw "Immagine EFI cambiata prima dello scenario $scenario"
+    }
     $variables = Join-Path $scenarioRoot 'vars.fd'
     Copy-Item -LiteralPath $template -Destination $variables
     if ($scenario -ne 'missing') {
@@ -143,7 +149,8 @@ foreach ($scenario in @('valid', 'kernel-probe', 'missing', 'altered', 'kernel-m
                 $contractSection = $log.IndexOf("# ============ contratto ingresso kernel ============ #`r`n`r`n")
                 $contractSuccess = $log.IndexOf('[  OK  ] Contratto su pagina R/NX e stack ABI verificati; tabelle inattive.')
                 $finalMapSection = $log.IndexOf("# ============ mappa persistente per uscita UEFI ============ #`r`n`r`n")
-                $finalMapSuccess = $log.IndexOf('[  OK  ] Mappa su pagine dedicate verificata; kernel, stack, contratto e tabelle coperti.')
+                $finalMapSuccess = $log.IndexOf('[  OK  ] Mappa persistente R/NX e contratto v2 verificati; tutte le risorse coperte.')
+                $exitPreflight = $log.IndexOf('[  OK  ] Preflight uscita UEFI verificato; servizi firmware ancora attivi.')
                 $pagingSection = $log.IndexOf("# ============ stato paging e CR3 firmware ============ #`r`n`r`n")
                 $pagingSuccess = $log.IndexOf('[  OK  ] Paging attivo a quattro livelli verificato; CR3 letto senza modifiche.')
                 $cr3Before = [regex]::Match($log, '\[ INFO \] CR3 firmware: 0x([0-9A-F]{16})')
@@ -165,7 +172,7 @@ foreach ($scenario in @('valid', 'kernel-probe', 'missing', 'altered', 'kernel-m
                     $pagingSection -gt $cpuSuccess -and $tablesSection -gt $pagingSuccess -and $registerSequence -and
                     $contractSection -gt $tablesSuccess -and $contractSuccess -gt $contractSection -and
                     $finalMapSection -gt $contractSuccess -and $finalMapSuccess -gt $finalMapSection -and
-                    $releaseSuccess -gt $finalMapSuccess -and $returnMatch.Index -gt $releaseSuccess
+                    $exitPreflight -gt $finalMapSuccess -and $releaseSuccess -gt $exitPreflight -and $returnMatch.Index -gt $releaseSuccess
             }
             if ($scenario -eq 'cpu-no-nx') {
                 $cpuSection = $log.IndexOf("# ============ capacita paging CPU ============ #`r`n`r`n")
@@ -199,6 +206,10 @@ foreach ($scenario in @('valid', 'kernel-probe', 'missing', 'altered', 'kernel-m
         }
     }
 }
+if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash -ne $imageHash) {
+    throw 'Immagine EFI cambiata durante i test firmware'
+}
+Write-BootStatus OK '10/10 scenari firmware verificati sulla stessa immagine EFI.'
 Write-BootStatus INFO "Log: $testRoot"
 
 

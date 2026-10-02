@@ -1,4 +1,4 @@
-#include "load.h"
+#include "elf/load.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== verifica delle allocazioni gia possedute ====== //
@@ -89,6 +89,7 @@ EFI_STATUS elf_stage_segments(EFI_BOOT_SERVICES_PREFIX *services, const UINT8 *f
         if (status != EFI_SUCCESS)
             break;
         if (conflicts_with_owned_memory(image, file, size, address, pages * 4096) ||
+            os_address_ranges_overlap(address, pages * 4096, (UINT64)(UINTN)services, services->Hdr.HeaderSize) ||
             os_address_ranges_overlap(address, pages * 4096, (UINT64)(UINTN)&plan, sizeof(plan))) {
             status = EFI_DEVICE_ERROR;
             break;

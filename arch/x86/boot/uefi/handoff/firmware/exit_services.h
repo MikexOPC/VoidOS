@@ -16,5 +16,11 @@ typedef struct {
     EFI_STATUS LastStatus;
 } BOOT_EXIT_STATE;
 
+typedef EFI_STATUS (*BOOT_EXIT_SNAPSHOT_CHECK)(const BOOT_MEMORY_MAP *map, void *context);
+
+EFI_STATUS boot_exit_firmware_services_checked(EFI_HANDLE image, EFI_BOOT_SERVICES_EXIT_PREFIX *services,
+                                              BOOT_MEMORY_MAP *map, BOOT_EXIT_STATE *state,
+                                              BOOT_EXIT_SNAPSHOT_CHECK check, void *context);
+
 EFI_STATUS boot_exit_firmware_services(EFI_HANDLE image, EFI_BOOT_SERVICES_EXIT_PREFIX *services, BOOT_MEMORY_MAP *map, BOOT_EXIT_STATE *state);
 #endif

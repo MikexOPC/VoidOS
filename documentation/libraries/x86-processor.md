@@ -41,7 +41,7 @@ Vedere [capacita CPU](../paging/cpu-capabilities.md) e
 ## Verifica del confine fra linguaggi
 
 Le intestazioni usano `stdint.h` e `extern "C"` per i consumatori C++.
-Il test `test/libraries/shared_interface_test.cpp` del boot include le
+Il test `test/libraries/cpp/interfaces/shared_interface_test.cpp` del boot include le
 sole intestazioni condivise e chiama funzioni C e Rust. Verifica anche
 la dimensione della fotografia grezza dei registri e la maschera CR3.
 Gli altri test CPU esistenti continuano a verificare risultati, limiti,

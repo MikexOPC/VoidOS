@@ -69,7 +69,7 @@ EFI_STATUS EFIAPI test_get_memory_map(UINTN *size, void *buffer, UINTN *key,
         if (kernel_mock_page_allocations == 3) { sizing_calls = 0; final_buffer = 0; }
         ++sizing_calls;
     } else if (kernel_mock_page_allocations > 3 &&
-               buffer == table_pages[kernel_mock_page_allocations - 4]) {
+               (buffer == table_pages[kernel_mock_page_allocations - 4] || (UINT64)(UINTN)buffer == final_buffer)) {
         final_buffer = (UINT64)(UINTN)buffer;
         if (kernel_mock_scenario == 45) return EFI_DEVICE_ERROR;
     }

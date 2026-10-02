@@ -36,6 +36,14 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
                     return EFI_INVALID_PARAMETER;
                 budget_bytes = 0;
             }
+            if (mapping->VirtualBase == BOOT_MAP_VIRTUAL) {
+                if (bytes > X86_BOOT_MAP_MAX_BYTES || mapping->Flags != 4)
+                    return EFI_INVALID_PARAMETER;
+                budget_bytes = 0;
+            } else if (os_address_ranges_overlap(mapping->VirtualBase, bytes,
+                                                 BOOT_MAP_VIRTUAL, X86_BOOT_MAP_MAX_BYTES)) {
+                return EFI_INVALID_PARAMETER;
+            }
             if (budget_bytes > ELF_MAX_MEMORY_BYTES - total ||
                 (mapping->VirtualBase < plan->StackTop &&
                  BOOT_STACK_GUARD < mapping->VirtualBase + bytes))

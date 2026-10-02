@@ -1,4 +1,4 @@
-#[path = "../../../../lib/processor/paging_capabilities.rs"]
+#[path = "../../../../../../lib/processor/rust/paging/paging_capabilities.rs"]
 mod paging_capabilities;
 use paging_capabilities::x86_validate_paging_profile as cpu_validate_paging_profile;
 

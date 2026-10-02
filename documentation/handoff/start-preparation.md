@@ -42,7 +42,7 @@ calcolo non effettua la chiamata e non dimostra che lo stack sia attivo.
 ## Verifiche
 
 La build testa bozza valida, diciassette variazioni incompatibili, azzeramento
-di tutti i 72 byte su errore,
+di tutti i 112 byte su errore,
 alias fisici delle tabelle con kernel e stack, limiti CPU e sei intervalli
 di stack non validi. QEMU controlla l'ordine della nuova fase prima del
 rilascio, mantenendo invariato CR3 in entrambi gli scenari positivi.

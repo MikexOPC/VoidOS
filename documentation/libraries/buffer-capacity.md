@@ -1,6 +1,6 @@
 # Capacita e limiti numerici dei buffer
 
-`lib/memory/buffer_capacity.rs` e un modulo Rust `no_std`, collegato
+`lib/memory/rust/capacity/buffer_capacity.rs` e un modulo Rust `no_std`, collegato
 staticamente in `os_memory.lib`. L'interfaccia C e in `buffer_capacity.h`.
 Non riceve puntatori, non alloca, non usa uno stato globale e non accede
 alla memoria dei chiamanti.

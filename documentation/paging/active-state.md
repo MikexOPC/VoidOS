@@ -11,7 +11,7 @@ avere capacita CPU valide, con long mode e NX gia rilevati. Il controllo
 non installa un gestore per eccezioni causate da firmware/hypervisor
 non conformi; CPUID e il contratto UEFI rimangono presupposti del lettore.
 
-`arch/x86/lib/processor/paging_state.rs` valida solo numeri, in Rust no_std. Il profilo
+`arch/x86/lib/processor/rust/paging/paging_state.rs` valida solo numeri, in Rust no_std. Il profilo
 richiede CR0.PE e PG, CR4.PAE, EFER.LME e LMA. Rifiuta CR4.LA57 attivo:
 le nostre tabelle sono a quattro livelli, e una transizione da cinque
 livelli richiederebbe un percorso dedicato. Rifiuta anche bit di CR3

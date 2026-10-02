@@ -9,6 +9,8 @@
 // ====== indirizzi virtuali e budget del boot attuale ====== //
 
 #define X86_BOOT_INFO_VIRTUAL 0x0000600000000000ULL
+#define X86_BOOT_MAP_VIRTUAL 0x0000500000000000ULL
+#define X86_BOOT_MAP_MAX_BYTES 0x100000ULL
 #define X86_BOOT_STACK_GUARD 0x0000700000000000ULL
 #define X86_BOOT_STACK_VIRTUAL (X86_BOOT_STACK_GUARD + X86_BOOT_PAGE_BYTES)
 #define X86_BOOT_STACK_PAGES 16ULL
@@ -44,6 +46,13 @@ X86_BOOT_ASSERT((X86_BOOT_STACK_GUARD & (X86_BOOT_PAGE_BYTES - 1)) == 0,
 X86_BOOT_ASSERT(X86_BOOT_INFO_VIRTUAL + X86_BOOT_PAGE_BYTES <= X86_BOOT_STACK_GUARD ||
                 X86_BOOT_INFO_VIRTUAL >= X86_BOOT_STACK_TOP,
                 "Boot contract must not overlap the guard or stack");
+X86_BOOT_ASSERT(X86_BOOT_MAP_VIRTUAL >= X86_BOOT_PAGE_BYTES &&
+                X86_BOOT_MAP_VIRTUAL <= X86_BOOT_LOW_ADDRESS_LIMIT - X86_BOOT_MAP_MAX_BYTES &&
+                (X86_BOOT_MAP_VIRTUAL & (X86_BOOT_PAGE_BYTES - 1)) == 0,
+                "Memory map window must be aligned and canonical");
+X86_BOOT_ASSERT(X86_BOOT_MAP_VIRTUAL + X86_BOOT_MAP_MAX_BYTES <= X86_BOOT_INFO_VIRTUAL &&
+                X86_BOOT_MAP_VIRTUAL + X86_BOOT_MAP_MAX_BYTES <= X86_BOOT_STACK_GUARD,
+                "Memory map window must precede the contract and stack");
 
 #undef X86_BOOT_ASSERT
 #endif

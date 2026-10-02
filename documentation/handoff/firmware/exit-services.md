@@ -11,6 +11,9 @@ Il chiamante fornisce ImageHandle, prefisso dei servizi esteso fino a
 ExitBootServices, mappa con buffer posseduto e stato inizialmente azzerato.
 I servizi devono essere ancora disponibili; gli oggetti sono distinti,
 vivi e non modificati esternamente durante la chiamata.
+Il chiamante deve essere a TPL_APPLICATION, come richiesto da UEFI.
+Lo stato di uscita deve essere distinto da mappa, buffer e tabella
+dei servizi; questi alias vengono rifiutati prima di modificarlo.
 
 Ogni tentativo esegue GetMemoryMap, valida la fotografia in C e chiama
 ExitBootServices con la chiave appena ottenuta. Fra le due chiamate non
@@ -39,9 +42,12 @@ del buffer non deve chiamare FreePool o FreePages in Exited. Il cambio CR3 non v
 effettuato da questo modulo. Le altre risorse devono essere gia pronte:
 non e consentito attivare questo modulo nel percorso UEFI attuale.
 
-Il percorso attuale prepara una [mappa su pagine dedicate](final-map.md)
-e controlla la copertura di tutte le risorse, ma non la mappa ancora nella
-root futura e non consegna i descrittori nel contratto del kernel.
+Il percorso attuale prepara una [mappa su pagine dedicate](final-map.md),
+la mappa R/NX nella root futura e descrive il buffer nel contratto v2.
+Il [percorso terminale controllato](terminal-handoff.md) collega quella
+fotografia a ciascun tentativo di uscita, con verifica completa delle
+risorse prima della chiamata. Il preflight e integrato nel boot reale;
+la chiamata ExitBootServices resta nei test simulati.
 
 ## Verifiche e ABI
 

@@ -1,6 +1,6 @@
 # Controllo Rust dei segmenti ELF nel boot
 
-`arch/x86/boot/uefi/elf/segment_bounds.rs` e il primo modulo Rust
+`arch/x86/boot/uefi/elf/rust/validation/segment_bounds.rs` e il primo modulo Rust
 collegato all'immagine EFI. Il nome descrive la funzione del file;
 non viene creata una cartella di produzione chiamata rust.
 
@@ -24,7 +24,7 @@ non e un'applicazione Windows e non usa API Windows. Il collegamento
 Se future modifiche richiedessero funzioni runtime, la build deve fallire
 e il progetto dovra definire esplicitamente come gestirle.
 
-I test dedicati sono in `test/elf/segment_bounds_test.rs`, separati dal
+I test dedicati sono in `test/elf/rust/validation/segment_bounds_test.rs`, separati dal
 codice di produzione. Coprono overflow, troncamenti, allineamenti,
 permessi e limiti esclusivi. I test C del parser, comprese 5000 mutazioni,
 esercitano il percorso C -> Rust reale. I test QEMU verificano l'integrazione

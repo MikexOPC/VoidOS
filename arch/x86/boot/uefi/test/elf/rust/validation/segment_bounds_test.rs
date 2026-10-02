@@ -1,4 +1,4 @@
-#[path = "../../elf/segment_bounds.rs"]
+#[path = "../../../../elf/rust/validation/segment_bounds.rs"]
 mod segment_bounds;
 
 // ====== prove dei confini numerici e dei permessi ====== //

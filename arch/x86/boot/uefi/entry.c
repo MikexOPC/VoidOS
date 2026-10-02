@@ -10,6 +10,8 @@
 #include "cpu/paging_state.h"
 #include "handoff/protocol/prepare.h"
 #include "handoff/firmware/prepare_map.h"
+#include "memory/final/mapping.h"
+#include "handoff/firmware/terminal/handoff.h"
 
 // ====== verifica del piano senza aumentare lo stack di ingresso ====== //
 
@@ -17,6 +19,16 @@ static EFI_STATUS check_mapping_plan(const BOOT_KERNEL_IMAGE *kernel, const BOOT
 {
     BOOT_MAPPING_PLAN plan;
     return boot_plan_mappings(kernel, stack, &plan);
+}
+
+// ====== preflight senza tentare ExitBootServices nel percorso di prova ====== //
+
+static EFI_STATUS check_exit_handoff(const BOOT_KERNEL_IMAGE *kernel, const BOOT_KERNEL_STACK *stack,
+                                    const BOOT_PAGING_CAPABILITIES *caps, const BOOT_PAGE_TABLES *tables,
+                                    BOOT_START_PAGE *page, BOOT_FINAL_MEMORY_MAP *memory)
+{
+    BOOT_EXIT_HANDOFF handoff = {kernel, stack, caps, tables, page, memory};
+    return boot_validate_exit_handoff(&handoff);
 }
 
 // ====== ingresso applicazione UEFI ====== //
@@ -83,7 +95,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     status = boot_section(system_table->ConOut, L"stack iniziale kernel");
     if (status != EFI_SUCCESS)
         goto cleanup_kernel;
-    status = boot_allocate_stack((EFI_BOOT_SERVICES_PREFIX *)system_table->BootServices, &stack);
+    status = boot_allocate_stack((EFI_BOOT_SERVICES_PREFIX *)system_table->BootServices, &loaded, &stack);
     if (status != EFI_SUCCESS) {
         boot_log(system_table->ConOut, BOOT_FAIL, L"allocazione stack kernel fallita.");
         goto cleanup_kernel;
@@ -192,19 +204,32 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_prepare_final_memory_map((EFI_BOOT_SERVICES_PREFIX *)system_table->BootServices,
                                           &loaded, &stack, &capabilities, &tables, &start_page, &final_map);
+    if (status == EFI_SUCCESS)
+        status = boot_prepare_memory_handoff((EFI_BOOT_SERVICES_PREFIX *)system_table->BootServices,
+                                             &loaded, &stack, &capabilities, &tables, &start_page, &final_map);
+    if (status == EFI_SUCCESS) status = boot_read_paging_state(&capabilities, &paging_after);
+    if (status == EFI_SUCCESS) status = boot_compare_paging_state(&paging_before, &paging_after);
+    if (status == EFI_SUCCESS)
+        status = check_exit_handoff(&loaded, &stack, &capabilities, &tables, &start_page, &final_map);
     if (status != EFI_SUCCESS) {
         boot_log(system_table->ConOut, BOOT_FAIL, L"preparazione mappa persistente fallita.");
         goto cleanup_kernel;
     }
     status = boot_log(system_table->ConOut, BOOT_OK,
-                      L"Mappa su pagine dedicate verificata; kernel, stack, contratto e tabelle coperti.");
+                      L"Mappa persistente R/NX e contratto v2 verificati; tutte le risorse coperte.");
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log_hex(system_table->ConOut, L"Capacita buffer mappa persistente: ", final_map.Snapshot.Capacity);
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_log(system_table->ConOut, BOOT_OK, L"Preflight uscita UEFI verificato; servizi firmware ancora attivi.");
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log(system_table->ConOut, BOOT_WARN, L"Avvio del kernel non ancora implementato.");
 
 cleanup_kernel:
     had_kernel_pages = loaded.Pages.Count != 0;
+    if (start_page.Ready == 1) {
+        boot_invalidate_start_info((BOOT_START_INFO *)(UINTN)start_page.PhysicalBase);
+        start_page.Ready = 0;
+    }
     cleanup_status = boot_release_final_map((EFI_BOOT_SERVICES_PREFIX *)system_table->BootServices, &final_map);
     if (cleanup_status != EFI_SUCCESS)
         boot_log(system_table->ConOut, BOOT_FAIL, L"rilascio pagine mappa persistente fallito.");

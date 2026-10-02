@@ -6,9 +6,10 @@ La build genera `build/kernel_probe.elf` e lo copia nell'ESP come
 
 ## Contratto preparatorio
 
-`handoff/protocol/start_info.h` definisce una struttura di 72 byte, con
+`handoff/protocol/start_info.h` definisce una struttura versione 2 di 112 byte, con
 firma, versione, dimensione, funzionalita richieste e abilitate, root
-fisica delle tabelle, intervallo virtuale dello stack e ingresso kernel.
+fisica delle tabelle, intervallo virtuale dello stack, ingresso kernel e
+[metadati della mappa persistente](../memory/kernel-map.md).
 Il bit 0 significa NXE; il bit 1 significa CR0.WP. Entrambi sono richiesti.
 Il campo riservato deve essere zero. I tipi hanno ampiezza fissa nel
 profilo x64; non sono presenti puntatori o servizi UEFI nella struttura.
@@ -19,8 +20,9 @@ inattive con funzionalita abilitate a zero. La futura transizione
 dovra mantenere questo oggetto
 leggibile per tutta la chiamata e dichiarare le funzionalita abilitate
 soltanto dopo la verifica dei registri. Il bootloader non lo passa ancora
-al kernel. Non e ancora un protocollo completo: mancano la mappa memoria
-finale e le altre informazioni necessarie al kernel dell'OS.
+al kernel. Non e ancora un protocollo completo: la fotografia deve essere
+aggiornata alla futura uscita riuscita da UEFI e mancano altre informazioni
+necessarie al kernel dell'OS.
 
 L'ingresso usa la convenzione Microsoft x64: puntatore in RCX, 32 byte
 di shadow space del chiamante, RSP allineato a 16 prima di CALL e risultato

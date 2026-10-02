@@ -28,8 +28,9 @@ precedenti. Segnala successo dopo la nuova verifica e stampa la capacita
 del buffer. Poi ritorna ancora al firmware, rilasciando anche queste
 pagine prima delle altre risorse.
 
-La mappa persistente non e ancora mappata nelle nuove tabelle o descritta
-nel contratto di ingresso. Questo passo non attiva CR3 e non chiama
+Il passaggio successivo mappa il buffer R/NX nelle nuove tabelle e completa
+il contratto versione 2, come descritto in [mappa per il kernel](../../memory/kernel-map.md).
+Questo percorso non attiva CR3 e non chiama
 ExitBootServices. Ulteriori attivita firmware, inclusa la console, possono
 rendere vecchia la chiave: il futuro percorso di uscita deve aggiornare
 il buffer immediatamente prima di ciascun tentativo.

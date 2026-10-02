@@ -1,4 +1,4 @@
-#[path = "../buffer_capacity.rs"]
+#[path = "../../../rust/capacity/buffer_capacity.rs"]
 mod buffer_capacity;
 use buffer_capacity::{os_buffer_capacity as capacity, os_buffer_extent_is_valid as extent};
 

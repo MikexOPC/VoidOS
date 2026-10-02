@@ -1,4 +1,4 @@
-#include "validate.h"
+#include "elf/validate.h"
 
 extern UINT32 elf_check_load_segment(UINT32 flags, UINT64 offset, UINT64 virtual_address,
                                     UINT64 file_bytes, UINT64 memory_bytes, UINT64 alignment,

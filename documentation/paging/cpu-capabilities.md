@@ -2,7 +2,7 @@
 
 `cpu/processor_query.c` usa la libreria `arch/x86/lib/processor/` per
 leggere CPUID senza modificare CR3, CR4, IA32_EFER o lo stack.
-`arch/x86/lib/processor/paging_capabilities.rs` controlla i valori
+`arch/x86/lib/processor/rust/paging/paging_capabilities.rs` controlla i valori
 numerici in Rust no_std, senza puntatori, allocazioni o runtime.
 I nomi descrivono la funzione dei file.
 

@@ -15,6 +15,13 @@ BOOT_U64 kernel_probe_entry(const BOOT_START_INFO *info) {
         info->PageTableRoot >= (1ULL << 52)) return 4;
     if (info->StackBase != X86_BOOT_STACK_VIRTUAL || info->StackBytes != X86_BOOT_STACK_BYTES) return 5;
     if (info->KernelEntry < X86_BOOT_PAGE_BYTES || info->KernelEntry >= X86_BOOT_LOW_ADDRESS_LIMIT) return 6;
+    if (info->MemoryMapVirtual != X86_BOOT_MAP_VIRTUAL || !info->MemoryMapBytes ||
+        !info->MemoryMapCapacity || info->MemoryMapCapacity > X86_BOOT_MAP_MAX_BYTES ||
+        (info->MemoryMapCapacity & 4095) || info->MemoryMapBytes > info->MemoryMapCapacity ||
+        info->MemoryDescriptorBytes < 40 || info->MemoryDescriptorBytes > 4096 ||
+        info->MemoryMapBytes % info->MemoryDescriptorBytes ||
+        info->MemoryMapBytes / info->MemoryDescriptorBytes > 4096 ||
+        info->MemoryDescriptorVersion != 1 || info->MemoryReserved) return 7;
     probe_marker = BOOT_PROBE_SUCCESS;
     return probe_marker;
 }

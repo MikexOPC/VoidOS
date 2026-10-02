@@ -3,14 +3,14 @@
 Il boot alloca una pagina di 4 KiB EfiLoaderData prima delle tabelle e
 la azzera completamente. `handoff/protocol/page.c` ne mantiene il
 proprietario distinto da kernel, stack e pagine delle tabelle.
-Il contratto occupa i primi 72 byte, il resto della pagina resta zero.
+Il contratto versione 2 occupa i primi 112 byte, il resto della pagina resta zero.
 
 ## Mappatura e verifica
 
 Il piano aggiunge la pagina all'indirizzo virtuale `0x0000600000000000`,
 prima della voce dello stack. Il PTE e supervisor, Present, senza RW e
 con NX. Non esistono alias fisici tra le voci del piano. Il limite e
-18 mappature: 16 segmenti kernel, una pagina contratto e lo stack.
+19 mappature: 16 segmenti kernel, una pagina contratto, la mappa persistente e lo stack.
 La pagina contratto aggiunge 4 KiB al budget massimo kernel di 128 MiB.
 
 L'inserimento valida il piano completo; se un indirizzo collide, ripristina
@@ -32,6 +32,8 @@ fino al rilascio. Un output di allocazione riuscita ma numericamente
 invalido viene conservato per il cleanup, senza dereferenziazione.
 Un output che coincide con risorse gia possedute segnala firmware non
 conforme: non viene adottato o liberato come secondo proprietario.
+Questo controllo comprende anche i metadati del proprietario, il piano
+di mappatura e tutta la tabella dei servizi indicata da HeaderSize.
 
 Il rilascio invalida prima il contratto pronto. Se FreePages fallisce,
 conserva indirizzo e numero di pagine per un nuovo tentativo. Dopo il

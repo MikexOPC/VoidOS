@@ -1,0 +1,8 @@
+* text=auto eol=lf
+*.efi -text
+*.elf -text
+*.fd -text
+*.xz -text
+*.png -text
+*.jpg -text
+*.pdf -text

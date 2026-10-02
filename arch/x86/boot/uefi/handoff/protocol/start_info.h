@@ -6,7 +6,7 @@
 typedef unsigned long long BOOT_U64;
 typedef unsigned int BOOT_U32;
 #define BOOT_START_SIGNATURE 0x314f464e49545342ULL
-#define BOOT_START_VERSION 1U
+#define BOOT_START_VERSION 2U
 #define BOOT_START_NXE 1ULL
 #define BOOT_START_WP 2ULL
 #define BOOT_START_FEATURES (BOOT_START_NXE | BOOT_START_WP)
@@ -23,7 +23,13 @@ typedef struct {
     BOOT_U64 StackBytes;
     BOOT_U64 KernelEntry;
     BOOT_U64 Reserved;
+    BOOT_U64 MemoryMapVirtual;
+    BOOT_U64 MemoryMapBytes;
+    BOOT_U64 MemoryMapCapacity;
+    BOOT_U64 MemoryDescriptorBytes;
+    BOOT_U32 MemoryDescriptorVersion;
+    BOOT_U32 MemoryReserved;
 } BOOT_START_INFO;
 
-_Static_assert(sizeof(BOOT_START_INFO) == 72, "Contratto ingresso x64");
+_Static_assert(sizeof(BOOT_START_INFO) == 112, "Contratto ingresso x64 versione 2");
 #endif

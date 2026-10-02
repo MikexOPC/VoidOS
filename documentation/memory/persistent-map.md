@@ -54,5 +54,7 @@ invalidi e rilascio ritentabile senza doppio FreePages.
 
 La [preparazione del passaggio](../handoff/firmware/final-map.md) ricontrolla
 anche tutte le altre risorse sulla stessa fotografia.
+Il passaggio successivo [mappa il buffer nel futuro spazio del kernel](kernel-map.md)
+e completa il contratto di ingresso versione 2.
 
 [UEFI: AllocatePages e tipi di memoria](https://uefi.org/specs/UEFI/2.10/07_Services_Boot_Services.html#efi-boot-services-allocatepages).

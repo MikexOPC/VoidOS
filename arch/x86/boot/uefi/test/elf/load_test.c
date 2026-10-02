@@ -6,6 +6,7 @@ static UINT8 fixture[512];
 static UINTN calls, released, requested[2];
 static int fail_allocation, fail_release, bad_mock, invalid_address;
 static int alias_mode;
+static UINT64 services_address;
 
 // ====== allocazioni e rilasci controllati ====== //
 
@@ -25,7 +26,8 @@ static EFI_STATUS EFIAPI allocate(UINT32 mode, UINT32 type, UINTN pages, UINT64 
     if (index == 1 && alias_mode) {
         *address = alias_mode == 1 ? (UINT64)memory[0] :
             alias_mode == 2 ? (UINT64)memory[0] + 4096 :
-            alias_mode == 3 ? (UINT64)memory[0] + 4095 : (UINT64)fixture;
+            alias_mode == 3 ? (UINT64)memory[0] + 4095 :
+            alias_mode == 4 ? (UINT64)fixture : services_address;
     }
     return EFI_SUCCESS;
 }
@@ -51,6 +53,7 @@ static void prepare(EFI_BOOT_SERVICES_PREFIX *services, ELF_STAGED_IMAGE *image)
     calls = released = 0;
     fail_allocation = fail_release = bad_mock = invalid_address = 0;
     alias_mode = 0;
+    services_address = (UINT64)(UINTN)services;
     image->Count = 0;
     image->AllocatedBytes = 0;
     services->Hdr.HeaderSize = sizeof(*services);
@@ -165,7 +168,7 @@ __declspec(dllexport) int run_load_tests(void)
     services.FreePages = 0;
     if (elf_stage_segments(&services, fixture, sizeof(fixture), &image) != EFI_UNSUPPORTED || calls)
         return 522;
-    for (alias_mode = 1; alias_mode <= 4; ++alias_mode) {
+    for (alias_mode = 1; alias_mode <= 5; ++alias_mode) {
         int scenario = alias_mode;
         prepare(&services, &image);
         alias_mode = scenario;

@@ -1,4 +1,4 @@
-#[path = "../../../../lib/processor/paging_state.rs"]
+#[path = "../../../../../../lib/processor/rust/paging/paging_state.rs"]
 mod paging_state;
 use paging_state::x86_validate_paging_state as validate;
 

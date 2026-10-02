@@ -1,8 +1,9 @@
 #ifndef OS_BOOT_MEMORY_MAP_H
 #define OS_BOOT_MEMORY_MAP_H
 #include "file_protocol.h"
+#include "arch/x86/configs/boot_profile.h"
 
-#define BOOT_MAP_MAX_BYTES (1024ULL * 1024)
+#define BOOT_MAP_MAX_BYTES X86_BOOT_MAP_MAX_BYTES
 #define BOOT_MAP_MAX_DESCRIPTORS 4096ULL
 
 // ====== proprietario del buffer e validita della fotografia ====== //

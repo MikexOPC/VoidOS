@@ -2,6 +2,7 @@
 
 __declspec(align(4096)) static UINT8 storage[4096];
 static UINT32 mode, release_error, releases;
+static UINT64 alias_address;
 
 // ====== simulazione degli errori firmware senza accessi a indirizzi invalidi ====== //
 
@@ -9,7 +10,7 @@ static EFI_STATUS EFIAPI allocate_page(UINT32 type, UINT32 memory, UINTN count, 
 {
     if (type || memory != 2 || count != 1) return EFI_INVALID_PARAMETER;
     if (mode == 1) return EFI_OUT_OF_RESOURCES;
-    *address = mode == 2 ? (UINT64)(UINTN)storage + 1 :
+    *address = mode == 5 ? alias_address : mode == 2 ? (UINT64)(UINTN)storage + 1 :
                mode == 3 ? 1ULL << 52 : mode == 4 ? 0x400000 : (UINT64)(UINTN)storage;
     return EFI_SUCCESS;
 }
@@ -70,6 +71,14 @@ __declspec(dllexport) int run_start_page_tests(void)
             if (page.Pages || page.PhysicalBase) return 20 + (int)mode;
         } else if (page.Pages != 1 || boot_release_start_page(&services, &page) != EFI_SUCCESS)
             return 30 + (int)mode;
+    }
+    for (byte = 0; byte < 3; ++byte) {
+        UINT32 previous_releases = releases;
+        mode = 5;
+        alias_address = byte == 0 ? (UINT64)(UINTN)&page & ~4095ULL :
+            byte == 1 ? (UINT64)(UINTN)&original & ~4095ULL : (UINT64)(UINTN)&services & ~4095ULL;
+        if (boot_allocate_start_page(&services, &original, 52, &page) != EFI_DEVICE_ERROR ||
+            page.PhysicalBase || page.Pages || page.Ready || releases != previous_releases) return 45 + (int)byte;
     }
     plan = original;
     page.PhysicalBase = 0x400000;

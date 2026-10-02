@@ -24,7 +24,8 @@ generali non dipendono da `arch/` o da servizi firmware.
 `lib/memory/address_ranges.*` contiene il confronto numerico degli
 intervalli. ELF, mappa UEFI e piano di paging usano la stessa funzione.
 I test propri della libreria sono in `lib/memory/test/`.
-`lib/memory/buffer_capacity.*` centralizza margine, allineamento e limiti
+`lib/memory/buffer_capacity.h` e `lib/memory/rust/capacity/buffer_capacity.rs`
+centralizzano margine, allineamento e limiti
 numerici dei buffer con un'implementazione Rust senza puntatori o heap.
 
 `arch/x86/lib/processor/` contiene l'accesso CPUID, la lettura dei registri
@@ -37,6 +38,30 @@ anche da C++. I controlli Rust sono `no_std`, senza heap, e hanno simboli
 con prefisso `x86_`. Non dipendono dai tipi definiti in `uefi.h`.
 
 ## Compilazione e test
+
+C e il linguaggio di base: sorgenti e header C restano nella cartella
+funzionale del componente, senza un livello `c/`. Gli altri linguaggi
+usano `<linguaggio>/<funzione>/...`, sia nella produzione sia nei test:
+`cpp/`, `rust/` e `assembly/`. Gli header C++ seguono il componente cpp/.
+Non si creano cartelle per linguaggi ancora assenti.
+Per esempio, il bridge C delle tabelle e in `test/paging/bridge.c`,
+mentre i test Rust sono in `test/paging/rust/allocation/`.
+La separazione dei linguaggi non cambia proprieta o interfacce FFI.
+
+```text
+memory/
+├── address_ranges.c
+├── address_ranges.h
+├── buffer_capacity.h
+├── rust/
+│   └── capacity/
+└── test/
+    ├── address_ranges_test.c
+    └── rust/capacity/
+```
+
+La divisione funzionale resta valida anche quando il componente contiene
+solo C. I file Rust e C++ mantengono i nomi dei compiti che svolgono.
 
 La build UEFI genera `os_memory.lib` e `x86_processor.lib` nella propria
 cartella `build/`, poi li collega staticamente. La build di un futuro

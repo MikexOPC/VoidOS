@@ -68,6 +68,16 @@ static EFI_STATUS EFIAPI forbidden_free(void *allocation)
     return EFI_DEVICE_ERROR;
 }
 
+// ====== controllo difettoso simulato che altera la chiave della fotografia ====== //
+
+static EFI_STATUS corrupt_key(const BOOT_MEMORY_MAP *snapshot, void *context)
+{
+    BOOT_MEMORY_MAP *map = (BOOT_MEMORY_MAP *)context;
+    if (snapshot != map) return EFI_INVALID_PARAMETER;
+    map->Key ^= 1;
+    return EFI_SUCCESS;
+}
+
 // ====== sequenza ABI stato irreversibile e assenza di allocazioni ====== //
 
 __declspec(dllexport) int run_exit_services_tests(void)
@@ -110,6 +120,27 @@ __declspec(dllexport) int run_exit_services_tests(void)
                 maps != previous_maps || exits != attempts || state.Phase != phase || state.LastStatus != expected)
                 return 933;
         }
+    }
+    {
+        BOOT_MEMORY_MAP map = {0};
+        BOOT_EXIT_STATE state = {0};
+        scenario = maps = exits = forbidden = closed = trace_size = 0;
+        map.Buffer = buffer;
+        map.Capacity = sizeof(buffer);
+        if (boot_exit_firmware_services_checked(&image_token, &services, &map, &state, corrupt_key, &map) != EFI_DEVICE_ERROR ||
+            maps != 1 || exits || forbidden || state.Phase != BOOT_SERVICES_AVAILABLE || state.Attempts ||
+            state.LastStatus != EFI_DEVICE_ERROR || map.Valid || map.Size || map.Key) return 944;
+    }
+    {
+        union { BOOT_EXIT_STATE State; UINT8 Bytes[256]; } alias = {0};
+        BOOT_MEMORY_MAP map = {0};
+        UINT32 index;
+        maps = exits = forbidden = 0;
+        map.Buffer = alias.Bytes;
+        map.Capacity = sizeof(alias);
+        if (boot_exit_firmware_services(&image_token, &services, &map, &alias.State) != EFI_INVALID_PARAMETER ||
+            maps || exits || forbidden) return 945;
+        for (index = 0; index < sizeof(alias); ++index) if (alias.Bytes[index]) return 946;
     }
     {
         BOOT_MEMORY_MAP map = {0};

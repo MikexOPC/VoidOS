@@ -1,4 +1,4 @@
-#include "processor_access.h"
+#include "arch/x86/lib/processor/processor_access.h"
 
 #if !defined(_M_X64)
 #error This processor access implementation requires the Microsoft x64 ABI.

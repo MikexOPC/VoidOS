@@ -1,6 +1,6 @@
 #ifndef OS_ELF_LOAD_H
 #define OS_ELF_LOAD_H
-#include "validate.h"
+#include "elf/validate.h"
 #include "file_protocol.h"
 
 // ====== segmenti preparati in pagine fisiche ====== //

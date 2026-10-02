@@ -18,4 +18,7 @@ EFI_STATUS boot_build_page_tables(EFI_BOOT_SERVICES_PREFIX *services,
                                  const BOOT_MAPPING_PLAN *plan, UINT32 physical_bits,
                                  UINT32 nx_supported, BOOT_PAGE_TABLES *tables);
 EFI_STATUS boot_release_page_tables(EFI_BOOT_SERVICES_PREFIX *services, BOOT_PAGE_TABLES *tables);
+EFI_STATUS boot_extend_page_tables(EFI_BOOT_SERVICES_PREFIX *services, BOOT_MAPPING_PLAN *plan,
+                                  const BOOT_MAPPING *mapping, UINT32 physical_bits,
+                                  BOOT_PAGE_TABLES *tables);
 #endif
