@@ -1,6 +1,7 @@
 #include "boot/contract.h"
 #include "mm/inventory.h"
 #include "mm/physical/allocator.h"
+#include "mm/objects/pool.h"
 #include "diagnostics/log.h"
 #include "arch/x86/kernel/platform.h"
 #include "arch/x86/mm/window/page.h"
@@ -9,6 +10,7 @@ static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
 static X86_PAGE_WINDOW page_window;
+static KERNEL_OBJECT_POOL object_pool;
 #ifdef KERNEL_TEST_WINDOW_FAULT
 void x86_window_fault(BOOT_U64 address, BOOT_U32 mode);
 #endif
@@ -43,6 +45,54 @@ static void prepare_page_window(void)
         !kernel_log(0, "KERNEL_MAPPING_OK") || !kernel_log(0, "KERNEL_WINDOW_16_PAGES_OK")) kernel_panic("PAGE_RELEASE_FAILED");
 }
 
+// ====== pool esclusivo nel mapping vivo senza reclamare la memoria del loader ===== //
+
+static void prepare_kernel_objects(void)
+{
+    KERNEL_OBJECT_HANDLE first = {0}, second = {0}, stale, third = {0};
+    unsigned char *data;
+    BOOT_U32 index;
+    BOOT_U64 budget = physical_allocator.FreePages;
+    if (!x86_page_window_acquire(&page_window, X86_KERNEL_WINDOW_PAGES) ||
+        !kernel_object_initialize(&object_pool, (void *)x86_window_bytes(), X86_KERNEL_WINDOW_BYTES)) kernel_panic("OBJECT_POOL_INIT_FAILED");
+    if (!kernel_object_allocate(&object_pool, 128, 64, &first) ||
+        !kernel_object_allocate(&object_pool, 4097, 4096, &second) ||
+        !kernel_object_allocate(&object_pool, 96, 32, &third)) kernel_panic("OBJECT_ALLOCATION_FAILED");
+    data = kernel_object_data(&object_pool, &first);
+    if (!data) kernel_panic("OBJECT_ACCESS_FAILED");
+    for (index = 0; index < first.Bytes; ++index) {
+        if (data[index]) kernel_panic("OBJECT_NOT_ZERO");
+        data[index] = 0xa5;
+    }
+    data = 0;
+    data = kernel_object_data(&object_pool, &second);
+    if (!data || ((BOOT_U64)data & 4095)) kernel_panic("OBJECT_ALIGNMENT_FAILED");
+    for (index = 0; index < second.Bytes; ++index) if (data[index]) kernel_panic("OBJECT_NOT_ZERO");
+    data[0] = 0x5a; data[4096] = 0xa5;
+    data = 0;
+    stale = first;
+    if (kernel_object_detach(&object_pool) || !kernel_object_release(&object_pool, &first) ||
+        kernel_object_data(&object_pool, &stale) || !kernel_object_allocate(&object_pool, 128, 64, &first) ||
+        first.Id == stale.Id || first.Offset != stale.Offset ||
+        kernel_object_release(&object_pool, &stale)) kernel_panic("OBJECT_LIFETIME_FAILED");
+    data = kernel_object_data(&object_pool, &first);
+    if (!data || ((BOOT_U64)data & 63)) kernel_panic("OBJECT_ALIGNMENT_FAILED");
+    for (index = 0; index < first.Bytes; ++index) if (data[index]) kernel_panic("OBJECT_REUSE_NOT_ZERO");
+    data = kernel_object_data(&object_pool, &second);
+    if (!data || data[0] != 0x5a || data[4096] != 0xa5) kernel_panic("OBJECT_NEIGHBOR_CORRUPTED");
+    data = 0;
+    stale = first;
+    if (!kernel_object_release(&object_pool, &first) || !kernel_object_release(&object_pool, &second) ||
+        !kernel_object_release(&object_pool, &third) || object_pool.Used || object_pool.Count ||
+        !kernel_object_detach(&object_pool)) kernel_panic("OBJECT_RELEASE_FAILED");
+    if (!kernel_object_initialize(&object_pool, (void *)x86_window_bytes(), X86_KERNEL_WINDOW_BYTES) ||
+        !kernel_object_allocate(&object_pool, 128, 64, &first) || first.Id <= stale.Id ||
+        kernel_object_data(&object_pool, &stale) || !kernel_object_release(&object_pool, &first) ||
+        !kernel_object_detach(&object_pool) || object_pool.Arena ||
+        !x86_page_window_release(&page_window) || physical_allocator.FreePages != budget) kernel_panic("OBJECT_DETACH_FAILED");
+    if (!kernel_log(0, "KERNEL_OBJECTS_OK")) kernel_panic("SERIAL_UNAVAILABLE");
+}
+
 // ====== ciclo ownership fisico senza leggere o scrivere pagine non mappate ===== //
 
 static void prepare_physical_memory(void)
@@ -64,7 +114,7 @@ static void prepare_physical_memory(void)
         !kernel_number(total) || !kernel_text("\n")) kernel_panic("SERIAL_UNAVAILABLE");
 }
 
-// ====== inizializzazione comune senza heap o servizi UEFI ===== //
+// ====== inizializzazione comune con pool limitato e senza servizi UEFI ===== //
 
 __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U64 entry)
 {
@@ -81,6 +131,8 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
     prepare_physical_memory();
     if (!kernel_section("blocco kernel RW NX")) kernel_panic("SERIAL_UNAVAILABLE");
     prepare_page_window();
+    if (!kernel_section("pool oggetti kernel")) kernel_panic("SERIAL_UNAVAILABLE");
+    prepare_kernel_objects();
 #ifdef KERNEL_TEST_WINDOW_FAULT
 #if KERNEL_TEST_WINDOW_FAULT != 2
     if (!x86_page_window_acquire(&page_window, X86_KERNEL_WINDOW_PAGES)) kernel_panic("FAULT_SETUP_FAILED");

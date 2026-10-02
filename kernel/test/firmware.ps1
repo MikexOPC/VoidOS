@@ -90,7 +90,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $registers -notmatch 'CS =0008' -or
             !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK') -or
             !$log.Contains('KERNEL_PHYSICAL_OK') -or !$log.Contains('KERNEL_MAPPING_OK') -or
-            !$log.Contains('KERNEL_WINDOW_16_PAGES_OK')) {
+            !$log.Contains('KERNEL_WINDOW_16_PAGES_OK') -or !$log.Contains('KERNEL_OBJECTS_OK')) {
             throw "Stato CPU o inizializzazione kernel errati: $scenario"
         }
         if (!$faultCase) {
@@ -139,4 +139,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '7/7 scenari: blocco di 16 pagine azzerato, NX, unmap ultima pagina e due guardie verificati.'
+Write-BootStatus OK '7/7 scenari: pool oggetti, finestra azzerata, NX, unmap e guardie verificati.'

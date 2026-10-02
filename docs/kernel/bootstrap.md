@@ -72,6 +72,10 @@ scrivibili. La [finestra iniziale](memory/page-window.md) mappa fino a 16
 pagine contigue RW/NX, le azzera, ne prova il riuso e ripristina il budget
 fisico prima di KERNEL_MAPPING_OK e KERNEL_WINDOW_16_PAGES_OK.
 La reclamazione del loader resta un passo successivo.
+Il [pool iniziale di oggetti](memory/object-pool.md) usa poi il blocco
+mappato per verificare allineamento, oggetti su piu pagine, ID e riuso.
+Libera gli oggetti e scollega il buffer prima di rimuovere il mapping;
+KERNEL_OBJECTS_OK conferma anche il ripristino del budget fisico.
 Il confronto a coppie usa O(n^2) tempo, nessun heap e al massimo 4096 regioni;
 e una scelta iniziale limitata, da misurare prima di estenderne l'uso.
 
