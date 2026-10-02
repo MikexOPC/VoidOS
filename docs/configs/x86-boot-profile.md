@@ -16,6 +16,9 @@ allocazioni o stato modificabile.
 | Budget delle tabelle inattive | 128 pagine, massimo 512 KiB |
 | Dati della transizione | 11 pagine contigue, 44 KiB, due guardie possedute |
 | Codice della transizione | 1 pagina EfiLoaderCode distinta, 4 KiB |
+| Vista ricorsiva delle tabelle | Slot PML4 128, supervisor RW/NX |
+| Finestra dati iniziale del kernel | `0x0000700000020000`, una pagina RW/NX |
+| Guardie della finestra | Una pagina assente prima e dopo |
 
 I budget indicano limiti; le tabelle vengono allocate solo quando servono.
 Gli indirizzi sono virtuali e non impongono allocazioni fisiche a quelle
@@ -38,6 +41,9 @@ La lettura dei registri continua a controllare il paging attivo del
 firmware. Il profilo non attiva NXE, WP, CR3 o altre funzioni hardware.
 Il percorso `-BootKernel` attiva questi stati nel trampoline persistente;
 il valore di undici pagine e vincolato al layout corrente, non parametrico.
+La finestra dati e vincolata alla PT dello stack corrente. Il piano vieta
+segmenti nella vista ricorsiva, nella finestra e nelle sue guardie;
+la finestra rimane assente fino all'assegnazione da parte del kernel.
 
 La build compila l'header nei consumatori C e C++ e verifica il piano,
 le tabelle, il contratto e il probe. I test firmware restano in

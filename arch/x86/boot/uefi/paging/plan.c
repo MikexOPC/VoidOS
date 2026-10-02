@@ -26,6 +26,9 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
             (mapping->Flags & 3) == 3)
             return EFI_INVALID_PARAMETER;
         bytes = mapping->Pages * 4096;
+        if (os_address_ranges_overlap(mapping->VirtualBase, bytes, (UINT64)X86_BOOT_RECURSIVE_SLOT << 39, 1ULL << 39) ||
+            os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_KERNEL_PAGE_WINDOW - 4096, 3 * 4096))
+            return EFI_INVALID_PARAMETER;
         if (plan->CapsuleBase && mapping->VirtualBase == plan->CapsuleBase) {
             if (mapping->PhysicalBase != plan->CapsuleBase || mapping->Pages != 1 || mapping->Flags != 5)
                 return EFI_INVALID_PARAMETER;

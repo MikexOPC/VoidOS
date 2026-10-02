@@ -1,6 +1,7 @@
-param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install)
+param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install,
+    [ValidateSet('none','execute','unmapped')][string]$TestWindowFault = 'none')
 $ErrorActionPreference = 'Stop'
-if ($Install -and $TestPanic) { throw 'Non installare il kernel con panic di test nella ESP ordinaria.' }
+if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
 if (!$ToolchainBin) {
@@ -17,8 +18,12 @@ function Invoke-Compiler([string]$program, [string[]]$arguments) {
 Write-BootSection 'kernel autonomo C e Rust'
 $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project))
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
+if ($TestWindowFault -ne 'none') {
+    $mode = if ($TestWindowFault -eq 'execute') {1} else {2}
+    $flags += ('/DKERNEL_TEST_WINDOW_FAULT=' + $mode)
+}
 $objects = @()
-foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','kernel/main.c',
+foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
     'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/diagnostics/log.c')) {
     $object = Join-Path $output (([IO.Path]::GetFileNameWithoutExtension($source)) + '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
@@ -26,6 +31,11 @@ foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','kern
 }
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/io.obj'),
     (Join-Path $project 'arch/x86/kernel/assembly/platform/io.asm'))
+if ($TestWindowFault -ne 'none') {
+    Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/fault.obj'),
+        (Join-Path $project 'kernel/test/mm/window/assembly/fault/probe.asm'))
+    $objects += ($output + '/fault.obj')
+}
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/mm/rust/regions/validation.rs'),

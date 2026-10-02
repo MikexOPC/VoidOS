@@ -13,13 +13,17 @@ if ($UseInstalled) {
     & (Join-Path $project 'kernel/scripts/build.ps1') -OutputDirectory (Join-Path $output 'ready')
 }
 & (Join-Path $project 'kernel/scripts/build.ps1') -TestPanic -OutputDirectory (Join-Path $output 'panic')
+foreach ($fault in @('execute','unmapped')) {
+    & (Join-Path $project 'kernel/scripts/build.ps1') -TestWindowFault $fault -OutputDirectory (Join-Path $output $fault)
+}
 Write-BootSection 'kernel autonomo dopo uscita UEFI'
 $candidatePages = @{}
 
-# ====== due quantita di RAM e panic intenzionale senza ritorno al firmware ====== #
+# ====== due quantita di RAM panic e fault NX oppure dopo unmap ====== #
 
 foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-256';Variant='ready';Ram=256},
-    @{Name='panic-128';Variant='panic';Ram=128})) {
+    @{Name='panic-128';Variant='panic';Ram=128}, @{Name='execute-128';Variant='execute';Ram=128},
+    @{Name='unmapped-128';Variant='unmapped';Ram=128})) {
     $scenario = Join-Path $output $case.Name
     $boot = Join-Path $scenario 'esp/EFI/BOOT'
     New-Item -ItemType Directory -Force -Path $boot | Out-Null
@@ -45,7 +49,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $started = $vm.Start()
         if (!$started) { throw 'QEMU non avviato.' }
         $stdout = $vm.StandardOutput.ReadToEndAsync(); $stderr = $vm.StandardError.ReadToEndAsync()
-        $expected = if ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } else { 'KERNEL_READY' }
+        $faultCase = $case.Variant -in @('execute','unmapped')
+        $expected = if ($faultCase) { 'KERNEL_WINDOW_FAULT_READY' } elseif ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } else { 'KERNEL_READY' }
         $deadline = [DateTime]::UtcNow.AddSeconds(40)
         $found = $false
         while ([DateTime]::UtcNow -lt $deadline) {
@@ -64,6 +69,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $exit = [regex]::Match($log, 'ACTIVATION_EXIT_STATE: 0x([0-9A-F]{16})')
         if (!$exit.Success) { throw 'Indirizzo dello stato UEFI assente.' }
         $vm.StandardInput.WriteLine('stop'); $vm.StandardInput.WriteLine('info registers')
+        $vm.StandardInput.WriteLine('x /8gx $rsp')
         $vm.StandardInput.WriteLine('xp /2gx 0x' + $exit.Groups[1].Value)
         $vm.StandardInput.WriteLine('quit'); $vm.StandardInput.Flush()
         if (!$vm.WaitForExit(5000)) { throw 'Monitor non risponde.' }
@@ -73,12 +79,33 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $root = [regex]::Match($log, 'ACTIVATION_ROOT: 0x([0-9A-F]{16})').Groups[1].Value
         $marker = if ($case.Variant -eq 'panic') { '4b50414e49430001' } else { '4b52454144590001' }
         $exitPattern = '(?im)^0*' + $exit.Groups[1].Value.TrimStart('0') + ':\s+0x0000000[1-3]00000002\s+0x0000000000000000'
-        if ($registers -notmatch $exitPattern -or $registers -notmatch ('(?i)RAX=' + $marker) -or
+        if ($registers -notmatch $exitPattern -or
             $registers -notmatch ('(?i)CR3=' + $root) -or $registers -notmatch 'HLT=1' -or
-            $registers -notmatch 'CS =0008' -or $registers -notmatch 'SS =0010' -or
-            $registers -notmatch 'RSP=00007000000[01][0-9a-fA-F]{4}' -or
-            !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK') -or !$log.Contains('KERNEL_PHYSICAL_OK')) {
+            $registers -notmatch 'CS =0008' -or
+            !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK') -or
+            !$log.Contains('KERNEL_PHYSICAL_OK') -or !$log.Contains('KERNEL_MAPPING_OK')) {
             throw "Stato CPU o inizializzazione kernel errati: $scenario"
+        }
+        if (!$faultCase) {
+            if ($registers -notmatch ('(?i)RAX=' + $marker) -or $registers -notmatch 'SS =0010' -or
+                $registers -notmatch 'RSP=00007000000[01][0-9a-fA-F]{4}') { throw 'Arresto kernel errato.' }
+        } else {
+            function Read-Hex([string]$Text, [string]$Pattern) {
+                $match = [regex]::Match($Text, $Pattern)
+                if (!$match.Success) { throw "Campo assente: $Pattern" }
+                return [Convert]::ToUInt64($match.Groups[1].Value,16)
+            }
+            $rsp = Read-Hex $registers 'RSP=([0-9a-f]{16})'
+            $codeBase = Read-Hex $log 'ACTIVATION_CODE: 0x([0-9A-F]{16})'
+            $dataBase = Read-Hex $log 'ACTIVATION_DATA: 0x([0-9A-F]{16})'
+            $errorCode = if ($case.Variant -eq 'execute') {17} else {0}
+            if ((Read-Hex $registers 'RAX=([0-9a-f]{16})') -ne 14 -or
+                (Read-Hex $registers 'RIP=([0-9a-f]{16})') -ne $codeBase + 578 -or
+                (Read-Hex $registers 'CR2=([0-9a-f]{16})') -ne [Convert]::ToUInt64('700000020000',16) -or
+                $registers -notmatch 'SS =0000' -or $rsp -lt $dataBase + 7*4096 -or $rsp -ge $dataBase + 11*4096 -or
+                (Read-Hex $registers '(?m)^[0-9a-f]{16}:\s+0x([0-9a-f]{16})') -ne $errorCode -or
+                (Read-Hex $registers ('(?im)^' + ($rsp + 32).ToString('x16') + ':\s+0x[0-9a-f]{16}\s+0x([0-9a-f]{16})')) -ne 16 -or
+                $log.Contains('KERNEL_READY') -or $log.Contains('EXPECTED_WINDOW_FAULT_MISSING')) { throw "Fault pagina errato: $scenario" }
         }
         $pages = [regex]::Match($log, 'Pagine convenzionali candidate: 0x([0-9a-f]{16})')
         if (!$pages.Success -or [Convert]::ToUInt64($pages.Groups[1].Value, 16) -eq 0) { throw 'Inventario RAM vuoto.' }
@@ -92,7 +119,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 $tail -notmatch '\x1b\[31m\[ FAIL \]\x1b\[0m INTENTIONAL_TEST_PANIC'))) {
             throw 'Etichette o percorso panic errati.'
         }
-        Write-BootStatus OK "$($case.Name): messaggi autonomi, inventario e arresto kernel verificati."
+        Write-BootStatus OK "$($case.Name): mappatura, inventario e stato CPU terminale verificati."
     } finally {
         if ($started -and !$vm.HasExited) { $vm.Kill(); $vm.WaitForExit() }
         $vm.Dispose()
@@ -100,4 +127,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '3/3 scenari del kernel autonomo superati.'
+Write-BootStatus OK '5/5 scenari: kernel autonomo, pagina azzerata, NX e accesso dopo unmap verificati.'

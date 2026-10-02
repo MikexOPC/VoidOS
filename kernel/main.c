@@ -3,9 +3,34 @@
 #include "mm/physical/allocator.h"
 #include "diagnostics/log.h"
 #include "arch/x86/kernel/platform.h"
+#include "arch/x86/mm/window/page.h"
+#include "arch/x86/mm/window/access.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
+static X86_PAGE_WINDOW page_window;
+#ifdef KERNEL_TEST_WINDOW_FAULT
+void x86_window_fault(BOOT_U64 address, BOOT_U32 mode);
+#endif
+
+// ====== pagina azzerata scrittura verifica e nuovo azzeramento dopo riuso ====== //
+
+static void prepare_page_window(void)
+{
+    BOOT_U32 index;
+    BOOT_U64 budget = physical_allocator.FreePages;
+    volatile unsigned char *data;
+    if (!x86_page_window_initialize(&page_window, &physical_allocator, boot_context.Info.PageTableRoot) ||
+        !x86_page_window_acquire(&page_window)) kernel_panic("PAGE_MAPPING_FAILED");
+    data = x86_window_bytes();
+    for (index = 0; index < 4096; ++index) if (data[index]) kernel_panic("PAGE_NOT_ZERO");
+    data[0] = 0x5a; data[4095] = 0xa5;
+    if (data[0] != 0x5a || data[4095] != 0xa5 || kernel_physical_release(&physical_allocator, &page_window.Lease) ||
+        !x86_page_window_release(&page_window) || !x86_page_window_acquire(&page_window)) kernel_panic("PAGE_LIFETIME_FAILED");
+    for (index = 0; index < 4096; ++index) if (data[index]) kernel_panic("PAGE_REUSE_NOT_ZERO");
+    if (!x86_page_window_release(&page_window) || physical_allocator.FreePages != budget ||
+        !kernel_log(0, "KERNEL_MAPPING_OK")) kernel_panic("PAGE_RELEASE_FAILED");
+}
 
 // ====== ciclo ownership fisico senza leggere o scrivere pagine non mappate ====== //
 
@@ -43,7 +68,16 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
         !kernel_number(memory_inventory.ReservedPages) || !kernel_text("\n")) kernel_panic("SERIAL_UNAVAILABLE");
     if (!kernel_section("allocatore fisico")) kernel_panic("SERIAL_UNAVAILABLE");
     prepare_physical_memory();
-#ifdef KERNEL_TEST_PANIC
+    if (!kernel_section("pagina kernel RW NX")) kernel_panic("SERIAL_UNAVAILABLE");
+    prepare_page_window();
+#ifdef KERNEL_TEST_WINDOW_FAULT
+#if KERNEL_TEST_WINDOW_FAULT == 1
+    if (!x86_page_window_acquire(&page_window)) kernel_panic("FAULT_SETUP_FAILED");
+#endif
+    if (!kernel_log(1, "KERNEL_WINDOW_FAULT_READY")) kernel_panic("SERIAL_UNAVAILABLE");
+    x86_window_fault(X86_KERNEL_PAGE_WINDOW, KERNEL_TEST_WINDOW_FAULT);
+    kernel_panic("EXPECTED_WINDOW_FAULT_MISSING");
+#elif defined(KERNEL_TEST_PANIC)
     kernel_panic("INTENTIONAL_TEST_PANIC");
 #else
     if (!kernel_log(0, "KERNEL_READY")) kernel_panic("SERIAL_UNAVAILABLE");

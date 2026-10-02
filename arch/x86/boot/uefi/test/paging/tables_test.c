@@ -206,7 +206,7 @@ __declspec(dllexport) int run_table_contents_tests(void)
     plan.Mappings[2].VirtualBase = BOOT_STACK_VIRTUAL;
     plan.Mappings[2].Pages = 16;
     plan.Mappings[2].Flags = 6;
-    for (scenario = 0; scenario < 20; ++scenario) {
+    for (scenario = 0; scenario < 24; ++scenario) {
         BOOT_PAGE_TABLES tables = {0}, bad;
         UINT64 *leaf, *info_leaf, *parent, *root;
         EFI_STATUS expected;
@@ -220,7 +220,7 @@ __declspec(dllexport) int run_table_contents_tests(void)
         parent = entry_slot(tables.Root, plan.Entry, 2);
         root = (UINT64 *)(UINTN)tables.Root;
         if (!leaf || !info_leaf || !parent) return 701;
-        expected = scenario < 14 ? EFI_DEVICE_ERROR : EFI_INVALID_PARAMETER;
+        expected = scenario < 14 || scenario >= 20 ? EFI_DEVICE_ERROR : EFI_INVALID_PARAMETER;
         switch (scenario) {
         case 0: *leaf = 0; break;
         case 1: *leaf |= 2; break;
@@ -241,7 +241,11 @@ __declspec(dllexport) int run_table_contents_tests(void)
         case 16: bad.Root++; break;
         case 17: bad.Valid = 0; break;
         case 18: bad.Count = BOOT_TABLE_LIMIT + 1; break;
-        default: bad.Pages[1] = 1ULL << 52; break;
+        case 19: bad.Pages[1] = 1ULL << 52; break;
+        case 20: root[X86_BOOT_RECURSIVE_SLOT] = 0; break;
+        case 21: root[X86_BOOT_RECURSIVE_SLOT] &= ~BOOT_PTE_NX; break;
+        case 22: root[X86_BOOT_RECURSIVE_SLOT] |= 4; break;
+        default: root[X86_BOOT_RECURSIVE_SLOT] ^= 4096; break;
         }
         if (boot_verify_table_contents(&plan, &bad, 52) != expected || !tables.Valid ||
             tables.Root != tables.Pages[0]) return 710 + (int)scenario;

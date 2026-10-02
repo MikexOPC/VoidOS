@@ -18,6 +18,8 @@
 #define X86_BOOT_STACK_TOP (X86_BOOT_STACK_VIRTUAL + X86_BOOT_STACK_BYTES)
 #define X86_BOOT_TABLE_LIMIT 128U
 #define X86_BOOT_TRANSITION_DATA_PAGES 11U
+#define X86_BOOT_RECURSIVE_SLOT 128U
+#define X86_KERNEL_PAGE_WINDOW 0x0000700000020000ULL
 
 // ====== vincoli verificati anche dai consumatori C++ ====== //
 
@@ -56,6 +58,10 @@ X86_BOOT_ASSERT(X86_BOOT_MAP_VIRTUAL + X86_BOOT_MAP_MAX_BYTES <= X86_BOOT_INFO_V
                 "Memory map window must precede the contract and stack");
 
 X86_BOOT_ASSERT(X86_BOOT_TRANSITION_DATA_PAGES == 11, "Descriptor and guarded stack layout requires eleven pages");
+X86_BOOT_ASSERT(X86_BOOT_RECURSIVE_SLOT > 0 && X86_BOOT_RECURSIVE_SLOT < 160,
+                "Recursive view must precede the fixed boot windows");
+X86_BOOT_ASSERT(X86_KERNEL_PAGE_WINDOW == 0x0000700000020000ULL,
+                "Bootstrap page window and guards require the current stack page table");
 
 #undef X86_BOOT_ASSERT
 #endif

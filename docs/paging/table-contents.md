@@ -17,6 +17,9 @@ La visita ha al massimo quattro livelli e 128 pagine di tabelle. Prima
 di seguire un indirizzo intermedio lo cerca nell'elenco delle pagine
 possedute: un indirizzo estraneo non viene dereferenziato. Una bitmap
 di 128 byte impedisce cicli e riuso della stessa tabella su piu rami.
+L'unica eccezione e la voce PML4 ricorsiva del profilo: deve puntare
+esattamente alla root con Present/RW/NX supervisor. Non viene seguita
+come ramo ordinario e non viene contata fra le foglie del piano.
 
 Le voci intermedie devono essere esattamente supervisor Present/RW,
 con indirizzo della pagina figlia. Ogni foglia deve corrispondere al
@@ -35,16 +38,17 @@ Metadati non validi producono EFI_INVALID_PARAMETER; contenuti corrotti
 producono EFI_DEVICE_ERROR. Il verificatore non cambia il proprietario.
 Nel percorso boot l'errore invalida root e contratto e porta al cleanup.
 
-I test alterano venti casi: foglie mancanti, indirizzi o permessi errati,
+I test alterano ventiquattro casi: foglie mancanti, indirizzi o permessi errati,
 contratto scrivibile/eseguibile, User, Global, huge page, indirizzi esterni,
-cicli, rami condivisi, guardia mappata e metadati non validi. Verificano
+cicli, rami condivisi, guardia mappata, voce ricorsiva e metadati non validi. Verificano
 anche il profilo massimo di 128 MiB con 16 segmenti e il contratto.
 Un caso integrato corrompe una voce durante la fotografia firmware:
 il boot deve rifiutarla e tentare il rilascio di tutte le risorse.
 
 Questa verifica controlla il risultato del costruttore; non sostituisce
 la mappatura del trampoline, le eccezioni o ExitBootServices. Le tabelle
-non vengono ancora attivate.
+vengono attivate nel percorso `-BootKernel`; nel percorso diagnostico
+restano inattive.
 
 [Intel SDM, Volume 3A](https://cdrdv2-public.intel.com/825758/253668-sdm-vol-3a.pdf),
 capitolo 4: paging a quattro livelli e permessi delle voci.

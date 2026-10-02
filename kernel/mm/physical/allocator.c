@@ -54,7 +54,8 @@ int kernel_physical_validate(const KERNEL_PHYSICAL_ALLOCATOR *owner)
     }
     for (index = 0; index < KERNEL_PHYSICAL_LEASES; ++index) {
         const KERNEL_PHYSICAL_LEASE *lease = &owner->Live[index];
-        if (!lease->Id) { if (lease->Base || lease->Pages || lease->Owner) return 0; continue; }
+        if (!lease->Id) { if (lease->Base || lease->Pages || lease->Owner || owner->Pins[index]) return 0; continue; }
+        if (owner->Pins[index] > 1) return 0;
         if (lease->Owner != (BOOT_U64)owner || lease->Id >= owner->NextId || !lease->Pages ||
             kernel_physical_pages(lease->Base, lease->Pages, 8, 7, owner->PhysicalBits) != lease->Pages ||
             lease->Pages > owner->TotalPages - live_pages) return 0;
@@ -141,10 +142,40 @@ int kernel_physical_release(KERNEL_PHYSICAL_ALLOCATOR *owner, KERNEL_PHYSICAL_LE
         const KERNEL_PHYSICAL_LEASE *live = &owner->Live[slot];
         if (live->Id == lease->Id && live->Base == lease->Base && live->Pages == lease->Pages) break;
     }
-    if (slot == KERNEL_PHYSICAL_LEASES) return 0;
+    if (slot == KERNEL_PHYSICAL_LEASES || owner->Pins[slot]) return 0;
     insert_extent(owner, lease->Base, lease->Pages);
     owner->FreePages += lease->Pages;
     owner->Live[slot] = (KERNEL_PHYSICAL_LEASE){0};
     *lease = (KERNEL_PHYSICAL_LEASE){0};
     return 1;
+}
+
+// ====== pin esclusivo usato dal mapper prima di pubblicare una PTE ====== //
+
+int kernel_physical_pin(KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lease, BOOT_U32 pin)
+{
+    BOOT_U32 slot;
+    if (!owner || !lease || pin > 1 || !kernel_physical_validate(owner) || lease->Owner != (BOOT_U64)owner || !lease->Id) return 0;
+    for (slot = 0; slot < KERNEL_PHYSICAL_LEASES; ++slot) {
+        const KERNEL_PHYSICAL_LEASE *live = &owner->Live[slot];
+        if (live->Id == lease->Id && live->Base == lease->Base && live->Pages == lease->Pages) {
+            if (owner->Pins[slot] == pin) return 0;
+            owner->Pins[slot] = pin;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// ====== identita del frame bloccato verificata senza modificare lo stato ====== //
+
+int kernel_physical_is_pinned(const KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lease)
+{
+    BOOT_U32 slot;
+    if (!owner || !lease || !kernel_physical_validate(owner) || !lease->Id || lease->Owner != (BOOT_U64)owner) return 0;
+    for (slot = 0; slot < KERNEL_PHYSICAL_LEASES; ++slot) {
+        const KERNEL_PHYSICAL_LEASE *live = &owner->Live[slot];
+        if (live->Id == lease->Id && live->Base == lease->Base && live->Pages == lease->Pages) return owner->Pins[slot] == 1;
+    }
+    return 0;
 }

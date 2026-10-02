@@ -49,6 +49,10 @@ static EFI_STATUS scan_table(TABLE_VERIFICATION *check, UINT32 index, UINT32 lev
     for (slot = 0; slot < 512; ++slot) {
         UINT64 entry = entries[slot];
         UINT64 virtual_address = prefix | ((UINT64)slot << shifts[level]);
+        if (level == 0 && slot == X86_BOOT_RECURSIVE_SLOT) {
+            if (entry != (check->Tables->Root | 3ULL | BOOT_PTE_NX)) return EFI_DEVICE_ERROR;
+            continue;
+        }
         if (!entry) continue;
         if (level == 0 && slot >= 256) return EFI_DEVICE_ERROR;
         if (level == 3) {

@@ -122,6 +122,7 @@ EFI_STATUS boot_build_page_tables(EFI_BOOT_SERVICES_PREFIX *services,
                 return status;
         }
     }
+    ((UINT64 *)(UINTN)root)[X86_BOOT_RECURSIVE_SLOT] = root | 3ULL | BOOT_PTE_NX;
     tables->Root = root;
     tables->Valid = 1;
     return EFI_SUCCESS;

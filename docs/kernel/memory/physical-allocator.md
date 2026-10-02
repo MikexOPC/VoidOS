@@ -24,7 +24,7 @@ attualmente attivo; la politica paging dovra rispettare tali requisiti.
 
 Sono gestibili al massimo 128 descrittori candidati, 256 intervalli liberi
 e 64 assegnazioni contemporanee. Una mappa oltre il limite viene rifiutata
-interamente, senza perdere silenziosamente RAM. L'owner occupa 6192 byte
+interamente, senza perdere silenziosamente RAM. L'owner occupa 6448 byte
 nel profilo corrente e vive nella BSS kernel, gia EfiLoaderData riservata;
 un assert limita il costo a 8 KiB. Nessun grosso owner viene costruito sullo
 stack e non serve memoria proporzionale al numero totale di pagine.
@@ -82,8 +82,11 @@ Le prove con 128/256 MiB e panic restano in kernel/test/firmware.ps1.
 .\kernel\test\firmware.ps1 -UseInstalled
 ```
 
-Il prossimo passo e il mapping kernel di pagine possedute con permessi
-espliciti e azzeramento prima dell'esposizione ai consumatori.
+Il mapper puo bloccare una assegnazione con un pin esclusivo. Il rilascio
+fisico respinge handle bloccati; l'identita del pin si puo verificare
+senza modifiche. Il mapper sblocca solo dopo unmap e invalidazione TLB.
+La [finestra iniziale](page-window.md) aggiunge permessi RW/NX e azzeramento;
+l'allocatore fisico da solo continua a non toccare i byte delle pagine.
 
 Riferimenti: [UEFI 2.11, GetMemoryMap](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html)
 e [Intel CPUID, dimensione fisica](https://cdrdv2-public.intel.com/774475/252046-sdm-change-document.pdf).

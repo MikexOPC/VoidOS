@@ -27,7 +27,7 @@ __declspec(dllexport) int run_plan_tests(void)
     if (boot_plan_mappings(&kernel, &stack, &plan) != EFI_SUCCESS || plan.Count != 2 ||
         plan.Mappings[1].Flags != 6 || plan.StackTop != BOOT_STACK_VIRTUAL + 65536)
         return 1;
-    for (scenario = 0; scenario < 10; ++scenario) {
+    for (scenario = 0; scenario < 14; ++scenario) {
         BOOT_MAPPING_PLAN bad = plan;
         switch (scenario) {
         case 0: bad.Count = BOOT_MAPPING_LIMIT + 1; break;
@@ -39,7 +39,11 @@ __declspec(dllexport) int run_plan_tests(void)
         case 6: bad.Entry = 0x101000; break;
         case 7: bad.Mappings[1].Flags = 5; break;
         case 8: bad.Mappings[0].PhysicalBase = ~0ULL - 4095; break;
-        default: bad.StackTop++; break;
+        case 9: bad.StackTop++; break;
+        case 10: bad.Mappings[0].VirtualBase = (UINT64)X86_BOOT_RECURSIVE_SLOT << 39; bad.Entry = bad.Mappings[0].VirtualBase; break;
+        case 11: bad.Mappings[0].VirtualBase = X86_KERNEL_PAGE_WINDOW - 4096; bad.Entry = bad.Mappings[0].VirtualBase; break;
+        case 12: bad.Mappings[0].VirtualBase = X86_KERNEL_PAGE_WINDOW; bad.Entry = bad.Mappings[0].VirtualBase; break;
+        default: bad.Mappings[0].VirtualBase = X86_KERNEL_PAGE_WINDOW + 4096; bad.Entry = bad.Mappings[0].VirtualBase; break;
         }
         if (boot_validate_mapping_plan(&bad) == EFI_SUCCESS)
             return 10 + (int)scenario;

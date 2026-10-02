@@ -53,4 +53,11 @@ unsupported_bits:
     pop rbx
     ret
 x86_physical_bits ENDP
+; ====== invalidazione locale dopo modifica della PTE senza PCID o SMP ====== ;
+
+PUBLIC x86_invalidate_page
+x86_invalidate_page PROC
+    invlpg BYTE PTR [rcx]
+    ret
+x86_invalidate_page ENDP
 END
