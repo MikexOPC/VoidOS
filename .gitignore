@@ -1,2 +1,3 @@
 arch/x86/boot/uefi/build/
 .tools/
+kernel/build/
