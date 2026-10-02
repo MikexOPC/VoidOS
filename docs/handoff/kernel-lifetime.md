@@ -1,9 +1,10 @@
-# Durata delle pagine del kernel
+# Durata delle risorse del kernel
 
 ## Proprietario unico
 
-BOOT_KERNEL_IMAGE contiene il proprietario ELF_STAGED_IMAGE e la
-descrizione numerica BOOT_SEGMENTS. Il chiamante inizializza tutto a
+BOOT_KERNEL_IMAGE contiene il proprietario ELF_STAGED_IMAGE, la
+descrizione numerica BOOT_SEGMENTS e FileBuffer/FileBufferBytes per il
+contenuto temporaneo del file. Il chiamante inizializza tutto a
 zero e non copia questo oggetto per valore, per evitare due proprietari
 delle stesse pagine. Il report KERNEL_FILE_REPORT resta separato e
 contiene solo il risultato della verifica, senza possedere allocazioni.
@@ -24,7 +25,8 @@ di mappature o permessi MMU configurati.
 ## Rilascio
 
 boot_release_kernel invalida firma, entry e conteggio della descrizione
-prima di chiamare FreePages. Dopo un rilascio parziale, il proprietario
+prima di chiamare FreePool e FreePages. Tenta entrambi i rilasci anche
+se il primo fallisce, conservando il primo errore. Dopo un rilascio parziale, il proprietario
 conserva i riferimenti delle pagine non liberate e puo ritentare.
 Le pagine gia liberate hanno Pages zero e non sono rilasciate due volte.
 Un proprietario vuoto puo essere rilasciato di nuovo senza servizi UEFI.
@@ -32,8 +34,12 @@ Un proprietario vuoto puo essere rilasciato di nuovo senza servizi UEFI.
 Il primo errore dell'operazione prevale su un errore di rilascio successivo,
 che viene comunque segnalato. Se il firmware continua a rifiutare
 FreePages non si puo garantire il recupero: resta un errore terminale.
-Anche il buffer del file dipende da un FreePool conforme; questo passo
-non modifica la gestione di quel buffer temporaneo.
+FileBuffer e FileBufferBytes vengono azzerati solo dopo FreePool riuscito.
+Su errore restano nel proprietario e il chiamante puo ritentare senza
+leggere o liberare nuovamente risorse gia rilasciate. Il boot non procede
+verso stack, mappature o handoff mentre questo buffer resta posseduto.
+Il proprietario non deve uscire dal proprio ambito prima del cleanup;
+se il firmware rifiuta ogni tentativo, il recupero non e garantito.
 
 ## Percorso attuale
 
@@ -49,7 +55,9 @@ Il descrittore e ancora sullo stack del loader. Non viene trasferito
 al kernel, non viene chiamata l'entry della fixture e non si esegue
 ExitBootServices. La chiave della mappa temporanea resta inutilizzabile
 dopo la pulizia. Il wrapper boot_validate_kernel conserva il percorso
-di prova con rilascio immediato per le regressioni esistenti.
+di prova con rilascio immediato per le regressioni esistenti. Ora riceve
+esplicitamente un BOOT_KERNEL_IMAGE dal chiamante come quarto argomento,
+cosi anche una validazione fallita conserva le risorse non liberate.
 
 ## Test
 

@@ -260,10 +260,10 @@ cleanup_kernel:
         status = cleanup_status;
     cleanup_status = boot_release_kernel((EFI_BOOT_SERVICES_PREFIX *)system_table->BootServices, &loaded);
     if (cleanup_status != EFI_SUCCESS)
-        boot_log(system_table->ConOut, BOOT_FAIL, L"rilascio pagine kernel fallito.");
+        boot_log(system_table->ConOut, BOOT_FAIL, L"rilascio risorse kernel fallito.");
     if (status == EFI_SUCCESS)
         status = cleanup_status;
-    if (had_kernel_pages && !loaded.Pages.Count && !stack.Pages && !tables.Count && !start_page.Pages && !final_map.Pages) {
+    if (had_kernel_pages && !loaded.Pages.Count && !loaded.FileBuffer && !stack.Pages && !tables.Count && !start_page.Pages && !final_map.Pages) {
         cleanup_status = boot_log(system_table->ConOut, BOOT_OK, L"Pagine kernel rilasciate prima del ritorno al firmware.");
         if (status == EFI_SUCCESS)
             status = cleanup_status;

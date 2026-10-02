@@ -12,6 +12,7 @@ typedef struct {
     ELF_LOAD_PLAN Plan;
 } KERNEL_FILE_REPORT;
 
-EFI_STATUS boot_validate_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FILE_REPORT *report);
+EFI_STATUS boot_validate_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FILE_REPORT *report,
+                                BOOT_KERNEL_IMAGE *owner);
 EFI_STATUS boot_load_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FILE_REPORT *report, BOOT_KERNEL_IMAGE *kernel);
 #endif

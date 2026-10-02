@@ -7,7 +7,8 @@ static EFI_STATUS check_kernel_reservations(const BOOT_KERNEL_IMAGE *kernel)
 {
     UINT32 index, previous;
     UINT64 total = 0;
-    if (!kernel || !kernel->Pages.Count || kernel->Pages.Count > ELF_MAX_LOAD_SEGMENTS)
+    if (!kernel || kernel->FileBuffer || kernel->FileBufferBytes ||
+        !kernel->Pages.Count || kernel->Pages.Count > ELF_MAX_LOAD_SEGMENTS)
         return EFI_INVALID_PARAMETER;
     for (index = 0; index < kernel->Pages.Count; ++index) {
         const ELF_STAGED_SEGMENT *segment = &kernel->Pages.Segments[index];

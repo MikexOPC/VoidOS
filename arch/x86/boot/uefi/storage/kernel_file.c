@@ -2,6 +2,7 @@
 #include "elf/load.h"
 #include "console/log.h"
 #include "handoff/segments.h"
+#include "kernel_buffer.h"
 
 static EFI_GUID file_info_guid = {
     0x09576e92, 0x6d3f, 0x11d2, {0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}
@@ -84,7 +85,6 @@ EFI_STATUS boot_load_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FI
     EFI_BOOT_SERVICES_PREFIX *services;
     EFI_FILE_PREFIX *root = 0;
     EFI_FILE_PREFIX *file = 0;
-    void *buffer = 0;
     void *allocated = 0;
     UINTN size = 0;
     EFI_STATUS status, cleanup_status;
@@ -97,7 +97,7 @@ EFI_STATUS boot_load_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FI
     report->Plan.TotalMemoryBytes = 0;
     report->Plan.SegmentCount = 0;
     if (!image || !table || !kernel || kernel->Pages.Count || kernel->Pages.AllocatedBytes ||
-        kernel->Description.Signature)
+        kernel->Description.Signature || kernel->FileBuffer || kernel->FileBufferBytes)
         return EFI_INVALID_PARAMETER;
     services = (EFI_BOOT_SERVICES_PREFIX *)table->BootServices;
     if (!services || services->Hdr.HeaderSize < sizeof(*services) ||
@@ -126,15 +126,12 @@ EFI_STATUS boot_load_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FI
     status = services->AllocatePool(2, size, &allocated);
     if (status != EFI_SUCCESS)
         goto cleanup;
-    buffer = allocated;
-    if (!buffer) {
-        status = EFI_OUT_OF_RESOURCES;
-        goto cleanup;
-    }
-    status = read_kernel(file, (UINT8 *)buffer, size);
+    status = boot_adopt_kernel_file_buffer(table, root, file, report, kernel, allocated, size);
+    if (status != EFI_SUCCESS) goto cleanup;
+    status = read_kernel(file, (UINT8 *)kernel->FileBuffer, size);
     if (status != EFI_SUCCESS)
         goto cleanup;
-    report->Validation = elf_validate((const UINT8 *)buffer, size, &report->Plan);
+    report->Validation = elf_validate((const UINT8 *)kernel->FileBuffer, size, &report->Plan);
     if (report->Validation != ELF_VALID) {
         status = EFI_LOAD_ERROR;
         goto cleanup;
@@ -142,7 +139,7 @@ EFI_STATUS boot_load_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FI
     status = boot_section(table->ConOut, L"preparazione segmenti ELF");
     if (status != EFI_SUCCESS)
         goto cleanup;
-    status = elf_stage_segments(services, (const UINT8 *)buffer, size, &kernel->Pages);
+    status = elf_stage_segments(services, (const UINT8 *)kernel->FileBuffer, size, &kernel->Pages);
     if (status == EFI_SUCCESS)
         status = boot_describe_segments(&report->Plan, &kernel->Pages, &kernel->Description);
     if (status == EFI_SUCCESS)
@@ -154,11 +151,8 @@ EFI_STATUS boot_load_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FI
     // ====== conserva il primo errore ====== //
 
 cleanup:
-    if (buffer) {
-        cleanup_status = services->FreePool(buffer);
-        if (status == EFI_SUCCESS)
-            status = cleanup_status;
-    }
+    cleanup_status = boot_release_kernel_file_buffer(services, kernel);
+    if (status == EFI_SUCCESS) status = cleanup_status;
     if (file && file->Close) {
         cleanup_status = file->Close(file);
         if (status == EFI_SUCCESS)
@@ -178,11 +172,14 @@ cleanup:
 
 // ====== prova di compatibilita con rilascio immediato ====== //
 
-EFI_STATUS boot_validate_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FILE_REPORT *report)
+EFI_STATUS boot_validate_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *table, KERNEL_FILE_REPORT *report,
+                                BOOT_KERNEL_IMAGE *owner)
 {
-    BOOT_KERNEL_IMAGE kernel = {0};
-    EFI_STATUS status = boot_load_kernel(image, table, report, &kernel);
-    EFI_STATUS cleanup = boot_release_kernel(table ? (EFI_BOOT_SERVICES_PREFIX *)table->BootServices : 0, &kernel);
+    EFI_STATUS status, cleanup;
+    if (!owner || owner->Pages.Count || owner->Pages.AllocatedBytes || owner->Description.Signature ||
+        owner->FileBuffer || owner->FileBufferBytes) return EFI_INVALID_PARAMETER;
+    status = boot_load_kernel(image, table, report, owner);
+    cleanup = boot_release_kernel(table ? (EFI_BOOT_SERVICES_PREFIX *)table->BootServices : 0, owner);
     if (status == EFI_SUCCESS)
         status = cleanup;
     if (status != EFI_SUCCESS && report) {

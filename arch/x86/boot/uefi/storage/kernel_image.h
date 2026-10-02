@@ -7,7 +7,10 @@
 typedef struct {
     ELF_STAGED_IMAGE Pages;
     BOOT_SEGMENTS Description;
+    void *FileBuffer;
+    UINTN FileBufferBytes;
 } BOOT_KERNEL_IMAGE;
 
+EFI_STATUS boot_release_kernel_file_buffer(EFI_BOOT_SERVICES_PREFIX *services, BOOT_KERNEL_IMAGE *kernel);
 EFI_STATUS boot_release_kernel(EFI_BOOT_SERVICES_PREFIX *services, BOOT_KERNEL_IMAGE *kernel);
 #endif

@@ -12,9 +12,9 @@ chiama ExitBootServices. Ritorna al firmware al termine della verifica.
 
 ## File di prova
 
-Lo script build genera un `kernel.elf` sintetico di 512 byte in build/esp.
-Contiene header e due segmenti validi per il parser, non codice di un OS.
-Non deve essere eseguito. La generazione lo sostituisce a ogni build:
+Lo script build genera il probe C in `build/kernel_probe.elf` e lo copia
+come `kernel.elf` nel volume build/esp. Il probe e caricabile ma non viene
+ancora eseguito dal boot. La generazione lo sostituisce a ogni build:
 per ora il volume e dedicato alle prove. La fixture e definita in
 `test/fixtures/elf_fixture.ps1`; i test C usano la propria fixture condivisa.
 
@@ -52,7 +52,12 @@ gli altri tentativi di pulizia continuano comunque.
 
 Il loader dipende da protocolli firmware conformi: non puo chiudere un
 handle che non espone Close. Se FreePool fallisce, non puo dichiarare la
-memoria liberata: restituisce l'errore. I test simulano questi limiti.
+memoria liberata: restituisce l'errore e conserva puntatore e dimensione
+in BOOT_KERNEL_IMAGE. boot_release_kernel permette un successivo tentativo.
+Prima della lettura il buffer deve avere un intervallo rappresentabile,
+allineamento a 8 byte e non sovrapporsi a proprietario, report, tabelle
+firmware, console o prefissi dei protocolli file. Output ambigui del
+firmware vengono rifiutati senza Read, adozione o FreePool.
 
 Il report conserva FileBytes solo dopo un controllo dimensione riuscito.
 Validation ha valore significativo quando il parser viene raggiunto;
@@ -94,9 +99,9 @@ fine anticipata, byte extra, ELF malformati, errori di rilascio e chiusura,
 priorita degli errori e percorso integrato dal punto di ingresso.
 Controllano inoltre gli offset ABI di GetInfo e AllocatePool.
 
-In QEMU vengono provati otto volumi separati: caso valido, file di prova
-mancante/alterato e kernel mancante, troncato, oltre 64 MiB, con segmento
-malformato o firma ELF errata. Tutti sono stati superati il 1 ottobre 2026.
+In QEMU vengono provati dieci scenari: fixture valida, probe C, file di prova
+mancante/alterato, kernel mancante, troncato, oltre 64 MiB, con segmento
+malformato o firma ELF errata, e CPU senza NX.
 Il caso troppo grande usa un file da 64 MiB + 1 byte; i log e gli artefatti
 rimangono in build/firmware-test-<id>/.
 
@@ -106,9 +111,8 @@ rimangono in build/firmware-test-<id>/.
 - [UEFI: AllocatePool e FreePool](https://uefi.org/specs/UEFI/2.10/07_Services_Boot_Services.html)
 
 La preparazione dei segmenti e implementata in [segment-loading.md](segment-loading.md).
-Restano da costruire le mappature e il trasferimento al kernel.
-
-
+Le mappature sono costruite e verificate ma restano inattive.
+Il trasferimento al kernel non e ancora implementato.
 
 
 

@@ -77,7 +77,8 @@ EFI_STATUS boot_plan_mappings(const BOOT_KERNEL_IMAGE *kernel,
         return EFI_INVALID_PARAMETER;
     for (byte = 0; byte < sizeof(*plan); ++byte)
         ((UINT8 *)plan)[byte] = 0;
-    if (!kernel || !stack || kernel->Description.Signature != BOOT_SEGMENTS_SIGNATURE ||
+    if (!kernel || !stack || kernel->FileBuffer || kernel->FileBufferBytes ||
+        kernel->Description.Signature != BOOT_SEGMENTS_SIGNATURE ||
         kernel->Description.Version != BOOT_SEGMENTS_VERSION ||
         kernel->Description.Size != sizeof(kernel->Description) || kernel->Description.Reserved ||
         !kernel->Pages.Count || kernel->Pages.Count > ELF_MAX_LOAD_SEGMENTS ||

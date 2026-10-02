@@ -8,7 +8,7 @@ EFI_STATUS boot_check_resources(const BOOT_MEMORY_MAP *map, const BOOT_KERNEL_IM
     EFI_STATUS status;
     UINTN index, previous;
     UINT64 total = 0, stack_end;
-    if (!map || map->Valid != 1 || !kernel || !stack ||
+    if (!map || map->Valid != 1 || !kernel || !stack || kernel->FileBuffer || kernel->FileBufferBytes ||
         kernel->Description.Signature != BOOT_SEGMENTS_SIGNATURE ||
         kernel->Description.Version != BOOT_SEGMENTS_VERSION ||
         kernel->Description.Size != sizeof(kernel->Description) ||

@@ -32,6 +32,9 @@ static EFI_STATUS check_state_bindings(const BOOT_EXIT_HANDOFF *handoff, const B
         if (state_overlaps(state, handoff->Stack->PhysicalBase, handoff->Stack->Pages * 4096)) return EFI_INVALID_PARAMETER;
     }
     if (handoff->Kernel) {
+        if (handoff->Kernel->FileBufferBytes > ELF_MAX_FILE_BYTES ||
+            state_overlaps(state, (UINT64)(UINTN)handoff->Kernel->FileBuffer,
+                           handoff->Kernel->FileBufferBytes)) return EFI_INVALID_PARAMETER;
         if (handoff->Kernel->Pages.Count > ELF_MAX_LOAD_SEGMENTS) return EFI_INVALID_PARAMETER;
         for (index = 0; index < handoff->Kernel->Pages.Count; ++index) {
             const ELF_STAGED_SEGMENT *segment = &handoff->Kernel->Pages.Segments[index];

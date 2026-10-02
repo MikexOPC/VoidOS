@@ -16,6 +16,8 @@ static int image_token, device_token, mock_error;
 static UINTN position, chunk, allocations, frees, file_closes, root_closes;
 static UINTN actual_size, reported_size, max_request, probe_position;
 static UINTN success_messages, failure_messages, sections;
+static BOOT_KERNEL_IMAGE validation_owner;
+static int validation_cleanup_error;
 
 // ====== gestione protocolli e apertura ====== //
 
@@ -203,6 +205,13 @@ static EFI_STATUS EFIAPI output(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *self, CHAR16 *t
 
 static void prepare(int failure)
 {
+    if (validation_owner.FileBuffer || validation_owner.Pages.Count) {
+        kernel_mock_scenario = 0;
+        services.FreePool = free_pool;
+        services.FreePages = test_free_pages;
+        if (boot_release_kernel(&services, &validation_owner) != EFI_SUCCESS)
+            validation_cleanup_error = 1;
+    }
     kernel_mock_page_allocations = kernel_mock_page_frees = preparation_failures = 0;
     map_retry_releases = 0;
     kernel_mock_scenario = failure;
@@ -270,7 +279,8 @@ __declspec(dllexport) int run_kernel_tests(void)
         expected_allocations = (test == 0 || (test >= 5 && test <= 11) ||
             (test >= 14 && test <= 16) || test == 20) ? 1 : 0;
         expected_frees = expected_allocations && test != 5 && test != 14 ? 1 : 0;
-        status = boot_validate_kernel(&image_token, &table, &report);
+        if (test == 9) expected_frees = 2;
+        status = boot_validate_kernel(&image_token, &table, &report, &validation_owner);
         if (status != expected || mock_error || allocations != expected_allocations ||
             frees != expected_frees || root_closes != (test == 18 ? 0ULL : 1ULL) ||
             file_closes != (test == 1 || test == 18 ? 0ULL : 1ULL) || max_request > 64 * 1024)
@@ -283,26 +293,26 @@ __declspec(dllexport) int run_kernel_tests(void)
     }
     prepare(0);
     chunk = 7;
-    if (boot_validate_kernel(&image_token, &table, &report) != EFI_SUCCESS || position != 512 || frees != 1)
+    if (boot_validate_kernel(&image_token, &table, &report, &validation_owner) != EFI_SUCCESS || position != 512 || frees != 1)
         return 442;
     prepare(0);
     actual_size = reported_size = sizeof(data);
     chunk = sizeof(data);
-    if (boot_validate_kernel(&image_token, &table, &report) != EFI_SUCCESS ||
+    if (boot_validate_kernel(&image_token, &table, &report, &validation_owner) != EFI_SUCCESS ||
         max_request != 64 * 1024 || position != sizeof(data) || frees != 1)
         return 448;
     prepare(8);
     kernel_mock_scenario = 9;
-    if (boot_validate_kernel(&image_token, &table, &report) != EFI_LOAD_ERROR || frees != 1 || root_closes != 1)
+    if (boot_validate_kernel(&image_token, &table, &report, &validation_owner) != EFI_LOAD_ERROR || frees != 2 || root_closes != 1)
         return 443;
     prepare(0);
     services.FreePool = 0;
-    if (boot_validate_kernel(&image_token, &table, &report) != EFI_UNSUPPORTED || allocations)
+    if (boot_validate_kernel(&image_token, &table, &report, &validation_owner) != EFI_UNSUPPORTED || allocations)
         return 444;
     prepare(0);
-    if (boot_validate_kernel(0, &table, &report) != EFI_INVALID_PARAMETER ||
-        boot_validate_kernel(&image_token, &table, 0) != EFI_INVALID_PARAMETER ||
-        boot_validate_kernel(&image_token, 0, &report) != EFI_INVALID_PARAMETER)
+    if (boot_validate_kernel(0, &table, &report, &validation_owner) != EFI_INVALID_PARAMETER ||
+        boot_validate_kernel(&image_token, &table, 0, &validation_owner) != EFI_INVALID_PARAMETER ||
+        boot_validate_kernel(&image_token, 0, &report, &validation_owner) != EFI_INVALID_PARAMETER)
         return 445;
     prepare(0);
     if (efi_main(&image_token, &table) != EFI_SUCCESS || success_messages != 1 ||
@@ -320,7 +330,7 @@ __declspec(dllexport) int run_kernel_tests(void)
         return 449;
     prepare(9);
     if (efi_main(&image_token, &table) != EFI_DEVICE_ERROR || preparation_failures != 1 ||
-        failure_messages != 1 || kernel_mock_page_allocations != 2 || kernel_mock_page_frees != 2)
+        failure_messages != 2 || kernel_mock_page_allocations != 2 || kernel_mock_page_frees != 2)
         return 450;
     prepare(0);
     if (boot_load_kernel(&image_token, &table, &report, &retained) != EFI_SUCCESS ||
@@ -388,5 +398,5 @@ __declspec(dllexport) int run_kernel_tests(void)
         if (efi_main(&image_token, &table) != expected || failure_messages != 1 || kernel_mock_page_allocations <= 3 ||
             kernel_mock_page_frees != kernel_mock_page_allocations) return 471 + cleanup_cases[test];
     }
-    return 0;
+    return validation_cleanup_error ? 490 : 0;
 }
