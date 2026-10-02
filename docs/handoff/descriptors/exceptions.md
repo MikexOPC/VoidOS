@@ -55,16 +55,18 @@ Per la prova CPU separata, dopo la build:
 ```
 
 Lo script crea tre immagini EFI di test in build/, senza sostituire quella
-ordinaria. In QEMU/EDK2 carica GDT e IDT, disabilita gli interrupt mascherabili
+ordinaria. In QEMU/EDK2 carica GDT, IDT e [TSS](tss.md), disabilita gli interrupt mascherabili
 e provoca divisione per zero (#DE), UD2 (#UD) e caricamento di un selettore
 oltre il limite GDT (#GP). Il monitor verifica CS=8, limiti GDT/IDT,
-RAX=vettore, RIP nel loop di arresto, IF=0 e HLT=1. Per #GP verifica
-anche l'error code 0x18 in cima allo stack. Ogni VM termina dopo il controllo;
+RAX=vettore, RIP nel loop di arresto, IF=0 e HLT=1. Verifica anche TR,
+il bit busy nella GDT e RSP nel nuovo stack IST1. Per #GP verifica
+anche l'error code 0x28 in cima allo stack. Ogni VM termina dopo il controllo;
 il probe non ritorna al firmware dopo aver cambiato i descrittori.
 
 La prova usa le mappature firmware: non dimostra ExitBootServices,
-cambio CR3, stack autonomo, ingresso nel kernel o funzionamento su hardware
-fisico. TSS/IST e diagnostica autonoma restano passi successivi.
+cambio CR3, ingresso nel kernel o funzionamento su hardware fisico.
+Lo stack alternativo appartiene ancora all'immagine caricata dal firmware.
+Integrazione persistente di TSS/IST e diagnostica autonoma restano passi successivi.
 
 Riferimento: [Intel SDM volume 3A](https://cdrdv2-public.intel.com/825758/253668-sdm-vol-3a.pdf),
 sezioni 6.13, 6.14.1, 6.14.2 e 6.14.5.

@@ -8,6 +8,8 @@ boot_test_trigger_exception PROC
     cli
     lgdt FWORD PTR [rcx]
     lidt FWORD PTR [rdx]
+    mov ax, 18h
+    ltr ax
     cmp r8d, 6
     je invalid_opcode
     cmp r8d, 13
@@ -18,7 +20,7 @@ boot_test_trigger_exception PROC
 invalid_opcode:
     ud2
 invalid_selector:
-    mov ax, 18h
+    mov ax, 28h
     mov ds, ax
     ud2
 boot_test_trigger_exception ENDP

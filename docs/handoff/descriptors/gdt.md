@@ -39,7 +39,8 @@ Non si puo usare questa posizione dopo un cambio di CR3: il futuro
 trampoline dovra possedere e mappare la propria GDT e il relativo operando.
 
 Sono ora presenti anche [IDT e ingressi terminali](exceptions.md), preparati
-ma inattivi nel boot ordinario. Mancano ancora TSS/IST, caricamento dei
+ma inattivi nel boot ordinario. [TSS/IST](tss.md) sono verificati nel probe
+separato; mancano ancora la loro integrazione persistente, caricamento dei
 descrittori nel passaggio finale e trampoline. Questa bozza e un prerequisito verificabile,
 non una transizione hardware pronta all'uso.
 

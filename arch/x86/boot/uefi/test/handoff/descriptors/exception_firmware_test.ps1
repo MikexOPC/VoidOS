@@ -95,10 +95,13 @@ foreach ($vector in @(0, 6, 13)) {
             Start-Sleep -Milliseconds 100
         }
         if (!$ready) { throw "Timeout probe vettore $vector" }
+        $access = [regex]::Match($log, 'TSS_ACCESS: 0x([0-9A-F]{16})')
+        if (!$access.Success) { throw 'Indirizzo descrittore TSS assente' }
         Start-Sleep -Milliseconds 200
         $vm.StandardInput.WriteLine('stop')
         $vm.StandardInput.WriteLine('info registers')
         $vm.StandardInput.WriteLine('x /8gx $rsp')
+        $vm.StandardInput.WriteLine('x /1bx 0x' + $access.Groups[1].Value)
         $vm.StandardInput.WriteLine('quit')
         $vm.StandardInput.Flush()
         if (!$vm.WaitForExit(5000)) { throw 'Monitor QEMU non risponde' }
@@ -108,22 +111,28 @@ foreach ($vector in @(0, 6, 13)) {
         $stop = [regex]::Match($log, 'EXCEPTION_STOP: 0x([0-9A-F]{16})')
         $rax = [regex]::Match($registers, 'RAX=([0-9A-Fa-f]{16})')
         $rip = [regex]::Match($registers, 'RIP=([0-9A-Fa-f]{16})')
+        $rsp = [regex]::Match($registers, 'RSP=([0-9A-Fa-f]{16})')
+        $stack = [regex]::Match($log, 'EXCEPTION_STACK: 0x([0-9A-F]{16})')
         $flags = [regex]::Match($registers, 'RFL=([0-9A-Fa-f]{8})')
         $frame = [regex]::Match($registers, '(?m)^[0-9A-Fa-f]{16}:\s+0x([0-9A-Fa-f]{16})')
-        if (!$stop.Success -or !$rax.Success -or !$rip.Success -or
+        if (!$stop.Success -or !$rax.Success -or !$rip.Success -or !$rsp.Success -or !$stack.Success -or
+            [Convert]::ToUInt64($rsp.Groups[1].Value, 16) -lt [Convert]::ToUInt64($stack.Groups[1].Value, 16) -or
+            [Convert]::ToUInt64($rsp.Groups[1].Value, 16) -ge [Convert]::ToUInt64($stack.Groups[1].Value, 16) + 16384 -or
             !$flags.Success -or ([Convert]::ToUInt64($flags.Groups[1].Value, 16) -band 512) -ne 0 -or
             [Convert]::ToUInt64($rax.Groups[1].Value, 16) -ne $vector -or
             [Convert]::ToUInt64($rip.Groups[1].Value, 16) -ne [Convert]::ToUInt64($stop.Groups[1].Value, 16) + 2 -or
             $registers -notmatch 'HLT=1' -or $registers -notmatch 'CS =0008' -or
-            $registers -notmatch 'GDT=\s+[0-9A-Fa-f]+\s+00000017' -or
+            $registers -notmatch 'TR =0018' -or
+            $registers -notmatch ('(?im)^' + $access.Groups[1].Value + ':\s+0x8b\b') -or
+            $registers -notmatch 'GDT=\s+[0-9A-Fa-f]+\s+00000027' -or
             $registers -notmatch 'IDT=\s+[0-9A-Fa-f]+\s+000001ff') {
             throw "Vettore $vector non arrestato nel nostro handler: $scenarioRoot"
         }
         if ($vector -eq 13 -and (!$frame.Success -or
-            [Convert]::ToUInt64($frame.Groups[1].Value, 16) -ne 24)) {
+            [Convert]::ToUInt64($frame.Groups[1].Value, 16) -ne 40)) {
             throw "Error code #GP non conservato: $scenarioRoot"
         }
-        Write-BootStatus OK "Eccezione $vector`: gate ring 0, RAX, RIP, IF=0 e HLT verificati nella CPU emulata."
+        Write-BootStatus OK "Eccezione $vector`: TSS attivo, stack IST1, RAX, RIP, IF=0 e HLT verificati nella CPU emulata."
     } finally {
         if ($started -and !$vm.HasExited) { $vm.Kill(); $vm.WaitForExit() }
         $vm.Dispose()
