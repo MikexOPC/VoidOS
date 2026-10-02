@@ -77,12 +77,15 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $registers -notmatch ('(?i)CR3=' + $root) -or $registers -notmatch 'HLT=1' -or
             $registers -notmatch 'CS =0008' -or $registers -notmatch 'SS =0010' -or
             $registers -notmatch 'RSP=00007000000[01][0-9a-fA-F]{4}' -or
-            !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK')) {
+            !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK') -or !$log.Contains('KERNEL_PHYSICAL_OK')) {
             throw "Stato CPU o inizializzazione kernel errati: $scenario"
         }
         $pages = [regex]::Match($log, 'Pagine convenzionali candidate: 0x([0-9a-f]{16})')
         if (!$pages.Success -or [Convert]::ToUInt64($pages.Groups[1].Value, 16) -eq 0) { throw 'Inventario RAM vuoto.' }
         $candidatePages[$case.Name] = [Convert]::ToUInt64($pages.Groups[1].Value, 16)
+        $managed = [regex]::Match($log, 'Pagine fisiche gestite: 0x([0-9a-f]{16})')
+        if (!$managed.Success -or [Convert]::ToUInt64($managed.Groups[1].Value, 16) -eq 0 -or
+            [Convert]::ToUInt64($managed.Groups[1].Value, 16) -gt $candidatePages[$case.Name]) { throw 'Contabilita fisica errata.' }
         $tail = $raw.Substring($raw.IndexOf('# ============ ingresso kernel x86'))
         if ($tail -notmatch '\x1b\[32m\[  OK  \]\x1b\[0m KERNEL_CONTRACT_OK' -or
             ($case.Variant -eq 'panic' -and ($log.Contains('KERNEL_READY') -or

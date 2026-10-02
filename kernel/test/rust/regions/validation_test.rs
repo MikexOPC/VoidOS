@@ -34,3 +34,17 @@ fn adjacency_is_not_overlap() {
     }
     assert_eq!(kernel_regions_overlap(0, u64::MAX, 4096, 1), 1);
 }
+
+// ====== il budget fisico usa il limite CPU reale e richiede capacita WB ====== //
+
+#[test]
+fn allocation_policy_reserves_incompatible_memory() {
+    assert_eq!(kernel_physical_pages(4096, 1, 15, 7, 32), 1);
+    assert_eq!(kernel_physical_pages(4096, 1, 0, 7, 32), 0);
+    assert_eq!(kernel_physical_pages(4096, 1, 8, 2, 32), 0);
+    assert_eq!(kernel_physical_pages(0, 1, 8, 7, 32), 0);
+    assert_eq!(kernel_physical_pages((1 << 32) - 4096, 1, 8, 7, 32), 1);
+    assert_eq!(kernel_physical_pages((1 << 32) - 4096, 2, 8, 7, 32), 0);
+    for bits in [0, 31, 53, 64] { assert_eq!(kernel_physical_pages(4096, 1, 8, 7, bits), 0); }
+    for bit in 5..64 { assert_eq!(kernel_physical_pages(4096, 1, 8 | (1u64 << bit), 7, 52), 0); }
+}

@@ -5,6 +5,7 @@
 unsigned char x86_read_port(unsigned short port);
 void x86_write_port(unsigned short port, unsigned char value);
 BOOT_U64 x86_kernel_root(void);
+BOOT_U32 x86_physical_bits(void);
 __declspec(noreturn) void x86_kernel_stop(BOOT_U64 marker);
 int x86_serial_initialize(void);
 int x86_serial_character(char value);

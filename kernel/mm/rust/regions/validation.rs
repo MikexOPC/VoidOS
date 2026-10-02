@@ -22,6 +22,18 @@ pub extern "C" fn kernel_region_candidate(attributes: u64, kind: u32) -> u32 {
     u32::from(kind == 7 && attributes & !0x1f == 0)
 }
 
+// ====== limite CPU e capacita WB richiesti per ownership fisica ====== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_physical_pages(base: u64, pages: u64, attributes: u64, kind: u32, bits: u32) -> u64 {
+    if !(32..=52).contains(&bits) || base < 4096 || kind != 7 || attributes & 8 == 0
+        || attributes & !0x1f != 0 { return 0; }
+    match end(base, pages) {
+        Some(limit) if limit <= (1u64 << bits) => pages,
+        _ => 0,
+    }
+}
+
 // ====== confronto conservativo anche per input invalidi ====== //
 
 #[unsafe(no_mangle)]

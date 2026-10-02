@@ -12,7 +12,8 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Write-BootSection 'test kernel contratto memoria e diagnostica'
 $objects = @()
 foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c','kernel/boot/contract.c',
-    'kernel/mm/inventory.c','kernel/diagnostics/log.c','arch/x86/kernel/serial.c')) {
+    'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/test/mm/physical/allocator_test.c',
+    'kernel/diagnostics/log.c','arch/x86/kernel/serial.c')) {
     $object = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($source) + '.obj')
     & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O2 /c ('/I' + $project) (Join-Path $project $source) ('/Fo' + $object)
     if ($LASTEXITCODE -ne 0) { throw 'Compilazione test C fallita.' }
@@ -29,8 +30,12 @@ $interop = 'using System.Runtime.InteropServices; public static class ' + $typeN
 $type = Add-Type -TypeDefinition $interop -PassThru
 $result = $type.GetMethod('run_kernel_tests').Invoke($null, @())
 if ($result -ne 0) { throw "Test kernel fallito: $result" }
+$typeSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Physical { [DllImport(@"' + $dll + '")] public static extern int run_physical_tests(); }'
+$physicalType = Add-Type -TypeDefinition $typeSource -PassThru
+$result = $physicalType.GetMethod('run_physical_tests').Invoke($null, @())
+if ($result -ne 0) { throw "Test allocatore fisico fallito: $result" }
 & $rustc --edition=2024 --test -D warnings (Join-Path $PSScriptRoot 'rust/regions/validation_test.rs') -o ($output + '/regions-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test Rust fallita.' }
 & ($output + '/regions-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test Rust falliti.' }
-Write-BootStatus OK 'Contratto, inventario, UART assente, timeout e colori verificati; 3 test Rust superati.'
+Write-BootStatus OK 'Contratto, inventario, allocatore con 1024 sequenze, UART e colori verificati; 4 test Rust superati.'

@@ -19,7 +19,7 @@ $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' 
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
 $objects = @()
 foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','kernel/main.c',
-    'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/diagnostics/log.c')) {
+    'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/diagnostics/log.c')) {
     $object = Join-Path $output (([IO.Path]::GetFileNameWithoutExtension($source)) + '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
     $objects += $object

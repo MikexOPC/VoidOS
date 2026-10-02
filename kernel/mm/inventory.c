@@ -10,7 +10,27 @@ static BOOT_U64 read_number(const unsigned char *bytes, BOOT_U32 width)
     return value;
 }
 
-// ====== inventario conservativo senza heap e senza reclamare pagine ====== //
+// ====== lettura limitata del descrittore riusata dall'allocatore fisico ====== //
+
+int kernel_read_region(const unsigned char *map, BOOT_U64 bytes, BOOT_U64 stride,
+                       BOOT_U64 index, KERNEL_MEMORY_REGION *region)
+{
+    const unsigned char *source;
+    KERNEL_MEMORY_REGION draft;
+    if (!map || !region || !bytes || bytes > 1048576 || stride < 40 || stride > 4096 ||
+        bytes % stride || bytes / stride > 4096 || index >= bytes / stride ||
+        (BOOT_U64)map > ~0ULL - bytes || (BOOT_U64)region > ~0ULL - sizeof(*region) ||
+        ((BOOT_U64)region < (BOOT_U64)map + bytes && (BOOT_U64)map < (BOOT_U64)region + sizeof(*region))) return 0;
+    source = map + index * stride;
+    draft.Type = (BOOT_U32)read_number(source, 4);
+    draft.Base = read_number(source + 8, 8);
+    draft.Pages = read_number(source + 24, 8);
+    draft.Attributes = read_number(source + 32, 8);
+    *region = draft;
+    return 1;
+}
+
+// ====== controllo completo prima della pubblicazione del conteggio ====== //
 
 int kernel_inventory_memory(const unsigned char *map, BOOT_U64 bytes, BOOT_U64 stride,
                             KERNEL_MEMORY_INVENTORY *output)

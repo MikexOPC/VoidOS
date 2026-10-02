@@ -1,8 +1,9 @@
 # Prima base del kernel
 
 Il kernel di produzione iniziale vive in `kernel/` e `arch/x86/kernel/`,
-separato dal probe in boot/uefi/test/kernel. Non usa servizi UEFI, non
-ritorna al bootloader e non alloca ancora pagine. Non e ancora un kernel
+separato dal probe in boot/uefi/test/kernel. Non usa servizi UEFI e non
+ritorna al bootloader. Gestisce ora [ownership fisica](memory/physical-allocator.md)
+senza ancora mappare o dereferenziare le pagine assegnate. Non e ancora un kernel
 ibrido completo: questa base precede scheduler, servizi isolati e driver.
 
 ## Costruzione e prove
@@ -64,9 +65,10 @@ riservato. Le risorse del kernel, stack, tabelle, contratto, mappa e
 transizione restano quindi escluse attraverso i tipi LoaderData/LoaderCode.
 
 Il conteggio riservato include spazio MMIO: non rappresenta RAM consumata.
-Le pagine candidate non sono ancora mappate o allocate dal kernel.
-Il futuro allocatore dovra conservare intervalli e cacheability, verificare
-il limite fisico CPU effettivo e stabilire quando reclamare altre risorse.
+Il conteggio candidato non implica assegnazione o mappatura.
+L'allocatore fisico seleziona un sottoinsieme con capacita WB e entro il
+limite CPUID, registra assegnazioni e rilasci. Queste non sono puntatori
+scrivibili: mappature, azzeramento e reclamazione richiedono passi successivi.
 Il confronto a coppie usa O(n^2) tempo, nessun heap e al massimo 4096 regioni;
 e una scelta iniziale limitata, da misurare prima di estenderne l'uso.
 
