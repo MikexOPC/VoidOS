@@ -17,8 +17,8 @@ allocazioni o stato modificabile.
 | Dati della transizione | 11 pagine contigue, 44 KiB, due guardie possedute |
 | Codice della transizione | 1 pagina EfiLoaderCode distinta, 4 KiB |
 | Vista ricorsiva delle tabelle | Slot PML4 128, supervisor RW/NX |
-| Finestra dati iniziale del kernel | `0x0000700000020000`, una pagina RW/NX |
-| Guardie della finestra | Una pagina assente prima e dopo |
+| Finestra dati iniziale del kernel | `0x0000700000020000`, 1-16 pagine RW/NX, massimo 64 KiB |
+| Guardie della finestra | `0x000070000001f000` e `0x0000700000030000`, assenti |
 
 I budget indicano limiti; le tabelle vengono allocate solo quando servono.
 Gli indirizzi sono virtuali e non impongono allocazioni fisiche a quelle
@@ -44,6 +44,8 @@ il valore di undici pagine e vincolato al layout corrente, non parametrico.
 La finestra dati e vincolata alla PT dello stack corrente. Il piano vieta
 segmenti nella vista ricorsiva, nella finestra e nelle sue guardie;
 la finestra rimane assente fino all'assegnazione da parte del kernel.
+Il budget di 16 pagine e vincolato alla validazione Rust del layout;
+anche la coda non utilizzata da un blocco piu piccolo rimane assente.
 
 La build compila l'header nei consumatori C e C++ e verifica il piano,
 le tabelle, il contratto e il probe. I test firmware restano in

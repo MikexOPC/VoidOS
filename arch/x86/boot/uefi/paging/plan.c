@@ -1,7 +1,7 @@
 #include "plan.h"
 #include "lib/memory/address_ranges.h"
 
-// ====== intervalli e permessi del profilo a quattro livelli ====== //
+// ====== intervalli e permessi del profilo a quattro livelli ===== //
 
 EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
 {
@@ -27,7 +27,8 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
             return EFI_INVALID_PARAMETER;
         bytes = mapping->Pages * 4096;
         if (os_address_ranges_overlap(mapping->VirtualBase, bytes, (UINT64)X86_BOOT_RECURSIVE_SLOT << 39, 1ULL << 39) ||
-            os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_KERNEL_PAGE_WINDOW - 4096, 3 * 4096))
+            os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_KERNEL_PAGE_WINDOW - 4096,
+                                      X86_KERNEL_WINDOW_BYTES + 2 * 4096))
             return EFI_INVALID_PARAMETER;
         if (plan->CapsuleBase && mapping->VirtualBase == plan->CapsuleBase) {
             if (mapping->PhysicalBase != plan->CapsuleBase || mapping->Pages != 1 || mapping->Flags != 5)
@@ -89,7 +90,7 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
            descriptor_count == (plan->DescriptorBase ? 3U : 0U) ? EFI_SUCCESS : EFI_INVALID_PARAMETER;
 }
 
-// ====== conversione del contratto ancora vivo in piano numerico ====== //
+// ====== conversione del contratto ancora vivo in piano numerico ===== //
 
 EFI_STATUS boot_plan_mappings(const BOOT_KERNEL_IMAGE *kernel,
                              const BOOT_KERNEL_STACK *stack, BOOT_MAPPING_PLAN *plan)

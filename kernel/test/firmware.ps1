@@ -13,7 +13,7 @@ if ($UseInstalled) {
     & (Join-Path $project 'kernel/scripts/build.ps1') -OutputDirectory (Join-Path $output 'ready')
 }
 & (Join-Path $project 'kernel/scripts/build.ps1') -TestPanic -OutputDirectory (Join-Path $output 'panic')
-foreach ($fault in @('execute','unmapped')) {
+foreach ($fault in @('execute','unmapped','guard-low','guard-high')) {
     & (Join-Path $project 'kernel/scripts/build.ps1') -TestWindowFault $fault -OutputDirectory (Join-Path $output $fault)
 }
 Write-BootSection 'kernel autonomo dopo uscita UEFI'
@@ -23,7 +23,8 @@ $candidatePages = @{}
 
 foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-256';Variant='ready';Ram=256},
     @{Name='panic-128';Variant='panic';Ram=128}, @{Name='execute-128';Variant='execute';Ram=128},
-    @{Name='unmapped-128';Variant='unmapped';Ram=128})) {
+    @{Name='unmapped-128';Variant='unmapped';Ram=128}, @{Name='guard-low-128';Variant='guard-low';Ram=128},
+    @{Name='guard-high-128';Variant='guard-high';Ram=128})) {
     $scenario = Join-Path $output $case.Name
     $boot = Join-Path $scenario 'esp/EFI/BOOT'
     New-Item -ItemType Directory -Force -Path $boot | Out-Null
@@ -33,7 +34,9 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
     $vars = Join-Path $scenario 'vars.fd'
     Copy-Item -LiteralPath (Join-Path $QemuDirectory 'share/edk2-i386-vars.fd') -Destination $vars
     $serial = Join-Path $scenario 'serial.log'
+    $cpuLog = Join-Path $scenario 'qemu.log'
     $arguments = @('-machine','q35','-cpu','max','-accel','tcg','-m',[string]$case.Ram,'-net','none',
+        '-d','int,cpu_reset','-D',$cpuLog.Replace('\','/'),
         '-display','none','-monitor','stdio','-no-reboot','-serial',('file:' + $serial.Replace('\','/')),
         '-drive',('if=pflash,format=raw,readonly=on,file=' + (Join-Path $QemuDirectory 'share/edk2-x86_64-code.fd').Replace('\','/')),
         '-drive',('if=pflash,format=raw,file=' + $vars.Replace('\','/')),
@@ -49,7 +52,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $started = $vm.Start()
         if (!$started) { throw 'QEMU non avviato.' }
         $stdout = $vm.StandardOutput.ReadToEndAsync(); $stderr = $vm.StandardError.ReadToEndAsync()
-        $faultCase = $case.Variant -in @('execute','unmapped')
+        $faultCase = $case.Variant -in @('execute','unmapped','guard-low','guard-high')
         $expected = if ($faultCase) { 'KERNEL_WINDOW_FAULT_READY' } elseif ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } else { 'KERNEL_READY' }
         $deadline = [DateTime]::UtcNow.AddSeconds(40)
         $found = $false
@@ -76,6 +79,9 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $registers = $stdout.GetAwaiter().GetResult()
         [IO.File]::WriteAllText((Join-Path $scenario 'registers.log'), $registers)
         [IO.File]::WriteAllText((Join-Path $scenario 'stderr.log'), $stderr.GetAwaiter().GetResult())
+        if (!(Test-Path -LiteralPath $cpuLog) -or (Get-Content -LiteralPath $cpuLog -Raw) -match '(?i)triple fault') {
+            throw "Trace CPU assente o triple fault: $scenario"
+        }
         $root = [regex]::Match($log, 'ACTIVATION_ROOT: 0x([0-9A-F]{16})').Groups[1].Value
         $marker = if ($case.Variant -eq 'panic') { '4b50414e49430001' } else { '4b52454144590001' }
         $exitPattern = '(?im)^0*' + $exit.Groups[1].Value.TrimStart('0') + ':\s+0x0000000[1-3]00000002\s+0x0000000000000000'
@@ -83,7 +89,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $registers -notmatch ('(?i)CR3=' + $root) -or $registers -notmatch 'HLT=1' -or
             $registers -notmatch 'CS =0008' -or
             !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK') -or
-            !$log.Contains('KERNEL_PHYSICAL_OK') -or !$log.Contains('KERNEL_MAPPING_OK')) {
+            !$log.Contains('KERNEL_PHYSICAL_OK') -or !$log.Contains('KERNEL_MAPPING_OK') -or
+            !$log.Contains('KERNEL_WINDOW_16_PAGES_OK')) {
             throw "Stato CPU o inizializzazione kernel errati: $scenario"
         }
         if (!$faultCase) {
@@ -99,9 +106,14 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $codeBase = Read-Hex $log 'ACTIVATION_CODE: 0x([0-9A-F]{16})'
             $dataBase = Read-Hex $log 'ACTIVATION_DATA: 0x([0-9A-F]{16})'
             $errorCode = if ($case.Variant -eq 'execute') {17} else {0}
+            $faultAddress = switch ($case.Variant) {
+                'guard-low' { [Convert]::ToUInt64('70000001f000',16) }
+                'guard-high' { [Convert]::ToUInt64('700000030000',16) }
+                default { [Convert]::ToUInt64('70000002f000',16) }
+            }
             if ((Read-Hex $registers 'RAX=([0-9a-f]{16})') -ne 14 -or
                 (Read-Hex $registers 'RIP=([0-9a-f]{16})') -ne $codeBase + 578 -or
-                (Read-Hex $registers 'CR2=([0-9a-f]{16})') -ne [Convert]::ToUInt64('700000020000',16) -or
+                (Read-Hex $registers 'CR2=([0-9a-f]{16})') -ne $faultAddress -or
                 $registers -notmatch 'SS =0000' -or $rsp -lt $dataBase + 7*4096 -or $rsp -ge $dataBase + 11*4096 -or
                 (Read-Hex $registers '(?m)^[0-9a-f]{16}:\s+0x([0-9a-f]{16})') -ne $errorCode -or
                 (Read-Hex $registers ('(?im)^' + ($rsp + 32).ToString('x16') + ':\s+0x[0-9a-f]{16}\s+0x([0-9a-f]{16})')) -ne 16 -or
@@ -127,4 +139,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '5/5 scenari: kernel autonomo, pagina azzerata, NX e accesso dopo unmap verificati.'
+Write-BootStatus OK '7/7 scenari: blocco di 16 pagine azzerato, NX, unmap ultima pagina e due guardie verificati.'

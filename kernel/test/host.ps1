@@ -22,8 +22,10 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'kernel/mm/rust/regions/validation.rs') -o ($output + '/validation.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione Rust fallita.' }
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/mm/window/rust/layout/validation.rs') -o ($output + '/window-layout.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione layout Rust fallita.' }
 $dll = Join-Path $output 'kernel-tests.dll'
-& (Join-Path $ToolchainBin 'link.exe') /nologo /machine:x64 /dll /noentry /nodefaultlib /incremental:no ('/out:' + $dll) ($output + '/validation.obj') @objects
+& (Join-Path $ToolchainBin 'link.exe') /nologo /machine:x64 /dll /noentry /nodefaultlib /incremental:no ('/out:' + $dll) ($output + '/validation.obj') ($output + '/window-layout.obj') @objects
 if ($LASTEXITCODE -ne 0) { throw 'Link test fallito.' }
 $typeName = 'KernelTests' + [guid]::NewGuid().ToString('N')
 $interop = 'using System.Runtime.InteropServices; public static class ' + $typeName + ' { [DllImport(@"' + $dll + '")] public static extern int run_kernel_tests(); }'
@@ -42,4 +44,8 @@ if ($result -ne 0) { throw "Test mapper pagina fallito: $result" }
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test Rust fallita.' }
 & ($output + '/regions-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test Rust falliti.' }
-Write-BootStatus OK 'Contratto, inventario, allocatore con 1024 sequenze, mapper e ordine TLB, UART e colori verificati; 4 test Rust superati.'
+& $rustc --edition=2024 --test -D warnings (Join-Path $PSScriptRoot 'mm/window/rust/layout/validation_test.rs') -o ($output + '/window-layout-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione test layout Rust fallita.' }
+& ($output + '/window-layout-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Test layout Rust falliti.' }
+Write-BootStatus OK 'Contratto, inventario, allocatore, mapper 1-16 pagine e ordine TLB, UART/colori verificati; 8 test Rust superati.'

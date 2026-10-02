@@ -1,5 +1,5 @@
 param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install,
-    [ValidateSet('none','execute','unmapped')][string]$TestWindowFault = 'none')
+    [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none')
 $ErrorActionPreference = 'Stop'
 if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -19,7 +19,7 @@ Write-BootSection 'kernel autonomo C e Rust'
 $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project))
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
 if ($TestWindowFault -ne 'none') {
-    $mode = if ($TestWindowFault -eq 'execute') {1} else {2}
+    $mode = switch ($TestWindowFault) { 'execute' {1} 'unmapped' {2} 'guard-low' {3} 'guard-high' {4} }
     $flags += ('/DKERNEL_TEST_WINDOW_FAULT=' + $mode)
 }
 $objects = @()
@@ -40,9 +40,12 @@ $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/mm/rust/regions/validation.rs'),
     '-o',($output + '/validation.obj'))
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/mm/window/rust/layout/validation.rs'),
+    '-o',($output + '/window-layout.obj'))
 Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') (@('/nologo','/machine:x64','/subsystem:native',
     '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed','/base:0x100000000',
-    ('/out:' + $output + '/kernel.exe'),($output + '/io.obj'),($output + '/validation.obj')) + $objects)
+    ('/out:' + $output + '/kernel.exe'),($output + '/io.obj'),($output + '/validation.obj'),($output + '/window-layout.obj')) + $objects)
 & (Join-Path $PSScriptRoot 'convert-image.ps1') -Image ($output + '/kernel.exe') -Output ($output + '/kernel.elf')
 Write-BootStatus OK "Kernel ELF verificato e generato: $output/kernel.elf"
 if ($Install) {

@@ -68,9 +68,10 @@ Il conteggio riservato include spazio MMIO: non rappresenta RAM consumata.
 Il conteggio candidato non implica assegnazione o mappatura.
 L'allocatore fisico seleziona un sottoinsieme con capacita WB e entro il
 limite CPUID, registra assegnazioni e rilasci. Queste non sono puntatori
-scrivibili. La [finestra iniziale](memory/page-window.md) mappa una pagina
-RW/NX, la azzera, ne prova il riuso e ripristina il budget fisico prima
-di KERNEL_MAPPING_OK. La reclamazione del loader resta un passo successivo.
+scrivibili. La [finestra iniziale](memory/page-window.md) mappa fino a 16
+pagine contigue RW/NX, le azzera, ne prova il riuso e ripristina il budget
+fisico prima di KERNEL_MAPPING_OK e KERNEL_WINDOW_16_PAGES_OK.
+La reclamazione del loader resta un passo successivo.
 Il confronto a coppie usa O(n^2) tempo, nessun heap e al massimo 4096 regioni;
 e una scelta iniziale limitata, da misurare prima di estenderne l'uso.
 

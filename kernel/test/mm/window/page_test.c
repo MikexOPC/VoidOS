@@ -3,24 +3,39 @@
 static KERNEL_PHYSICAL_ALLOCATOR pool;
 static X86_PAGE_WINDOW window;
 static BOOT_U64 tables[4][512];
-static unsigned char bytes[4096], map[40];
+static unsigned char bytes[16 * 4096], map[40];
 static BOOT_U32 invalidations, ordering_error;
 static BOOT_U64 initial_free;
+static BOOT_U32 null_buffer;
+static BOOT_U32 seen_pages, batch_calls;
 
-// ====== backend host senza istruzioni privilegiate ====== //
+// ====== backend host senza istruzioni privilegiate ===== //
 
 BOOT_U64 x86_kernel_root(void) { return 0x1000; }
 volatile BOOT_U64 *x86_window_entries(BOOT_U32 level) { return level < 4 ? tables[level] : 0; }
-volatile unsigned char *x86_window_bytes(void) { return bytes; }
+volatile unsigned char *x86_window_bytes(void) { return null_buffer ? 0 : bytes; }
 void x86_invalidate_page(BOOT_U64 address)
 {
-    if (address != X86_KERNEL_PAGE_WINDOW || pool.FreePages != initial_free - 1 ||
+    BOOT_U32 index;
+    BOOT_U64 offset = address - X86_KERNEL_PAGE_WINDOW;
+    if (address < X86_KERNEL_PAGE_WINDOW || address >= X86_KERNEL_PAGE_WINDOW + window.Lease.Pages * 4096 ||
+        (address & 4095) || pool.FreePages != initial_free - window.Lease.Pages ||
         !kernel_physical_is_pinned(&pool, &window.Lease)) ordering_error = 1;
-    if ((!tables[3][32]) != ((invalidations & 1) != 0)) ordering_error = 1;
+    if (offset < 16 * 4096 && !(offset & 4095)) {
+        BOOT_U32 bit = 1U << (BOOT_U32)(offset / 4096);
+        if (seen_pages & bit) ordering_error = 1;
+        seen_pages |= bit;
+    }
+    for (index = 0; index < window.Lease.Pages; ++index)
+        if ((!tables[3][32 + index]) != (window.Active != 0)) ordering_error = 1;
     ++invalidations;
+    if (++batch_calls == window.Lease.Pages) {
+        if (seen_pages != (1U << (BOOT_U32)window.Lease.Pages) - 1) ordering_error = 1;
+        batch_calls = seen_pages = 0;
+    }
 }
 
-// ====== mappa firmware e tabelle indipendenti per ogni scenario ====== //
+// ====== mappa firmware e tabelle indipendenti per ogni scenario ===== //
 
 static void clear(void *object, BOOT_U64 size)
 {
@@ -32,18 +47,64 @@ static int fixture(void)
 {
     BOOT_U32 index;
     clear(&pool, sizeof(pool)); clear(&window, sizeof(window)); clear(tables, sizeof(tables)); clear(map, sizeof(map));
-    map[0] = 7; map[9] = 0x10; map[24] = 4; map[32] = 8;
+    map[0] = 7; map[9] = 0x10; map[24] = 32; map[32] = 8;
     tables[0][X86_BOOT_RECURSIVE_SLOT] = 0x1003 | (1ULL << 63);
     tables[0][(X86_KERNEL_PAGE_WINDOW >> 39) & 511] = 0x2003;
     tables[1][0] = 0x3003; tables[2][0] = 0x4003;
-    for (index = 0; index < 4096; ++index) ((volatile unsigned char *)bytes)[index] = 0xa5;
-    invalidations = ordering_error = 0;
+    for (index = 0; index < sizeof(bytes); ++index) ((volatile unsigned char *)bytes)[index] = 0xa5;
+    invalidations = ordering_error = null_buffer = 0;
+    batch_calls = seen_pages = 0;
     if (!kernel_physical_initialize(&pool, map, sizeof(map), sizeof(map), 32)) return 0;
     initial_free = pool.FreePages;
     return 1;
 }
 
-// ====== ordine TLB ownership handle alterato e azzeramento dopo riuso ====== //
+// ====== ordine TLB ownership handle alterato e azzeramento dopo riuso ===== //
+
+static int repeated_sizes(void)
+{
+    BOOT_U32 cycle, index;
+    BOOT_U64 previous_id = 0;
+    KERNEL_PHYSICAL_LEASE stale;
+    if (!fixture() || !x86_page_window_initialize(&window, &pool, 0x1000)) return 80;
+    tables[3][1] = 0x800003 | (1ULL << 63);
+    for (cycle = 0; cycle < 256; ++cycle) {
+        BOOT_U64 pages = 1 + ((cycle * 7) % 16);
+        BOOT_U32 before = invalidations;
+        if (!x86_page_window_acquire(&window, pages) || window.Lease.Id <= previous_id ||
+            pool.FreePages != initial_free - pages) return 81;
+        previous_id = window.Lease.Id;
+        stale = window.Lease;
+        for (index = 0; index < pages * 4096; ++index) {
+            if (bytes[index]) return 82;
+            bytes[index] = (unsigned char)(cycle + index);
+        }
+        if (!x86_page_window_release(&window) || kernel_physical_release(&pool, &stale) ||
+            ordering_error || invalidations != before + 2 * pages || pool.FreePages != initial_free ||
+            !kernel_physical_validate(&pool) || tables[3][1] != (0x800003 | (1ULL << 63))) return 83;
+        for (index = 31; index <= 48; ++index) {
+            if (tables[3][index]) return 84;
+        }
+    }
+    return 0;
+}
+
+// ====== preflight deve rifiutare prima di pubblicare qualsiasi foglia ===== //
+
+static int rejects_every_occupied_slot(void)
+{
+    BOOT_U32 slot;
+    for (slot = 31; slot <= 48; ++slot) {
+        if (!fixture() || !x86_page_window_initialize(&window, &pool, 0x1000)) return 85;
+        tables[3][slot] = 0x9003;
+        if (x86_page_window_acquire(&window, 16) || invalidations || window.Lease.Id ||
+            window.Active || pool.FreePages != initial_free || pool.NextId != 1) return 86;
+        if (tables[3][slot] != 0x9003) return 87;
+    }
+    return 0;
+}
+
+// ====== ogni dimensione inclusi OOM e corruzione dell ultima foglia ===== //
 
 __declspec(dllexport) int run_window_tests(void)
 {
@@ -51,9 +112,9 @@ __declspec(dllexport) int run_window_tests(void)
     BOOT_U64 id, entry;
     X86_PAGE_WINDOW copy;
     if (!fixture() || !x86_page_window_initialize(&window, &pool, 0x1000) ||
-        !x86_page_window_acquire(&window) || pool.FreePages != initial_free - 1 || invalidations != 1) return 1;
+        !x86_page_window_acquire(&window, 1) || pool.FreePages != initial_free - 1 || invalidations != 1) return 1;
     for (index = 0; index < 4096; ++index) if (bytes[index]) return 2;
-    if (kernel_physical_release(&pool, &window.Lease) || x86_page_window_acquire(&window)) return 3;
+    if (kernel_physical_release(&pool, &window.Lease) || x86_page_window_acquire(&window, 1)) return 3;
     copy = window;
     if (x86_page_window_release(&copy)) return 4;
     id = window.Lease.Id; entry = tables[3][32]; ++window.Lease.Id;
@@ -69,7 +130,7 @@ __declspec(dllexport) int run_window_tests(void)
     bytes[0] = 0x5a; bytes[4095] = 0xa5;
     if (!x86_page_window_release(&window) || tables[3][32] || pool.FreePages != initial_free ||
         invalidations != 2 || ordering_error || x86_page_window_release(&window)) return 6;
-    if (!x86_page_window_acquire(&window) || window.Lease.Id == id) return 7;
+    if (!x86_page_window_acquire(&window, 1) || window.Lease.Id == id) return 7;
     for (index = 0; index < 4096; ++index) if (bytes[index]) return 8;
     if (!x86_page_window_release(&window) || ordering_error || !kernel_physical_validate(&pool)) return 9;
     for (scenario = 0; scenario < 7; ++scenario) {
@@ -80,7 +141,7 @@ __declspec(dllexport) int run_window_tests(void)
         case 2: tables[1][0] |= 0x80; break;
         case 3: tables[2][0] |= 4; break;
         case 4: tables[3][31] = 0x5003; break;
-        case 5: tables[3][33] = 0x5003; break;
+        case 5: tables[3][48] = 0x5003; break;
         default: tables[3][32] = 0x5003; break;
         }
         if (x86_page_window_initialize(&window, &pool, 0x1000) || window.Ready || invalidations ||
@@ -90,8 +151,55 @@ __declspec(dllexport) int run_window_tests(void)
     {
         KERNEL_PHYSICAL_LEASE all;
         clear(&all, sizeof(all));
-        if (!kernel_physical_allocate(&pool, initial_free, &all) || x86_page_window_acquire(&window) ||
+        if (!kernel_physical_allocate(&pool, initial_free, &all) || x86_page_window_acquire(&window, 1) ||
             tables[3][32] || invalidations || !kernel_physical_release(&pool, &all)) return 31;
     }
-    return 0;
+    for (scenario = 1; scenario <= 16; ++scenario) {
+        BOOT_U64 base;
+        if (!fixture() || !x86_page_window_initialize(&window, &pool, 0x1000) ||
+            !x86_page_window_acquire(&window, scenario)) return 40 + (int)scenario;
+        base = window.Lease.Base;
+        if (pool.FreePages != initial_free - scenario || invalidations != scenario || ordering_error) return 60;
+        for (index = 0; index < scenario; ++index) {
+            if (tables[3][32 + index] != ((base + index * 4096) | 3 | (1ULL << 63))) return 61;
+            if (bytes[index * 4096] || bytes[index * 4096 + 4095]) return 62;
+            bytes[index * 4096] = (unsigned char)index + 1;
+            bytes[index * 4096 + 4095] = 0x5a;
+        }
+        for (index = scenario * 4096; index < sizeof(bytes); ++index) {
+            if (bytes[index] != 0xa5) return 74;
+        }
+        tables[3][31 + scenario] |= 4;
+        if (x86_page_window_release(&window) || invalidations != scenario || !tables[3][32] ||
+            !kernel_physical_is_pinned(&pool, &window.Lease)) return 63;
+        tables[3][31 + scenario] &= ~4ULL;
+        if (!x86_page_window_release(&window) || invalidations != 2 * scenario || ordering_error ||
+            pool.FreePages != initial_free || window.Lease.Id) return 64;
+        for (index = 31; index <= 48; ++index) if (tables[3][index]) return 65;
+        if (!x86_page_window_acquire(&window, scenario)) return 66;
+        for (index = 0; index < scenario * 4096; ++index) if (bytes[index]) return 67;
+        if (!x86_page_window_release(&window) || ordering_error || pool.FreePages != initial_free) return 68;
+    }
+    if (!fixture() || !x86_page_window_initialize(&window, &pool, 0x1000)) return 69;
+    if (x86_page_window_acquire(&window, 0) || x86_page_window_acquire(&window, 17) ||
+        x86_page_window_acquire(&window, ~0ULL) || pool.FreePages != initial_free || pool.NextId != 1 ||
+        window.Active || invalidations) return 70;
+    tables[3][47] = 0x9003;
+    if (x86_page_window_acquire(&window, 1) || pool.FreePages != initial_free || pool.NextId != 1) return 71;
+    tables[3][47] = 0;
+    null_buffer = 1;
+    if (x86_page_window_acquire(&window, 16) || pool.FreePages != initial_free || invalidations) return 72;
+    null_buffer = 0;
+    {
+        KERNEL_PHYSICAL_LEASE occupied;
+        clear(&occupied, sizeof(occupied));
+        if (!kernel_physical_allocate(&pool, 17, &occupied) || x86_page_window_acquire(&window, 16) ||
+            invalidations || tables[3][32] || window.Active || window.Lease.Id ||
+            !kernel_physical_release(&pool, &occupied)) return 73;
+    }
+    {
+        int result = repeated_sizes();
+        if (result) return result;
+    }
+    return rejects_every_occupied_slot();
 }
