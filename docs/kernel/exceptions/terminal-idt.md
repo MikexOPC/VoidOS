@@ -7,15 +7,18 @@ a 16 byte. L'operando IDTR occupa 10 byte. Non servono allocazioni dinamiche.
 
 ## Costruzione e attivazione
 
-Il C verifica confini, allineamento e separazione dei buffer prima della scrittura.
+Il C riceve esplicitamente il numero di ingressi (esattamente 32) e verifica
+confini, allineamento e separazione dei buffer prima della scrittura.
 Rust controlla che gli indirizzi appartengano al codice degli ingressi terminali.
 Ogni gate contiene selettore CS 8, interrupt gate presente ring zero `0x8e`, IST 1
 e campi riservati zero. La verifica confronta tutti i byte prima di `LIDT`.
 
 L'attivazione richiede CS 8, SS 16, TR 24 e IF disabilitato. La IDT precedente
 deve avere il formato iniziale del loader: 32 gate, limite 511, base canonica
-inferiore e allineata. Dopo il caricamento, `SIDT` deve restituire esattamente
-l'operando preparato; in caso contrario viene ripristinata la IDT precedente.
+inferiore e allineata; l'intero intervallo di 512 byte deve restare canonico.
+Dopo il caricamento, `SIDT` deve restituire esattamente l'operando preparato;
+in caso contrario viene ripristinata la IDT precedente e verificato il ripristino.
+Un ripristino non confermato arresta direttamente la CPU con un marcatore diverso.
 `KERNEL_IDT_OK` viene stampato solamente dopo questa verifica.
 
 La GDT, la TSS e lo stack IST di 16 KiB sono ancora prestiti persistenti dal
@@ -39,9 +42,13 @@ l'error code zero del double fault. Tutte le stampe sono limitate e non allocano
 
 Il terminale si arresta con `CLI/HLT` e marcatore RAX `0x4b4641554c540001`.
 Non torna con `IRETQ`, non recupera un thread e non ripristina registri/SIMD.
-Non e una gestione completa degli interrupt: IF resta zero, non ci sono IRQ,
-APIC, SMP o handler recuperabili. Un unico IST condiviso non offre robustezza
-per eccezioni annidate o NMI durante la diagnostica. Non e una prova su hardware.
+Una guardia Assembly atomica di un byte precede il C: un secondo ingresso
+si arresta direttamente con RAX `0x4b4e455354450001`, senza richiamare la seriale.
+La guardia non viene azzerata, poiche nessun handler ritorna. Il frame iniziale
+puo comunque essere sovrascritto dall'IST condiviso: non esiste recupero.
+IF resta zero; non ci sono IRQ, APIC, SMP o handler recuperabili.
+NMI, machine check e guasti dell'IST non sono dimostrati robusti. La guardia
+e globale al profilo a una CPU, non per CPU. Non e una prova su hardware.
 
 ## Verifica
 
@@ -56,12 +63,23 @@ Da PowerShell nella root del progetto:
 La ESP deve gia contenere il bootloader costruito con `-BootKernel`.
 Le varianti con fault non possono essere installate nella ESP ordinaria.
 I test host confrontano i gate con una decodifica indipendente e alterano ogni
-byte della tabella e dell'operando. Rust verifica confini degli ingressi e frame.
+bit della tabella e dell'operando (4.176 prove), piu 8.192 indirizzi generati.
+Il backend mock controlla attivazione, readback, rollback e fallimento del rollback.
+Rust verifica confini degli ingressi, operando IDTR completo e frame.
 QEMU verifica IDTR attivo, frame in memoria, registri, CR3, stato UEFI e assenza
 di triple fault tramite `-d int,cpu_reset`. Le eccezioni vengono generate da
 accessi vietati, `UD2`, selettore fuori GDT e divisione per zero.
 Un'ulteriore variante porta RSP al fondo dello stack kernel e forza un push
 nella pagina guardia: la diagnostica deve comunque raggiungere lo stack IST.
+La variante `nested` genera UD2 e poi un page fault dentro il terminale C:
+il secondo ingresso deve arrestarsi in Assembly, con un solo ingresso nella
+diagnostica seriale e senza triple fault.
+
+`x86_exception_activate` e un backend privilegiato: il chiamante deve fornire
+un operando leggibile e una tabella gia verificata, mappata e persistente.
+I controlli aritmetici non dimostrano da soli che un puntatore C sia mappato.
+Ritorna 1 dopo il readback, 0 se non attivata o ripristinata, -1 se il ripristino
+non e confermato; in produzione quest'ultimo risultato impone l'arresto.
 
 ## Riferimenti ufficiali
 

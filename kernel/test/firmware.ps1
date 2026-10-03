@@ -16,7 +16,7 @@ if ($UseInstalled) {
 foreach ($fault in @('execute','unmapped','guard-low','guard-high')) {
     & (Join-Path $project 'kernel/scripts/build.ps1') -TestWindowFault $fault -OutputDirectory (Join-Path $output $fault)
 }
-foreach ($fault in @('opcode','selector','divide','stack')) {
+foreach ($fault in @('opcode','selector','divide','stack','nested')) {
     & (Join-Path $project 'kernel/scripts/build.ps1') -TestCpuFault $fault -OutputDirectory (Join-Path $output $fault)
 }
 Write-BootSection 'kernel autonomo dopo uscita UEFI'
@@ -29,7 +29,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
     @{Name='unmapped-128';Variant='unmapped';Ram=128}, @{Name='guard-low-128';Variant='guard-low';Ram=128},
     @{Name='guard-high-128';Variant='guard-high';Ram=128}, @{Name='opcode-128';Variant='opcode';Ram=128},
     @{Name='selector-128';Variant='selector';Ram=128}, @{Name='divide-128';Variant='divide';Ram=128},
-    @{Name='stack-128';Variant='stack';Ram=128})) {
+    @{Name='stack-128';Variant='stack';Ram=128}, @{Name='nested-128';Variant='nested';Ram=128})) {
     $scenario = Join-Path $output $case.Name
     $boot = Join-Path $scenario 'esp/EFI/BOOT'
     New-Item -ItemType Directory -Force -Path $boot | Out-Null
@@ -58,7 +58,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         if (!$started) { throw 'QEMU non avviato.' }
         $stdout = $vm.StandardOutput.ReadToEndAsync(); $stderr = $vm.StandardError.ReadToEndAsync()
         $faultCase = $case.Variant -in @('execute','unmapped','guard-low','guard-high','opcode','selector','divide','stack')
-        $expected = if ($faultCase) { 'KERNEL_EXCEPTION_HALTED' } elseif ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } else { 'KERNEL_READY' }
+        $nestedCase = $case.Variant -eq 'nested'
+        $expected = if ($nestedCase) { 'KERNEL_NESTED_FAULT_READY' } elseif ($faultCase) { 'KERNEL_EXCEPTION_HALTED' } elseif ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } else { 'KERNEL_READY' }
         $deadline = [DateTime]::UtcNow.AddSeconds(40)
         $found = $false
         while ([DateTime]::UtcNow -lt $deadline) {
@@ -77,7 +78,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $exit = [regex]::Match($log, 'ACTIVATION_EXIT_STATE: 0x([0-9A-F]{16})')
         if (!$exit.Success) { throw 'Indirizzo dello stato UEFI assente.' }
         $vm.StandardInput.WriteLine('stop'); $vm.StandardInput.WriteLine('info registers')
-        $vm.StandardInput.WriteLine('x /8gx $rsp')
+        $vm.StandardInput.WriteLine($(if ($nestedCase) { 'x /7gx $rsp' } else { 'x /8gx $rsp' }))
         if ($faultCase) {
             $frame = [regex]::Match($log, '(?i)FAULT_FRAME: 0x([0-9a-f]{16})')
             if (!$frame.Success) { throw 'Frame eccezione assente.' }
@@ -109,7 +110,21 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         }
         $idtBase = [Convert]::ToUInt64($idt.Groups[1].Value,16)
         if ($idtBase -lt 0x100000000 -or $idtBase -ge 0x100100000 -or ($idtBase -band 15)) { throw 'IDT fuori dal kernel o non allineata.' }
-        if (!$faultCase) {
+        if ($nestedCase) {
+            $data = [regex]::Match($log, 'ACTIVATION_DATA: 0x([0-9A-F]{16})')
+            $rspMatch = [regex]::Match($registers, 'RSP=([0-9a-f]{16})')
+            if (!$data.Success -or !$rspMatch.Success) { throw 'Bounds IST assenti nel fault annidato.' }
+            $dataBase = [Convert]::ToUInt64($data.Groups[1].Value,16)
+            $nestedRsp = [Convert]::ToUInt64($rspMatch.Groups[1].Value,16)
+            if ($registers -notmatch 'RAX=4b4e455354450001' -or $registers -notmatch 'SS =0000' -or
+                $registers -notmatch 'CR2=0000700000020000' -or $nestedRsp -ne $dataBase + 11*4096 - 56 -or
+                $registers -notmatch ('(?im)^' + $nestedRsp.ToString('x16') + ':\s+0x000000000000000e\s+0x0000000000000000') -or
+                $registers -notmatch ('(?im)^' + ($nestedRsp + 48).ToString('x16') + ':\s+0x0000000000000000') -or
+                ([regex]::Matches($log,'(?m)^\[ FAIL \] KERNEL_EXCEPTION\r?$')).Count -ne 1 -or
+                $log.Contains('KERNEL_EXCEPTION_HALTED') -or $log.Contains('KERNEL_READY')) {
+                throw 'Secondo fault non arrestato prima del rientro in C.'
+            }
+        } elseif (!$faultCase) {
             if ($registers -notmatch ('(?i)RAX=' + $marker) -or $registers -notmatch 'SS =0010' -or
                 $registers -notmatch 'RSP=00007000000[01][0-9a-fA-F]{4}') { throw 'Arresto kernel errato.' }
         } else {
@@ -177,4 +192,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '11/11 scenari: IDT kernel, frame PF UD GP DE, fault stack con IST, pool, NX, unmap e guardie verificati.'
+Write-BootStatus OK '12/12 scenari: IDT kernel, frame PF UD GP DE, stack IST e arresto del fault annidato verificati.'

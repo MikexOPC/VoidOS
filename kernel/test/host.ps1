@@ -72,4 +72,4 @@ if ($result -ne 0) { throw "Test IDT fallito: $result" }
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test frame fallita.' }
 & ($output + '/exception-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test frame Rust falliti.' }
-Write-BootStatus OK 'IDT: tutti i 512 byte dei gate e i 10 byte IDTR verificati; 3 test Rust del frame superati.'
+Write-BootStatus OK 'IDT: 4176 alterazioni di bit, bounds, attivazione e rollback verificati; 4 test Rust del frame superati.'

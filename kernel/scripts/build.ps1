@@ -1,6 +1,6 @@
 param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
-    [ValidateSet('none','opcode','selector','divide','stack')][string]$TestCpuFault = 'none')
+    [ValidateSet('none','opcode','selector','divide','stack','nested')][string]$TestCpuFault = 'none')
 $ErrorActionPreference = 'Stop'
 if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
 if ($TestCpuFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
@@ -29,8 +29,9 @@ if ($TestWindowFault -ne 'none') {
 }
 $objects = @()
 if ($TestCpuFault -ne 'none') {
-    $mode = switch ($TestCpuFault) { 'opcode' {1} 'selector' {2} 'divide' {3} 'stack' {4} }
+    $mode = switch ($TestCpuFault) { 'opcode' {1} 'selector' {2} 'divide' {3} 'stack' {4} 'nested' {1} }
     $flags += ('/DKERNEL_TEST_CPU_FAULT=' + $mode)
+    if ($TestCpuFault -eq 'nested') { $flags += '/DKERNEL_TEST_NESTED_FAULT=1' }
 }
 foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
     'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',

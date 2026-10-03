@@ -23,3 +23,11 @@ pub extern "C" fn x86_exception_frame(vector: u64, error: u64, cs: u64, flags: u
         && (x86_exception_error(vector) != 0 || error == 0)
         && (vector != 8 || error == 0))
 }
+
+// ====== la tabella completa deve restare nel sottointervallo canonico ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_exception_idtr(base: u64, limit: u64) -> u32 {
+    u32::from(limit == 511 && base >= 4096 && base & 15 == 0
+        && base <= (1 << 47) - 512)
+}

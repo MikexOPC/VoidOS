@@ -36,3 +36,17 @@ fn invalid_frames() {
     assert_eq!(x86_exception_frame(6, 0, 8, 2, 0), 0);
     assert_eq!(x86_exception_frame(8, 1, 8, 2, 16), 0);
 }
+
+// ====== operando IDTR interamente canonico e allineato ===== //
+
+#[test]
+fn descriptor_bounds() {
+    assert_eq!(x86_exception_idtr(4096, 511), 1);
+    assert_eq!(x86_exception_idtr((1 << 47) - 512, 511), 1);
+    for base in [0, 4095, 4097, (1 << 47) - 16, 1 << 47, u64::MAX] {
+        assert_eq!(x86_exception_idtr(base, 511), 0);
+    }
+    for limit in [0, 510, 512, 65535, u64::MAX] {
+        assert_eq!(x86_exception_idtr(4096, limit), 0);
+    }
+}

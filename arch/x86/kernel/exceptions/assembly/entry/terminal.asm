@@ -65,6 +65,10 @@ ENDM
 ; ====== terminale senza ritorno shadow space e allineamento Microsoft x64 ===== ;
 
 x86_kernel_fault_common LABEL BYTE
+    mov al, 1
+    xchg al, BYTE PTR [x86_kernel_fault_entered]
+    test al, al
+    jnz NEAR PTR x86_kernel_nested_stop
     cld
     mov rcx, rsp
     mov rdx, cr2
@@ -75,6 +79,15 @@ x86_kernel_fault_common LABEL BYTE
 terminal_fallback:
     hlt
     jmp terminal_fallback
+
+; ====== secondo ingresso arrestato senza richiamare C o la seriale ===== ;
+
+x86_kernel_nested_stop LABEL BYTE
+    cli
+    mov rax, 4b4e455354450001h
+nested_halt:
+    hlt
+    jmp nested_halt
 PUBLIC x86_kernel_fault_end
 x86_kernel_fault_end LABEL BYTE
 
@@ -87,4 +100,6 @@ x86_kernel_fault_targets LABEL QWORD
 IRP vector, <0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31>
     DQ x86_kernel_fault_&vector
 ENDM
+.data
+x86_kernel_fault_entered DB 0
 END
