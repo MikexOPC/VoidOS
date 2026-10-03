@@ -1,12 +1,13 @@
 #ifndef OS_BOOT_START_INFO_H
 #define OS_BOOT_START_INFO_H
+#include "lib/firmware/acpi/rsdp.h"
 
 // ====== contratto numerico di ingresso x64 ====== //
 
 typedef unsigned long long BOOT_U64;
 typedef unsigned int BOOT_U32;
 #define BOOT_START_SIGNATURE 0x314f464e49545342ULL
-#define BOOT_START_VERSION 2U
+#define BOOT_START_VERSION 3U
 #define BOOT_START_NXE 1ULL
 #define BOOT_START_WP 2ULL
 #define BOOT_START_FEATURES (BOOT_START_NXE | BOOT_START_WP)
@@ -29,7 +30,8 @@ typedef struct {
     BOOT_U64 MemoryDescriptorBytes;
     BOOT_U32 MemoryDescriptorVersion;
     BOOT_U32 MemoryReserved;
+    OS_ACPI_ROOT Acpi;
 } BOOT_START_INFO;
 
-_Static_assert(sizeof(BOOT_START_INFO) == 112, "Contratto ingresso x64 versione 2");
+_Static_assert(sizeof(BOOT_START_INFO) == 168, "Contratto ingresso x64 versione 3");
 #endif

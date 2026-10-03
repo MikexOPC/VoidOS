@@ -6,7 +6,8 @@
 int kernel_validate_contract(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U64 entry)
 {
     if (!info || info->Signature != BOOT_START_SIGNATURE || info->Version != BOOT_START_VERSION ||
-        info->Size != sizeof(*info) || info->Reserved || info->MemoryReserved) return 0;
+        info->Size != sizeof(*info) || info->Reserved || info->MemoryReserved ||
+        !os_acpi_root_valid(&info->Acpi, 52)) return 0;
     if (info->RequiredFeatures != BOOT_START_FEATURES || info->EnabledFeatures != BOOT_START_FEATURES ||
         root < 4096 || (root & 4095) || root >= (1ULL << 52) || info->PageTableRoot != root) return 0;
     if (entry < 4096 || entry >= X86_BOOT_LOW_ADDRESS_LIMIT || info->KernelEntry != entry ||
@@ -31,6 +32,11 @@ int kernel_capture_contract(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U64
          (BOOT_U64)info < (BOOT_U64)context + sizeof(*context)) ||
         ((BOOT_U64)context < info->MemoryMapVirtual + info->MemoryMapCapacity &&
          info->MemoryMapVirtual < (BOOT_U64)context + sizeof(*context))) return 0;
-    *context = (KERNEL_BOOT_CONTEXT){*info, (const unsigned char *)info->MemoryMapVirtual};
+    {
+        BOOT_U32 byte;
+        for (byte = 0; byte < sizeof(*info); ++byte)
+            ((volatile unsigned char *)&context->Info)[byte] = ((const unsigned char *)info)[byte];
+        context->MemoryMap = (const unsigned char *)info->MemoryMapVirtual;
+    }
     return 1;
 }

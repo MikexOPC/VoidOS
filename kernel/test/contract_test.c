@@ -28,9 +28,20 @@ static int check_contract(void)
     BOOT_START_INFO info = {BOOT_START_SIGNATURE, BOOT_START_VERSION, sizeof(info), 3, 3,
         0x1000, X86_BOOT_STACK_VIRTUAL, X86_BOOT_STACK_BYTES, 0x100001000, 0,
         X86_BOOT_MAP_VIRTUAL, 144, 4096, 48, 1, 0};
-    KERNEL_BOOT_CONTEXT output = {0};
+    KERNEL_BOOT_CONTEXT output;
+    BOOT_U32 byte;
+    for (byte = 0; byte < sizeof(output); ++byte) ((volatile unsigned char *)&output)[byte] = 0;
     if (kernel_capture_contract(&info, 0x1000, info.KernelEntry, (KERNEL_BOOT_CONTEXT *)&info)) return 6;
     if (!kernel_capture_contract(&info, 0x1000, info.KernelEntry, &output) || output.Info.MemoryMapBytes != 144) return 1;
+    for (byte = 0; byte < sizeof(info.Acpi); ++byte) {
+        ((unsigned char *)&info.Acpi)[byte] = 1;
+        if (kernel_capture_contract(&info, 0x1000, info.KernelEntry, &output) ||
+            output.Info.Acpi.Source || output.Info.MemoryMapBytes != 144) return 7;
+        ((unsigned char *)&info.Acpi)[byte] = 0;
+    }
+    info.Version = 2;
+    if (kernel_validate_contract(&info, 0x1000, info.KernelEntry)) return 8;
+    info.Version = BOOT_START_VERSION;
     info.MemoryMapBytes = 145;
     if (kernel_capture_contract(&info, 0x1000, info.KernelEntry, &output) || output.Info.MemoryMapBytes != 144) return 2;
     info.MemoryMapBytes = 144;

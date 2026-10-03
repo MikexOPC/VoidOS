@@ -27,7 +27,7 @@ __declspec(dllexport) int run_start_info_tests(void)
     tables.Count = 2;
     tables.Valid = 1;
     if (boot_prepare_start_info(&plan, &tables, &capabilities, &info) != EFI_SUCCESS ||
-        info.Signature != BOOT_START_SIGNATURE || info.Version != 2 || info.Size != 112 ||
+        info.Signature != BOOT_START_SIGNATURE || info.Version != BOOT_START_VERSION || info.Size != sizeof(info) ||
         info.RequiredFeatures != 3 || info.EnabledFeatures || info.Reserved ||
         info.PageTableRoot != tables.Root || info.KernelEntry != plan.Entry ||
         info.StackBase != BOOT_STACK_VIRTUAL || info.StackBytes != 65536) return 1;

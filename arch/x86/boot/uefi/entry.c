@@ -15,6 +15,7 @@
 #include "handoff/descriptors/prepare.h"
 #include "handoff/descriptors/exceptions.h"
 #include "handoff/transition/activation.h"
+#include "acpi/discovery.h"
 
 // ====== verifica del piano senza aumentare lo stack di ingresso ====== //
 
@@ -235,7 +236,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
         goto cleanup_kernel;
     }
     status = boot_log(system_table->ConOut, BOOT_OK,
-                      L"Mappa persistente R/NX e contratto v2 verificati; tutte le risorse coperte.");
+                      L"Mappa persistente R/NX e contratto v3 verificati; tutte le risorse coperte.");
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log_hex(system_table->ConOut, L"Capacita buffer mappa persistente: ", final_map.Snapshot.Capacity);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
@@ -261,6 +262,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     status = boot_log_hex(system_table->ConOut, L"Root finale delle tabelle inattive: ", tables.Root);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log_hex(system_table->ConOut, L"Pagine descrittori e stack persistenti: ", descriptor_storage.Pages);
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_prepare_acpi_handoff(system_table, &final_map.Snapshot, capabilities.PhysicalBits, &start_page);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
 #ifdef BOOT_RUN_KERNEL
     {

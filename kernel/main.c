@@ -261,6 +261,13 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
 __declspec(noreturn) static void kernel_continue(void)
 {
     if (!x86_kernel_main_retire(&main_stack) || !x86_kernel_main_report(&main_stack)) kernel_panic("MAIN_STACK_RETIRE_FAILED");
+    if (!os_acpi_root_valid(&boot_context.Info.Acpi, x86_physical_bits())) kernel_panic("ACPI_ROOT_INVALID");
+    if (boot_context.Info.Acpi.Source) {
+        if (!kernel_section("discovery piattaforma ACPI") ||
+            !kernel_text("KERNEL_ACPI_RSDP: ") || !kernel_number(boot_context.Info.Acpi.Physical) ||
+            !kernel_text("\nKERNEL_ACPI_ROOT: ") || !kernel_number(os_acpi_root_table(&boot_context.Info.Acpi, x86_physical_bits())) ||
+            !kernel_text("\n") || !kernel_log(0, "KERNEL_ACPI_RSDP_OK")) kernel_panic("SERIAL_UNAVAILABLE");
+    } else if (!kernel_log(2, "ACPI_RSDP_ABSENT")) kernel_panic("SERIAL_UNAVAILABLE");
     {
         const KERNEL_BOOT_CONTEXT *context = (const KERNEL_BOOT_CONTEXT *)x86_object_arena_data(&persistent_arena, &context_object);
         const KERNEL_MEMORY_INVENTORY *inventory = (const KERNEL_MEMORY_INVENTORY *)x86_object_arena_data(&persistent_arena, &inventory_object);
@@ -278,7 +285,8 @@ __declspec(noreturn) static void kernel_continue(void)
         paging = (X86_PAGING_INVENTORY *)x86_object_arena_data(&persistent_arena, &paging_object);
         if (!paging || !x86_paging_inventory_capture(context, &physical_allocator, paging) ||
             !x86_paging_inventory_verify(context, &physical_allocator, paging) ||
-            physical_allocator.FreePages != budget || persistent_arena.Objects.Used != 3240)
+            physical_allocator.FreePages != budget ||
+            persistent_arena.Objects.Used != sizeof(boot_context) + sizeof(memory_inventory) + sizeof(*paging))
             kernel_panic("PAGING_INVENTORY_INVALID");
         if (!kernel_text("KERNEL_PAGING_INVENTORY: ") || !kernel_number((BOOT_U64)paging) ||
             !kernel_text("\nKERNEL_PAGING_TABLES: ") || !kernel_number(paging->Count) ||

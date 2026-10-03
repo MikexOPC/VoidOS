@@ -21,6 +21,7 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     'arch/x86/mm/regions/mapping.c','kernel/test/mm/regions/mapping_test.c',
     'arch/x86/mm/arena/objects.c','kernel/test/mm/arena/objects_test.c',
     'arch/x86/mm/paging/inventory.c','kernel/test/mm/paging/inventory_test.c',
+    'lib/firmware/acpi/rsdp.c',
     'kernel/diagnostics/log.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','kernel/test/mm/window/page_test.c',
     'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
     'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c',
@@ -33,6 +34,9 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'lib/firmware/acpi/rust/rsdp/validation.rs') -o ($output + '/acpi-rsdp-fields.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione campi ACPI fallita.' }
+$objects += ($output + '/acpi-rsdp-fields.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/mm/paging/rust/validation/entries.rs') -o ($output + '/paging-entries.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione formato paging fallita.' }
 $objects += ($output + '/paging-entries.obj')

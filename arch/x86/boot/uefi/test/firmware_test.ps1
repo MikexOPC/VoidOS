@@ -149,7 +149,7 @@ foreach ($scenario in @('valid', 'kernel-probe', 'missing', 'altered', 'kernel-m
                 $contractSection = $log.IndexOf("# ============ contratto ingresso kernel ============ #`r`n`r`n")
                 $contractSuccess = $log.IndexOf('[  OK  ] Contratto su pagina R/NX e stack ABI verificati; tabelle inattive.')
                 $finalMapSection = $log.IndexOf("# ============ mappa persistente per uscita UEFI ============ #`r`n`r`n")
-                $finalMapSuccess = $log.IndexOf('[  OK  ] Mappa persistente R/NX e contratto v2 verificati; tutte le risorse coperte.')
+                $finalMapSuccess = $log.IndexOf('[  OK  ] Mappa persistente R/NX e contratto v3 verificati; tutte le risorse coperte.')
                 $exitPreflight = $log.IndexOf('[  OK  ] Preflight uscita UEFI verificato; servizi firmware ancora attivi.')
                 $gdtSection = $log.IndexOf("# ============ descrittori segmenti x64 ============ #`r`n`r`n")
                 $gdtSuccess = $log.IndexOf('[  OK  ] GDT ring 0 e operando GDTR verificati; descrittori ancora inattivi.')
@@ -221,4 +221,3 @@ if ((Get-FileHash -LiteralPath $image -Algorithm SHA256).Hash -ne $imageHash) {
 }
 Write-BootStatus OK '10/10 scenari firmware verificati sulla stessa immagine EFI.'
 Write-BootStatus INFO "Log: $testRoot"
-

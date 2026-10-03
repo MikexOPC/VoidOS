@@ -114,7 +114,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $vm.StandardInput.WriteLine('x /136gx 0x' + $regionPte.ToString('x16'))
         $arenaContext = Read-Hex $log 'KERNEL_ARENA_CONTEXT: 0x([0-9a-f]{16})'
         $arenaInventory = Read-Hex $log 'KERNEL_ARENA_INVENTORY: 0x([0-9a-f]{16})'
-        $vm.StandardInput.WriteLine('x /15gx 0x' + $arenaContext.ToString('x16'))
+        $vm.StandardInput.WriteLine('x /21gx 0x' + $arenaContext.ToString('x16'))
+        $vm.StandardInput.WriteLine('x /7gx 0x' + ($arenaContext + 112).ToString('x16'))
         $vm.StandardInput.WriteLine('x /3gx 0x' + $arenaInventory.ToString('x16'))
         $pagingInventory = Read-Hex $log 'KERNEL_PAGING_INVENTORY: 0x([0-9a-f]{16})'
         $vm.StandardInput.WriteLine('x /3gx 0x' + $pagingInventory.ToString('x16'))
@@ -174,12 +175,22 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             throw 'Inventario paging fuori arena o diverso dalla fotografia verificata.'
         }
         if (($arenaContext -band 15) -or ($arenaInventory -band 7) -or
-            $arenaContext -lt 0x7000000a3000 -or $arenaContext + 120 -gt 0x7000000b3000 -or
+            $arenaContext -lt 0x7000000a3000 -or $arenaContext + 176 -gt 0x7000000b3000 -or
             $arenaInventory -lt 0x7000000a3000 -or $arenaInventory + 24 -gt 0x7000000b3000 -or
-            ($arenaContext -lt $arenaInventory + 24 -and $arenaInventory -lt $arenaContext + 120) -or
-            (Read-Hex $log 'KERNEL_ARENA_USED: 0x([0-9a-f]{16})') -ne 144 -or
-            $registers -notmatch ('(?im)^' + $arenaContext.ToString('x16') + ':\s+0x314f464e49545342\s+0x0000007000000002')) {
+            ($arenaContext -lt $arenaInventory + 24 -and $arenaInventory -lt $arenaContext + 176) -or
+            (Read-Hex $log 'KERNEL_ARENA_USED: 0x([0-9a-f]{16})') -ne 200 -or
+            $registers -notmatch ('(?im)^' + $arenaContext.ToString('x16') + ':\s+0x314f464e49545342\s+0x000000a800000003')) {
             throw 'Contesto persistente fuori arena, sovrapposto o contratto corrotto.'
+        }
+        $acpiPhysical = Read-Hex $log 'KERNEL_ACPI_RSDP: 0x([0-9a-f]{16})'
+        $acpiRoot = Read-Hex $log 'KERNEL_ACPI_ROOT: 0x([0-9a-f]{16})'
+        if (!$log.Contains('KERNEL_ACPI_RSDP_OK') -or
+            $acpiPhysical -ne (Read-Hex $log 'ACPI_RSDP_PHYSICAL: 0x([0-9A-F]{16})') -or
+            $acpiRoot -ne (Read-Hex $log 'ACPI_ROOT_PHYSICAL: 0x([0-9A-F]{16})') -or
+            $registers -notmatch ('(?im)^' + ($arenaContext + 112).ToString('x16') + ':\s+0x' + $acpiPhysical.ToString('x16') + '\s+0x0000000200000024') -or
+            $registers -notmatch ('(?im)^' + ($arenaContext + 128).ToString('x16') + ':\s+0x2052545020445352') -or
+            $registers -notmatch ('(?im)^' + ($arenaContext + 144).ToString('x16') + ':\s+0x[0-9a-f]{16}\s+0x' + $acpiRoot.ToString('x16'))) {
+            throw 'Snapshot ACPI persistente diverso dalla discovery firmware.'
         }
         if (!$region0 -or !$region1 -or ($region0 -band 65535) -or ($region1 -band 65535) -or
             ($region0 -lt $region1 + 65536 -and $region1 -lt $region0 + 131072)) { throw 'Blocchi kernel sovrapposti o non allineati.' }
@@ -358,4 +369,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '22/22 scenari: mapping simultanei, revoca arena, stack, guardie, NX, NMI e double fault verificati.'
+Write-BootStatus OK '22/22 scenari: copia ACPI, mapping, stack, guardie, NX, NMI e double fault verificati.'

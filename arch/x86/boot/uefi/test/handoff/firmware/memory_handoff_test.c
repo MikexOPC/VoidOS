@@ -10,6 +10,7 @@ __declspec(align(4096)) static BOOT_MAPPING isolated_mapping;
 static BOOT_PAGE_TABLES tables;
 static UINT32 allocated, released, fail_at, scenario, queries;
 static UINT32 terminal_mode, terminal_case, exits, forbidden, closed;
+static UINT32 acpi_mode;
 static int image_token;
 static BOOT_FINAL_MEMORY_MAP *terminal_memory;
 
@@ -54,7 +55,7 @@ static EFI_STATUS EFIAPI get_map(UINTN *bytes, void *buffer, UINTN *key, UINTN *
     if (terminal_mode && terminal_case == 5) return EFI_DEVICE_ERROR;
     if (terminal_mode && terminal_case == 6 && queries == 2) { *bytes = 8193; return EFI_BUFFER_TOO_SMALL; }
     step = terminal_mode && terminal_case == 1 && queries == 2 ? 64 : 48;
-    count = (UINTN)tables.Count + 4 + (terminal_mode ? queries - 1 : 0);
+    count = (UINTN)tables.Count + 4 + (terminal_mode ? queries - 1 : 0) + acpi_mode;
     needed = count * step;
     if (queries > 1 && scenario == 4) return EFI_DEVICE_ERROR;
     if (queries > 1 && scenario == 5) { *bytes = 8193; return EFI_BUFFER_TOO_SMALL; }
@@ -68,6 +69,11 @@ static EFI_STATUS EFIAPI get_map(UINTN *bytes, void *buffer, UINTN *key, UINTN *
             (terminal_mode && index == 0 && (terminal_case == 8 || (terminal_case == 7 && queries == 2))) ? 7 : 2;
         put64(storage + index * step + 8, address);
         put64(storage + index * step + 24, index == 1 ? 16 : index == 3 ? 2 : 1);
+        if (acpi_mode && index == tables.Count + 4) {
+            storage[index * step] = terminal_mode && terminal_case == 16 && queries == 2 ? 7 : 9;
+            put64(storage + index * step + 8, 0x2000000);
+            put64(storage + index * step + 32, 8);
+        }
     }
     *bytes = needed;
     *key = terminal_mode ? (terminal_case == 14 ? 0 : queries * 100) : queries == 1 ? 10 : 20;
@@ -85,13 +91,15 @@ static EFI_STATUS EFIAPI exit_services(EFI_HANDLE image, UINTN key)
     const BOOT_MEMORY_MAP *map = &terminal_memory->Snapshot;
     if (closed || image != &image_token || key != map->Key || key != (terminal_case == 14 ? 0 : queries * 100) ||
         info->Signature != BOOT_START_SIGNATURE || info->EnabledFeatures || info->MemoryMapBytes != map->Size ||
-        info->MemoryDescriptorBytes != map->DescriptorSize || info->MemoryDescriptorVersion != map->DescriptorVersion) {
+        info->MemoryDescriptorBytes != map->DescriptorSize || info->MemoryDescriptorVersion != map->DescriptorVersion ||
+        (acpi_mode && (info->Acpi.Source != 2 || info->Acpi.Physical != 0x2000000 ||
+                       !os_acpi_root_valid(&info->Acpi, 52)))) {
         ++forbidden;
         return EFI_DEVICE_ERROR;
     }
     ++exits;
     if (terminal_case == 3 || (terminal_case == 1 && exits == 1) || (terminal_case == 2 && exits < 3) ||
-        ((terminal_case == 6 || terminal_case == 7 || terminal_case == 15) && exits == 1)) return EFI_INVALID_PARAMETER;
+        ((terminal_case == 6 || terminal_case == 7 || terminal_case == 15 || terminal_case == 16) && exits == 1)) return EFI_INVALID_PARAMETER;
     if (terminal_case == 4) return EFI_DEVICE_ERROR;
     closed = 1;
     return EFI_SUCCESS;
@@ -127,6 +135,21 @@ static EFI_STATUS EFIAPI deny_free_pool(void *buffer)
 
 // ====== tentativi terminali senza allocazioni con stride e dimensione variabili ====== //
 
+static void attach_test_acpi(BOOT_START_INFO *info)
+{
+    OS_ACPI_ROOT *root = &info->Acpi;
+    UINT32 index, sum = 0;
+    root->Physical = 0x2000000; root->Source = 2; root->Length = 36;
+    put64(root->Bytes, 0x2052545020445352ULL); root->Bytes[15] = 2;
+    root->Bytes[20] = 36; put64(root->Bytes + 24, 0x300000);
+    for (index = 0; index < 20; ++index) sum += root->Bytes[index];
+    root->Bytes[8] = (UINT8)(0U - sum); sum = 0;
+    for (index = 0; index < 36; ++index) sum += root->Bytes[index];
+    root->Bytes[32] = (UINT8)(0U - sum);
+}
+
+// ====== preservazione della copia ACPI attraverso due e tre tentativi ===== //
+
 static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL_IMAGE *kernel,
                          const BOOT_KERNEL_STACK *stack, const BOOT_PAGING_CAPABILITIES *caps,
                          BOOT_START_PAGE *page, BOOT_FINAL_MEMORY_MAP *owner)
@@ -145,25 +168,30 @@ static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL
     services.Prefix.AllocatePool = deny_pool;
     services.Prefix.FreePool = deny_free_pool;
     services.ExitBootServices = exit_services;
-    for (test = 0; test < 16; ++test) {
+    for (test = 0; test < 17; ++test) {
         BOOT_EXIT_STATE state = {0};
         EFI_STATUS expected = test <= 2 || test == 14 ? EFI_SUCCESS :
             test == 3 || test == 11 || test == 12 || test == 13 ? EFI_INVALID_PARAMETER :
-            test == 6 ? EFI_BUFFER_TOO_SMALL : test == 7 || test == 8 || test == 15 ? EFI_LOAD_ERROR :
+            test == 6 ? EFI_BUFFER_TOO_SMALL : test == 7 || test == 8 || test == 15 || test == 16 ? EFI_LOAD_ERROR :
             test == 10 ? EFI_UNSUPPORTED : EFI_DEVICE_ERROR;
         UINT32 expected_attempts = test <= 2 ? test + 1 : test == 3 ? 3 :
-            test == 4 || test == 6 || test == 7 || test == 14 || test == 15 ? 1 : 0;
+            test == 4 || test == 6 || test == 7 || test == 14 || test == 15 || test == 16 ? 1 : 0;
         UINT32 initial_phase = test == 12 ? BOOT_SERVICES_RESTRICTED : BOOT_SERVICES_AVAILABLE;
         UINT32 expected_phase = expected == EFI_SUCCESS ? BOOT_SERVICES_EXITED :
             expected_attempts || test == 12 ? BOOT_SERVICES_RESTRICTED : BOOT_SERVICES_AVAILABLE;
         UINT32 before_allocations = allocated, before_releases = released;
         terminal_mode = scenario = closed = 0;
+        acpi_mode = test == 1 || test == 2 || test == 16;
         queries = 0;
         arena[0][0] = root_entry;
         owner->Snapshot = snapshot;
         owner->Pages = 2;
         if (boot_refresh_final_map(&services.Prefix, owner) != EFI_SUCCESS) return 1500;
         *(BOOT_START_INFO *)contract = saved;
+        if (acpi_mode) {
+            attach_test_acpi((BOOT_START_INFO *)contract);
+            ((BOOT_START_INFO *)contract)->MemoryMapBytes = owner->Snapshot.Size;
+        }
         page->Ready = 1;
         if (test == 11) ((BOOT_START_INFO *)contract)->EnabledFeatures = 3;
         if (test == 13) owner->Pages = 0;
@@ -194,7 +222,7 @@ static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL
         BOOT_EXIT_STATE *alias;
         UINT8 before[sizeof(BOOT_EXIT_STATE)];
         UINT32 byte;
-        terminal_mode = scenario = closed = 0;
+        terminal_mode = scenario = closed = acpi_mode = 0;
         arena[0][0] = root_entry;
         owner->Snapshot = snapshot;
         owner->Pages = 2;
@@ -315,7 +343,7 @@ __declspec(dllexport) int run_memory_handoff_tests(void)
             UINT32 offset;
             if (queries != 2 || owner.Snapshot.Key != 20 || tables.Root != root ||
                 tables.Count != baseline + 3 || !page.Ready || info->Signature != BOOT_START_SIGNATURE ||
-                info->Version != 2 || info->Size != 112 || info->EnabledFeatures ||
+                info->Version != BOOT_START_VERSION || info->Size != sizeof(*info) || info->EnabledFeatures ||
                 info->MemoryMapVirtual != 0x0000500000000000ULL || info->MemoryMapCapacity != 8192 ||
                 info->MemoryMapBytes != ((UINT64)tables.Count + 4) * 48 ||
                 info->MemoryDescriptorBytes != 48 || info->MemoryDescriptorVersion != 1 || info->MemoryReserved)

@@ -7,7 +7,7 @@ BOOT_U64 kernel_probe_marker(void);
 // ====== verifica ingresso e rifiuto dei contratti incompatibili ====== //
 
 __declspec(dllexport) int run_kernel_probe_tests(void) {
-    BOOT_START_INFO info = {BOOT_START_SIGNATURE, BOOT_START_VERSION, 112,
+    BOOT_START_INFO info = {BOOT_START_SIGNATURE, BOOT_START_VERSION, sizeof(BOOT_START_INFO),
         BOOT_START_FEATURES, BOOT_START_FEATURES, 0x400000,
         0x0000700000001000ULL, 65536, 0x101000, 0,
         0x0000500000000000ULL, 96, 4096, 48, 1, 0};
