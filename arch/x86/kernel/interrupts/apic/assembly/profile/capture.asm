@@ -68,4 +68,21 @@ capture_null:
     xor eax, eax
     ret
 x86_apic_read_profile ENDP
+; ====== IF zero e caching normale senza cambiare CR0 ===== ;
+
+PUBLIC x86_apic_cache_state
+x86_apic_cache_state PROC
+    pushfq
+    pop rax
+    test eax, 200h
+    jnz cache_bad
+    mov rax, cr0
+    test eax, 60000000h
+    jnz cache_bad
+    mov eax, 1
+    ret
+cache_bad:
+    xor eax, eax
+    ret
+x86_apic_cache_state ENDP
 END

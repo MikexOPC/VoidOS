@@ -89,5 +89,8 @@ handler con ritorno e maschere controllati dal kernel.
 
 ## Riferimenti
 
+Il profilo viene ora consumato dal [probe MMIO temporaneo](apic-mmio.md),
+che verifica anche l'ID LAPIC attuale, le capacita I/O APIC e gli intervalli GSI.
+
 [Intel SDM, Vol. 3A: 11.4.4, 11.4.6, 11.12 e capitolo 12;
 Vol. 4: IA32_APIC_BASE e IA32_PAT](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html).

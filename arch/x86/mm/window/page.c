@@ -83,6 +83,13 @@ static int leaves_match(const X86_PAGE_WINDOW *window)
     return 1;
 }
 
+// ====== controllo completo riusato dai prestiti MMIO senza possedere frame ===== //
+
+int x86_page_window_idle_valid(const X86_PAGE_WINDOW *window)
+{
+    return window_valid(window) && !window->Active && leaves_match(window);
+}
+
 // ====== owner non spostabile e distinto dai metadati fisici ===== //
 
 int x86_page_window_initialize(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)

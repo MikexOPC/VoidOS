@@ -15,6 +15,7 @@
 #include "firmware/acpi/platform.h"
 #include "firmware/acpi/madt/platform.h"
 #include "arch/x86/kernel/interrupts/apic/profile.h"
+#include "arch/x86/kernel/interrupts/apic/probe.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
@@ -29,6 +30,7 @@ static KERNEL_OBJECT_HANDLE paging_object;
 static KERNEL_OBJECT_HANDLE acpi_object;
 static KERNEL_OBJECT_HANDLE madt_object;
 static X86_APIC_PROFILE apic_profile;
+static X86_APIC_CAPABILITIES apic_capabilities;
 __declspec(noreturn) static void kernel_continue(void);
 #if defined(KERNEL_TEST_MAIN_FAULT) && KERNEL_TEST_MAIN_FAULT == 4
 
@@ -306,6 +308,10 @@ __declspec(noreturn) static void kernel_continue(void)
             (!x86_apic_initialize((const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&persistent_arena, &madt_object),
                                     physical_allocator.PhysicalBits, &apic_profile) ||
              !x86_paging_inventory_verify(context, &physical_allocator, paging))) kernel_panic("APIC_PREFLIGHT_INVALID");
+        if (context->Info.Acpi.Source &&
+            !x86_apic_probe(context, &page_window, paging,
+                (const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&persistent_arena, &madt_object),
+                &apic_profile, &apic_capabilities)) kernel_panic("APIC_MMIO_INVALID");
     }
 #ifdef KERNEL_TEST_REGION_FAULT
     {

@@ -10,6 +10,7 @@ typedef struct {
 int x86_page_window_initialize(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root);
 int x86_page_window_acquire(X86_PAGE_WINDOW *window, BOOT_U64 pages);
 int x86_page_window_release(X86_PAGE_WINDOW *window);
+int x86_page_window_idle_valid(const X86_PAGE_WINDOW *window);
 int x86_page_window_read_acpi(X86_PAGE_WINDOW *window, const KERNEL_BOOT_CONTEXT *context,
                               BOOT_U64 physical, BOOT_U64 bytes, unsigned char *output);
 #endif
