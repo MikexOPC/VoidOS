@@ -11,6 +11,7 @@
 #include "arch/x86/kernel/stack/main.h"
 #include "arch/x86/mm/regions/mapping.h"
 #include "arch/x86/mm/arena/objects.h"
+#include "arch/x86/mm/paging/inventory.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
@@ -21,6 +22,7 @@ static X86_REGION_MAPPER region_mapper;
 static X86_REGION_HANDLE region_handles[2];
 static X86_OBJECT_ARENA persistent_arena;
 static KERNEL_OBJECT_HANDLE context_object, inventory_object;
+static KERNEL_OBJECT_HANDLE paging_object;
 __declspec(noreturn) static void kernel_continue(void);
 #if defined(KERNEL_TEST_MAIN_FAULT) && KERNEL_TEST_MAIN_FAULT == 4
 
@@ -266,6 +268,22 @@ __declspec(noreturn) static void kernel_continue(void)
             context->MemoryMap != boot_context.MemoryMap || inventory->ConventionalPages != memory_inventory.ConventionalPages ||
             inventory->ReservedPages != memory_inventory.ReservedPages || inventory->Regions != memory_inventory.Regions ||
             !kernel_log(0, "KERNEL_PERSISTENT_STATE_OK")) kernel_panic("PERSISTENT_STATE_INVALID");
+    }
+    {
+        const KERNEL_BOOT_CONTEXT *context = (const KERNEL_BOOT_CONTEXT *)x86_object_arena_data(&persistent_arena, &context_object);
+        X86_PAGING_INVENTORY *paging;
+        BOOT_U64 budget = physical_allocator.FreePages;
+        if (!context || !kernel_section("risorse paging attive") ||
+            !x86_object_arena_allocate(&persistent_arena, sizeof(*paging), 8, &paging_object)) kernel_panic("PAGING_INVENTORY_ALLOC_FAILED");
+        paging = (X86_PAGING_INVENTORY *)x86_object_arena_data(&persistent_arena, &paging_object);
+        if (!paging || !x86_paging_inventory_capture(context, &physical_allocator, paging) ||
+            !x86_paging_inventory_verify(context, &physical_allocator, paging) ||
+            physical_allocator.FreePages != budget || persistent_arena.Objects.Used != 3240)
+            kernel_panic("PAGING_INVENTORY_INVALID");
+        if (!kernel_text("KERNEL_PAGING_INVENTORY: ") || !kernel_number((BOOT_U64)paging) ||
+            !kernel_text("\nKERNEL_PAGING_TABLES: ") || !kernel_number(paging->Count) ||
+            !kernel_text("\nKERNEL_PAGING_LEAVES: ") || !kernel_number(paging->LeafPages) ||
+            !kernel_text("\n") || !kernel_log(0, "KERNEL_PAGING_INVENTORY_OK")) kernel_panic("SERIAL_UNAVAILABLE");
     }
 #ifdef KERNEL_TEST_REGION_FAULT
     {

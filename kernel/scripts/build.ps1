@@ -55,6 +55,7 @@ foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch
     'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
     'arch/x86/mm/regions/mapping.c','arch/x86/mm/regions/access.c',
     'arch/x86/mm/arena/objects.c',
+    'arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/access.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
     'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
     $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
@@ -83,6 +84,10 @@ if ($TestWindowFault -ne 'none') {
     $objects += ($output + '/fault.obj')
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/mm/paging/rust/validation/entries.rs'),
+    '-o',($output + '/paging-entries.obj'))
+$objects += ($output + '/paging-entries.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/mm/regions/rust/layout/validation.rs'),
     '-o',($output + '/region-layout.obj'))

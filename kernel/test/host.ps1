@@ -20,6 +20,7 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     'kernel/test/mm/physical/alignment_test.c',
     'arch/x86/mm/regions/mapping.c','kernel/test/mm/regions/mapping_test.c',
     'arch/x86/mm/arena/objects.c','kernel/test/mm/arena/objects_test.c',
+    'arch/x86/mm/paging/inventory.c','kernel/test/mm/paging/inventory_test.c',
     'kernel/diagnostics/log.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','kernel/test/mm/window/page_test.c',
     'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
     'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c',
@@ -32,6 +33,9 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/mm/paging/rust/validation/entries.rs') -o ($output + '/paging-entries.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione formato paging fallita.' }
+$objects += ($output + '/paging-entries.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/mm/regions/rust/layout/validation.rs') -o ($output + '/region-layout.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione layout mapping fallita.' }
 $objects += ($output + '/region-layout.obj')
@@ -85,6 +89,15 @@ $arenaType = Add-Type -TypeDefinition $arenaSource -PassThru
 $result = $arenaType.GetMethod('run_arena_tests').Invoke($null, @())
 if ($result -ne 0) { throw "Test arena persistente fallito: $result" }
 Write-BootStatus OK 'Arena oggetti: binding mapping, lifetime, OOM, 64 record e 256 cicli verificati.'
+$pagingSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Paging { [DllImport(@"' + $dll + '")] public static extern int run_paging_inventory_tests(); }'
+$pagingType = Add-Type -TypeDefinition $pagingSource -PassThru
+$result = $pagingType.GetMethod('run_paging_inventory_tests').Invoke($null, @())
+if ($result -ne 0) { throw "Test inventario paging fallito: $result" }
+& $rustc --edition=2024 --test -D warnings (Join-Path $PSScriptRoot 'mm/paging/rust/validation/entries_test.rs') -o ($output + '/paging-entries-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione test formato paging fallita.' }
+& ($output + '/paging-entries-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Test formato paging Rust falliti.' }
+Write-BootStatus OK 'Inventario paging: cicli, alias, riserve, 128 tabelle e 24768 alterazioni dei metadati verificati.'
 $windowSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Window { [DllImport(@"' + $dll + '")] public static extern int run_window_tests(); }'
 $windowType = Add-Type -TypeDefinition $windowSource -PassThru
 $result = $windowType.GetMethod('run_window_tests').Invoke($null, @())
@@ -125,4 +138,4 @@ foreach ($method in @('run_stack_tests','run_segment_tests','run_main_stack_test
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
-Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 23 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 25 test Rust complessivi.'

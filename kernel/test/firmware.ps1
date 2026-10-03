@@ -116,6 +116,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $arenaInventory = Read-Hex $log 'KERNEL_ARENA_INVENTORY: 0x([0-9a-f]{16})'
         $vm.StandardInput.WriteLine('x /15gx 0x' + $arenaContext.ToString('x16'))
         $vm.StandardInput.WriteLine('x /3gx 0x' + $arenaInventory.ToString('x16'))
+        $pagingInventory = Read-Hex $log 'KERNEL_PAGING_INVENTORY: 0x([0-9a-f]{16})'
+        $vm.StandardInput.WriteLine('x /3gx 0x' + $pagingInventory.ToString('x16'))
         $tss = [regex]::Match($log, '(?i)KERNEL_TSS_BASE: 0x([0-9a-f]{16})')
         if (!$tss.Success) { throw 'TSS kernel assente.' }
         $vm.StandardInput.WriteLine('x /1gx 0x' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16'))
@@ -148,6 +150,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             !$log.Contains('KERNEL_PHYSICAL_ALIGNED_OK') -or
             !$log.Contains('KERNEL_REGIONS_OK') -or
             !$log.Contains('KERNEL_ARENA_OK') -or !$log.Contains('KERNEL_PERSISTENT_STATE_OK') -or
+            !$log.Contains('KERNEL_PAGING_INVENTORY_OK') -or
             !$log.Contains('KERNEL_WINDOW_16_PAGES_OK') -or !$log.Contains('KERNEL_OBJECTS_OK') -or
             !$log.Contains('KERNEL_IDT_OK') -or !$log.Contains('KERNEL_DESCRIPTORS_OK') -or
             !$log.Contains('KERNEL_MAIN_STACK_OK') -or !$log.Contains('KERNEL_RSP0_OK')) {
@@ -161,6 +164,15 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         }
         $region0 = Read-Hex $log 'KERNEL_REGION0_PHYSICAL: 0x([0-9a-f]{16})'
         $region1 = Read-Hex $log 'KERNEL_REGION1_PHYSICAL: 0x([0-9a-f]{16})'
+        $pagingCount = Read-Hex $log 'KERNEL_PAGING_TABLES: 0x([0-9a-f]{16})'
+        $pagingLeaves = Read-Hex $log 'KERNEL_PAGING_LEAVES: 0x([0-9a-f]{16})'
+        $pagingRoot = [Convert]::ToUInt64($root,16)
+        if (!$pagingCount -or $pagingCount -gt 128 -or !$pagingLeaves -or ($pagingInventory -band 7) -or
+            $pagingInventory -lt $arenaInventory + 24 -or $pagingInventory + 3096 -gt 0x7000000b3000 -or
+            $registers -notmatch ('(?im)^' + $pagingInventory.ToString('x16') + ':\s+0x' + $pagingRoot.ToString('x16') + '\s+0x' + $pagingLeaves.ToString('x16')) -or
+            $registers -notmatch ('(?im)^' + ($pagingInventory + 16).ToString('x16') + ':\s+0x' + ((1L -shl 32) + $pagingCount).ToString('x16'))) {
+            throw 'Inventario paging fuori arena o diverso dalla fotografia verificata.'
+        }
         if (($arenaContext -band 15) -or ($arenaInventory -band 7) -or
             $arenaContext -lt 0x7000000a3000 -or $arenaContext + 120 -gt 0x7000000b3000 -or
             $arenaInventory -lt 0x7000000a3000 -or $arenaInventory + 24 -gt 0x7000000b3000 -or
