@@ -15,7 +15,7 @@ utilizzabili iniziano una pagina dopo la guardia. Gli slot usano PTE
 non si cambia CR3 e non si adottano PTE preesistenti. Gli assert C
 vincolano il profilo condiviso con Rust, che valida basi, handle e frame.
 
-Il mapper occupa 160 byte e vive nella BSS; l'handle occupa 32 byte.
+Il mapper occupa 192 byte e vive nella BSS; l'handle occupa 32 byte.
 Owner e allocatore fisico sono non spostabili e devono restare vivi.
 I buffer di metadati e gli handle devono essere accessibili, distinti
 e fuori dall'arena che il mapper gestisce. I controlli numerici non
@@ -42,6 +42,13 @@ INVLPG per ogni pagina, poi rimuove il pin e restituisce la lease.
 Il rilascio azzera l'handle fornito; altre copie diventano obsolete.
 Detach azzera il mapper soltanto quando non esistono piu mapping vivi.
 Gli ID dell'allocatore fisico continuano a crescere dopo reinitialize.
+
+Bind registra un borrower esclusivo, identificato dai suoi metadati;
+release respinge anche copie valide dell'handle mentre il binding e vivo.
+Unbind richiede la stessa identita. Il [pool persistente](persistent-objects.md)
+usa questo vincolo per impedire l'unmap del buffer dei suoi oggetti.
+Si tratta di un protocollo fra componenti fidati, non autenticazione:
+la conoscenza dell'identita non e un permesso per codice non fidato.
 
 Il puntatore restituito da data e un prestito valido fino al rilascio.
 Il chiamante deve terminare tutti gli accessi e scartarlo prima di

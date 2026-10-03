@@ -12,9 +12,10 @@ typedef struct {
     BOOT_U64 Self, Root;
     KERNEL_PHYSICAL_ALLOCATOR *Pool;
     KERNEL_PHYSICAL_LEASE Live[X86_REGION_SLOTS];
+    BOOT_U64 Borrowers[X86_REGION_SLOTS];
     BOOT_U32 Ready, Reserved;
 } X86_REGION_MAPPER;
-_Static_assert(sizeof(X86_REGION_MAPPER) == 160, "Mapper metadata bounded to 160 bytes");
+_Static_assert(sizeof(X86_REGION_MAPPER) == 192, "Mapper metadata bounded to 192 bytes");
 _Static_assert(X86_REGION_GUARD == 0x0000700000080000ULL && X86_REGION_SLOTS == 4 &&
                X86_REGION_STRIDE == 34 && X86_REGION_PAGES == 32, "C and Rust require the fixed arena profile");
 _Static_assert(((X86_REGION_GUARD >> 12) & 511) == X86_REGION_LEAF, "Arena leaf matches virtual address");
@@ -29,6 +30,9 @@ int x86_region_acquire(X86_REGION_MAPPER *owner, BOOT_U64 pages, BOOT_U64 alignm
 volatile unsigned char *x86_region_data(const X86_REGION_MAPPER *owner, const X86_REGION_HANDLE *handle);
 int x86_region_release(X86_REGION_MAPPER *owner, X86_REGION_HANDLE *handle);
 int x86_region_detach(X86_REGION_MAPPER *owner);
+int x86_region_bind(X86_REGION_MAPPER *owner, const X86_REGION_HANDLE *handle, BOOT_U64 borrower);
+int x86_region_unbind(X86_REGION_MAPPER *owner, const X86_REGION_HANDLE *handle, BOOT_U64 borrower);
+int x86_region_is_bound(const X86_REGION_MAPPER *owner, const X86_REGION_HANDLE *handle, BOOT_U64 borrower);
 volatile BOOT_U64 *x86_region_entries(BOOT_U32 level);
 volatile unsigned char *x86_region_bytes(BOOT_U32 slot);
 void x86_region_invalidate(BOOT_U64 address);

@@ -79,6 +79,10 @@ KERNEL_OBJECTS_OK conferma anche il ripristino del budget fisico.
 I [mapping simultanei](memory/region-mappings.md) aggiungono poi quattro
 slot indipendenti; due blocchi da 128 e 64 KiB rimangono vivi, RW/NX e
 protetti da guardie, senza dipendere dalla finestra temporanea.
+Il [pool persistente](memory/persistent-objects.md) usa il secondo blocco
+per contesto di boot e inventario: 144 byte di oggetti, con prestito del
+mapping mantenuto fino allo scollegamento del pool. La continuazione
+li verifica nuovamente dopo aver revocato lo stack del loader.
 Il confronto a coppie usa O(n^2) tempo, nessun heap e al massimo 4096 regioni;
 e una scelta iniziale limitata, da misurare prima di estenderne l'uso.
 

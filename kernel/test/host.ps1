@@ -19,6 +19,7 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/test/mm/physical/allocator_test.c',
     'kernel/test/mm/physical/alignment_test.c',
     'arch/x86/mm/regions/mapping.c','kernel/test/mm/regions/mapping_test.c',
+    'arch/x86/mm/arena/objects.c','kernel/test/mm/arena/objects_test.c',
     'kernel/diagnostics/log.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','kernel/test/mm/window/page_test.c',
     'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
     'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c',
@@ -79,6 +80,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test mapping Rust fallita.' }
 & ($output + '/region-layout-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test mapping Rust falliti.' }
 Write-BootStatus OK 'Mapping simultanei: pin, rollback, stale handle, guardie, 8640 corruzioni PTE e 128 cicli verificati.'
+$arenaSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Arena { [DllImport(@"' + $dll + '")] public static extern int run_arena_tests(); }'
+$arenaType = Add-Type -TypeDefinition $arenaSource -PassThru
+$result = $arenaType.GetMethod('run_arena_tests').Invoke($null, @())
+if ($result -ne 0) { throw "Test arena persistente fallito: $result" }
+Write-BootStatus OK 'Arena oggetti: binding mapping, lifetime, OOM, 64 record e 256 cicli verificati.'
 $windowSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Window { [DllImport(@"' + $dll + '")] public static extern int run_window_tests(); }'
 $windowType = Add-Type -TypeDefinition $windowSource -PassThru
 $result = $windowType.GetMethod('run_window_tests').Invoke($null, @())

@@ -67,7 +67,8 @@ int x86_region_validate(const X86_REGION_MAPPER *owner)
         !separate(owner, sizeof(*owner), owner->Pool, sizeof(*owner->Pool)) || !kernel_physical_validate(owner->Pool)) return 0;
     for (slot = 0; slot < X86_REGION_SLOTS; ++slot) {
         const KERNEL_PHYSICAL_LEASE *lease = &owner->Live[slot];
-        if (!lease->Id) { if (lease->Base || lease->Pages || lease->Owner) return 0; continue; }
+        if (!lease->Id) { if (lease->Base || lease->Pages || lease->Owner || owner->Borrowers[slot]) return 0; continue; }
+        if (owner->Borrowers[slot] && !range((const void *)owner->Borrowers[slot], 8, 8)) return 0;
         if (!x86_region_frame(lease->Base, lease->Pages, owner->Pool->PhysicalBits) ||
             !kernel_physical_is_pinned(owner->Pool, lease)) return 0;
         for (other = 0; other < slot; ++other) if (owner->Live[other].Id == lease->Id) return 0;
@@ -198,7 +199,35 @@ volatile unsigned char *x86_region_data(const X86_REGION_MAPPER *owner, const X8
 int x86_region_release(X86_REGION_MAPPER *owner, X86_REGION_HANDLE *handle)
 {
     BOOT_U32 slot = matching(owner, handle);
-    if (!slot || !remove_mapping(owner, slot - 1)) return 0;
+    if (!slot || owner->Borrowers[slot - 1] || !remove_mapping(owner, slot - 1)) return 0;
     *handle = (X86_REGION_HANDLE){0};
     return 1;
+}
+
+// ====== prestito esclusivo della durata del mapping per un componente persistente ===== //
+
+int x86_region_bind(X86_REGION_MAPPER *owner, const X86_REGION_HANDLE *handle, BOOT_U64 borrower)
+{
+    BOOT_U32 slot = matching(owner, handle);
+    if (!slot || !range((const void *)borrower, 8, 8) || owner->Borrowers[slot - 1]) return 0;
+    owner->Borrowers[slot - 1] = borrower;
+    return 1;
+}
+
+// ====== solo la stessa identita puo terminare il prestito del mapping ===== //
+
+int x86_region_unbind(X86_REGION_MAPPER *owner, const X86_REGION_HANDLE *handle, BOOT_U64 borrower)
+{
+    BOOT_U32 slot = matching(owner, handle);
+    if (!slot || !borrower || owner->Borrowers[slot - 1] != borrower) return 0;
+    owner->Borrowers[slot - 1] = 0;
+    return 1;
+}
+
+// ====== verifica immutabile del prestito prima di usare oggetti nel mapping ===== //
+
+int x86_region_is_bound(const X86_REGION_MAPPER *owner, const X86_REGION_HANDLE *handle, BOOT_U64 borrower)
+{
+    BOOT_U32 slot = matching(owner, handle);
+    return slot && borrower && owner->Borrowers[slot - 1] == borrower;
 }

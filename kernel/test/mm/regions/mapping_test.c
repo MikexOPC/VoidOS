@@ -2,14 +2,14 @@
 static X86_REGION_MAPPER owner, copy;
 static KERNEL_PHYSICAL_ALLOCATOR pool;
 static BOOT_U64 tables[4][512];
-static volatile unsigned char buffers[4][32 * 4096];
-static BOOT_U32 missing, invalidations, ordering;
+_Alignas(4096) static volatile unsigned char buffers[4][32 * 4096];
+static BOOT_U32 missing, byte_offset, invalidations, ordering;
 static unsigned char map[48];
 
 // ====== backend indipendente con verifica del pin durante ogni invalidazione ===== //
 
 volatile BOOT_U64 *x86_region_entries(BOOT_U32 level) { return level < 4 ? tables[level] : 0; }
-volatile unsigned char *x86_region_bytes(BOOT_U32 slot) { return slot < 4 && !missing ? buffers[slot] : 0; }
+volatile unsigned char *x86_region_bytes(BOOT_U32 slot) { return slot < 4 && !missing ? buffers[slot] + byte_offset : 0; }
 void x86_region_invalidate(BOOT_U64 address)
 {
     BOOT_U32 slot, index;
@@ -38,12 +38,19 @@ static void clear(void *object, BOOT_U64 bytes)
 static int fixture(void)
 {
     clear(&owner, sizeof(owner)); clear(&pool, sizeof(pool)); clear(tables, sizeof(tables)); clear(map, sizeof(map));
-    missing = invalidations = ordering = 0;
+    missing = byte_offset = invalidations = ordering = 0;
     map[0] = 7; map[10] = 0x10; map[24] = 128; map[32] = 8;
     tables[0][128] = 0x8000000000001003ULL;
     tables[0][224] = 0x2003; tables[1][0] = 0x3003; tables[2][0] = 0x4003;
     return kernel_physical_initialize(&pool, map, 48, 48, 32) && x86_region_initialize(&owner, &pool, 0x1000);
 }
+
+// ====== fixture condivisa con i test di binding del pool senza duplicare il backend ===== //
+
+int x86_test_region_fixture(void) { return fixture(); }
+X86_REGION_MAPPER *x86_test_region_mapper(void) { return &owner; }
+KERNEL_PHYSICAL_ALLOCATOR *x86_test_region_pool(void) { return &pool; }
+void x86_test_region_offset(BOOT_U32 value) { byte_offset = value; }
 
 // ====== quattro mapping simultanei con saturazione pin riuso e isolamento dei byte ===== //
 
@@ -180,6 +187,10 @@ static int invalid_handles(void)
     if (x86_region_acquire(&owner, 1, 1, &handle) || handle.Id != 73 || pool.FreePages != 128) return 3;
     handle.Id = 0;
     if (!x86_region_acquire(&owner, 1, 1, &handle)) return 4;
+    if (!x86_region_bind(&owner, &handle, (BOOT_U64)&copy) ||
+        x86_region_bind(&owner, &handle, (BOOT_U64)&copy) || x86_region_release(&owner, &handle) ||
+        x86_region_unbind(&owner, &handle, (BOOT_U64)&pool) ||
+        !x86_region_unbind(&owner, &handle, (BOOT_U64)&copy)) return 12;
     if (x86_region_detach(&owner)) return 8;
     bad = handle; ++bad.Virtual;
     if (x86_region_data(&owner, &bad) || x86_region_release(&owner, &bad)) return 5;

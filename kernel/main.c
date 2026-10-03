@@ -10,6 +10,7 @@
 #include "arch/x86/kernel/descriptors/segments.h"
 #include "arch/x86/kernel/stack/main.h"
 #include "arch/x86/mm/regions/mapping.h"
+#include "arch/x86/mm/arena/objects.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
@@ -18,6 +19,8 @@ static KERNEL_OBJECT_POOL object_pool;
 static X86_KERNEL_MAIN_STACK main_stack;
 static X86_REGION_MAPPER region_mapper;
 static X86_REGION_HANDLE region_handles[2];
+static X86_OBJECT_ARENA persistent_arena;
+static KERNEL_OBJECT_HANDLE context_object, inventory_object;
 __declspec(noreturn) static void kernel_continue(void);
 #if defined(KERNEL_TEST_MAIN_FAULT) && KERNEL_TEST_MAIN_FAULT == 4
 
@@ -182,6 +185,44 @@ static void prepare_kernel_regions(void)
         !kernel_text("\n") || !kernel_log(0, "KERNEL_REGIONS_OK")) kernel_panic("SERIAL_UNAVAILABLE");
 }
 
+// ====== contesto e inventario posseduti dal kernel in un mapping persistente ===== //
+
+static void prepare_persistent_objects(void)
+{
+    KERNEL_OBJECT_HANDLE temporary = {0}, stale;
+    unsigned char *data;
+    BOOT_U32 byte;
+    BOOT_U64 budget = physical_allocator.FreePages;
+    if (!x86_object_arena_attach(&persistent_arena, &region_mapper, &region_handles[1]) ||
+        !x86_object_arena_allocate(&persistent_arena, sizeof(boot_context), 16, &context_object) ||
+        !x86_object_arena_allocate(&persistent_arena, sizeof(memory_inventory), 8, &inventory_object) ||
+        !x86_object_arena_allocate(&persistent_arena, 4097, 4096, &temporary)) kernel_panic("PERSISTENT_OBJECT_INIT_FAILED");
+    data = x86_object_arena_data(&persistent_arena, &context_object);
+    if (!data) kernel_panic("PERSISTENT_OBJECT_ACCESS_FAILED");
+    for (byte = 0; byte < sizeof(boot_context); ++byte)
+        ((volatile unsigned char *)data)[byte] = ((const unsigned char *)&boot_context)[byte];
+    data = 0;
+    data = x86_object_arena_data(&persistent_arena, &inventory_object);
+    if (!data) kernel_panic("PERSISTENT_OBJECT_ACCESS_FAILED");
+    for (byte = 0; byte < sizeof(memory_inventory); ++byte)
+        ((volatile unsigned char *)data)[byte] = ((const unsigned char *)&memory_inventory)[byte];
+    data = 0;
+    data = x86_object_arena_data(&persistent_arena, &temporary);
+    if (!data || ((BOOT_U64)data & 4095)) kernel_panic("PERSISTENT_OBJECT_ALIGNMENT_FAILED");
+    for (byte = 0; byte < temporary.Bytes; ++byte) { if (data[byte]) kernel_panic("PERSISTENT_OBJECT_NOT_ZERO"); data[byte] = 0x5a; }
+    data = 0; stale = temporary;
+    if (x86_object_arena_detach(&persistent_arena) || x86_region_release(&region_mapper, &region_handles[1]) ||
+        !x86_object_arena_release(&persistent_arena, &temporary) || x86_object_arena_data(&persistent_arena, &stale) ||
+        !x86_object_arena_allocate(&persistent_arena, 4097, 4096, &temporary) || temporary.Id == stale.Id ||
+        !x86_object_arena_release(&persistent_arena, &temporary) || physical_allocator.FreePages != budget ||
+        persistent_arena.Objects.Count != 2 || persistent_arena.Objects.Used != sizeof(boot_context) + sizeof(memory_inventory))
+        kernel_panic("PERSISTENT_OBJECT_LIFETIME_FAILED");
+    if (!kernel_text("KERNEL_ARENA_CONTEXT: ") || !kernel_number(region_handles[1].Virtual + context_object.Offset) ||
+        !kernel_text("\nKERNEL_ARENA_INVENTORY: ") || !kernel_number(region_handles[1].Virtual + inventory_object.Offset) ||
+        !kernel_text("\nKERNEL_ARENA_USED: ") || !kernel_number(persistent_arena.Objects.Used) ||
+        !kernel_text("\n") || !kernel_log(0, "KERNEL_ARENA_OK")) kernel_panic("SERIAL_UNAVAILABLE");
+}
+
 // ====== inizializzazione comune con pool limitato e senza servizi UEFI ===== //
 
 __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U64 entry)
@@ -204,6 +245,8 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
     prepare_kernel_objects();
     if (!kernel_section("mapping kernel simultanei RW NX")) kernel_panic("SERIAL_UNAVAILABLE");
     prepare_kernel_regions();
+    if (!kernel_section("oggetti persistenti kernel")) kernel_panic("SERIAL_UNAVAILABLE");
+    prepare_persistent_objects();
     if (!kernel_section("GDT TSS e stack di emergenza kernel") ||
         !x86_kernel_segments_initialize(&physical_allocator)) kernel_panic("KERNEL_DESCRIPTORS_FAILED");
     if (!kernel_section("stack principale kernel") ||
@@ -216,6 +259,14 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
 __declspec(noreturn) static void kernel_continue(void)
 {
     if (!x86_kernel_main_retire(&main_stack) || !x86_kernel_main_report(&main_stack)) kernel_panic("MAIN_STACK_RETIRE_FAILED");
+    {
+        const KERNEL_BOOT_CONTEXT *context = (const KERNEL_BOOT_CONTEXT *)x86_object_arena_data(&persistent_arena, &context_object);
+        const KERNEL_MEMORY_INVENTORY *inventory = (const KERNEL_MEMORY_INVENTORY *)x86_object_arena_data(&persistent_arena, &inventory_object);
+        if (!context || !inventory || !kernel_validate_contract(&context->Info, x86_kernel_root(), context->Info.KernelEntry) ||
+            context->MemoryMap != boot_context.MemoryMap || inventory->ConventionalPages != memory_inventory.ConventionalPages ||
+            inventory->ReservedPages != memory_inventory.ReservedPages || inventory->Regions != memory_inventory.Regions ||
+            !kernel_log(0, "KERNEL_PERSISTENT_STATE_OK")) kernel_panic("PERSISTENT_STATE_INVALID");
+    }
 #ifdef KERNEL_TEST_REGION_FAULT
     {
         BOOT_U64 address = region_handles[0].Virtual;
