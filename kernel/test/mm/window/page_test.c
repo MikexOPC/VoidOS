@@ -8,6 +8,7 @@ static BOOT_U32 invalidations, ordering_error;
 static BOOT_U64 initial_free;
 static BOOT_U32 null_buffer;
 static BOOT_U32 seen_pages, batch_calls;
+static BOOT_U32 borrow_mode;
 
 // ====== backend host senza istruzioni privilegiate ===== //
 
@@ -18,6 +19,17 @@ void x86_invalidate_page(BOOT_U64 address)
 {
     BOOT_U32 index;
     BOOT_U64 offset = address - X86_KERNEL_PAGE_WINDOW;
+    if (borrow_mode) {
+        BOOT_U64 leaf = tables[3][32], base = leaf & 0x000ffffffffff000ULL;
+        if (address != X86_KERNEL_PAGE_WINDOW || window.Active || window.Lease.Id ||
+            pool.FreePages != initial_free || (leaf && leaf != (base | 1 | (1ULL << 63)))) ordering_error = 1;
+        if (leaf) {
+            for (index = 0; index < 4096; ++index) bytes[index] = (unsigned char)((base + index) % 251);
+            tables[3][32] |= 0x20;
+        }
+        ++invalidations;
+        return;
+    }
     if (address < X86_KERNEL_PAGE_WINDOW || address >= X86_KERNEL_PAGE_WINDOW + window.Lease.Pages * 4096 ||
         (address & 4095) || pool.FreePages != initial_free - window.Lease.Pages ||
         !kernel_physical_is_pinned(&pool, &window.Lease)) ordering_error = 1;
@@ -52,7 +64,7 @@ static int fixture(void)
     tables[0][(X86_KERNEL_PAGE_WINDOW >> 39) & 511] = 0x2003;
     tables[1][0] = 0x3003; tables[2][0] = 0x4003;
     for (index = 0; index < sizeof(bytes); ++index) ((volatile unsigned char *)bytes)[index] = 0xa5;
-    invalidations = ordering_error = null_buffer = 0;
+    invalidations = ordering_error = null_buffer = borrow_mode = 0;
     batch_calls = seen_pages = 0;
     if (!kernel_physical_initialize(&pool, map, sizeof(map), sizeof(map), 32)) return 0;
     initial_free = pool.FreePages;
@@ -104,7 +116,61 @@ static int rejects_every_occupied_slot(void)
     return 0;
 }
 
-// ====== ogni dimensione inclusi OOM e corruzione dell ultima foglia ===== //
+// ====== letture ACPI tra pagine con budget e ordine delle invalidazioni verificati ===== //
+
+static int borrowed_reads(void)
+{
+    KERNEL_BOOT_CONTEXT context;
+    unsigned char firmware_map[40];
+    static unsigned char output[8192];
+    BOOT_U32 index;
+    if (!fixture() || !x86_page_window_initialize(&window, &pool, 0x1000)) return 90;
+    clear(&context, sizeof(context)); clear(firmware_map, sizeof(firmware_map));
+    context.Info.Signature = BOOT_START_SIGNATURE; context.Info.Version = BOOT_START_VERSION;
+    context.Info.Size = sizeof(context.Info); context.Info.RequiredFeatures = context.Info.EnabledFeatures = 3;
+    context.Info.PageTableRoot = 0x1000; context.Info.KernelEntry = 0x100001000;
+    context.Info.StackBase = X86_BOOT_STACK_VIRTUAL; context.Info.StackBytes = X86_BOOT_STACK_BYTES;
+    context.Info.MemoryMapVirtual = X86_BOOT_MAP_VIRTUAL; context.Info.MemoryMapBytes = 40;
+    context.Info.MemoryMapCapacity = 4096; context.Info.MemoryDescriptorBytes = 40; context.Info.MemoryDescriptorVersion = 1;
+    context.MemoryMap = firmware_map;
+    firmware_map[0] = 9; firmware_map[10] = 0x80; firmware_map[24] = 3; firmware_map[32] = 8;
+    borrow_mode = 1;
+    if (!x86_page_window_read_acpi(&window, &context, 0x800fff, 8192, output) ||
+        invalidations != 6 || ordering_error || tables[3][32] || window.Active || window.Lease.Id ||
+        pool.FreePages != initial_free || pool.NextId != 1) return 91;
+    for (index = 0; index < sizeof(output); ++index)
+        if (output[index] != (unsigned char)((0x800fffULL + index) % 251)) return 92;
+    for (index = 0; index < 15; ++index) {
+        firmware_map[0] = (unsigned char)index;
+        if (index == 9 || index == 10) continue;
+        if (x86_page_window_read_acpi(&window, &context, 0x800000, 36, output) || invalidations != 6) return 93;
+    }
+    firmware_map[0] = 10;
+    if (!x86_page_window_read_acpi(&window, &context, 0x800007, 36, output) || invalidations != 8) return 94;
+    firmware_map[33] = 0x20;
+    if (x86_page_window_read_acpi(&window, &context, 0x800000, 36, output)) return 95;
+    firmware_map[33] = 0;
+    if (x86_page_window_read_acpi(&window, &context, 0x802fff, 2, output) ||
+        x86_page_window_read_acpi(&window, &context, ~0ULL, 36, output) ||
+        x86_page_window_read_acpi(&window, &context, 0x800000, 0, output) ||
+        x86_page_window_read_acpi(&window, &context, 0x800000, 65537, output) ||
+        x86_page_window_read_acpi(&window, &context, 0x800000, 36, firmware_map) ||
+        x86_page_window_read_acpi(&window, &context, 0x800000, 36, (unsigned char *)&pool) ||
+        x86_page_window_read_acpi(&window, &context, 0x800000, 36, (unsigned char *)&window) ||
+        x86_page_window_read_acpi(&window, &context, 0x800000, 36, (unsigned char *)&context) ||
+        x86_page_window_read_acpi(&window, &context, 0x800000, 36, (unsigned char *)X86_KERNEL_PAGE_WINDOW)) return 96;
+    null_buffer = 1;
+    if (x86_page_window_read_acpi(&window, &context, 0x800000, 36, output) || invalidations != 8) return 97;
+    null_buffer = 0; tables[3][47] = 0x9003;
+    if (x86_page_window_read_acpi(&window, &context, 0x800000, 36, output) || invalidations != 8) return 98;
+    tables[3][47] = 0; borrow_mode = 0;
+    if (!x86_page_window_acquire(&window, 1)) return 99;
+    if (x86_page_window_read_acpi(&window, &context, 0x800000, 36, output)) return 100;
+    if (!x86_page_window_release(&window) || ordering_error) return 101;
+    return 0;
+}
+
+// ====== suite pagina posseduta e prestito ACPI senza trasferimenti ownership ===== //
 
 __declspec(dllexport) int run_window_tests(void)
 {
@@ -201,5 +267,9 @@ __declspec(dllexport) int run_window_tests(void)
         int result = repeated_sizes();
         if (result) return result;
     }
-    return rejects_every_occupied_slot();
+    {
+        int result = rejects_every_occupied_slot();
+        if (result) return result;
+    }
+    return borrowed_reads();
 }

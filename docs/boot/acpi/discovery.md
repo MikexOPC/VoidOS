@@ -55,9 +55,10 @@ viene respinto, non reinterpretato come v3.
 
 ## Prossimo passo e limiti
 
-L'indirizzo RSDT/XSDT e validato numericamente, ma le tabelle puntate
-non sono ancora lette o validate. Servono una lettura fisica controllata,
-verifica di header, dimensioni e checksum XSDT/RSDT e poi parsing MADT.
+La discovery valida numericamente l'indirizzo RSDT/XSDT. Il kernel
+ora ne legge e verifica la tabella tramite la finestra R/NX descritta
+in [directory ACPI](../../kernel/firmware/acpi-root.md). Le tabelle
+figlie, inclusa MADT, richiedono ancora lettura e validazione proprie.
 Nessun controller IRQ viene programmato e IF resta zero.
 Il codice assume il normale modello di memoria UEFI prima dell'uscita
 e input C leggibili; non promette isolamento da firmware o kernel ostili.

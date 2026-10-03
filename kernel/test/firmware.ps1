@@ -105,6 +105,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $istPte = [regex]::Match($log, '(?i)KERNEL_IST_PTE: 0x([0-9a-f]{16})')
         if (!$istPte.Success) { throw 'Vista PTE stack kernel assente.' }
         $vm.StandardInput.WriteLine('x /16gx 0x' + $istPte.Groups[1].Value)
+        $windowPte = [Convert]::ToUInt64($istPte.Groups[1].Value,16) - 31 * 8
+        $vm.StandardInput.WriteLine('x /16gx 0x' + $windowPte.ToString('x16'))
         $mainPte = [regex]::Match($log, '(?i)KERNEL_MAIN_PTE: 0x([0-9a-f]{16})')
         $oldPte = [regex]::Match($log, '(?i)KERNEL_OLD_STACK_PTE: 0x([0-9a-f]{16})')
         if (!$mainPte.Success -or !$oldPte.Success) { throw 'PTE stack principale assenti.' }
@@ -119,6 +121,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $vm.StandardInput.WriteLine('x /3gx 0x' + $arenaInventory.ToString('x16'))
         $pagingInventory = Read-Hex $log 'KERNEL_PAGING_INVENTORY: 0x([0-9a-f]{16})'
         $vm.StandardInput.WriteLine('x /3gx 0x' + $pagingInventory.ToString('x16'))
+        $acpiDirectory = Read-Hex $log 'KERNEL_ACPI_DIRECTORY: 0x([0-9a-f]{16})'
+        $vm.StandardInput.WriteLine('x /3gx 0x' + $acpiDirectory.ToString('x16'))
         $tss = [regex]::Match($log, '(?i)KERNEL_TSS_BASE: 0x([0-9a-f]{16})')
         if (!$tss.Success) { throw 'TSS kernel assente.' }
         $vm.StandardInput.WriteLine('x /1gx 0x' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16'))
@@ -191,6 +195,23 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $registers -notmatch ('(?im)^' + ($arenaContext + 128).ToString('x16') + ':\s+0x2052545020445352') -or
             $registers -notmatch ('(?im)^' + ($arenaContext + 144).ToString('x16') + ':\s+0x[0-9a-f]{16}\s+0x' + $acpiRoot.ToString('x16'))) {
             throw 'Snapshot ACPI persistente diverso dalla discovery firmware.'
+        }
+        $acpiCount = Read-Hex $log 'KERNEL_ACPI_TABLE_COUNT: 0x([0-9a-f]{16})'
+        $acpiBytes = Read-Hex $log 'KERNEL_ACPI_TABLE_BYTES: 0x([0-9a-f]{16})'
+        if (!$log.Contains('KERNEL_ACPI_XSDT_OK') -or !$log.Contains('KERNEL_ACPI_DIRECTORY_OK') -or
+            !$acpiCount -or $acpiCount -gt 256 -or $acpiBytes -ne 36 + 8 * $acpiCount -or
+            ($acpiDirectory -band 7) -or $acpiDirectory -lt $pagingInventory + 3096 -or
+            $acpiDirectory + 2072 -gt 0x7000000b3000 -or
+            $registers -notmatch ('(?im)^' + $acpiDirectory.ToString('x16') + ':\s+0x' + $acpiRoot.ToString('x16') + '\s+0x' + (($acpiCount -shl 32) + $acpiBytes).ToString('x16')) -or
+            $registers -notmatch ('(?im)^' + ($acpiDirectory + 16).ToString('x16') + ':\s+0x0000000000000008')) {
+            throw 'Directory XSDT fuori arena o diversa dai dati verificati dal kernel.'
+        }
+        if ($case.Variant -notin @('execute','guard-low','guard-high')) {
+            for ($slot = 0; $slot -lt 16; $slot += 2) {
+                if ($registers -notmatch ('(?im)^' + ($windowPte + $slot * 8).ToString('x16') + ':\s+0x0000000000000000\s+0x0000000000000000')) {
+                    throw 'Mapping temporaneo ACPI ancora presente nella finestra.'
+                }
+            }
         }
         if (!$region0 -or !$region1 -or ($region0 -band 65535) -or ($region1 -band 65535) -or
             ($region0 -lt $region1 + 65536 -and $region1 -lt $region0 + 131072)) { throw 'Blocchi kernel sovrapposti o non allineati.' }
@@ -369,4 +390,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '22/22 scenari: copia ACPI, mapping, stack, guardie, NX, NMI e double fault verificati.'
+Write-BootStatus OK '22/22 scenari: RSDP e directory XSDT, mapping, stack, guardie, NX, NMI e double fault verificati.'

@@ -1,5 +1,7 @@
 #include "page.h"
 #include "access.h"
+#include "kernel/mm/inventory.h"
+#include "lib/memory/address_ranges.h"
 #define PAGE_NX (1ULL << 63)
 #define PAGE_ADDRESS 0x000ffffffffff000ULL
 #define PAGE_AD 0x60ULL
@@ -198,4 +200,74 @@ int x86_page_window_release(X86_PAGE_WINDOW *window)
     }
     window->Active = 0;
     return 1;
+}
+
+// ====== copertura di tutte le pagine esposte dal prestito ACPI ===== //
+
+static int acpi_range(const KERNEL_BOOT_CONTEXT *context, BOOT_U64 base, BOOT_U64 span)
+{
+    KERNEL_MEMORY_INVENTORY inventory;
+    BOOT_U64 index;
+    BOOT_U32 found = 0;
+    if (!kernel_inventory_memory(context->MemoryMap, context->Info.MemoryMapBytes,
+                                  context->Info.MemoryDescriptorBytes, &inventory)) return 0;
+    for (index = 0; index < inventory.Regions; ++index) {
+        KERNEL_MEMORY_REGION region;
+        BOOT_U64 bytes;
+        if (!kernel_read_region(context->MemoryMap, context->Info.MemoryMapBytes,
+                                context->Info.MemoryDescriptorBytes, index, &region)) return 0;
+        bytes = region.Pages * 4096;
+        if (!os_address_ranges_overlap(base, span, region.Base, bytes)) continue;
+        if ((region.Type != 9 && region.Type != 10) || !(region.Attributes & 8) ||
+            (region.Attributes & 0x2000) || base < region.Base || base - region.Base >= bytes ||
+            span > bytes - (base - region.Base)) return 0;
+        ++found;
+    }
+    return found == 1;
+}
+
+// ====== prestito supervisor R NX senza lease ne allocazioni nuove ===== //
+
+int x86_page_window_read_acpi(X86_PAGE_WINDOW *window, const KERNEL_BOOT_CONTEXT *context,
+                              BOOT_U64 physical, BOOT_U64 bytes, unsigned char *output)
+{
+    BOOT_U64 base, span, copied = 0, address = (BOOT_U64)output;
+    volatile BOOT_U64 *entries;
+    volatile unsigned char *source;
+    if (!context || !output || !bytes || bytes > 65536 || address > ~0ULL - bytes ||
+        !window_valid(window) || window->Active || !leaves_match(window) ||
+        !kernel_validate_contract(&context->Info, window->Root, context->Info.KernelEntry)) return 0;
+    if ((BOOT_U64)context->MemoryMap > ~0ULL - context->Info.MemoryMapCapacity) return 0;
+    if (physical < 4096 || physical >= (1ULL << window->Pool->PhysicalBits) ||
+        bytes > (1ULL << window->Pool->PhysicalBits) - physical) return 0;
+    base = physical & ~4095ULL;
+    span = ((physical - base + bytes + 4095) / 4096) * 4096;
+    if (os_address_ranges_overlap(address, bytes, (BOOT_U64)window, sizeof(*window)) ||
+        os_address_ranges_overlap(address, bytes, (BOOT_U64)window->Pool, sizeof(*window->Pool)) ||
+        os_address_ranges_overlap(address, bytes, (BOOT_U64)context, sizeof(*context)) ||
+        os_address_ranges_overlap(address, bytes, (BOOT_U64)context->MemoryMap, context->Info.MemoryMapCapacity) ||
+        os_address_ranges_overlap(address, bytes, X86_KERNEL_PAGE_WINDOW, X86_KERNEL_WINDOW_BYTES) ||
+        !acpi_range(context, base, span)) return 0;
+    source = x86_window_bytes();
+    entries = x86_window_entries(3);
+    if (!source || !entries) return 0;
+    // UP e IF=0: nessun altro utilizzatore puo entrare durante il prestito.
+    while (copied < bytes) {
+        BOOT_U64 current = physical + copied, offset = current & 4095, index;
+        BOOT_U64 amount = bytes - copied;
+        BOOT_U64 expected = (current & ~4095ULL) | 1 | PAGE_NX;
+        if (amount > 4096 - offset) amount = 4096 - offset;
+        entries[WINDOW_LEAF] = expected;
+        x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
+        if ((entries[WINDOW_LEAF] & ~0x20ULL) != expected) {
+            entries[WINDOW_LEAF] = 0;
+            x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
+            return 0;
+        }
+        for (index = 0; index < amount; ++index) output[copied + index] = source[offset + index];
+        entries[WINDOW_LEAF] = 0;
+        x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
+        copied += amount;
+    }
+    return leaves_match(window);
 }
