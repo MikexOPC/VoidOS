@@ -24,6 +24,7 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     'lib/firmware/acpi/rsdp.c',
     'kernel/firmware/acpi/root.c','kernel/test/firmware/acpi/root_test.c',
     'kernel/firmware/acpi/madt/parser.c','kernel/firmware/acpi/madt/records.c','kernel/test/firmware/acpi/madt/parser_test.c',
+    'arch/x86/kernel/interrupts/apic/profile.c','kernel/test/interrupts/apic/profile_test.c',
     'kernel/diagnostics/log.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','kernel/test/mm/window/page_test.c',
     'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
     'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c',
@@ -45,6 +46,9 @@ $objects += ($output + '/acpi-root-layout.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'kernel/firmware/acpi/madt/rust/records/validation.rs') -o ($output + '/madt-records.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione record MADT fallita.' }
 $objects += ($output + '/madt-records.obj')
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/kernel/interrupts/apic/rust/profile/validation.rs') -o ($output + '/apic-profile.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione profilo APIC fallita.' }
+$objects += ($output + '/apic-profile.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/mm/paging/rust/validation/entries.rs') -o ($output + '/paging-entries.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione formato paging fallita.' }
 $objects += ($output + '/paging-entries.obj')
@@ -92,6 +96,15 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test MADT Rust fallita.' }
 & ($output + '/madt-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test MADT Rust falliti.' }
 Write-BootStatus OK 'MADT: streaming, checksum, record APIC, NMI e 4 test Rust verificati.'
+$apicSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Apic { [DllImport(@"' + $dll + '")] public static extern int run_apic_profile_tests(); }'
+$apicType = Add-Type -TypeDefinition $apicSource -PassThru
+$result = $apicType.GetMethod('run_apic_profile_tests').Invoke($null, @())
+if ($result -ne 0) { throw "Test profilo APIC fallito: $result" }
+& $rustc --edition=2024 --test -D warnings (Join-Path $PSScriptRoot 'interrupts/apic/rust/profile/validation_test.rs') -o ($output + '/apic-profile-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione test APIC Rust fallita.' }
+& ($output + '/apic-profile-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Test APIC Rust falliti.' }
+Write-BootStatus OK 'Preflight APIC: BSP, MADT, PAT corrente e 3 test Rust verificati.'
 $typeSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Physical { [DllImport(@"' + $dll + '")] public static extern int run_physical_tests(); }'
 $physicalType = Add-Type -TypeDefinition $typeSource -PassThru
 $result = $physicalType.GetMethod('run_physical_tests').Invoke($null, @())
@@ -168,4 +181,4 @@ foreach ($method in @('run_stack_tests','run_segment_tests','run_main_stack_test
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
-Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 31 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 34 test Rust complessivi.'

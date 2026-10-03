@@ -74,11 +74,12 @@ non ricostruisce i byte firmware originali o la loro provenienza.
 
 ## Cosa resta prima dei driver IRQ
 
-Verificare BSP e modalita APIC dai registri CPU, stabilire mapping MMIO
-con cache policy appropriata e controllare gli intervalli GSI usando
-i registri I/O APIC. MADT fornisce il GSI iniziale, non il numero
-degli ingressi. Seguono handler con ritorno e una prova del driver seriale
-tramite interrupt. Nessuna di queste operazioni e eseguita qui.
+Il [preflight BSP/APIC/PAT](../interrupts/apic-profile.md) verifica ora
+stato BSP, modalita ereditata, base LAPIC e associazione dell'Initial
+APIC ID con la MADT. Restano identita attuale del LAPIC, mapping MMIO
+con cache policy appropriata e intervalli GSI dai registri I/O APIC.
+MADT fornisce il GSI iniziale, non il numero degli ingressi. Seguono
+handler con ritorno e una prova del driver seriale tramite interrupt.
 
 ## Test
 

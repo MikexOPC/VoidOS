@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
 . (Join-Path $PSScriptRoot 'firmware/acpi/scripts/firmware.ps1')
+. (Join-Path $PSScriptRoot 'interrupts/apic/scripts/firmware.ps1')
 $output = Join-Path $project ('kernel/build/firmware-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $image = Join-Path $project 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
@@ -127,6 +128,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $acpiDirectory = Read-Hex $log 'KERNEL_ACPI_DIRECTORY: 0x([0-9a-f]{16})'
         $vm.StandardInput.WriteLine('x /3gx 0x' + $acpiDirectory.ToString('x16'))
         Write-MadtMonitor $log $vm
+        Write-ApicMonitor $log $vm
         $tss = [regex]::Match($log, '(?i)KERNEL_TSS_BASE: 0x([0-9a-f]{16})')
         if (!$tss.Success) { throw 'TSS kernel assente.' }
         $vm.StandardInput.WriteLine('x /1gx 0x' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16'))
@@ -191,6 +193,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             throw 'Contesto persistente fuori arena, sovrapposto o contratto corrotto.'
         }
         Test-AcpiFirmware $log $registers $arenaContext $pagingInventory $case $windowPte
+        Test-ApicFirmware $log $registers
         if (!$region0 -or !$region1 -or ($region0 -band 65535) -or ($region1 -band 65535) -or
             ($region0 -lt $region1 + 65536 -and $region1 -lt $region0 + 131072)) { throw 'Blocchi kernel sovrapposti o non allineati.' }
         for ($slot = 0; $slot -lt 4; ++$slot) {
