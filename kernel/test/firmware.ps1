@@ -22,6 +22,9 @@ foreach ($fault in @('opcode','selector','divide','stack','nested','double')) {
 foreach ($fault in @('retired','guard-high','execute','return')) {
     & (Join-Path $project 'kernel/scripts/build.ps1') -TestMainFault $fault -OutputDirectory (Join-Path $output ('main-' + $fault))
 }
+foreach ($fault in @('retired','guard-low','guard-high','execute')) {
+    & (Join-Path $project 'kernel/scripts/build.ps1') -TestRegionFault $fault -OutputDirectory (Join-Path $output ('region-' + $fault))
+}
 Write-BootSection 'kernel autonomo dopo uscita UEFI'
 $candidatePages = @{}
 
@@ -43,7 +46,9 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
     @{Name='stack-128';Variant='stack';Ram=128}, @{Name='nested-128';Variant='nested';Ram=128},
     @{Name='double-128';Variant='double';Ram=128}, @{Name='nmi-128';Variant='ready';Ram=128;Nmi=$true},
     @{Name='main-retired-128';Variant='main-retired';Ram=128}, @{Name='main-guard-high-128';Variant='main-guard-high';Ram=128},
-    @{Name='main-execute-128';Variant='main-execute';Ram=128}, @{Name='main-return-128';Variant='main-return';Ram=128})) {
+    @{Name='main-execute-128';Variant='main-execute';Ram=128}, @{Name='main-return-128';Variant='main-return';Ram=128},
+    @{Name='region-retired-128';Variant='region-retired';Ram=128}, @{Name='region-guard-low-128';Variant='region-guard-low';Ram=128},
+    @{Name='region-guard-high-128';Variant='region-guard-high';Ram=128}, @{Name='region-execute-128';Variant='region-execute';Ram=128})) {
     $scenario = Join-Path $output $case.Name
     $boot = Join-Path $scenario 'esp/EFI/BOOT'
     New-Item -ItemType Directory -Force -Path $boot | Out-Null
@@ -71,7 +76,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $started = $vm.Start()
         if (!$started) { throw 'QEMU non avviato.' }
         $stdout = $vm.StandardOutput.ReadToEndAsync(); $stderr = $vm.StandardError.ReadToEndAsync()
-        $faultCase = $case.Nmi -or $case.Variant -in @('execute','unmapped','guard-low','guard-high','opcode','selector','divide','stack','double','main-retired','main-guard-high','main-execute')
+        $faultCase = $case.Nmi -or $case.Variant.StartsWith('region-') -or $case.Variant -in @('execute','unmapped','guard-low','guard-high','opcode','selector','divide','stack','double','main-retired','main-guard-high','main-execute')
         $nestedCase = $case.Variant -eq 'nested'
         $expected = if ($nestedCase) { 'KERNEL_NESTED_FAULT_READY' } elseif ($faultCase) { 'KERNEL_EXCEPTION_HALTED' } elseif ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } elseif ($case.Variant -eq 'main-return') { 'KERNEL_MAIN_RETURN_TEST_READY' } else { 'KERNEL_READY' }
         $deadline = [DateTime]::UtcNow.AddSeconds(40)
@@ -105,6 +110,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         if (!$mainPte.Success -or !$oldPte.Success) { throw 'PTE stack principale assenti.' }
         $vm.StandardInput.WriteLine('x /18gx 0x' + $mainPte.Groups[1].Value)
         $vm.StandardInput.WriteLine('x /18gx 0x' + $oldPte.Groups[1].Value)
+        $regionPte = Read-Hex $log 'KERNEL_REGION_PTE: 0x([0-9a-f]{16})'
+        $vm.StandardInput.WriteLine('x /136gx 0x' + $regionPte.ToString('x16'))
         $tss = [regex]::Match($log, '(?i)KERNEL_TSS_BASE: 0x([0-9a-f]{16})')
         if (!$tss.Success) { throw 'TSS kernel assente.' }
         $vm.StandardInput.WriteLine('x /1gx 0x' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16'))
@@ -135,6 +142,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK') -or
             !$log.Contains('KERNEL_PHYSICAL_OK') -or !$log.Contains('KERNEL_MAPPING_OK') -or
             !$log.Contains('KERNEL_PHYSICAL_ALIGNED_OK') -or
+            !$log.Contains('KERNEL_REGIONS_OK') -or
             !$log.Contains('KERNEL_WINDOW_16_PAGES_OK') -or !$log.Contains('KERNEL_OBJECTS_OK') -or
             !$log.Contains('KERNEL_IDT_OK') -or !$log.Contains('KERNEL_DESCRIPTORS_OK') -or
             !$log.Contains('KERNEL_MAIN_STACK_OK') -or !$log.Contains('KERNEL_RSP0_OK')) {
@@ -145,6 +153,28 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         if (!$aligned64 -or !$aligned2m -or ($aligned64 -band 65535) -or ($aligned2m -band 2097151) -or
             ($aligned64 -lt $aligned2m + 32768 -and $aligned2m -lt $aligned64 + 16384)) {
             throw 'Allocazioni fisiche non allineate o sovrapposte.'
+        }
+        $region0 = Read-Hex $log 'KERNEL_REGION0_PHYSICAL: 0x([0-9a-f]{16})'
+        $region1 = Read-Hex $log 'KERNEL_REGION1_PHYSICAL: 0x([0-9a-f]{16})'
+        if (!$region0 -or !$region1 -or ($region0 -band 65535) -or ($region1 -band 65535) -or
+            ($region0 -lt $region1 + 65536 -and $region1 -lt $region0 + 131072)) { throw 'Blocchi kernel sovrapposti o non allineati.' }
+        for ($slot = 0; $slot -lt 4; ++$slot) {
+            for ($page = 0; $page -lt 34; ++$page) {
+                $address = $regionPte + ($slot * 34 + $page) * 8
+                $line = [regex]::Match($registers, '(?im)^' + $address.ToString('x16') + ':\s+0x([0-9a-f]{16})')
+                # QEMU stampa due qword per riga: il secondo valore usa la riga precedente.
+                if (!$line.Success) {
+                    $line = [regex]::Match($registers, '(?im)^' + ($address - 8).ToString('x16') + ':\s+0x[0-9a-f]{16}\s+0x([0-9a-f]{16})')
+                }
+                if (!$line.Success) { throw 'PTE arena assente dal monitor.' }
+                $actual = [Convert]::ToUInt64($line.Groups[1].Value,16)
+                $pages = if ($slot -eq 0 -and $case.Variant -ne 'region-retired') {32} elseif ($slot -eq 1) {16} else {0}
+                if ($page -gt 0 -and $page -le $pages) {
+                    $physical = $(if ($slot -eq 0) {$region0} else {$region1}) + ($page - 1) * 4096
+                    $expectedPte = $physical -bor [uint64]::Parse('8000000000000003',[Globalization.NumberStyles]::HexNumber)
+                    if (($actual -band [uint64]::Parse('ffffffffffffff9f',[Globalization.NumberStyles]::HexNumber)) -ne $expectedPte) { throw 'PTE arena RW NX diversa dal lease.' }
+                } elseif ($actual) { throw 'Guardia o coda arena presente.' }
+            }
         }
         $idt = [regex]::Match($log, '(?i)KERNEL_IDT_BASE: 0x([0-9a-f]{16})')
         if (!$idt.Success -or $registers -notmatch ('(?i)IDT=\s*' + $idt.Groups[1].Value + '\s+000001ff')) {
@@ -239,7 +269,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 ($case.Variant -eq 'main-return' -and $log.Contains('KERNEL_READY'))) { throw 'Arresto kernel errato.' }
         } else {
             $rsp = Read-Hex $registers 'RSP=([0-9a-f]{16})'
-            $errorCode = switch ($case.Variant) { 'execute' {17} 'main-execute' {17} 'selector' {40} 'stack' {2} default {0} }
+            $errorCode = switch ($case.Variant) { 'execute' {17} 'main-execute' {17} 'region-execute' {17} 'selector' {40} 'stack' {2} default {0} }
             $vector = if ($case.Nmi) { 2 } else { switch ($case.Variant) { 'opcode' {6} 'selector' {13} 'divide' {0} 'double' {8} default {14} } }
             $istTop = if ($vector -eq 2) { 0x70000004a000 } elseif ($vector -eq 8) { 0x70000004f000 } else { 0x700000045000 }
             $faultAddress = switch ($case.Variant) {
@@ -249,6 +279,10 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 'main-retired' { [Convert]::ToUInt64('700000001000',16) }
                 'main-guard-high' { [Convert]::ToUInt64('700000071000',16) }
                 'main-execute' { [Convert]::ToUInt64('700000070000',16) }
+                'region-retired' { [Convert]::ToUInt64('700000081000',16) }
+                'region-guard-low' { [Convert]::ToUInt64('700000080000',16) }
+                'region-guard-high' { [Convert]::ToUInt64('7000000a1000',16) }
+                'region-execute' { [Convert]::ToUInt64('7000000a0000',16) }
                 default { [Convert]::ToUInt64('70000002f000',16) }
             }
             $frameAddress = Read-Hex $log '(?i)FAULT_FRAME: 0x([0-9a-f]{16})'
@@ -272,10 +306,10 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 $registers -notmatch ('(?im)^' + ($frameAddress + 48).ToString('x16') + ':\s+0x0000000000000010') -or
                 (!$case.Nmi -and $log.Contains('KERNEL_READY')) -or $log.Contains('EXCEPTION_FRAME_INVALID') -or
                 $log.Contains('EXPECTED_CPU_FAULT_MISSING') -or $log.Contains('EXPECTED_WINDOW_FAULT_MISSING') -or
-                $log.Contains('EXPECTED_MAIN_FAULT_MISSING')) { throw "Eccezione kernel errata: $scenario" }
+                $log.Contains('EXPECTED_MAIN_FAULT_MISSING') -or $log.Contains('EXPECTED_REGION_FAULT_MISSING')) { throw "Eccezione kernel errata: $scenario" }
             if ($vector -eq 14 -and ((Read-Hex $registers 'CR2=([0-9a-f]{16})') -ne $faultAddress -or
                 (Read-Hex $log '(?i)FAULT_CR2: 0x([0-9a-f]{16})') -ne $faultAddress -or
-                ($case.Variant -in @('execute','main-execute') -and $faultRip -ne $faultAddress))) { throw 'Diagnostica CR2 o RIP NX errata.' }
+                ($case.Variant -in @('execute','main-execute','region-execute') -and $faultRip -ne $faultAddress))) { throw 'Diagnostica CR2 o RIP NX errata.' }
             if ($vector -ne 14 -and $vector -ne 8 -and ($faultRip -lt 0x100000000 -or $faultRip -ge 0x100100000)) { throw 'RIP fault fuori dal kernel.' }
             if ($raw -notmatch '\x1b\[31m\[ FAIL \]\x1b\[0m KERNEL_EXCEPTION\r?\n') { throw 'Colore etichetta eccezione errato.' }
         }
@@ -299,4 +333,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '18/18 scenari: stack principale, RSP0, revoca loader, guardie, NX, ritorno vietato ed eccezioni verificati.'
+Write-BootStatus OK '22/22 scenari: mapping simultanei, revoca arena, stack, guardie, NX, NMI e double fault verificati.'

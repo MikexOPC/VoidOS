@@ -18,6 +18,7 @@ if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c','kernel/boot/contract.c',
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/test/mm/physical/allocator_test.c',
     'kernel/test/mm/physical/alignment_test.c',
+    'arch/x86/mm/regions/mapping.c','kernel/test/mm/regions/mapping_test.c',
     'kernel/diagnostics/log.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','kernel/test/mm/window/page_test.c',
     'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
     'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c',
@@ -30,6 +31,9 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/mm/regions/rust/layout/validation.rs') -o ($output + '/region-layout.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione layout mapping fallita.' }
+$objects += ($output + '/region-layout.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'kernel/mm/physical/rust/alignment/placement.rs') -o ($output + '/physical-alignment.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione allineamento fisico fallita.' }
 $objects += ($output + '/physical-alignment.obj')
@@ -66,6 +70,15 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test allineamento fisico fallita.
 & ($output + '/physical-alignment-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test allineamento fisico Rust falliti.' }
 Write-BootStatus OK 'Allineamento fisico: split, coalescenza, 8192 operazioni e 278528 confronti Rust verificati.'
+$regionSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Regions { [DllImport(@"' + $dll + '")] public static extern int run_region_tests(); }'
+$regionType = Add-Type -TypeDefinition $regionSource -PassThru
+$result = $regionType.GetMethod('run_region_tests').Invoke($null, @())
+if ($result -ne 0) { throw "Test mapping simultanei fallito: $result" }
+& $rustc --edition=2024 --test -D warnings (Join-Path $PSScriptRoot 'mm/regions/rust/layout/validation_test.rs') -o ($output + '/region-layout-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione test mapping Rust fallita.' }
+& ($output + '/region-layout-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Test mapping Rust falliti.' }
+Write-BootStatus OK 'Mapping simultanei: pin, rollback, stale handle, guardie, 8640 corruzioni PTE e 128 cicli verificati.'
 $windowSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Window { [DllImport(@"' + $dll + '")] public static extern int run_window_tests(); }'
 $windowType = Add-Type -TypeDefinition $windowSource -PassThru
 $result = $windowType.GetMethod('run_window_tests').Invoke($null, @())
@@ -106,4 +119,4 @@ foreach ($method in @('run_stack_tests','run_segment_tests','run_main_stack_test
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
-Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 21 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 23 test Rust complessivi.'

@@ -9,12 +9,15 @@
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/descriptors/segments.h"
 #include "arch/x86/kernel/stack/main.h"
+#include "arch/x86/mm/regions/mapping.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
 static X86_PAGE_WINDOW page_window;
 static KERNEL_OBJECT_POOL object_pool;
 static X86_KERNEL_MAIN_STACK main_stack;
+static X86_REGION_MAPPER region_mapper;
+static X86_REGION_HANDLE region_handles[2];
 __declspec(noreturn) static void kernel_continue(void);
 #if defined(KERNEL_TEST_MAIN_FAULT) && KERNEL_TEST_MAIN_FAULT == 4
 
@@ -142,6 +145,43 @@ static void prepare_physical_memory(void)
         !kernel_number(total) || !kernel_text("\n")) kernel_panic("SERIAL_UNAVAILABLE");
 }
 
+// ====== blocchi simultanei persistenti con prova di unmap riuso e vicini intatti ===== //
+
+static void prepare_kernel_regions(void)
+{
+    X86_REGION_HANDLE stale, third = {0}, fourth = {0}, extra = {0};
+    volatile unsigned char *first, *second;
+    BOOT_U32 page, byte;
+    BOOT_U64 budget = physical_allocator.FreePages;
+    if (!x86_region_initialize(&region_mapper, &physical_allocator, boot_context.Info.PageTableRoot) ||
+        !x86_region_acquire(&region_mapper, 32, 16, &region_handles[0]) ||
+        !x86_region_acquire(&region_mapper, 16, 16, &region_handles[1])) kernel_panic("REGION_INIT_FAILED");
+    first = x86_region_data(&region_mapper, &region_handles[0]);
+    second = x86_region_data(&region_mapper, &region_handles[1]);
+    if (!first || !second) kernel_panic("REGION_ACCESS_FAILED");
+    for (page = 0; page < 32; ++page) { first[page * 4096] = 0x5a; first[page * 4096 + 4095] = 0xa5; }
+    for (page = 0; page < 16; ++page) { second[page * 4096] = 0xa5; second[page * 4096 + 4095] = 0x5a; }
+    first = 0; second = 0; stale = region_handles[0];
+    if (!x86_region_release(&region_mapper, &region_handles[0]) || x86_region_data(&region_mapper, &stale) ||
+        !x86_region_acquire(&region_mapper, 32, 16, &region_handles[0]) || region_handles[0].Id == stale.Id ||
+        x86_region_release(&region_mapper, &stale)) kernel_panic("REGION_REUSE_FAILED");
+    first = x86_region_data(&region_mapper, &region_handles[0]);
+    second = x86_region_data(&region_mapper, &region_handles[1]);
+    if (!first || !second) kernel_panic("REGION_ACCESS_FAILED");
+    for (byte = 0; byte < 32 * 4096; ++byte) if (first[byte]) kernel_panic("REGION_REUSE_NOT_ZERO");
+    for (page = 0; page < 16; ++page)
+        if (second[page * 4096] != 0xa5 || second[page * 4096 + 4095] != 0x5a) kernel_panic("REGION_NEIGHBOR_CORRUPTED");
+    first = 0; second = 0;
+    if (!x86_region_acquire(&region_mapper, 1, 1, &third) || !x86_region_acquire(&region_mapper, 1, 1, &fourth) ||
+        x86_region_acquire(&region_mapper, 1, 1, &extra) || !x86_region_release(&region_mapper, &third) ||
+        !x86_region_release(&region_mapper, &fourth) || physical_allocator.FreePages != budget - 48 ||
+        !x86_region_validate(&region_mapper)) kernel_panic("REGION_BUDGET_FAILED");
+    if (!kernel_text("KERNEL_REGION_PTE: ") || !kernel_number((BOOT_U64)&x86_region_entries(3)[X86_REGION_LEAF]) ||
+        !kernel_text("\nKERNEL_REGION0_PHYSICAL: ") || !kernel_number(region_mapper.Live[0].Base) ||
+        !kernel_text("\nKERNEL_REGION1_PHYSICAL: ") || !kernel_number(region_mapper.Live[1].Base) ||
+        !kernel_text("\n") || !kernel_log(0, "KERNEL_REGIONS_OK")) kernel_panic("SERIAL_UNAVAILABLE");
+}
+
 // ====== inizializzazione comune con pool limitato e senza servizi UEFI ===== //
 
 __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U64 entry)
@@ -162,6 +202,8 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
     prepare_page_window();
     if (!kernel_section("pool oggetti kernel")) kernel_panic("SERIAL_UNAVAILABLE");
     prepare_kernel_objects();
+    if (!kernel_section("mapping kernel simultanei RW NX")) kernel_panic("SERIAL_UNAVAILABLE");
+    prepare_kernel_regions();
     if (!kernel_section("GDT TSS e stack di emergenza kernel") ||
         !x86_kernel_segments_initialize(&physical_allocator)) kernel_panic("KERNEL_DESCRIPTORS_FAILED");
     if (!kernel_section("stack principale kernel") ||
@@ -174,7 +216,26 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
 __declspec(noreturn) static void kernel_continue(void)
 {
     if (!x86_kernel_main_retire(&main_stack) || !x86_kernel_main_report(&main_stack)) kernel_panic("MAIN_STACK_RETIRE_FAILED");
-#ifdef KERNEL_TEST_MAIN_FAULT
+#ifdef KERNEL_TEST_REGION_FAULT
+    {
+        BOOT_U64 address = region_handles[0].Virtual;
+#if KERNEL_TEST_REGION_FAULT == 1
+        if (!x86_region_release(&region_mapper, &region_handles[0])) kernel_panic("REGION_FAULT_SETUP_FAILED");
+#elif KERNEL_TEST_REGION_FAULT == 2
+        address -= 4096;
+#elif KERNEL_TEST_REGION_FAULT == 3
+        address += 32 * 4096;
+#elif KERNEL_TEST_REGION_FAULT == 4
+        address += 31 * 4096;
+        ((void (*)(void))address)();
+#endif
+#if KERNEL_TEST_REGION_FAULT != 4
+        volatile unsigned char value = *(volatile unsigned char *)address;
+        (void)value;
+#endif
+        kernel_panic("EXPECTED_REGION_FAULT_MISSING");
+    }
+#elif defined(KERNEL_TEST_MAIN_FAULT)
 #if KERNEL_TEST_MAIN_FAULT == 4
     // Test del guard return mantenendo prima la normale revoca del mapping.
     x86_kernel_stack_switch(X86_KERNEL_MAIN_TOP, kernel_return_probe);

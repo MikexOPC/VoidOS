@@ -76,6 +76,9 @@ Il [pool iniziale di oggetti](memory/object-pool.md) usa poi il blocco
 mappato per verificare allineamento, oggetti su piu pagine, ID e riuso.
 Libera gli oggetti e scollega il buffer prima di rimuovere il mapping;
 KERNEL_OBJECTS_OK conferma anche il ripristino del budget fisico.
+I [mapping simultanei](memory/region-mappings.md) aggiungono poi quattro
+slot indipendenti; due blocchi da 128 e 64 KiB rimangono vivi, RW/NX e
+protetti da guardie, senza dipendere dalla finestra temporanea.
 Il confronto a coppie usa O(n^2) tempo, nessun heap e al massimo 4096 regioni;
 e una scelta iniziale limitata, da misurare prima di estenderne l'uso.
 
