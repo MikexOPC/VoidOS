@@ -5,6 +5,7 @@ extern const unsigned char x86_kernel_fault_begin[], x86_kernel_fault_end[];
 static X86_KERNEL_IDT kernel_idt;
 static X86_KERNEL_IDTR kernel_idtr;
 static BOOT_U32 installed;
+static BOOT_U32 split_ist;
 
 // ====== intervalli non sovrapposti senza overflow prima degli accessi ===== //
 
@@ -143,7 +144,8 @@ int x86_exception_initialize(void)
     }
     if (!x86_exception_prepare(&kernel_idt, &kernel_idtr, x86_kernel_fault_targets, 32,
         (BOOT_U64)x86_kernel_fault_begin, (BOOT_U64)x86_kernel_fault_end)) return 0;
-    // TSS e IST restano prestiti del loader: le sue pagine non sono reclamate.
+    // All'ingresso la TSS e IST1 appartengono al loader. Il kernel li sostituira
+    // dopo avere riservato e verificato i propri stack persistenti.
     result = x86_exception_activate(&kernel_idtr);
     if (result < 0) {
         x86_kernel_stop(0x4b49445442410001ULL);
@@ -157,7 +159,35 @@ int x86_exception_initialize(void)
     return 1;
 }
 
-// ====== diagnostica terminale bounded senza allocazioni o ritorno IRET ===== //
+// ====== selezione dei tre IST solo dopo LTR della TSS kernel ===== //
+
+int x86_exception_split_ist(void)
+{
+    X86_KERNEL_IDTR actual = {{0}};
+    BOOT_U32 byte, vector;
+    if (!installed || split_ist || !x86_exception_environment()) return 0;
+    x86_exception_read_idt(&actual);
+    for (byte = 0; byte < 10; ++byte) if (actual.Bytes[byte] != kernel_idtr.Bytes[byte]) return 0;
+    if (!x86_exception_verify(&kernel_idt, &kernel_idtr, x86_kernel_fault_targets, 32,
+        (BOOT_U64)x86_kernel_fault_begin, (BOOT_U64)x86_kernel_fault_end)) return 0;
+    kernel_idt.Gates[2][4] = 2;
+    kernel_idt.Gates[8][4] = 3;
+    for (vector = 0; vector < 32; ++vector) {
+        for (byte = 0; byte < 16; ++byte) {
+            unsigned char expected = byte == 4 && vector == 2 ? 2 : byte == 4 && vector == 8 ? 3 :
+                gate_byte(x86_kernel_fault_targets[vector], byte);
+            if (kernel_idt.Gates[vector][byte] != expected) return 0;
+        }
+    }
+    split_ist = 1;
+#ifdef KERNEL_TEST_DOUBLE_FAULT
+    kernel_idt.Gates[13][5] &= 0x7f;
+    if (!kernel_log(1, "KERNEL_DOUBLE_FAULT_TEST_ARMED")) return 0;
+#endif
+    return 1;
+}
+
+// ====== campi diagnostici senza allocazione sullo stack selezionato ===== //
 
 static void fault_field(const char *name, BOOT_U64 value)
 {

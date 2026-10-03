@@ -11,17 +11,26 @@ $output = Join-Path $project ('kernel/build/host-' + [guid]::NewGuid().ToString(
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Write-BootSection 'test kernel contratto memoria e diagnostica'
 $objects = @()
+$sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt/stddef.h') } |
+    Sort-Object Name -Descending | Select-Object -First 1
+if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c','kernel/boot/contract.c',
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/test/mm/physical/allocator_test.c',
     'kernel/diagnostics/log.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','kernel/test/mm/window/page_test.c',
     'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
-    'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c')) {
+    'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c',
+    'arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c','kernel/test/descriptors/stacks_test.c',
+    'kernel/test/descriptors/segments_test.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
     $object = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($source) + '.obj')
-    & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O2 /c ('/I' + $project) (Join-Path $project $source) ('/Fo' + $object)
+    & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O2 /c ('/I' + $project) ('/I' + (Join-Path $ToolchainBin '../../../include')) ('/I' + (Join-Path $sdk.FullName 'ucrt')) (Join-Path $project $source) ('/Fo' + $object)
     if ($LASTEXITCODE -ne 0) { throw 'Compilazione test C fallita.' }
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/kernel/descriptors/rust/layout/validation.rs') -o ($output + '/ist-layout.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione layout IST fallita.' }
+$objects += ($output + '/ist-layout.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/kernel/exceptions/rust/frame/validation.rs') -o ($output + '/exception-frame.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione frame eccezioni fallita.' }
 $objects += ($output + '/exception-frame.obj')
@@ -73,3 +82,14 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test frame fallita.' }
 & ($output + '/exception-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test frame Rust falliti.' }
 Write-BootStatus OK 'IDT: 4176 alterazioni di bit, bounds, attivazione e rollback verificati; 4 test Rust del frame superati.'
+$descriptorSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Descriptors { [DllImport(@"' + $dll + '")] public static extern int run_stack_tests(); [DllImport(@"' + $dll + '")] public static extern int run_segment_tests(); }'
+$descriptorType = Add-Type -TypeDefinition $descriptorSource -PassThru
+foreach ($method in @('run_stack_tests','run_segment_tests')) {
+    $result = $descriptorType.GetMethod($method).Invoke($null, @())
+    if ($result -ne 0) { throw "Test descrittori fallito: $method, $result" }
+}
+& $rustc --edition=2024 --test -D warnings (Join-Path $PSScriptRoot 'descriptors/rust/layout/validation_test.rs') -o ($output + '/ist-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
+& ($output + '/ist-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
+Write-BootStatus OK 'GDT TSS: 2464 alterazioni di bit; IST: 1000 corruzioni respinte, rollback e 256 cicli senza perdite; 18 test Rust complessivi.'

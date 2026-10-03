@@ -1,6 +1,6 @@
 param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
-    [ValidateSet('none','opcode','selector','divide','stack','nested')][string]$TestCpuFault = 'none')
+    [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none')
 $ErrorActionPreference = 'Stop'
 if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
 if ($TestCpuFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
@@ -21,7 +21,12 @@ function Invoke-Compiler([string]$program, [string[]]$arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Compilazione fallita: $program" }
 }
 Write-BootSection 'kernel autonomo C e Rust'
-$flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project))
+$sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory |
+    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt/stddef.h') } |
+    Sort-Object Name -Descending | Select-Object -First 1
+if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
+$flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project),
+    ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')))
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
 if ($TestWindowFault -ne 'none') {
     $mode = switch ($TestWindowFault) { 'execute' {1} 'unmapped' {2} 'guard-low' {3} 'guard-high' {4} }
@@ -29,13 +34,15 @@ if ($TestWindowFault -ne 'none') {
 }
 $objects = @()
 if ($TestCpuFault -ne 'none') {
-    $mode = switch ($TestCpuFault) { 'opcode' {1} 'selector' {2} 'divide' {3} 'stack' {4} 'nested' {1} }
+    $mode = switch ($TestCpuFault) { 'opcode' {1} 'selector' {2} 'divide' {3} 'stack' {4} 'nested' {1} 'double' {2} }
     $flags += ('/DKERNEL_TEST_CPU_FAULT=' + $mode)
     if ($TestCpuFault -eq 'nested') { $flags += '/DKERNEL_TEST_NESTED_FAULT=1' }
+    if ($TestCpuFault -eq 'double') { $flags += '/DKERNEL_TEST_DOUBLE_FAULT=1' }
 }
 foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
     'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
-    'arch/x86/kernel/exceptions/terminal.c')) {
+    'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
+    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
     $object = Join-Path $output (([IO.Path]::GetFileNameWithoutExtension($source)) + '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
     $objects += $object
@@ -45,6 +52,9 @@ Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/exception-entry.obj'),
     (Join-Path $project 'arch/x86/kernel/exceptions/assembly/entry/terminal.asm'))
 $objects += ($output + '/exception-entry.obj')
+Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/segment-entry.obj'),
+    (Join-Path $project 'arch/x86/kernel/descriptors/assembly/activation/segments.asm'))
+$objects += ($output + '/segment-entry.obj')
 if ($TestCpuFault -ne 'none') {
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/cpu-fault.obj'),
         (Join-Path $project 'kernel/test/exceptions/assembly/fault/probe.asm'))
@@ -56,6 +66,10 @@ if ($TestWindowFault -ne 'none') {
     $objects += ($output + '/fault.obj')
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/descriptors/rust/layout/validation.rs'),
+    '-o',($output + '/ist-layout.obj'))
+$objects += ($output + '/ist-layout.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/exceptions/rust/frame/validation.rs'),
     '-o',($output + '/exception-frame.obj'))

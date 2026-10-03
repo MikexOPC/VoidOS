@@ -15,6 +15,8 @@ int x86_exception_prepare(X86_KERNEL_IDT *table, X86_KERNEL_IDTR *pointer,
 int x86_exception_verify(const X86_KERNEL_IDT *table, const X86_KERNEL_IDTR *pointer,
     const BOOT_U64 *targets, BOOT_U32 count, BOOT_U64 begin, BOOT_U64 end);
 int x86_exception_initialize(void);
+// Richiede la TSS kernel verificata e gia caricata con tutti e tre gli IST.
+int x86_exception_split_ist(void);
 int x86_exception_activate(const X86_KERNEL_IDTR *pointer);
 BOOT_U32 x86_exception_target(BOOT_U64 address, BOOT_U64 begin, BOOT_U64 end);
 BOOT_U32 x86_exception_error(BOOT_U64 vector);

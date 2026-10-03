@@ -7,6 +7,7 @@
 #include "arch/x86/mm/window/page.h"
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
+#include "arch/x86/kernel/descriptors/segments.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
@@ -138,6 +139,8 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
     prepare_page_window();
     if (!kernel_section("pool oggetti kernel")) kernel_panic("SERIAL_UNAVAILABLE");
     prepare_kernel_objects();
+    if (!kernel_section("GDT TSS e stack di emergenza kernel") ||
+        !x86_kernel_segments_initialize(&physical_allocator)) kernel_panic("KERNEL_DESCRIPTORS_FAILED");
 #ifdef KERNEL_TEST_WINDOW_FAULT
 #if KERNEL_TEST_WINDOW_FAULT != 2
     if (!x86_page_window_acquire(&page_window, X86_KERNEL_WINDOW_PAGES)) kernel_panic("FAULT_SETUP_FAILED");

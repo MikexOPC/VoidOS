@@ -21,10 +21,10 @@ in caso contrario viene ripristinata la IDT precedente e verificato il ripristin
 Un ripristino non confermato arresta direttamente la CPU con un marcatore diverso.
 `KERNEL_IDT_OK` viene stampato solamente dopo questa verifica.
 
-La GDT, la TSS e lo stack IST di 16 KiB sono ancora prestiti persistenti dal
-bootloader. La loro validita deriva dalla transizione gia verificata del loader:
-questo modulo non ricostruisce o valida indipendentemente la TSS. Le pagine del
-loader restano riservate e non sono reclamate dall'allocatore fisico.
+All'ingresso GDT, TSS e IST1 sono prestiti persistenti dal loader. Dopo i test
+iniziali di memoria il kernel installa [GDT, TSS e tre stack propri](../descriptors/ownership.md).
+Le gate iniziali usano IST1; dopo LTR verificato, NMI passa a IST2 e double fault
+a IST3. Le pagine del loader restano riservate e non sono reclamate dall'allocatore.
 
 ## Frame e diagnostica
 
@@ -47,7 +47,8 @@ si arresta direttamente con RAX `0x4b4e455354450001`, senza richiamare la serial
 La guardia non viene azzerata, poiche nessun handler ritorna. Il frame iniziale
 puo comunque essere sovrascritto dall'IST condiviso: non esiste recupero.
 IF resta zero; non ci sono IRQ, APIC, SMP o handler recuperabili.
-NMI, machine check e guasti dell'IST non sono dimostrati robusti. La guardia
+NMI e double fault sono provati come ingressi terminali su stack distinti in QEMU.
+NMI annidati, machine check e guasti dell'IST non sono dimostrati robusti. La guardia
 e globale al profilo a una CPU, non per CPU. Non e una prova su hardware.
 
 ## Verifica
@@ -74,6 +75,9 @@ nella pagina guardia: la diagnostica deve comunque raggiungere lo stack IST.
 La variante `nested` genera UD2 e poi un page fault dentro il terminale C:
 il secondo ingresso deve arrestarsi in Assembly, con un solo ingresso nella
 diagnostica seriale e senza triple fault.
+La variante `double` induce un double fault durante la consegna di GP; il monitor
+inietta un vero NMI nello scenario dedicato. I frame devono usare rispettivamente
+IST3 e IST2. Anche lo stato GDT/TR e le quattro guardie vengono controllati.
 
 `x86_exception_activate` e un backend privilegiato: il chiamante deve fornire
 un operando leggibile e una tabella gia verificata, mappata e persistente.
