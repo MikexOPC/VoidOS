@@ -1,6 +1,8 @@
 #include "arch/x86/kernel/descriptors/segments.h"
 static X86_KERNEL_SEGMENTS segments;
 static BOOT_U32 activation_calls, register_reads;
+static void clear_segments(void);
+static BOOT_U64 read_le(const unsigned char *bytes, BOOT_U32 count);
 
 // ====== mock attivazione non usato dal costruttore puro ===== //
 
@@ -62,6 +64,26 @@ static int busy_corruption_tests(void)
         }
     }
     return x86_kernel_segments_verify(&segments, 1) ? 0 : 20;
+}
+
+// ====== RSP0 aggiornato in memoria con busy invariato e tutti gli IST preservati ===== //
+
+static int retarget_tests(void)
+{
+    BOOT_U32 byte;
+    unsigned char before[104];
+    clear_segments();
+    if (!x86_kernel_segments_prepare(&segments) || x86_kernel_segments_retarget(&segments)) return 21;
+    for (byte = 0; byte < 104; ++byte) before[byte] = segments.Task.Bytes[byte];
+    segments.Descriptor.Bytes[5] = 0x8b;
+    if (!x86_kernel_segments_retarget(&segments) || !x86_kernel_segments_verify(&segments, 1) ||
+        read_le(segments.Task.Bytes + 4, 8) != 0x700000071000ULL ||
+        segments.Descriptor.Bytes[5] != 0x8b || x86_kernel_segments_retarget(&segments)) return 22;
+    for (byte = 0; byte < 104; ++byte) {
+        if ((byte < 4 || byte >= 12) && before[byte] != segments.Task.Bytes[byte]) return 23;
+    }
+    if (x86_kernel_segments_verify(&segments, 0)) return 24;
+    return busy_corruption_tests();
 }
 
 // ====== memoria vergine senza dipendenze da memset del runtime ===== //
@@ -199,5 +221,6 @@ __declspec(dllexport) int run_segment_tests(void)
     if ((result = task_type_tests()) != 0) return result;
     if ((result = argument_tests()) != 0) return result;
     if ((result = busy_corruption_tests()) != 0) return result;
+    if ((result = retarget_tests()) != 0) return result;
     return activation_calls || register_reads ? 18 : 0;
 }

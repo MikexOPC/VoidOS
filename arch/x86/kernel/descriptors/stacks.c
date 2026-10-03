@@ -15,12 +15,13 @@ static int metadata_range(const void *object, BOOT_U64 bytes, BOOT_U64 alignment
         return 0;
     }
     end = base + bytes;
-    return end <= X86_KERNEL_IST_GUARD || base >= X86_KERNEL_IST_GUARD + 16 * 4096;
+    return (end <= X86_KERNEL_IST_GUARD || base >= X86_KERNEL_IST_GUARD + 16 * 4096) &&
+        (end <= X86_KERNEL_MAIN_GUARD || base >= X86_KERNEL_MAIN_TOP + 4096);
 }
 
 // ====== genitori verificati prima di raggiungere una vista successiva ===== //
 
-static int parents(BOOT_U64 root, BOOT_U32 bits)
+int x86_kernel_stack_branch(BOOT_U64 root, BOOT_U32 bits)
 {
     BOOT_U32 level;
     const BOOT_U32 shifts[] = {39, 30, 21};
@@ -50,17 +51,19 @@ static int parents(BOOT_U64 root, BOOT_U32 bits)
 
 // ====== foglie e guardie confrontate senza adottare mapping estranei ===== //
 
-static int leaves(const X86_KERNEL_STACKS *owner, int present)
+static int leaves(const X86_KERNEL_STACKS *owner, int present, BOOT_U32 profile)
 {
     BOOT_U32 slot;
+    BOOT_U32 first = profile == 1 ? X86_KERNEL_IST_LEAF : X86_KERNEL_MAIN_LEAF;
+    BOOT_U32 count = profile == 1 ? 16 : 18;
     volatile BOOT_U64 *entries = x86_stack_entries(3);
     if (!entries) {
         return 0;
     }
-    for (slot = 0; slot < 16; ++slot) {
-        BOOT_U32 page = x86_ist_page(slot);
+    for (slot = 0; slot < count; ++slot) {
+        BOOT_U32 page = x86_stack_page(profile, slot);
         BOOT_U64 expected = present && page ? (owner->Lease.Base + (page - 1) * 4096) | 3 | IST_NX : 0;
-        BOOT_U64 actual = entries[X86_KERNEL_IST_LEAF + slot];
+        BOOT_U64 actual = entries[first + slot];
         if (expected ? (actual & ~IST_AD) != expected : actual != 0) {
             return 0;
         }
@@ -68,28 +71,32 @@ static int leaves(const X86_KERNEL_STACKS *owner, int present)
     return 1;
 }
 
-// ====== dodici invalidazioni dopo pubblicazione o revoca completa ===== //
+// ====== invalidazioni del profilo dopo pubblicazione o revoca completa ===== //
 
-static void invalidate(void)
+static void invalidate(BOOT_U32 profile)
 {
     BOOT_U32 slot;
-    for (slot = 0; slot < 16; ++slot) {
-        if (x86_ist_page(slot)) {
-            x86_stack_invalidate(X86_KERNEL_IST_GUARD + slot * 4096);
+    BOOT_U32 count = profile == 1 ? 16 : 18;
+    BOOT_U64 guard = profile == 1 ? X86_KERNEL_IST_GUARD : X86_KERNEL_MAIN_GUARD;
+    for (slot = 0; slot < count; ++slot) {
+        if (x86_stack_page(profile, slot)) {
+            x86_stack_invalidate(guard + slot * 4096);
         }
     }
 }
 
 // ====== azzeramento bounded prima della disponibilita per la TSS ===== //
 
-static int clear_stacks(void)
+static int clear_stacks(BOOT_U32 profile)
 {
     BOOT_U32 stack, byte;
-    for (stack = 1; stack <= 3; ++stack) {
+    BOOT_U32 begin = profile == 1 ? 1 : 4, end = profile == 1 ? 3 : 4;
+    BOOT_U64 bytes = profile == 1 ? X86_KERNEL_IST_BYTES : X86_KERNEL_MAIN_BYTES;
+    for (stack = begin; stack <= end; ++stack) {
         volatile unsigned char *data = x86_stack_bytes(stack);
         if (!data) return 0;
-        for (byte = 0; byte < X86_KERNEL_IST_BYTES; ++byte) data[byte] = 0;
-        for (byte = 0; byte < X86_KERNEL_IST_BYTES; ++byte) if (data[byte]) return 0;
+        for (byte = 0; byte < bytes; ++byte) data[byte] = 0;
+        for (byte = 0; byte < bytes; ++byte) if (data[byte]) return 0;
     }
     return 1;
 }
@@ -106,12 +113,13 @@ int x86_kernel_stacks_validate(const X86_KERNEL_STACKS *owner)
     if (!metadata_range(owner->Pool, sizeof(*owner->Pool), _Alignof(KERNEL_PHYSICAL_ALLOCATOR)) ||
         (a < b + sizeof(*owner->Pool) && b < a + sizeof(*owner)) ||
         owner->Self != a || owner->Ready != 1 || owner->Committed > 1 ||
-        !kernel_physical_validate(owner->Pool) || owner->Lease.Pages != 12 ||
-        !x86_ist_frame(owner->Lease.Base, owner->Pool->PhysicalBits) ||
+        owner->Profile < 1 || owner->Profile > 2 || owner->Reserved ||
+        !kernel_physical_validate(owner->Pool) || owner->Lease.Pages != (owner->Profile == 1 ? 12U : 16U) ||
+        !x86_stack_frame(owner->Profile, owner->Lease.Base, owner->Pool->PhysicalBits) ||
         !kernel_physical_is_pinned(owner->Pool, &owner->Lease)) {
         return 0;
     }
-    return parents(owner->Root, owner->Pool->PhysicalBits) && leaves(owner, 1);
+    return x86_kernel_stack_branch(owner->Root, owner->Pool->PhysicalBits) && leaves(owner, 1, owner->Profile);
 }
 
 // ====== azzeramento dei metadati solo dopo rilascio del prestito ===== //
@@ -127,18 +135,21 @@ static void forget(X86_KERNEL_STACKS *owner)
 int x86_kernel_stacks_release(X86_KERNEL_STACKS *owner)
 {
     BOOT_U32 slot;
+    BOOT_U32 count, first;
     volatile BOOT_U64 *entries;
     if (!x86_kernel_stacks_validate(owner) || owner->Committed ||
         owner->Pool->Count == KERNEL_PHYSICAL_EXTENTS) {
         return 0;
     }
     entries = x86_stack_entries(3);
-    for (slot = 0; slot < 16; ++slot) {
-        if (x86_ist_page(slot)) {
-            entries[X86_KERNEL_IST_LEAF + slot] = 0;
+    count = owner->Profile == 1 ? 16 : 18;
+    first = owner->Profile == 1 ? X86_KERNEL_IST_LEAF : X86_KERNEL_MAIN_LEAF;
+    for (slot = 0; slot < count; ++slot) {
+        if (x86_stack_page(owner->Profile, slot)) {
+            entries[first + slot] = 0;
         }
     }
-    invalidate();
+    invalidate(owner->Profile);
     if (!kernel_physical_pin(owner->Pool, &owner->Lease, 0) ||
         !kernel_physical_release(owner->Pool, &owner->Lease)) return 0;
     forget(owner);
@@ -162,31 +173,43 @@ static int fresh(X86_KERNEL_STACKS *owner, KERNEL_PHYSICAL_ALLOCATOR *pool)
 
 // ====== blocco fisico contiguo con guardie esclusivamente virtuali ===== //
 
-int x86_kernel_stacks_acquire(X86_KERNEL_STACKS *owner, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
+int x86_kernel_stacks_acquire_for(X86_KERNEL_STACKS *owner, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root, BOOT_U32 profile)
 {
     BOOT_U32 slot;
+    BOOT_U32 count = profile == 1 ? 16 : 18;
+    BOOT_U32 first = profile == 1 ? X86_KERNEL_IST_LEAF : X86_KERNEL_MAIN_LEAF;
+    BOOT_U64 pages = profile == 1 ? 12 : 16;
     volatile BOOT_U64 *entries;
-    if (!fresh(owner, pool) || !parents(root, pool->PhysicalBits) || !leaves(owner, 0)) return 0;
-    if (!kernel_physical_allocate(pool, 12, &owner->Lease)) return 0;
-    if (!x86_ist_frame(owner->Lease.Base, pool->PhysicalBits) || !kernel_physical_pin(pool, &owner->Lease, 1)) {
+    if (profile < 1 || profile > 2 || !fresh(owner, pool) ||
+        !x86_kernel_stack_branch(root, pool->PhysicalBits) || !leaves(owner, 0, profile)) return 0;
+    if (!kernel_physical_allocate(pool, pages, &owner->Lease)) return 0;
+    if (!x86_stack_frame(profile, owner->Lease.Base, pool->PhysicalBits) || !kernel_physical_pin(pool, &owner->Lease, 1)) {
         if (!kernel_physical_release(pool, &owner->Lease)) return 0;
         return 0;
     }
     owner->Self = (BOOT_U64)owner;
     owner->Pool = pool;
     owner->Root = root;
+    owner->Profile = profile;
     entries = x86_stack_entries(3);
-    for (slot = 0; slot < 16; ++slot) {
-        BOOT_U32 page = x86_ist_page(slot);
-        if (page) entries[X86_KERNEL_IST_LEAF + slot] = (owner->Lease.Base + (page - 1) * 4096) | 3 | IST_NX;
+    for (slot = 0; slot < count; ++slot) {
+        BOOT_U32 page = x86_stack_page(profile, slot);
+        if (page) entries[first + slot] = (owner->Lease.Base + (page - 1) * 4096) | 3 | IST_NX;
     }
-    invalidate();
+    invalidate(profile);
     owner->Ready = 1;
-    if (!clear_stacks() || !x86_kernel_stacks_validate(owner)) {
+    if (!clear_stacks(profile) || !x86_kernel_stacks_validate(owner)) {
         x86_kernel_stacks_release(owner);
         return 0;
     }
     return 1;
+}
+
+// ====== compatibilita del profilo IST senza duplicare il mapper ===== //
+
+int x86_kernel_stacks_acquire(X86_KERNEL_STACKS *owner, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
+{
+    return x86_kernel_stacks_acquire_for(owner, pool, root, 1);
 }
 
 // ====== irreversibile per il bootstrap nessun FreePages dopo LTR ===== //

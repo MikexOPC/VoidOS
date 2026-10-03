@@ -3,7 +3,7 @@
 Il kernel sostituisce GDT e TSS del loader dopo l'inizializzazione della memoria.
 La prima IDT kernel usa temporaneamente IST1 del loader; la sostituzione della TSS
 avviene prima di assegnare IST2 a NMI e IST3 a double fault. Lo stack principale
-di ingresso resta quello ricevuto nel contratto di boot.
+di ingresso viene poi sostituito dallo [stack principale autonomo](../stack/main-stack.md).
 
 ## Storage e selettori
 
@@ -18,6 +18,9 @@ Sono riutilizzati i costruttori e validatori del progetto in
 `arch/x86/lib/descriptors/`. Il validatore kernel controlla inoltre IST2/IST3
 e lo stato busy previsto, senza ignorare altri bit. Gli header standard MSVC/UCRT
 servono solo alla compilazione; il link continua a usare `/nodefaultlib`.
+RSP0 viene inizialmente preparato per lo stack loader, poi aggiornato al top
+del nuovo stack principale sotto il profilo UP/CPL0/IF=0. La verifica distingue
+questi due valori previsti; il nuovo valore e ammesso solo nella TSS busy.
 
 ## Geometria e ownership degli stack
 
@@ -75,11 +78,12 @@ e gia pronto. `KERNEL_DESCRIPTORS_OK` viene stampato dopo le verifiche.
 La ESP deve contenere il loader costruito con `-BootKernel`. Gli artefatti dei
 fault sono isolati in `kernel/build/`; la build impedisce di installarli nella
 ESP ordinaria. I test host verificano codifica indipendente, stato vergine,
-2.464 alterazioni di bit disponibili/busy, 1.000 corruzioni PTE respinte,
+3.696 alterazioni di bit disponibili/busy con RSP0 iniziale o nuovo,
+1.000 corruzioni PTE IST respinte,
 ownership, rollback di ciascuno stack mancante, OOM e 256 cicli senza perdite.
-I tre test Rust IST portano il totale kernel a 18.
+Il test Rust del profilo principale porta il totale kernel a 19.
 
-I 14 scenari QEMU controllano GDTR, cache TR, busy in memoria, CR3, PTE/guardie
+I 18 scenari QEMU controllano GDTR, cache TR, busy in memoria, CR3, PTE/guardie
 e frame reali su IST1/IST2/IST3. Il monitor inietta NMI dopo KERNEL_READY.
 La variante double rende non presente la gate GP e forza un GP: il fault durante
 la consegna genera DF sulla terza IST. Il RIP salvato del DF non viene assunto
@@ -90,7 +94,8 @@ Nessun recupero IRET, SMP, IRQ o supporto per CPU con CET attivo. La guardia
 terminale delle eccezioni resta globale e un secondo ingresso si arresta senza C.
 Il test NMI dimostra un ingresso terminale, non recupero o robustezza generale
 contro NMI annidati/machine check. Le pagine del loader non vengono ancora
-reclamate; lo stack principale e RSP0 rimangono dipendenze del loader.
+reclamate. Stack principale e RSP0 sono ora propri del kernel; il vecchio mapping
+e revocato, mentre il backing fisico resta riservato.
 Questi risultati riguardano QEMU, non hardware fisico.
 
 ## Fonti ufficiali consultate

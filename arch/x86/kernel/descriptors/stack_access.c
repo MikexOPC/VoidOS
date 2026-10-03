@@ -12,7 +12,7 @@ volatile BOOT_U64 *x86_stack_entries(BOOT_U32 level)
 
 volatile unsigned char *x86_stack_bytes(BOOT_U32 stack)
 {
-    return (volatile unsigned char *)x86_ist_base(stack);
+    return (volatile unsigned char *)(stack == 4 ? X86_KERNEL_MAIN_BASE : x86_ist_base(stack));
 }
 
 // ====== INVLPG locale nel profilo senza SMP e PCID ===== //

@@ -19,8 +19,19 @@ foreach ($fault in @('execute','unmapped','guard-low','guard-high')) {
 foreach ($fault in @('opcode','selector','divide','stack','nested','double')) {
     & (Join-Path $project 'kernel/scripts/build.ps1') -TestCpuFault $fault -OutputDirectory (Join-Path $output $fault)
 }
+foreach ($fault in @('retired','guard-high','execute','return')) {
+    & (Join-Path $project 'kernel/scripts/build.ps1') -TestMainFault $fault -OutputDirectory (Join-Path $output ('main-' + $fault))
+}
 Write-BootSection 'kernel autonomo dopo uscita UEFI'
 $candidatePages = @{}
+
+# ====== campi numerici obbligatori senza valori impliciti ===== #
+
+function Read-Hex([string]$Text, [string]$Pattern) {
+    $match = [regex]::Match($Text, $Pattern)
+    if (!$match.Success) { throw "Campo assente: $Pattern" }
+    return [Convert]::ToUInt64($match.Groups[1].Value,16)
+}
 
 # ====== due quantita di RAM panic e fault NX oppure dopo unmap ====== #
 
@@ -30,7 +41,9 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
     @{Name='guard-high-128';Variant='guard-high';Ram=128}, @{Name='opcode-128';Variant='opcode';Ram=128},
     @{Name='selector-128';Variant='selector';Ram=128}, @{Name='divide-128';Variant='divide';Ram=128},
     @{Name='stack-128';Variant='stack';Ram=128}, @{Name='nested-128';Variant='nested';Ram=128},
-    @{Name='double-128';Variant='double';Ram=128}, @{Name='nmi-128';Variant='ready';Ram=128;Nmi=$true})) {
+    @{Name='double-128';Variant='double';Ram=128}, @{Name='nmi-128';Variant='ready';Ram=128;Nmi=$true},
+    @{Name='main-retired-128';Variant='main-retired';Ram=128}, @{Name='main-guard-high-128';Variant='main-guard-high';Ram=128},
+    @{Name='main-execute-128';Variant='main-execute';Ram=128}, @{Name='main-return-128';Variant='main-return';Ram=128})) {
     $scenario = Join-Path $output $case.Name
     $boot = Join-Path $scenario 'esp/EFI/BOOT'
     New-Item -ItemType Directory -Force -Path $boot | Out-Null
@@ -58,9 +71,9 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $started = $vm.Start()
         if (!$started) { throw 'QEMU non avviato.' }
         $stdout = $vm.StandardOutput.ReadToEndAsync(); $stderr = $vm.StandardError.ReadToEndAsync()
-        $faultCase = $case.Nmi -or $case.Variant -in @('execute','unmapped','guard-low','guard-high','opcode','selector','divide','stack','double')
+        $faultCase = $case.Nmi -or $case.Variant -in @('execute','unmapped','guard-low','guard-high','opcode','selector','divide','stack','double','main-retired','main-guard-high','main-execute')
         $nestedCase = $case.Variant -eq 'nested'
-        $expected = if ($nestedCase) { 'KERNEL_NESTED_FAULT_READY' } elseif ($faultCase) { 'KERNEL_EXCEPTION_HALTED' } elseif ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } else { 'KERNEL_READY' }
+        $expected = if ($nestedCase) { 'KERNEL_NESTED_FAULT_READY' } elseif ($faultCase) { 'KERNEL_EXCEPTION_HALTED' } elseif ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } elseif ($case.Variant -eq 'main-return') { 'KERNEL_MAIN_RETURN_TEST_READY' } else { 'KERNEL_READY' }
         $deadline = [DateTime]::UtcNow.AddSeconds(40)
         $found = $false
         $nmiInjected = $false
@@ -87,6 +100,14 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $istPte = [regex]::Match($log, '(?i)KERNEL_IST_PTE: 0x([0-9a-f]{16})')
         if (!$istPte.Success) { throw 'Vista PTE stack kernel assente.' }
         $vm.StandardInput.WriteLine('x /16gx 0x' + $istPte.Groups[1].Value)
+        $mainPte = [regex]::Match($log, '(?i)KERNEL_MAIN_PTE: 0x([0-9a-f]{16})')
+        $oldPte = [regex]::Match($log, '(?i)KERNEL_OLD_STACK_PTE: 0x([0-9a-f]{16})')
+        if (!$mainPte.Success -or !$oldPte.Success) { throw 'PTE stack principale assenti.' }
+        $vm.StandardInput.WriteLine('x /18gx 0x' + $mainPte.Groups[1].Value)
+        $vm.StandardInput.WriteLine('x /18gx 0x' + $oldPte.Groups[1].Value)
+        $tss = [regex]::Match($log, '(?i)KERNEL_TSS_BASE: 0x([0-9a-f]{16})')
+        if (!$tss.Success) { throw 'TSS kernel assente.' }
+        $vm.StandardInput.WriteLine('x /1gx 0x' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16'))
         $gdt = [regex]::Match($log, '(?i)KERNEL_GDT_BASE: 0x([0-9a-f]{16})')
         if (!$gdt.Success) { throw 'GDT kernel assente.' }
         $vm.StandardInput.WriteLine('x /2gx 0x' + ([Convert]::ToUInt64($gdt.Groups[1].Value,16) + 24).ToString('x16'))
@@ -106,7 +127,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             throw "Trace CPU assente o triple fault: $scenario"
         }
         $root = [regex]::Match($log, 'ACTIVATION_ROOT: 0x([0-9A-F]{16})').Groups[1].Value
-        $marker = if ($case.Variant -eq 'panic') { '4b50414e49430001' } else { '4b52454144590001' }
+        $marker = if ($case.Variant -eq 'panic') { '4b50414e49430001' } elseif ($case.Variant -eq 'main-return') { '4b53545245540001' } else { '4b52454144590001' }
         $exitPattern = '(?im)^0*' + $exit.Groups[1].Value.TrimStart('0') + ':\s+0x0000000[1-3]00000002\s+0x0000000000000000'
         if ($registers -notmatch $exitPattern -or
             $registers -notmatch ('(?i)CR3=' + $root) -or $registers -notmatch 'HLT=1' -or
@@ -114,7 +135,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK') -or
             !$log.Contains('KERNEL_PHYSICAL_OK') -or !$log.Contains('KERNEL_MAPPING_OK') -or
             !$log.Contains('KERNEL_WINDOW_16_PAGES_OK') -or !$log.Contains('KERNEL_OBJECTS_OK') -or
-            !$log.Contains('KERNEL_IDT_OK') -or !$log.Contains('KERNEL_DESCRIPTORS_OK')) {
+            !$log.Contains('KERNEL_IDT_OK') -or !$log.Contains('KERNEL_DESCRIPTORS_OK') -or
+            !$log.Contains('KERNEL_MAIN_STACK_OK') -or !$log.Contains('KERNEL_RSP0_OK')) {
             throw "Stato CPU o inizializzazione kernel errati: $scenario"
         }
         $idt = [regex]::Match($log, '(?i)KERNEL_IDT_BASE: 0x([0-9a-f]{16})')
@@ -151,6 +173,34 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $istPhysical = [Convert]::ToUInt64($physicalMatch.Groups[1].Value,16)
         $nx = [Convert]::ToUInt64('8000000000000003',16)
         $mask = [Convert]::ToUInt64('ffffffffffffff9f',16)
+        $mainPhysicalMatch = [regex]::Match($log, '(?i)KERNEL_MAIN_PHYSICAL: 0x([0-9a-f]{16})')
+        if (!$mainPhysicalMatch.Success) { throw 'Lease principale assente.' }
+        $mainPhysical = [Convert]::ToUInt64($mainPhysicalMatch.Groups[1].Value,16)
+        $oldPhysical = Read-Hex $log '(?i)KERNEL_OLD_STACK_PHYSICAL: 0x([0-9a-f]{16})'
+        $mainRsp = Read-Hex $log '(?i)KERNEL_MAIN_RSP: 0x([0-9a-f]{16})'
+        if (($mainPhysical -lt $oldPhysical + 65536 -and $oldPhysical -lt $mainPhysical + 65536) -or
+            $mainRsp -lt 0x700000061000 -or $mainRsp -ge 0x700000071000 -or ($mainRsp -band 7)) {
+            throw 'Overlap fisico o RSP della continuazione errato.'
+        }
+        $mainBase = [Convert]::ToUInt64($mainPte.Groups[1].Value,16)
+        $oldBase = [Convert]::ToUInt64($oldPte.Groups[1].Value,16)
+        if ($mainBase -ne $oldBase + 96*8 -or
+            $registers -notmatch ('(?im)^' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16') + ':\s+0x0000700000071000')) {
+            throw 'RSP0 o ramo paging dello stack principale errati.'
+        }
+        for ($slot = 0; $slot -lt 18; $slot += 2) {
+            foreach ($base in @($mainBase,$oldBase)) {
+                $row = [regex]::Match($registers, '(?im)^' + ($base + $slot*8).ToString('x16') + ':\s+0x([0-9a-f]{16})\s+0x([0-9a-f]{16})')
+                if (!$row.Success) { throw 'PTE principali non leggibili.' }
+                for ($column = 0; $column -lt 2; ++$column) {
+                    $index = $slot + $column
+                    $actual = [Convert]::ToUInt64($row.Groups[$column + 1].Value,16)
+                    $expectedPte = if ($base -eq $oldBase -or $index -eq 0 -or $index -eq 17) { [uint64]0 } else { ($mainPhysical + ($index - 1)*4096) -bor $nx }
+                    if (($expectedPte -eq 0 -and $actual -ne 0) -or
+                        ($expectedPte -ne 0 -and ($actual -band $mask) -ne $expectedPte)) { throw 'Mapping principale o revoca loader errati.' }
+                }
+            }
+        }
         for ($slot = 0; $slot -lt 16; $slot += 2) {
             $row = [regex]::Match($registers, '(?im)^' + ($pteBase + $slot*8).ToString('x16') + ':\s+0x([0-9a-f]{16})\s+0x([0-9a-f]{16})')
             if (!$row.Success) { throw 'PTE IST non leggibili dal monitor.' }
@@ -176,24 +226,22 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 throw 'Secondo fault non arrestato prima del rientro in C.'
             }
         } elseif (!$faultCase) {
+            $terminalRsp = Read-Hex $registers 'RSP=([0-9a-f]{16})'
             if ($registers -notmatch ('(?i)RAX=' + $marker) -or $registers -notmatch 'SS =0010' -or
-                $registers -notmatch 'RSP=00007000000[01][0-9a-fA-F]{4}') { throw 'Arresto kernel errato.' }
+                $terminalRsp -lt 0x700000061000 -or $terminalRsp -ge 0x700000071000 -or
+                ($case.Variant -eq 'main-return' -and $log.Contains('KERNEL_READY'))) { throw 'Arresto kernel errato.' }
         } else {
-            # ====== campi numerici obbligatori senza valori impliciti ===== #
-
-            function Read-Hex([string]$Text, [string]$Pattern) {
-                $match = [regex]::Match($Text, $Pattern)
-                if (!$match.Success) { throw "Campo assente: $Pattern" }
-                return [Convert]::ToUInt64($match.Groups[1].Value,16)
-            }
             $rsp = Read-Hex $registers 'RSP=([0-9a-f]{16})'
-            $errorCode = switch ($case.Variant) { 'execute' {17} 'selector' {40} 'stack' {2} default {0} }
+            $errorCode = switch ($case.Variant) { 'execute' {17} 'main-execute' {17} 'selector' {40} 'stack' {2} default {0} }
             $vector = if ($case.Nmi) { 2 } else { switch ($case.Variant) { 'opcode' {6} 'selector' {13} 'divide' {0} 'double' {8} default {14} } }
             $istTop = if ($vector -eq 2) { 0x70000004a000 } elseif ($vector -eq 8) { 0x70000004f000 } else { 0x700000045000 }
             $faultAddress = switch ($case.Variant) {
                 'guard-low' { [Convert]::ToUInt64('70000001f000',16) }
                 'guard-high' { [Convert]::ToUInt64('700000030000',16) }
-                'stack' { [Convert]::ToUInt64('700000000ff8',16) }
+                'stack' { [Convert]::ToUInt64('700000060ff8',16) }
+                'main-retired' { [Convert]::ToUInt64('700000001000',16) }
+                'main-guard-high' { [Convert]::ToUInt64('700000071000',16) }
+                'main-execute' { [Convert]::ToUInt64('700000070000',16) }
                 default { [Convert]::ToUInt64('70000002f000',16) }
             }
             $frameAddress = Read-Hex $log '(?i)FAULT_FRAME: 0x([0-9a-f]{16})'
@@ -207,7 +255,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 (Read-Hex $log '(?i)FAULT_ERROR: 0x([0-9a-f]{16})') -ne $errorCode -or
                 (Read-Hex $log '(?i)FAULT_CS: 0x([0-9a-f]{16})') -ne 8 -or
                 (Read-Hex $log '(?i)FAULT_SS: 0x([0-9a-f]{16})') -ne 16 -or
-                $faultRsp -lt 0x700000001000 -or $faultRsp -ge 0x700000011000 -or
+                $faultRsp -lt 0x700000061000 -or $faultRsp -ge 0x700000071000 -or
                 ($faultFlags -band 512) -ne 0 -or
                 $frameAddress -ne $istTop - 56 -or
                 $registers -notmatch 'SS =0000' -or $rsp -lt $istTop - 16384 -or $rsp -ge $istTop -or
@@ -216,10 +264,11 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 $registers -notmatch ('(?im)^' + ($frameAddress + 32).ToString('x16') + ':\s+0x' + $faultFlags.ToString('x16') + '\s+0x' + $faultRsp.ToString('x16')) -or
                 $registers -notmatch ('(?im)^' + ($frameAddress + 48).ToString('x16') + ':\s+0x0000000000000010') -or
                 (!$case.Nmi -and $log.Contains('KERNEL_READY')) -or $log.Contains('EXCEPTION_FRAME_INVALID') -or
-                $log.Contains('EXPECTED_CPU_FAULT_MISSING') -or $log.Contains('EXPECTED_WINDOW_FAULT_MISSING')) { throw "Eccezione kernel errata: $scenario" }
+                $log.Contains('EXPECTED_CPU_FAULT_MISSING') -or $log.Contains('EXPECTED_WINDOW_FAULT_MISSING') -or
+                $log.Contains('EXPECTED_MAIN_FAULT_MISSING')) { throw "Eccezione kernel errata: $scenario" }
             if ($vector -eq 14 -and ((Read-Hex $registers 'CR2=([0-9a-f]{16})') -ne $faultAddress -or
                 (Read-Hex $log '(?i)FAULT_CR2: 0x([0-9a-f]{16})') -ne $faultAddress -or
-                ($case.Variant -eq 'execute' -and $faultRip -ne $faultAddress))) { throw 'Diagnostica CR2 o RIP NX errata.' }
+                ($case.Variant -in @('execute','main-execute') -and $faultRip -ne $faultAddress))) { throw 'Diagnostica CR2 o RIP NX errata.' }
             if ($vector -ne 14 -and $vector -ne 8 -and ($faultRip -lt 0x100000000 -or $faultRip -ge 0x100100000)) { throw 'RIP fault fuori dal kernel.' }
             if ($raw -notmatch '\x1b\[31m\[ FAIL \]\x1b\[0m KERNEL_EXCEPTION\r?\n') { throw 'Colore etichetta eccezione errato.' }
         }
@@ -243,4 +292,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '14/14 scenari: GDT TSS kernel, guardie e permessi IST, PF UD GP DE DF NMI e fault annidato verificati.'
+Write-BootStatus OK '18/18 scenari: stack principale, RSP0, revoca loader, guardie, NX, ritorno vietato ed eccezioni verificati.'

@@ -4,6 +4,17 @@
 static X86_KERNEL_SEGMENTS kernel_segments;
 static X86_KERNEL_STACKS kernel_stacks;
 
+// ====== confronto bounded del campo RSP0 non allineato nel formato hardware ===== //
+
+static int main_rsp0(const X86_BOOT_TSS *task)
+{
+    BOOT_U32 byte;
+    for (byte = 0; byte < 8; ++byte) {
+        if (task->Bytes[4 + byte] != (unsigned char)(X86_KERNEL_MAIN_TOP >> (byte*8))) return 0;
+    }
+    return 1;
+}
+
 // ====== owner esclusivo completo prima degli accessi ===== //
 
 static int valid_owner(const X86_KERNEL_SEGMENTS *owner)
@@ -96,6 +107,9 @@ int x86_kernel_segments_verify(const X86_KERNEL_SEGMENTS *owner, BOOT_U32 busy)
     for (byte = 0; byte < 104; ++byte) {
         task.Bytes[byte] = owner->Task.Bytes[byte];
     }
+    if (busy && main_rsp0(&task)) {
+        for (byte = 0; byte < 8; ++byte) task.Bytes[4 + byte] = (unsigned char)(X86_BOOT_STACK_TOP >> (byte*8));
+    }
     for (stack = 2; stack <= 3; ++stack) {
         BOOT_U64 top = x86_ist_top(stack);
         for (byte = 0; byte < 8; ++byte) {
@@ -123,7 +137,7 @@ static int field(const char *name, BOOT_U64 value)
 
 // ====== verifica dello stato effettivo dopo le istruzioni privilegiate ===== //
 
-static int activated(BOOT_U64 budget)
+static int loaded(void)
 {
     X86_GDT_POINTER actual = {{0}};
     BOOT_U32 byte;
@@ -136,10 +150,40 @@ static int activated(BOOT_U64 budget)
     // SGDT controlla il registro, il bit busy controlla la scrittura di LTR.
     // Il backend reale e l'unico chiamante privilegiato; i test QEMU verificano
     // anche la cache nascosta TR, non leggibile con la sola istruzione STR.
-    return x86_exception_environment() &&
+    return x86_exception_environment() != 0;
+}
+
+// ====== budget del solo profilo IST dopo il primo LTR ===== //
+
+static int activated(BOOT_U64 budget)
+{
+    return loaded() &&
         x86_kernel_segments_verify(&kernel_segments, 1) &&
         x86_kernel_stacks_validate(&kernel_stacks) &&
         budget >= 12 && kernel_stacks.Pool->FreePages == budget - 12;
+}
+
+// ====== aggiornamento RSP0 in memoria senza ripetere LTR su un descrittore busy ===== //
+
+int x86_kernel_segments_retarget(X86_KERNEL_SEGMENTS *owner)
+{
+    BOOT_U32 byte;
+    if (!x86_kernel_segments_verify(owner, 1) || main_rsp0(&owner->Task)) return 0;
+    // UP, CPL0 e IF=0: nessun ingresso di privilegio legge RSP0 durante la scrittura.
+    // NMI e DF usano IST separati. Il chiamante deve mantenere queste precondizioni.
+    for (byte = 0; byte < 8; ++byte) owner->Task.Bytes[4 + byte] = (unsigned char)(X86_KERNEL_MAIN_TOP >> (byte*8));
+    return x86_kernel_segments_verify(owner, 1) && main_rsp0(&owner->Task);
+}
+
+// ====== owner principale pin-nato nello stesso pool prima della pubblicazione ===== //
+
+int x86_kernel_segments_bind_main(const X86_KERNEL_STACKS *main)
+{
+    if (!x86_kernel_stacks_validate(main) || main->Profile != 2 || !main->Committed ||
+        !x86_kernel_stacks_validate(&kernel_stacks) || !kernel_stacks.Committed ||
+        main->Pool != kernel_stacks.Pool || !loaded() ||
+        !x86_kernel_segments_retarget(&kernel_segments)) return 0;
+    return field("KERNEL_RSP0: ", X86_KERNEL_MAIN_TOP) && kernel_log(0, "KERNEL_RSP0_OK");
 }
 
 // ====== indirizzi osservabili senza dipendenza dal layout del loader ===== //

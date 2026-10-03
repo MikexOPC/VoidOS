@@ -29,6 +29,32 @@ pub extern "C" fn x86_ist_page(slot: u32) -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_ist_frame(physical: u64, bits: u32) -> u32 {
+    x86_stack_frame(1, physical, bits)
+}
+
+// ====== profilo IST oppure stack principale con guardie escluse ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_stack_page(profile: u32, slot: u32) -> u32 {
+    match profile {
+        1 => x86_ist_page(slot),
+        2 if (1..=16).contains(&slot) => slot,
+        _ => 0,
+    }
+}
+
+// ====== dimensione fisica scelta prima di checked_add ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_stack_frame(profile: u32, physical: u64, bits: u32) -> u32 {
+    let pages = match profile { 1 => 12, 2 => 16, _ => return 0 };
     if !(32..=52).contains(&bits) || physical < 4096 || physical & 4095 != 0 { return 0; }
-    u32::from(physical.checked_add(12 * 4096).is_some_and(|end| end <= (1u64 << bits)))
+    u32::from(physical.checked_add(pages * 4096).is_some_and(|end| end <= (1u64 << bits)))
+}
+
+// ====== RSP appartenente al nuovo stack senza assumere un indirizzo mappato ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_main_pointer(pointer: u64) -> u32 {
+    u32::from((0x7000_0006_1000..0x7000_0007_1000).contains(&pointer) && pointer & 7 == 0)
 }

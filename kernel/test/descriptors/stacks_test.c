@@ -3,7 +3,17 @@ static X86_KERNEL_STACKS stacks;
 static KERNEL_PHYSICAL_ALLOCATOR physical;
 static BOOT_U64 tables[4][512];
 static unsigned char data[3][16384], map[40];
+static unsigned char main_data[65536];
+static X86_KERNEL_STACKS *observed = &stacks;
 static BOOT_U32 invalidations, ordering, missing;
+
+// ====== fixture condivisa solo dai test del mapper degli stack ===== //
+
+KERNEL_PHYSICAL_ALLOCATOR *x86_test_stack_pool(void) { return &physical; }
+
+// ====== osservazione del lease che il mapper sta pubblicando ===== //
+
+void x86_test_stack_owner(X86_KERNEL_STACKS *owner) { observed = owner; }
 
 // ====== viste host indipendenti dalla finestra di allocazione ===== //
 
@@ -16,6 +26,7 @@ volatile BOOT_U64 *x86_stack_entries(BOOT_U32 level)
 
 volatile unsigned char *x86_stack_bytes(BOOT_U32 stack)
 {
+    if (stack == 4) return missing == 4 ? 0 : main_data;
     return stack >= 1 && stack <= 3 && stack != missing ? data[stack - 1] : 0;
 }
 
@@ -24,12 +35,18 @@ volatile unsigned char *x86_stack_bytes(BOOT_U32 stack)
 void x86_stack_invalidate(BOOT_U64 address)
 {
     BOOT_U32 slot;
-    BOOT_U64 offset = address - X86_KERNEL_IST_GUARD;
-    if (address < X86_KERNEL_IST_GUARD || offset >= 65536 || (offset & 4095) ||
-        !x86_ist_page((BOOT_U32)(offset / 4096)) ||
-        !kernel_physical_is_pinned(&physical, &stacks.Lease)) ordering = 1;
-    for (slot = 0; slot < 16; ++slot) {
-        if (x86_ist_page(slot) && ((!tables[3][64 + slot]) != (stacks.Ready != 0))) ordering = 1;
+    BOOT_U32 profile = observed->Profile, first = profile == 1 ? 64 : 96, count = profile == 1 ? 16 : 18;
+    BOOT_U64 guard = profile == 1 ? X86_KERNEL_IST_GUARD : X86_KERNEL_MAIN_GUARD;
+    BOOT_U64 offset = address - guard;
+    if (address >= X86_BOOT_STACK_VIRTUAL && address < X86_BOOT_STACK_TOP && observed->Committed) {
+        for (slot = 1; slot <= 16; ++slot) if (tables[3][slot]) ordering = 1;
+    } else {
+        if (address < guard || offset >= count*4096ULL || (offset & 4095) ||
+            !x86_stack_page(profile, (BOOT_U32)(offset / 4096)) ||
+            !kernel_physical_is_pinned(&physical, &observed->Lease)) ordering = 1;
+        for (slot = 0; slot < count; ++slot) {
+            if (x86_stack_page(profile, slot) && ((!tables[3][first + slot]) != (observed->Ready != 0))) ordering = 1;
+        }
     }
     ++invalidations;
 }
@@ -49,16 +66,34 @@ static int fixture(void)
     BOOT_U32 byte, stack;
     clear(&stacks, sizeof(stacks)); clear(&physical, sizeof(physical));
     clear(tables, sizeof(tables)); clear(map, sizeof(map));
-    map[0] = 7; map[9] = 0x10; map[24] = 32; map[32] = 8;
+    map[0] = 7; map[10] = 0x10; map[24] = 32; map[32] = 8;
     tables[0][X86_BOOT_RECURSIVE_SLOT] = 0x1003 | (1ULL << 63);
     tables[0][(X86_KERNEL_IST_GUARD >> 39) & 511] = 0x2003;
     tables[1][0] = 0x3003; tables[2][0] = 0x4003;
     invalidations = ordering = missing = 0;
+    observed = &stacks;
+    for (byte = 0; byte < 65536; ++byte) ((volatile unsigned char *)main_data)[byte] = 0xa5;
     for (stack = 0; stack < 3; ++stack) {
         for (byte = 0; byte < 16384; ++byte) ((volatile unsigned char *)data[stack])[byte] = 0xa5;
     }
     return kernel_physical_initialize(&physical, map, 40, 40, 36);
 }
+
+// ====== reset host esplicito con accesso ai contatori delle invalidazioni ===== //
+
+int x86_test_stack_fixture(void) { return fixture(); }
+
+// ====== numero di invalidazioni senza modificarne lo stato ===== //
+
+BOOT_U32 x86_test_stack_invalidations(void) { return invalidations; }
+
+// ====== anomalie di ordinamento osservate dal backend host ===== //
+
+BOOT_U32 x86_test_stack_ordering(void) { return ordering; }
+
+// ====== iniezione bounded del buffer mancante ===== //
+
+void x86_test_stack_missing(BOOT_U32 value) { missing = value; }
 
 // ====== ownership guardie zeroing commit e rilascio vietato dopo pubblicazione ===== //
 

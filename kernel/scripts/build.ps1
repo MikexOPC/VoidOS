@@ -1,8 +1,10 @@
 param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
-    [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none')
+    [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
+    [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none')
 $ErrorActionPreference = 'Stop'
-if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
+if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
+if ($TestMainFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
 if ($TestCpuFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
@@ -28,6 +30,10 @@ if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project),
     ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')))
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
+if ($TestMainFault -ne 'none') {
+    $mode = switch ($TestMainFault) { 'retired' {1} 'guard-high' {2} 'execute' {3} 'return' {4} }
+    $flags += ('/DKERNEL_TEST_MAIN_FAULT=' + $mode)
+}
 if ($TestWindowFault -ne 'none') {
     $mode = switch ($TestWindowFault) { 'execute' {1} 'unmapped' {2} 'guard-low' {3} 'guard-high' {4} }
     $flags += ('/DKERNEL_TEST_WINDOW_FAULT=' + $mode)
@@ -42,8 +48,8 @@ if ($TestCpuFault -ne 'none') {
 foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
     'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
-    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
-    $object = Join-Path $output (([IO.Path]::GetFileNameWithoutExtension($source)) + '.obj')
+    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
+    $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
     $objects += $object
 }
@@ -55,6 +61,9 @@ $objects += ($output + '/exception-entry.obj')
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/segment-entry.obj'),
     (Join-Path $project 'arch/x86/kernel/descriptors/assembly/activation/segments.asm'))
 $objects += ($output + '/segment-entry.obj')
+Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/stack-switch.obj'),
+    (Join-Path $project 'arch/x86/kernel/stack/assembly/switch/main.asm'))
+$objects += ($output + '/stack-switch.obj')
 if ($TestCpuFault -ne 'none') {
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/cpu-fault.obj'),
         (Join-Path $project 'kernel/test/exceptions/assembly/fault/probe.asm'))

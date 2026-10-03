@@ -24,7 +24,7 @@ invalid_selector:
     mov ds, ax
     ret
 invalid_stack:
-    mov rsp, 700000001000h
+    mov rsp, 700000061000h
     push rax
     ; Se il push non fallisce, UD2 segnala un fault diverso da quello atteso.
     ud2

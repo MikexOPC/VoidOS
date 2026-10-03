@@ -8,11 +8,23 @@
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/descriptors/segments.h"
+#include "arch/x86/kernel/stack/main.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
 static X86_PAGE_WINDOW page_window;
 static KERNEL_OBJECT_POOL object_pool;
+static X86_KERNEL_MAIN_STACK main_stack;
+__declspec(noreturn) static void kernel_continue(void);
+#if defined(KERNEL_TEST_MAIN_FAULT) && KERNEL_TEST_MAIN_FAULT == 4
+
+// ====== ritorno intenzionale soltanto nell'immagine di test isolata ===== //
+
+static void kernel_return_probe(void)
+{
+    if (!kernel_log(1, "KERNEL_MAIN_RETURN_TEST_READY")) kernel_panic("SERIAL_UNAVAILABLE");
+}
+#endif
 #ifdef KERNEL_TEST_WINDOW_FAULT
 void x86_window_fault(BOOT_U64 address, BOOT_U32 mode);
 #endif
@@ -141,7 +153,33 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
     prepare_kernel_objects();
     if (!kernel_section("GDT TSS e stack di emergenza kernel") ||
         !x86_kernel_segments_initialize(&physical_allocator)) kernel_panic("KERNEL_DESCRIPTORS_FAILED");
-#ifdef KERNEL_TEST_WINDOW_FAULT
+    if (!kernel_section("stack principale kernel") ||
+        !x86_kernel_main_prepare(&main_stack, &physical_allocator, &boot_context.Info)) kernel_panic("MAIN_STACK_PREPARE_FAILED");
+    x86_kernel_main_enter(&main_stack, kernel_continue);
+}
+
+// ====== continuazione statica senza riferimenti o ritorni sullo stack loader ===== //
+
+__declspec(noreturn) static void kernel_continue(void)
+{
+    if (!x86_kernel_main_retire(&main_stack) || !x86_kernel_main_report(&main_stack)) kernel_panic("MAIN_STACK_RETIRE_FAILED");
+#ifdef KERNEL_TEST_MAIN_FAULT
+#if KERNEL_TEST_MAIN_FAULT == 4
+    // Test del guard return mantenendo prima la normale revoca del mapping.
+    x86_kernel_stack_switch(X86_KERNEL_MAIN_TOP, kernel_return_probe);
+#elif KERNEL_TEST_MAIN_FAULT == 3
+    ((void (*)(void))(X86_KERNEL_MAIN_TOP - 4096))();
+#else
+    {
+        BOOT_U64 address = KERNEL_TEST_MAIN_FAULT == 1 ? X86_BOOT_STACK_VIRTUAL : X86_KERNEL_MAIN_TOP;
+        volatile unsigned char value = *(volatile unsigned char *)address;
+        (void)value;
+    }
+#endif
+#if KERNEL_TEST_MAIN_FAULT != 4
+    kernel_panic("EXPECTED_MAIN_FAULT_MISSING");
+#endif
+#elif defined(KERNEL_TEST_WINDOW_FAULT)
 #if KERNEL_TEST_WINDOW_FAULT != 2
     if (!x86_page_window_acquire(&page_window, X86_KERNEL_WINDOW_PAGES)) kernel_panic("FAULT_SETUP_FAILED");
 #endif

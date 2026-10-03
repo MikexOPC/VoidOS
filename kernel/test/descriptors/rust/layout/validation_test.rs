@@ -40,3 +40,24 @@ fn physical_bounds() {
     for base in [0, 1, 4097, u64::MAX] { assert_eq!(x86_ist_frame(base, 52), 0); }
     for bits in [0, 31, 53, u32::MAX] { assert_eq!(x86_ist_frame(4096, bits), 0); }
 }
+
+// ====== sedici pagine contigue e due guardie sul profilo principale ===== //
+
+#[test]
+fn main_layout() {
+    for slot in 0..=18 {
+        assert_eq!(x86_stack_page(2, slot), if (1..=16).contains(&slot) { slot } else { 0 });
+    }
+    for profile in [0, 3, u32::MAX] {
+        assert_eq!(x86_stack_page(profile, 1), 0);
+        assert_eq!(x86_stack_frame(profile, 4096, 52), 0);
+    }
+    for bits in 32..=52 {
+        assert_eq!(x86_stack_frame(2, (1u64 << bits) - 65536, bits), 1);
+        assert_eq!(x86_stack_frame(2, (1u64 << bits) - 61440, bits), 0);
+    }
+    for pointer in [0x700000061000, 0x700000070ff8] { assert_eq!(x86_main_pointer(pointer), 1); }
+    for pointer in [0, 0x700000060ff8, 0x700000061001, 0x700000071000, u64::MAX] {
+        assert_eq!(x86_main_pointer(pointer), 0);
+    }
+}

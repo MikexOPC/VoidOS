@@ -21,8 +21,9 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
     'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c',
     'arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c','kernel/test/descriptors/stacks_test.c',
-    'kernel/test/descriptors/segments_test.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
-    $object = Join-Path $output ([IO.Path]::GetFileNameWithoutExtension($source) + '.obj')
+    'kernel/test/descriptors/segments_test.c','arch/x86/kernel/stack/main.c','kernel/test/stack/main_test.c',
+    'arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
+    $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
     & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O2 /c ('/I' + $project) ('/I' + (Join-Path $ToolchainBin '../../../include')) ('/I' + (Join-Path $sdk.FullName 'ucrt')) (Join-Path $project $source) ('/Fo' + $object)
     if ($LASTEXITCODE -ne 0) { throw 'Compilazione test C fallita.' }
     $objects += $object
@@ -82,9 +83,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test frame fallita.' }
 & ($output + '/exception-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test frame Rust falliti.' }
 Write-BootStatus OK 'IDT: 4176 alterazioni di bit, bounds, attivazione e rollback verificati; 4 test Rust del frame superati.'
-$descriptorSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Descriptors { [DllImport(@"' + $dll + '")] public static extern int run_stack_tests(); [DllImport(@"' + $dll + '")] public static extern int run_segment_tests(); }'
+$descriptorSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Descriptors { [DllImport(@"' + $dll + '")] public static extern int run_stack_tests(); [DllImport(@"' + $dll + '")] public static extern int run_segment_tests(); [DllImport(@"' + $dll + '")] public static extern int run_main_stack_tests(); }'
 $descriptorType = Add-Type -TypeDefinition $descriptorSource -PassThru
-foreach ($method in @('run_stack_tests','run_segment_tests')) {
+foreach ($method in @('run_stack_tests','run_segment_tests','run_main_stack_tests')) {
     $result = $descriptorType.GetMethod($method).Invoke($null, @())
     if ($result -ne 0) { throw "Test descrittori fallito: $method, $result" }
 }
@@ -92,4 +93,4 @@ foreach ($method in @('run_stack_tests','run_segment_tests')) {
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
-Write-BootStatus OK 'GDT TSS: 2464 alterazioni di bit; IST: 1000 corruzioni respinte, rollback e 256 cicli senza perdite; 18 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 19 test Rust complessivi.'
