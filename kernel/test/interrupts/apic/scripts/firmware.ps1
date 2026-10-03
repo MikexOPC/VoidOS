@@ -6,6 +6,11 @@ function Write-ApicMonitor($log, $vm) {
     $vm.StandardInput.WriteLine('info lapic')
     $capabilities = Read-Hex $log 'KERNEL_APIC_CAPABILITIES: 0x([0-9a-f]{16})'
     $vm.StandardInput.WriteLine('x /66gx 0x' + $capabilities.ToString('x16'))
+    $vm.StandardInput.WriteLine('info pic')
+    $idt = Read-Hex $log 'KERNEL_IRQ_IDT_BASE: 0x([0-9a-f]{16})'
+    foreach ($vector in @(0x40,0xf0,0xff,2,8)) {
+        $vm.StandardInput.WriteLine('x /2gx 0x' + ($idt+$vector*16).ToString('x16'))
+    }
 }
 
 # ====== verifica PAT corrente PTE previste e identita iniziale del BSP ===== #
@@ -36,6 +41,7 @@ function Test-ApicFirmware($log, $registers) {
         throw 'Preflight APIC diverso da snapshot CPU, MADT o selezione PAT UC.'
     }
     Test-ApicCapabilities $log $registers
+    Test-IrqFirmware $log $registers
 }
 
 # ====== fotografia hardware e code zero dopo la revoca dei mapping MMIO ===== #
@@ -63,5 +69,43 @@ function Test-ApicCapabilities($log, $registers) {
         if ($registers -notmatch ('(?im)^'+($target+48+$row*16).ToString('x16')+':\s+0x0000000000000000\s+0x0000000000000000')) {
             throw 'Coda delle capacita IOAPIC non azzerata.'
         }
+    }
+}
+
+# ====== ritorno verificato e stato mascherato letto dal monitor indipendente ===== #
+
+function Test-IrqFirmware($log, $registers) {
+    if (!$log.Contains('KERNEL_IRQ_RETURN_OK') -or !$log.Contains('KERNEL_APIC_MASKED_OK') -or
+        (Read-Hex $log 'KERNEL_IRQ_RETURN_COUNT: 0x([0-9a-f]{16})') -ne 1 -or
+        (Read-Hex $log 'KERNEL_IRQ_SPURIOUS_COUNT: 0x([0-9a-f]{16})') -ne 1 -or
+        (Read-Hex $log 'KERNEL_MASKED_IO_INPUTS: 0x([0-9a-f]{16})') -ne 24 -or
+        (Read-Hex $log 'KERNEL_MASKED_LVT_COUNT: 0x([0-9a-f]{16})') -ne 6 -or
+        $registers -notmatch '(?im)^SPIV\s+0x000001ff' -or
+        $registers -notmatch '(?im)^ISR\s+\(none\)' -or $registers -notmatch '(?im)^IRR\s+\(none\)') {
+        throw 'Ritorno IRQ o controller mascherati diversi dal profilo verificato.'
+    }
+    if ($registers -notmatch '(?im)^LVT1\s+0x00000400') { throw 'NMI locale MADT non configurato su LINT1.' }
+    foreach ($name in @('LVT0','LVTPC','LVTERR','LVTTHMR','LVTT')) {
+        if ($registers -notmatch ('(?im)^'+$name+'\s+0x00010040')) { throw "LVT non mascherato: $name" }
+    }
+    foreach ($pic in @(0,1)) {
+        if ($registers -notmatch ('(?im)^pic'+$pic+':.*\bimr=ff\b.*\bisr=00\b')) { throw 'PIC legacy aperto o in servizio.' }
+    }
+    for ($pin = 0; $pin -lt 24; ++$pin) {
+        if ($registers -notmatch ('(?im)^\s+pin '+$pin+'\s+0x0000000000010040\s+dest=0\s+vec=64\s+active-hi edge\s+masked fixed\s+physical')) {
+            throw "Rotta I/O APIC non mascherata: $pin"
+        }
+    }
+    $idt = Read-Hex $log 'KERNEL_IRQ_IDT_BASE: 0x([0-9a-f]{16})'
+    foreach ($vector in @(0x40,0xf0,0xff,2,8)) {
+        $row = [regex]::Match($registers,'(?im)^'+($idt+$vector*16).ToString('x16')+':\s+0x([0-9a-f]{16})\s+0x([0-9a-f]{16})')
+        if (!$row.Success) { throw 'Gate IRQ assente dal monitor.' }
+        $low = [Convert]::ToUInt64($row.Groups[1].Value,16)
+        $high = [Convert]::ToUInt64($row.Groups[2].Value,16)
+        $ist = if ($vector -eq 2) {2} elseif ($vector -eq 8) {3} else {0}
+        $address = ($low -band 65535) + (($low -shr 48) -shl 16) + (($high -band 4294967295L) -shl 32)
+        if (($low -shr 16 -band 65535) -ne 8 -or ($low -shr 32 -band 255) -ne $ist -or
+            ($low -shr 40 -band 255) -ne 0x8e -or ($high -shr 32) -or
+            $address -lt 0x100000000 -or $address -ge 0x100100000) { throw 'Gate IRQ corrotto o IST errato.' }
     }
 }

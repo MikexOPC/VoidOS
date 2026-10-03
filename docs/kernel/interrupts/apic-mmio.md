@@ -80,6 +80,11 @@ controller e ingresso IRQ con ritorno. Solo dopo si abilita una sorgente
 controllata, ad esempio la seriale. Una MADT a quattro CPU non significa
 che il kernel stia gia eseguendo SMP.
 
+La configurazione mascherabile e il ritorno ring zero sono ora implementati
+nel [blocco IDT/controller](irq-return.md). Il prestito e il preflight
+MMIO sono condivisi dal probe e dalla configurazione; il callback rimane
+interno, non rientrante e richiede preflight gia superato con IF=0.
+
 ## Riferimenti
 
 [Intel SDM, Vol. 3A: PAT/MTRR, cache e APIC](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html).

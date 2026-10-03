@@ -61,6 +61,8 @@ foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch
     'kernel/firmware/acpi/madt/parser.c','kernel/firmware/acpi/madt/records.c',
     'arch/x86/kernel/interrupts/apic/profile.c',
     'arch/x86/kernel/interrupts/apic/probe.c','arch/x86/kernel/interrupts/apic/access.c',
+    'arch/x86/kernel/interrupts/apic/control/masked.c','arch/x86/kernel/interrupts/apic/control/access.c',
+    'arch/x86/kernel/interrupts/return/table.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
     'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
     $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
@@ -81,6 +83,12 @@ $objects += ($output + '/stack-switch.obj')
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/apic-capture.obj'),
     (Join-Path $project 'arch/x86/kernel/interrupts/apic/assembly/profile/capture.asm'))
 $objects += ($output + '/apic-capture.obj')
+foreach ($entry in @('entry/return','verification/registers')) {
+    $object = $output + '/irq-' + ($entry.Replace('/','-')) + '.obj'
+    Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo'+$object),
+        (Join-Path $project ('arch/x86/kernel/interrupts/return/assembly/'+$entry+'.asm')))
+    $objects += $object
+}
 if ($TestCpuFault -ne 'none') {
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/cpu-fault.obj'),
         (Join-Path $project 'kernel/test/exceptions/assembly/fault/probe.asm'))
@@ -112,6 +120,14 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/interrupts/apic/rust/registers/validation.rs'),
     '-o',($output + '/apic-registers.obj'))
 $objects += ($output + '/apic-registers.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/interrupts/return/rust/frame/validation.rs'),
+    '-o',($output + '/irq-frame.obj'))
+$objects += ($output + '/irq-frame.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/interrupts/apic/control/rust/encoding/validation.rs'),
+    '-o',($output + '/irq-control.obj'))
+$objects += ($output + '/irq-control.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/mm/paging/rust/validation/entries.rs'),
     '-o',($output + '/paging-entries.obj'))

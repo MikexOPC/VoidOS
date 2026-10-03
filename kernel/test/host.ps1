@@ -106,7 +106,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test APIC Rust fallita.' }
 if ($LASTEXITCODE -ne 0) { throw 'Test APIC Rust falliti.' }
 Write-BootStatus OK 'Preflight APIC: BSP, MADT, PAT corrente e 3 test Rust verificati.'
 & (Join-Path $PSScriptRoot 'interrupts/apic/scripts/host-probe.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
-Write-BootStatus OK 'MMIO APIC: revoca PTE, selettore, riserve, alias GSI e 3 test Rust verificati.'
+Write-BootStatus OK 'MMIO APIC e IRQ: revoca PTE, maschere, NMI, rollback IDT e 7 test Rust verificati.'
 $typeSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Physical { [DllImport(@"' + $dll + '")] public static extern int run_physical_tests(); }'
 $physicalType = Add-Type -TypeDefinition $typeSource -PassThru
 $result = $physicalType.GetMethod('run_physical_tests').Invoke($null, @())
@@ -183,4 +183,4 @@ foreach ($method in @('run_stack_tests','run_segment_tests','run_main_stack_test
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
-Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 37 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 41 test Rust complessivi.'

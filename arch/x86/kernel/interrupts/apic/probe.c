@@ -63,43 +63,63 @@ static int cpu_current(const KERNEL_MADT_TOPOLOGY *topology, const X86_APIC_PROF
 
 // ====== mapping temporaneo supervisor NX con ownership di prestito Active due ===== //
 
-static int read_controller(X86_PAGE_WINDOW *window, BOOT_U64 physical, BOOT_U64 cache,
-                             int io, BOOT_U32 *id, BOOT_U32 *version)
+int x86_apic_borrow(X86_PAGE_WINDOW *window, BOOT_U64 physical, BOOT_U64 cache,
+    int writable, int (*operation)(void *), void *state)
 {
     volatile BOOT_U64 *entries;
     BOOT_U64 expected;
-    BOOT_U32 saved = 0, restored = 0, valid = 0, selected = 0;
+    BOOT_U64 budget;
     int result;
-    if (!x86_page_window_idle_valid(window)) return 0;
+    if (!operation || !state || (writable != 0 && writable != 1) ||
+        !x86_page_window_idle_valid(window) || (physical & 4095) ||
+        physical >= (1ULL << window->Pool->PhysicalBits) || (cache & ~0x98ULL)) return 0;
     entries = x86_window_entries(3);
     if (!entries) return 0;
-    expected = physical | NX | cache | (io ? 3 : 1);
+    expected = physical | NX | cache | (writable ? 3 : 1);
+    budget = window->Pool->FreePages;
     window->Active = 2;
     entries[WINDOW_LEAF] = expected;
     x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
     result = (entries[WINDOW_LEAF] & ~0x60ULL) == expected;
-    if (result && io) {
+    if (result) result = operation(state);
+    result = result && (entries[WINDOW_LEAF] & ~0x60ULL) == expected;
+    entries[WINDOW_LEAF] = 0;
+    x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
+    window->Active = 0;
+    return result && budget == window->Pool->FreePages && x86_page_window_idle_valid(window);
+}
+
+// ====== sole letture dei registri con ripristino del selettore ===== //
+
+typedef struct { int Io; BOOT_U32 *Id, *Version; } READ_REQUEST;
+static int read_registers(void *state)
+{
+    READ_REQUEST *request = state;
+    BOOT_U32 saved = 0, restored = 0, valid = 0, selected = 0;
+    int result = 1;
+    if (request->Io) {
         result = x86_apic_mmio_read(0, &saved);
         if (result) {
             saved &= 255;
             selected = 1;
-            result = x86_apic_mmio_select(0) && x86_apic_mmio_read(0x10, id) &&
-                     x86_apic_mmio_select(1) && x86_apic_mmio_read(0x10, version);
+            result = x86_apic_mmio_select(0) && x86_apic_mmio_read(0x10, request->Id) &&
+                     x86_apic_mmio_select(1) && x86_apic_mmio_read(0x10, request->Version);
         }
         if (selected) {
             valid = x86_apic_mmio_select(saved) && x86_apic_mmio_read(0, &restored) &&
                     (restored & 255) == saved;
             result = result && valid;
         }
-    } else if (result) {
-        result = x86_apic_mmio_read(0x20, id) && x86_apic_mmio_read(0x30, version);
+    } else {
+        result = x86_apic_mmio_read(0x20, request->Id) && x86_apic_mmio_read(0x30, request->Version);
     }
-    result = result && (entries[WINDOW_LEAF] & ~0x60ULL) == expected;
-    // Questa foglia appartiene al prestito: revocarla anche se il readback fallisce.
-    entries[WINDOW_LEAF] = 0;
-    x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
-    window->Active = 0;
-    return result && x86_page_window_idle_valid(window);
+    return result;
+}
+static int read_controller(X86_PAGE_WINDOW *window, BOOT_U64 physical, BOOT_U64 cache,
+    int io, BOOT_U32 *id, BOOT_U32 *version)
+{
+    READ_REQUEST request = {io, id, version};
+    return x86_apic_borrow(window, physical, cache, io, read_registers, &request);
 }
 
 // ====== conteggi hardware e intervalli GSI distinti per tutti gli IOAPIC ===== //
@@ -195,14 +215,13 @@ static int log_capabilities(const X86_APIC_CAPABILITIES *output)
 
 // ====== bozza locale verificata prima del successo del probe completo ===== //
 
-int x86_apic_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
-                     const X86_PAGING_INVENTORY *inventory, const KERNEL_MADT_TOPOLOGY *topology,
-                     const X86_APIC_PROFILE *profile, X86_APIC_CAPABILITIES *output)
+int x86_apic_mapping_ready(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
+    const X86_PAGING_INVENTORY *inventory, const KERNEL_MADT_TOPOLOGY *topology,
+    const X86_APIC_PROFILE *profile)
 {
-    X86_APIC_CAPABILITIES draft;
+    X86_APIC_CAPABILITIES unused;
     BOOT_U32 index;
-    BOOT_U64 budget;
-    if (!output_valid(context, window, inventory, topology, profile, output) ||
+    if (!output_valid(context, window, inventory, topology, profile, &unused) ||
         !x86_apic_profile_valid(topology, profile, window->Pool->PhysicalBits) ||
         !x86_page_window_idle_valid(window) || !x86_paging_inventory_verify(context, window->Pool, inventory) ||
         !cpu_current(topology, profile)) return 0;
@@ -211,6 +230,20 @@ int x86_apic_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
         if (!device_reserved(context, topology->Io[index].Address, 0) ||
             !aliases_absent(inventory, topology->Io[index].Address)) return 0;
     }
+    return 1;
+}
+
+// ====== bozza locale pubblicata dopo controlli condivisi e letture ===== //
+
+int x86_apic_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
+                     const X86_PAGING_INVENTORY *inventory, const KERNEL_MADT_TOPOLOGY *topology,
+                     const X86_APIC_PROFILE *profile, X86_APIC_CAPABILITIES *output)
+{
+    X86_APIC_CAPABILITIES draft;
+    BOOT_U32 index;
+    BOOT_U64 budget;
+    if (!output_valid(context, window, inventory, topology, profile, output) ||
+        !x86_apic_mapping_ready(context, window, inventory, topology, profile)) return 0;
     for (index = 0; index < sizeof(draft); ++index) ((volatile unsigned char *)&draft)[index] = 0;
     budget = window->Pool->FreePages;
     if (!collect(window, topology, profile, &draft) || !routes_covered(topology, &draft) ||

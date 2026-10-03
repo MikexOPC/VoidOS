@@ -214,8 +214,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 } elseif ($actual) { throw 'Guardia o coda arena presente.' }
             }
         }
-        $idt = [regex]::Match($log, '(?i)KERNEL_IDT_BASE: 0x([0-9a-f]{16})')
-        if (!$idt.Success -or $registers -notmatch ('(?i)IDT=\s*' + $idt.Groups[1].Value + '\s+000001ff')) {
+        $idt = [regex]::Match($log, '(?i)KERNEL_IRQ_IDT_BASE: 0x([0-9a-f]{16})')
+        if (!$idt.Success -or $registers -notmatch ('(?i)IDT=\s*' + $idt.Groups[1].Value + '\s+00000fff')) {
             throw 'IDTR attivo diverso dalla tabella kernel verificata.'
         }
         $idtBase = [Convert]::ToUInt64($idt.Groups[1].Value,16)

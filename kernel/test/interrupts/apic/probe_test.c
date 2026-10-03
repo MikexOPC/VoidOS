@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/interrupts/apic/probe.h"
+#include "arch/x86/kernel/interrupts/apic/control/masked.h"
 static KERNEL_BOOT_CONTEXT context;
 static X86_PAGE_WINDOW window;
 static KERNEL_PHYSICAL_ALLOCATOR pool;
@@ -200,4 +201,55 @@ __declspec(dllexport) int run_apic_probe_tests(void)
     result = policies(); if (result) return 200 + result;
     result = extended(); if (result) return 300 + result;
     return 0;
+}
+
+// ====== fixture condivisa dal modello controller senza duplicare gli owner ===== //
+
+int test_mask_reset(void)
+{
+    fixture();
+    topology.Pcat = 1;
+    return probe();
+}
+BOOT_U64 test_mask_physical(void) { return entries[32] & 0x000ffffffffff000ULL; }
+int test_mask_quiesce(void)
+{
+    return x86_apic_quiesce(&context,&window,&ledger,&topology,&profile,&output);
+}
+int test_mask_clean(void)
+{
+    return !entries[32] && !window.Active && pool.FreePages == 123 && !order_error;
+}
+void test_mask_corrupt(BOOT_U32 kind)
+{
+    if (kind == 1) output.Ready = 2;
+    if (kind == 2) output.Io[0].Inputs = 25;
+    if (kind == 3) output.Io[1].Address = 4096;
+    if (kind == 4) cache_bad = 1;
+    if (kind == 5) output.LapicVersion |= 0x80000000U;
+}
+BOOT_U32 test_mask_lapic_version(void) { return lapic_version; }
+BOOT_U32 test_mask_io_version(void) { return io_version; }
+void test_mask_variant(BOOT_U32 maximum, BOOT_U32 inputs, BOOT_U32 pcat)
+{
+    lapic_version = (maximum << 16) | 0x14;
+    io_version = ((inputs - 1) << 16) | 0x20;
+    output.LapicVersion = lapic_version;
+    output.Io[0].Version = io_version;
+    output.Io[0].Inputs = inputs;
+    output.Io[0].End = inputs;
+    topology.Pcat = pcat;
+}
+void test_mask_nmi(BOOT_U32 kind)
+{
+    topology.Length = 70; topology.NmiCount = 1;
+    topology.Nmi[0].Kind = 4; topology.Nmi[0].Uid = ~0U; topology.Nmi[0].Value = 1;
+    if (kind == 2) {
+        topology.Nmi[0].Uid = 99; topology.Nmi[0].Value = 0; topology.Nmi[0].Flags = 3;
+    }
+    if (kind == 3) topology.Nmi[0].Uid = 98;
+    if (kind == 4) {
+        topology.Length = 76; topology.NmiCount = 2; topology.Nmi[1] = topology.Nmi[0];
+    }
+    if (kind == 5) topology.Nmi[0].Flags = 12;
 }
