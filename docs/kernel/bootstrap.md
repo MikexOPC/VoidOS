@@ -3,7 +3,7 @@
 Il kernel di produzione iniziale vive in `kernel/` e `arch/x86/kernel/`,
 separato dal probe in boot/uefi/test/kernel. Non usa servizi UEFI e non
 ritorna al bootloader. Gestisce ora [ownership fisica](memory/physical-allocator.md)
-senza ancora mappare o dereferenziare le pagine assegnate. Non e ancora un kernel
+con una finestra RW/NX e stack propri protetti da guardie. Non e ancora un kernel
 ibrido completo: questa base precede scheduler, servizi isolati e driver.
 
 ## Costruzione e prove
@@ -93,9 +93,13 @@ Panic stampa la ragione se possibile e arresta autonomamente con CLI/HLT,
 conservando in RAX il marker 0x4b50414e49430001. L'avvio completato usa
 0x4b52454144590001. Nessun percorso ritorna al firmware.
 
-Restano ereditati GDT/IDT/TSS, gestione terminale delle eccezioni e stato
-SIMD/FPU del bootstrap. Mancano diagnostica grafica, NMI robusti,
-interrupt esterni, SMP e prove su hardware fisico.
+GDT/IDT/TSS ed eccezioni sono ora gestiti
+dal kernel, con tre IST distinti e stack principale autonomo: vedere
+[descrittori](descriptors/ownership.md) e [stack](stack/main-stack.md).
+Il mapping del vecchio stack e revocato, le sue pagine fisiche restano
+riservate. Restano ereditate le tabelle paging e lo stato SIMD/FPU;
+mancano diagnostica grafica, recupero dalle eccezioni, interrupt esterni,
+SMP e prove su hardware fisico.
 
 Riferimenti: [UEFI 2.11, memoria](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html),
 [UART TI TL16C550C](https://www.ti.com/lit/ds/symlink/tl16c550c.pdf),

@@ -134,10 +134,17 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $registers -notmatch 'CS =0008' -or
             !$log.Contains('KERNEL_CONTRACT_OK') -or !$log.Contains('KERNEL_MEMORY_OK') -or
             !$log.Contains('KERNEL_PHYSICAL_OK') -or !$log.Contains('KERNEL_MAPPING_OK') -or
+            !$log.Contains('KERNEL_PHYSICAL_ALIGNED_OK') -or
             !$log.Contains('KERNEL_WINDOW_16_PAGES_OK') -or !$log.Contains('KERNEL_OBJECTS_OK') -or
             !$log.Contains('KERNEL_IDT_OK') -or !$log.Contains('KERNEL_DESCRIPTORS_OK') -or
             !$log.Contains('KERNEL_MAIN_STACK_OK') -or !$log.Contains('KERNEL_RSP0_OK')) {
             throw "Stato CPU o inizializzazione kernel errati: $scenario"
+        }
+        $aligned64 = Read-Hex $log 'KERNEL_PHYSICAL_64K_BASE: 0x([0-9a-f]{16})'
+        $aligned2m = Read-Hex $log 'KERNEL_PHYSICAL_2M_BASE: 0x([0-9a-f]{16})'
+        if (!$aligned64 -or !$aligned2m -or ($aligned64 -band 65535) -or ($aligned2m -band 2097151) -or
+            ($aligned64 -lt $aligned2m + 32768 -and $aligned2m -lt $aligned64 + 16384)) {
+            throw 'Allocazioni fisiche non allineate o sovrapposte.'
         }
         $idt = [regex]::Match($log, '(?i)KERNEL_IDT_BASE: 0x([0-9a-f]{16})')
         if (!$idt.Success -or $registers -notmatch ('(?i)IDT=\s*' + $idt.Groups[1].Value + '\s+000001ff')) {

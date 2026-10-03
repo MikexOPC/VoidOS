@@ -19,6 +19,12 @@ int kernel_physical_initialize(KERNEL_PHYSICAL_ALLOCATOR *owner, const unsigned 
                                BOOT_U64 bytes, BOOT_U64 stride, BOOT_U32 bits);
 int kernel_physical_validate(const KERNEL_PHYSICAL_ALLOCATOR *owner);
 int kernel_physical_allocate(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 pages, KERNEL_PHYSICAL_LEASE *output);
+// ====== allineamento in pagine potenza di due e base fisica verificata da Rust ===== //
+
+BOOT_U64 kernel_physical_aligned_base(BOOT_U64 base, BOOT_U64 available, BOOT_U64 pages,
+                                     BOOT_U64 alignment_pages, BOOT_U32 bits);
+int kernel_physical_allocate_aligned(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 pages,
+                                     BOOT_U64 alignment_pages, KERNEL_PHYSICAL_LEASE *output);
 int kernel_physical_release(KERNEL_PHYSICAL_ALLOCATOR *owner, KERNEL_PHYSICAL_LEASE *lease);
 int kernel_physical_pin(KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lease, BOOT_U32 pin);
 int kernel_physical_is_pinned(const KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lease);

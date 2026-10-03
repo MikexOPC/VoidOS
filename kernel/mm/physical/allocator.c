@@ -22,18 +22,35 @@ static void insert_extent(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 base, BOOT_
 {
     BOOT_U32 index = 0, next;
     while (index < owner->Count && owner->Free[index].Base < base) ++index;
+    // Coalescere prima di inserire evita un record temporaneo anche a capacita piena.
+    if (index && owner->Free[index - 1].Base + owner->Free[index - 1].Pages * 4096 == base) {
+        owner->Free[index - 1].Pages += pages;
+        if (index < owner->Count && base + pages * 4096 == owner->Free[index].Base) {
+            owner->Free[index - 1].Pages += owner->Free[index].Pages;
+            remove_extent(owner, index);
+        }
+        return;
+    }
+    if (index < owner->Count && base + pages * 4096 == owner->Free[index].Base) {
+        owner->Free[index].Base = base;
+        owner->Free[index].Pages += pages;
+        return;
+    }
     for (next = owner->Count; next > index; --next) owner->Free[next] = owner->Free[next - 1];
     owner->Free[index] = (KERNEL_PHYSICAL_EXTENT){base, pages};
     ++owner->Count;
-    if (index && owner->Free[index - 1].Base + owner->Free[index - 1].Pages * 4096 == base) {
-        owner->Free[index - 1].Pages += pages;
-        remove_extent(owner, index);
-        --index;
-    }
-    if (index + 1 < owner->Count && owner->Free[index].Base + owner->Free[index].Pages * 4096 == owner->Free[index + 1].Base) {
-        owner->Free[index].Pages += owner->Free[index + 1].Pages;
-        remove_extent(owner, index + 1);
-    }
+}
+
+// ====== un rilascio adiacente non richiede spazio aggiuntivo nei metadati ===== //
+
+static int insertion_fits(const KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 base, BOOT_U64 pages)
+{
+    BOOT_U32 index;
+    if (owner->Count < KERNEL_PHYSICAL_EXTENTS) return 1;
+    for (index = 0; index < owner->Count; ++index)
+        if (owner->Free[index].Base + owner->Free[index].Pages * 4096 == base ||
+            base + pages * 4096 == owner->Free[index].Base) return 1;
+    return 0;
 }
 
 // ====== invarianti prima di ogni modifica e nessuna dereferenziazione fisica ====== //
@@ -106,28 +123,51 @@ invalid:
     return 0;
 }
 
-// ====== assegnazione contigua con identificatore monotono senza wrap ====== //
+// ====== first fit allineato con split limitato e identificatore senza wrap ===== //
 
-int kernel_physical_allocate(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 pages, KERNEL_PHYSICAL_LEASE *output)
+int kernel_physical_allocate_aligned(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 pages,
+                                     BOOT_U64 alignment_pages, KERNEL_PHYSICAL_LEASE *output)
 {
-    BOOT_U32 slot, index;
+    BOOT_U32 slot, index, next;
+    BOOT_U64 base = 0, prefix = 0, suffix = 0;
     KERNEL_PHYSICAL_LEASE lease;
     if (!owner || !output || !pages || overlaps(owner, sizeof(*owner), output, sizeof(*output)) ||
         !kernel_physical_validate(owner) || owner->NextId == ~0ULL ||
         output->Base || output->Pages || output->Id || output->Owner) return 0;
     for (slot = 0; slot < KERNEL_PHYSICAL_LEASES; ++slot) if (!owner->Live[slot].Id) break;
     if (slot == KERNEL_PHYSICAL_LEASES) return 0;
-    for (index = 0; index < owner->Count; ++index) if (owner->Free[index].Pages >= pages) break;
+    for (index = 0; index < owner->Count; ++index) {
+        const KERNEL_PHYSICAL_EXTENT *range = &owner->Free[index];
+        base = kernel_physical_aligned_base(range->Base, range->Pages, pages, alignment_pages, owner->PhysicalBits);
+        if (!base) continue;
+        prefix = (base - range->Base) / 4096;
+        suffix = range->Pages - prefix - pages;
+        if (!prefix || !suffix || owner->Count < KERNEL_PHYSICAL_EXTENTS) break;
+    }
     if (index == owner->Count) return 0;
-    lease = (KERNEL_PHYSICAL_LEASE){owner->Free[index].Base, pages, owner->NextId, (BOOT_U64)owner};
-    owner->Free[index].Base += pages * 4096;
-    owner->Free[index].Pages -= pages;
-    if (!owner->Free[index].Pages) remove_extent(owner, index);
+    lease = (KERNEL_PHYSICAL_LEASE){base, pages, owner->NextId, (BOOT_U64)owner};
+    if (prefix && suffix) {
+        for (next = owner->Count; next > index + 1; --next) owner->Free[next] = owner->Free[next - 1];
+        owner->Free[index].Pages = prefix;
+        owner->Free[index + 1] = (KERNEL_PHYSICAL_EXTENT){base + pages * 4096, suffix};
+        ++owner->Count;
+    } else if (prefix) {
+        owner->Free[index].Pages = prefix;
+    } else if (suffix) {
+        owner->Free[index] = (KERNEL_PHYSICAL_EXTENT){base + pages * 4096, suffix};
+    } else remove_extent(owner, index);
     owner->FreePages -= pages;
     ++owner->NextId;
     owner->Live[slot] = lease;
     *output = lease;
     return 1;
+}
+
+// ====== compatibilita dei chiamanti esistenti con allineamento minimo di una pagina ===== //
+
+int kernel_physical_allocate(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 pages, KERNEL_PHYSICAL_LEASE *output)
+{
+    return kernel_physical_allocate_aligned(owner, pages, 1, output);
 }
 
 // ====== rilascio esatto respinge handle obsoleti o alterati ====== //
@@ -136,13 +176,12 @@ int kernel_physical_release(KERNEL_PHYSICAL_ALLOCATOR *owner, KERNEL_PHYSICAL_LE
 {
     BOOT_U32 slot;
     if (!owner || !lease || overlaps(owner, sizeof(*owner), lease, sizeof(*lease)) ||
-        !kernel_physical_validate(owner) || !lease->Id || lease->Owner != (BOOT_U64)owner ||
-        owner->Count == KERNEL_PHYSICAL_EXTENTS) return 0;
+        !kernel_physical_validate(owner) || !lease->Id || lease->Owner != (BOOT_U64)owner) return 0;
     for (slot = 0; slot < KERNEL_PHYSICAL_LEASES; ++slot) {
         const KERNEL_PHYSICAL_LEASE *live = &owner->Live[slot];
         if (live->Id == lease->Id && live->Base == lease->Base && live->Pages == lease->Pages) break;
     }
-    if (slot == KERNEL_PHYSICAL_LEASES || owner->Pins[slot]) return 0;
+    if (slot == KERNEL_PHYSICAL_LEASES || owner->Pins[slot] || !insertion_fits(owner, lease->Base, lease->Pages)) return 0;
     insert_extent(owner, lease->Base, lease->Pages);
     owner->FreePages += lease->Pages;
     owner->Live[slot] = (KERNEL_PHYSICAL_LEASE){0};

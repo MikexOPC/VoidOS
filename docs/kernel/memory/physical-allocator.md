@@ -36,15 +36,26 @@ invarianti sono controllati prima di restituire successo.
 
 ## Allocazione e rilascio
 
-Il chiamante fornisce un handle distinto e interamente zero. La prima
-regione abbastanza grande viene consumata dal principio, senza creare
-alias o usare buchi riservati. Il record contiene base, numero di pagine,
+Il chiamante fornisce un handle distinto e interamente zero.
+`kernel_physical_allocate` usa un allineamento minimo di una pagina;
+`kernel_physical_allocate_aligned` riceve un allineamento espresso in
+pagine, positivo e potenza di due. Per esempio 16 significa 64 KiB,
+512 significa 2 MiB. Questo non crea huge page o mapping virtuali.
+Rust calcola il primo candidato con moltiplicazioni e somme checked,
+entro il limite fisico CPU. La prima regione utilizzabile viene scelta
+senza creare alias o usare buchi riservati. Prefisso e suffisso restano
+liberi; se entrambi esistono serve un solo record aggiuntivo. A metadati
+pieni si cerca un candidato successivo che non richieda tale record.
+Il record contiene base, numero di pagine,
 identificatore monotono e identita dell'owner. L'owner e non spostabile
 e non deve essere copiato, azzerato o reinizializzato mentre e in uso.
 
 Il rilascio richiede una corrispondenza esatta con un record vivo. Dopo
 successo il record e l'handle fornito vengono azzerati, il conteggio libero
-viene ripristinato e i vicini riuniti. Un doppio rilascio o una copia
+viene ripristinato e i vicini riuniti prima di inserire un nuovo record.
+Questo permette il rilascio adiacente anche con 256 extent occupati;
+un rilascio isolato senza spazio nei metadati fallisce senza modifiche.
+Un doppio rilascio o una copia
 obsoleta falliscono anche dopo riuso dello stesso indirizzo: l'ID cambia.
 L'esaurimento degli ID fallisce prima del wrap. Se esistono copie dello
 stesso handle vivo, la prima puo rilasciarlo e rende obsolete le altre;
@@ -69,11 +80,22 @@ esauriti, tutte le pagine esaurite, frammentazione, intervalli oltre CPU,
 attributi esclusi e 129 regioni candidate rifiutate. Eseguono 1024 sequenze
 con un modello indipendente di indirizzi e conteggi. Rust verifica anche
 estremi CPU, requisiti WB e ogni bit degli attributi speciali.
+La suite di allineamento aggiunge 8192 operazioni miste con una bitmap
+indipendente di 128 pagine, confrontando first fit, budget e intervalli
+liberi dopo ogni operazione. Controlla split, pin, handle obsoleti,
+overflow, alias, output non vuoti e rifiuti con fotografia byte per byte
+dell'owner. Fixture sintetiche valide con 256 extent esercitano i limiti
+dei metadati; non estendono la politica di acquisizione dalla mappa UEFI.
+Due test Rust aggiungono 278528 confronti con un modello enumerativo
+e i limiti fisici da 32 a 52 bit, senza puntatori o heap in produzione.
 
 In QEMU il kernel assegna due blocchi, libera e riusa il primo, respinge
 un handle obsoleto, rilascia entrambi e verifica il ripristino di tutte le
 pagine prima di KERNEL_PHYSICAL_OK. Non scrive a quegli indirizzi fisici.
-Le prove con 128/256 MiB e panic restano in kernel/test/firmware.ps1.
+Assegna anche 4 pagine allineate a 64 KiB e 8 pagine allineate a 2 MiB,
+controlla disgiunzione e budget, poi le rilascia entrambe prima di
+KERNEL_PHYSICAL_ALIGNED_OK. Lo script controlla le basi stampate in
+tutti i 18 scenari, inclusi 128/256 MiB, panic ed eccezioni terminali.
 
 ```powershell
 .\kernel\scripts\build.ps1 -Install
@@ -90,3 +112,4 @@ l'allocatore fisico da solo continua a non toccare i byte delle pagine.
 
 Riferimenti: [UEFI 2.11, GetMemoryMap](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html)
 e [Intel CPUID, dimensione fisica](https://cdrdv2-public.intel.com/774475/252046-sdm-change-document.pdf).
+L'aritmetica scalare usa [Rust core u64](https://doc.rust-lang.org/stable/core/primitive.u64.html).

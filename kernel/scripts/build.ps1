@@ -76,6 +76,10 @@ if ($TestWindowFault -ne 'none') {
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/mm/physical/rust/alignment/placement.rs'),
+    '-o',($output + '/physical-alignment.obj'))
+$objects += ($output + '/physical-alignment.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/descriptors/rust/layout/validation.rs'),
     '-o',($output + '/ist-layout.obj'))
 $objects += ($output + '/ist-layout.obj')

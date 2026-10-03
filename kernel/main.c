@@ -127,6 +127,17 @@ static void prepare_physical_memory(void)
         !kernel_physical_allocate(&physical_allocator, 2, &reused) || kernel_physical_release(&physical_allocator, &stale) ||
         !kernel_physical_release(&physical_allocator, &second) || !kernel_physical_release(&physical_allocator, &reused) ||
         physical_allocator.FreePages != total || !kernel_physical_validate(&physical_allocator)) kernel_panic("PHYSICAL_RELEASE_FAILED");
+    if (!kernel_physical_allocate_aligned(&physical_allocator, 4, 16, &first) ||
+        !kernel_physical_allocate_aligned(&physical_allocator, 8, 512, &second) ||
+        (first.Base & 65535) || (second.Base & 2097151) || physical_allocator.FreePages != total - 12 ||
+        kernel_regions_overlap(first.Base, first.Pages, second.Base, second.Pages) ||
+        !kernel_physical_validate(&physical_allocator)) kernel_panic("PHYSICAL_ALIGNMENT_FAILED");
+    if (!kernel_text("KERNEL_PHYSICAL_64K_BASE: ") || !kernel_number(first.Base) ||
+        !kernel_text("\nKERNEL_PHYSICAL_2M_BASE: ") || !kernel_number(second.Base) ||
+        !kernel_text("\n")) kernel_panic("SERIAL_UNAVAILABLE");
+    if (!kernel_physical_release(&physical_allocator, &first) || !kernel_physical_release(&physical_allocator, &second) ||
+        physical_allocator.FreePages != total || !kernel_physical_validate(&physical_allocator)) kernel_panic("PHYSICAL_ALIGNED_RELEASE_FAILED");
+    if (!kernel_log(0, "KERNEL_PHYSICAL_ALIGNED_OK")) kernel_panic("SERIAL_UNAVAILABLE");
     if (!kernel_log(0, "KERNEL_PHYSICAL_OK") || !kernel_text("Pagine fisiche gestite: ") ||
         !kernel_number(total) || !kernel_text("\n")) kernel_panic("SERIAL_UNAVAILABLE");
 }

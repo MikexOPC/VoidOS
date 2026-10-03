@@ -17,6 +17,7 @@ $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory
 if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c','kernel/boot/contract.c',
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/test/mm/physical/allocator_test.c',
+    'kernel/test/mm/physical/alignment_test.c',
     'kernel/diagnostics/log.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','kernel/test/mm/window/page_test.c',
     'kernel/mm/objects/pool.c','kernel/test/mm/objects/pool_test.c',
     'arch/x86/kernel/exceptions/terminal.c','kernel/test/exceptions/terminal_test.c',
@@ -29,6 +30,9 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'kernel/mm/physical/rust/alignment/placement.rs') -o ($output + '/physical-alignment.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione allineamento fisico fallita.' }
+$objects += ($output + '/physical-alignment.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'arch/x86/kernel/descriptors/rust/layout/validation.rs') -o ($output + '/ist-layout.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione layout IST fallita.' }
 $objects += ($output + '/ist-layout.obj')
@@ -53,6 +57,15 @@ $typeSource = 'using System.Runtime.InteropServices; public static class ' + $ty
 $physicalType = Add-Type -TypeDefinition $typeSource -PassThru
 $result = $physicalType.GetMethod('run_physical_tests').Invoke($null, @())
 if ($result -ne 0) { throw "Test allocatore fisico fallito: $result" }
+$alignmentSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Alignment { [DllImport(@"' + $dll + '")] public static extern int run_alignment_tests(); }'
+$alignmentType = Add-Type -TypeDefinition $alignmentSource -PassThru
+$result = $alignmentType.GetMethod('run_alignment_tests').Invoke($null, @())
+if ($result -ne 0) { throw "Test allineamento fisico fallito: $result" }
+& $rustc --edition=2024 --test -D warnings (Join-Path $PSScriptRoot 'mm/physical/rust/alignment/placement_test.rs') -o ($output + '/physical-alignment-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione test allineamento fisico fallita.' }
+& ($output + '/physical-alignment-tests.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Test allineamento fisico Rust falliti.' }
+Write-BootStatus OK 'Allineamento fisico: split, coalescenza, 8192 operazioni e 278528 confronti Rust verificati.'
 $windowSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Window { [DllImport(@"' + $dll + '")] public static extern int run_window_tests(); }'
 $windowType = Add-Type -TypeDefinition $windowSource -PassThru
 $result = $windowType.GetMethod('run_window_tests').Invoke($null, @())
@@ -93,4 +106,4 @@ foreach ($method in @('run_stack_tests','run_segment_tests','run_main_stack_test
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
-Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 19 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 21 test Rust complessivi.'
