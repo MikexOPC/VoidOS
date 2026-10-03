@@ -13,6 +13,7 @@
 #include "arch/x86/mm/arena/objects.h"
 #include "arch/x86/mm/paging/inventory.h"
 #include "firmware/acpi/platform.h"
+#include "firmware/acpi/madt/platform.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
@@ -25,6 +26,7 @@ static X86_OBJECT_ARENA persistent_arena;
 static KERNEL_OBJECT_HANDLE context_object, inventory_object;
 static KERNEL_OBJECT_HANDLE paging_object;
 static KERNEL_OBJECT_HANDLE acpi_object;
+static KERNEL_OBJECT_HANDLE madt_object;
 __declspec(noreturn) static void kernel_continue(void);
 #if defined(KERNEL_TEST_MAIN_FAULT) && KERNEL_TEST_MAIN_FAULT == 4
 
@@ -296,6 +298,8 @@ __declspec(noreturn) static void kernel_continue(void)
             !kernel_text("\n") || !kernel_log(0, "KERNEL_PAGING_INVENTORY_OK")) kernel_panic("SERIAL_UNAVAILABLE");
         if (!kernel_acpi_initialize(context, &page_window, &persistent_arena, &acpi_object) ||
             !x86_paging_inventory_verify(context, &physical_allocator, paging)) kernel_panic("ACPI_DIRECTORY_INVALID");
+        if (!kernel_madt_initialize(context, &page_window, &persistent_arena, &acpi_object, &madt_object) ||
+            !x86_paging_inventory_verify(context, &physical_allocator, paging)) kernel_panic("MADT_TOPOLOGY_INVALID");
     }
 #ifdef KERNEL_TEST_REGION_FAULT
     {

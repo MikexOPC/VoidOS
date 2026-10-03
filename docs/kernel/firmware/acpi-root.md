@@ -77,8 +77,9 @@ compilatore. Non si disabilitano gli stack probe per aggirare il link.
 
 ## Prossimo blocco
 
-Leggere gli header figli con lo stesso lettore, individuare MADT,
-verificarne dimensione e checksum e interpretare i record bounded.
+La discovery MADT e ora implementata con lo stesso lettore; il contratto
+e descritto in [madt.md](madt.md). Il prossimo blocco deve verificare
+identita del BSP, modalita APIC e pagine MMIO prima di configurare IRQ.
 Controller IRQ e MMIO non sono ancora programmati; IF resta zero.
 
 ## Specifiche

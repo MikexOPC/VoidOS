@@ -2,6 +2,7 @@ param([string]$QemuDirectory = 'C:/Program Files/qemu', [switch]$UseInstalled)
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
+. (Join-Path $PSScriptRoot 'firmware/acpi/scripts/firmware.ps1')
 $output = Join-Path $project ('kernel/build/firmware-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $image = Join-Path $project 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
@@ -39,6 +40,7 @@ function Read-Hex([string]$Text, [string]$Pattern) {
 # ====== due quantita di RAM panic e fault NX oppure dopo unmap ====== #
 
 foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-256';Variant='ready';Ram=256},
+    @{Name='ready-smp4';Variant='ready';Ram=256;Smp=4},
     @{Name='panic-128';Variant='panic';Ram=128}, @{Name='execute-128';Variant='execute';Ram=128},
     @{Name='unmapped-128';Variant='unmapped';Ram=128}, @{Name='guard-low-128';Variant='guard-low';Ram=128},
     @{Name='guard-high-128';Variant='guard-high';Ram=128}, @{Name='opcode-128';Variant='opcode';Ram=128},
@@ -60,6 +62,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
     $serial = Join-Path $scenario 'serial.log'
     $cpuLog = Join-Path $scenario 'qemu.log'
     $arguments = @('-machine','q35','-cpu','max','-accel','tcg','-m',[string]$case.Ram,'-net','none',
+        '-smp',$(if ($case.Smp) {[string]$case.Smp} else {'1'}),
         '-d','int,cpu_reset','-D',$cpuLog.Replace('\','/'),
         '-display','none','-monitor','stdio','-no-reboot','-serial',('file:' + $serial.Replace('\','/')),
         '-drive',('if=pflash,format=raw,readonly=on,file=' + (Join-Path $QemuDirectory 'share/edk2-x86_64-code.fd').Replace('\','/')),
@@ -123,6 +126,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $vm.StandardInput.WriteLine('x /3gx 0x' + $pagingInventory.ToString('x16'))
         $acpiDirectory = Read-Hex $log 'KERNEL_ACPI_DIRECTORY: 0x([0-9a-f]{16})'
         $vm.StandardInput.WriteLine('x /3gx 0x' + $acpiDirectory.ToString('x16'))
+        Write-MadtMonitor $log $vm
         $tss = [regex]::Match($log, '(?i)KERNEL_TSS_BASE: 0x([0-9a-f]{16})')
         if (!$tss.Success) { throw 'TSS kernel assente.' }
         $vm.StandardInput.WriteLine('x /1gx 0x' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16'))
@@ -186,33 +190,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $registers -notmatch ('(?im)^' + $arenaContext.ToString('x16') + ':\s+0x314f464e49545342\s+0x000000a800000003')) {
             throw 'Contesto persistente fuori arena, sovrapposto o contratto corrotto.'
         }
-        $acpiPhysical = Read-Hex $log 'KERNEL_ACPI_RSDP: 0x([0-9a-f]{16})'
-        $acpiRoot = Read-Hex $log 'KERNEL_ACPI_ROOT: 0x([0-9a-f]{16})'
-        if (!$log.Contains('KERNEL_ACPI_RSDP_OK') -or
-            $acpiPhysical -ne (Read-Hex $log 'ACPI_RSDP_PHYSICAL: 0x([0-9A-F]{16})') -or
-            $acpiRoot -ne (Read-Hex $log 'ACPI_ROOT_PHYSICAL: 0x([0-9A-F]{16})') -or
-            $registers -notmatch ('(?im)^' + ($arenaContext + 112).ToString('x16') + ':\s+0x' + $acpiPhysical.ToString('x16') + '\s+0x0000000200000024') -or
-            $registers -notmatch ('(?im)^' + ($arenaContext + 128).ToString('x16') + ':\s+0x2052545020445352') -or
-            $registers -notmatch ('(?im)^' + ($arenaContext + 144).ToString('x16') + ':\s+0x[0-9a-f]{16}\s+0x' + $acpiRoot.ToString('x16'))) {
-            throw 'Snapshot ACPI persistente diverso dalla discovery firmware.'
-        }
-        $acpiCount = Read-Hex $log 'KERNEL_ACPI_TABLE_COUNT: 0x([0-9a-f]{16})'
-        $acpiBytes = Read-Hex $log 'KERNEL_ACPI_TABLE_BYTES: 0x([0-9a-f]{16})'
-        if (!$log.Contains('KERNEL_ACPI_XSDT_OK') -or !$log.Contains('KERNEL_ACPI_DIRECTORY_OK') -or
-            !$acpiCount -or $acpiCount -gt 256 -or $acpiBytes -ne 36 + 8 * $acpiCount -or
-            ($acpiDirectory -band 7) -or $acpiDirectory -lt $pagingInventory + 3096 -or
-            $acpiDirectory + 2072 -gt 0x7000000b3000 -or
-            $registers -notmatch ('(?im)^' + $acpiDirectory.ToString('x16') + ':\s+0x' + $acpiRoot.ToString('x16') + '\s+0x' + (($acpiCount -shl 32) + $acpiBytes).ToString('x16')) -or
-            $registers -notmatch ('(?im)^' + ($acpiDirectory + 16).ToString('x16') + ':\s+0x0000000000000008')) {
-            throw 'Directory XSDT fuori arena o diversa dai dati verificati dal kernel.'
-        }
-        if ($case.Variant -notin @('execute','guard-low','guard-high')) {
-            for ($slot = 0; $slot -lt 16; $slot += 2) {
-                if ($registers -notmatch ('(?im)^' + ($windowPte + $slot * 8).ToString('x16') + ':\s+0x0000000000000000\s+0x0000000000000000')) {
-                    throw 'Mapping temporaneo ACPI ancora presente nella finestra.'
-                }
-            }
-        }
+        Test-AcpiFirmware $log $registers $arenaContext $pagingInventory $case $windowPte
         if (!$region0 -or !$region1 -or ($region0 -band 65535) -or ($region1 -band 65535) -or
             ($region0 -lt $region1 + 65536 -and $region1 -lt $region0 + 131072)) { throw 'Blocchi kernel sovrapposti o non allineati.' }
         for ($slot = 0; $slot -lt 4; ++$slot) {
@@ -390,4 +368,4 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 Write-BootStatus INFO "Log: $output"
-Write-BootStatus OK '22/22 scenari: RSDP e directory XSDT, mapping, stack, guardie, NX, NMI e double fault verificati.'
+Write-BootStatus OK '23/23 scenari: MADT con 1/4 CPU, ACPI, mapping, stack, guardie, NX, NMI e double fault verificati.'
