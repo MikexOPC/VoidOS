@@ -184,4 +184,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
 & (Join-Path $PSScriptRoot 'serial/transmit/scripts/host.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
-Write-BootStatus OK 'GDT TSS stack e TX bounded: ownership, rollback, revoca e corruzioni verificati; 48 test Rust complessivi.'
+& (Join-Path $PSScriptRoot 'serial/queue/scripts/host.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
+Write-BootStatus OK 'GDT TSS stack e TX bounded: ownership, rollback, revoca e corruzioni verificati; 50 test Rust complessivi.'

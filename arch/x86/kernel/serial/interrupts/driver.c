@@ -1,4 +1,5 @@
 #include "route.h"
+#include "arch/x86/kernel/serial/queue/queue.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "kernel/diagnostics/log.h"
@@ -124,6 +125,8 @@ static X86_UART_IRQ_OWNER owner;
 static X86_LAPIC_MAPPING mapping;
 static X86_UART_ROUTE route;
 static X86_UART_TX tx;
+static X86_UART_QUEUE queue;
+static BOOT_U32 backpressure;
 static const unsigned char payload[] = "\r\nKERNEL_UART_TX_PAYLOAD: 0123456789abcdef\r\n";
 static const unsigned char full_payload[] = "KERNEL_UART_TX_REUSE: 0123456789abcdef0123456789abcdef01234567\r\n";
 static const unsigned char final_payload[] = "KERNEL_UART_TX_FINAL: OK\r\n";
@@ -226,6 +229,9 @@ static int report(void)
         kernel_text("\nKERNEL_UART_TX_BYTES: ") && kernel_number(tx.Next) &&
         kernel_text("\nKERNEL_UART_TX_TOTAL: ") && kernel_number(bytes_total) &&
         kernel_text("\nKERNEL_UART_TX_COMPLETED: ") && kernel_number(owner.TxCompleted) &&
+        kernel_text("\nKERNEL_UART_QUEUE_OWNER: ") && kernel_number((BOOT_U64)&queue) &&
+        kernel_text("\nKERNEL_UART_QUEUE_FULL: ") && kernel_number(backpressure) &&
+        kernel_text("\n") && kernel_log(0,"KERNEL_UART_QUEUE_OK") &&
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_TX_OK") &&
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_IRQ_OK");
 }
@@ -255,6 +261,31 @@ static int transmit(const unsigned char *data, BOOT_U32 bytes)
     ++owner.TxCompleted;
     bytes_total += bytes;
     return 1;
+}
+
+// ====== coda piena senza sovrascrittura e tre completamenti ordinati ===== //
+
+static int queued_transfers(void)
+{
+    X86_UART_PACKET packet;
+    BOOT_U64 id = 0;
+    BOOT_U32 index;
+    if (!x86_uart_queue_initialize(&queue) ||
+        x86_uart_queue_submit(&queue,payload,sizeof(payload)-1,&id) != X86_UART_QUEUE_OK || id != 1 ||
+        x86_uart_queue_submit(&queue,full_payload,sizeof(full_payload)-1,&id) != X86_UART_QUEUE_OK || id != 2 ||
+        x86_uart_queue_submit(&queue,final_payload,sizeof(final_payload)-1,&id) != X86_UART_QUEUE_OK || id != 3) return 0;
+    id = 99;
+    if (x86_uart_queue_submit(&queue,payload,sizeof(payload)-1,&id) != X86_UART_QUEUE_FULL ||
+        id != 99 || queue.Count != 3 || queue.Next != 4 || !x86_uart_queue_validate(&queue)) return 0;
+    backpressure = 1;
+    for (index = 0; index < 3; ++index) {
+        if (!x86_uart_queue_front(&queue,&packet) || packet.Id != index+1 ||
+            !transmit(packet.Data,packet.Length)) return 0;
+        // transmit prova ACK, EOI, TEMT e LAPIC inattivo prima di rimuovere la testa.
+        if (!x86_uart_queue_complete(&queue,packet.Id)) return 0;
+    }
+    return !queue.Count && queue.Completed == 3 && queue.Next == 4 &&
+        x86_uart_queue_validate(&queue);
 }
 
 // ====== inventario corrente include il dispositivo mantenuto per il kernel ===== //
@@ -300,8 +331,7 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
         if (x86_read_port(COM1+1) != 2 || !x86_uart_irq_wait(&owner.Count,goal,10000000) ||
             owner.Count != goal || owner.Error || !x86_exception_environment()) goto cleanup;
     }
-    if (!transmit(payload,sizeof(payload)-1) || !transmit(full_payload,sizeof(full_payload)-1) ||
-        !transmit(final_payload,sizeof(final_payload)-1)) goto cleanup;
+    if (!queued_transfers()) goto cleanup;
     result = x86_lapic_report(&mapping);
 cleanup:
     restored = uart_restore(saved);

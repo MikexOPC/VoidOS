@@ -59,6 +59,8 @@ Il bootstrap conserva la prova preliminare di tre IRQ e invia poi il
 payload di 44 byte `CR LF KERNEL_UART_TX_PAYLOAD: 0123456789abcdef CR LF`,
 seguito da una prova di 64 byte e una finale di 26. Lo stesso buffer
 viene rilasciato e riacquisito fra gli invii, senza nuova memoria.
+I tre messaggi sono conservati nella [coda TX limitata](queue.md), che
+rifiuta una quarta submission e rimuove la testa solo dopo successo TX.
 Il totale e 134 byte e 140 IRQ: tre iniziali, 134 scritture e tre chiusure.
 Il successo segue Drain, chiusura rotta, OUT2 ripristinato, ISR/IRR vuoti,
 IDTR invariata, finestra libera e inventario misto verificato.

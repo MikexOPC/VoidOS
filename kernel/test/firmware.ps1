@@ -373,5 +373,6 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
     }
 }
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
+& (Join-Path $PSScriptRoot 'serial/queue/scripts/monitor-test.ps1') -ScenarioDirectory (Join-Path $output 'ready-128')
 Write-BootStatus INFO "Log: $output"
 Write-BootStatus OK '23/23 scenari: MADT con 1/4 CPU, ACPI, mapping, stack, guardie, NX, NMI e double fault verificati.'

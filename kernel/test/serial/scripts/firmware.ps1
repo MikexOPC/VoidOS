@@ -5,6 +5,8 @@ function Write-UartMonitor($log, $vm) {
     $vm.StandardInput.WriteLine('x /6gx 0x' + $owner.ToString('x16'))
     $tx = Read-Hex $log 'KERNEL_UART_TX_OWNER: 0x([0-9a-f]{16})'
     $vm.StandardInput.WriteLine('x /11gx 0x' + $tx.ToString('x16'))
+    $queue = Read-Hex $log 'KERNEL_UART_QUEUE_OWNER: 0x([0-9a-f]{16})'
+    $vm.StandardInput.WriteLine('x /34gx 0x' + $queue.ToString('x16'))
     $mapping = Read-Hex $log 'KERNEL_LAPIC_MAPPING: 0x([0-9a-f]{16})'
     $vm.StandardInput.WriteLine('x /5gx 0x' + $mapping.ToString('x16'))
     $ist = Read-Hex $log 'KERNEL_IST_PTE: 0x([0-9a-f]{16})'
@@ -22,6 +24,7 @@ function Test-UartFirmware($log, $registers, $cpuLog) {
     $trace = Get-Content -LiteralPath $cpuLog -Raw
     Test-LapicRetention $log $registers
     Test-UartTransmit $log $registers $owner
+    Test-UartQueue $log $registers
     if (!$log.Contains('KERNEL_UART_IRQ_OK') -or ($owner -band 7) -or
         $owner -lt 0x100000000 -or $owner+48 -gt 0x100100000 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 140 -or
@@ -39,11 +42,15 @@ function Test-UartFirmware($log, $registers, $cpuLog) {
 function Test-UartTransmit($log, $registers, $owner) {
     $tx = Read-Hex $log 'KERNEL_UART_TX_OWNER: 0x([0-9a-f]{16})'
     $payload = [Text.Encoding]::ASCII.GetBytes("KERNEL_UART_TX_FINAL: OK`r`n")
+    $first = $log.IndexOf('KERNEL_UART_TX_PAYLOAD: 0123456789abcdef')
+    $second = $log.IndexOf('KERNEL_UART_TX_REUSE: 0123456789abcdef0123456789abcdef01234567')
+    $third = $log.IndexOf('KERNEL_UART_TX_FINAL: OK')
     if (!$log.Contains('KERNEL_UART_TX_OK') -or ($tx -band 7) -or
         $tx -lt 0x100000000 -or $tx+88 -gt 0x100100000 -or
         (Read-Hex $log 'KERNEL_UART_TX_BYTES: 0x([0-9a-f]{16})') -ne $payload.Length -or
         (Read-Hex $log 'KERNEL_UART_TX_TOTAL: 0x([0-9a-f]{16})') -ne 134 -or
         (Read-Hex $log 'KERNEL_UART_TX_COMPLETED: 0x([0-9a-f]{16})') -ne 3 -or
+        $first -lt 0 -or $second -le $first -or $third -le $second -or
         [regex]::Matches($log,'\r?\nKERNEL_UART_TX_PAYLOAD: 0123456789abcdef\r?\n').Count -ne 1 -or
         [regex]::Matches($log,'\r?\nKERNEL_UART_TX_REUSE: 0123456789abcdef0123456789abcdef01234567\r?\n').Count -ne 1 -or
         [regex]::Matches($log,'\r?\nKERNEL_UART_TX_FINAL: OK\r?\n').Count -ne 1 -or
@@ -60,6 +67,26 @@ function Test-UartTransmit($log, $registers, $owner) {
         $pattern = '(?im)^'+($tx+$offset).ToString('x16')+':\s+0x'+[BitConverter]::ToUInt64($expected,$offset).ToString('x16')
         if ($offset+8 -lt 88) { $pattern += '\s+0x'+[BitConverter]::ToUInt64($expected,$offset+8).ToString('x16') }
         if ($registers -notmatch $pattern) { throw 'Dati o metadati TX diversi dalla copia posseduta.' }
+    }
+}
+
+# ============ coda svuotata e slot azzerati dopo tre messaggi verificati ============ #
+
+function Test-UartQueue($log, $registers) {
+    $queue = Read-Hex $log 'KERNEL_UART_QUEUE_OWNER: 0x([0-9a-f]{16})'
+    if (!$log.Contains('KERNEL_UART_QUEUE_OK') -or ($queue -band 7) -or
+        $queue -lt 0x100000000 -or $queue+272 -gt 0x100100000 -or
+        (Read-Hex $log 'KERNEL_UART_QUEUE_FULL: 0x([0-9a-f]{16})') -ne 1) {
+        throw 'Coda UART: owner o rifiuto della quarta submission non conforme.'
+    }
+    $expected = [byte[]]::new(272)
+    [BitConverter]::GetBytes([uint64]$queue).CopyTo($expected,0)
+    [BitConverter]::GetBytes([uint64]4).CopyTo($expected,8)
+    [BitConverter]::GetBytes([uint64]3).CopyTo($expected,16)
+    for ($offset=0; $offset -lt 272; $offset+=16) {
+        $pattern = '(?im)^'+($queue+$offset).ToString('x16')+':\s+0x'+[BitConverter]::ToUInt64($expected,$offset).ToString('x16')+
+            '\s+0x'+[BitConverter]::ToUInt64($expected,$offset+8).ToString('x16')
+        if ($registers -notmatch $pattern) { throw 'Coda UART: completamento o slot residui non conformi.' }
     }
 }
 

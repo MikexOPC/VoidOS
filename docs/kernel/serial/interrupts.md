@@ -87,8 +87,11 @@ QEMU, che segnala che non e specificato nel datasheet. Il test non
 dimostra la portabilita di questo riarmo a tutte le UART fisiche.
 Su un modello che richiede una transizione TX reale puo fallire per
 timeout. TX invia ora dati reali, ma rimane una prova finita, senza
-produttori concorrenti. Non sono ancora implementati RX a IRQ, RX FIFO, discovery
-PCI/ACPI della UART, SMP, AVX/XSAVE o ritorno a user mode.
+produttori concorrenti.
+La [coda TX limitata](queue.md) conserva ora tre messaggi posseduti;
+il driver la svuota in ordine dopo ogni completamento verificato.
+Non sono ancora implementati RX a IRQ, RX FIFO, discovery PCI/ACPI della
+UART, SMP, AVX/XSAVE o ritorno a user mode.
 Hardware fisico non testato.
 
 ## Fonti verificate
