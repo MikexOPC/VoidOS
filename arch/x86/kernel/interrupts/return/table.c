@@ -2,12 +2,13 @@
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/descriptors/stacks.h"
-#include "arch/x86/kernel/serial/interrupts/route.h"
+#include "arch/x86/kernel/interrupts/registry/registry.h"
 extern const BOOT_U64 x86_irq_targets[224];
 extern const unsigned char x86_irq_begin[], x86_irq_end[];
 extern const BOOT_U64 x86_kernel_fault_targets[32];
 static X86_IRQ_IDT irq_idt;
 static X86_KERNEL_IDTR irq_idtr;
+static X86_IRQ_REGISTRY irq_registry;
 static BOOT_U32 installed, armed, returned, spurious;
 static int exceptions_valid(const X86_KERNEL_IDT *exceptions);
 
@@ -146,6 +147,7 @@ int x86_irq_initialize(void)
     result = x86_irq_activate(&irq_idtr);
     if (result < 0) x86_kernel_stop(0x4b49525142410001ULL);
     if (!result) return 0;
+    if (!x86_irq_registry_initialize(&irq_registry,0x100000000ULL,0x100100000ULL)) return 0;
     installed = 1; armed = 1;
     result = x86_irq_return_test();
     armed = 0;
@@ -204,12 +206,19 @@ void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
 {
     if (!installed || !frame_owner(frame) || !x86_irq_frame(frame->Vector,frame->Cs,frame->Flags,frame->Ss))
         x86_kernel_stop(0x4b495251554e0001ULL);
-    if (frame->Vector == 0x40) {
-        if (!x86_uart_irq_handle()) x86_kernel_stop(0x4b55415254460001ULL);
+    if (frame->Vector == 0x40 || frame->Vector == 0x41) {
+        if (!x86_irq_registry_deliver(&irq_registry,(BOOT_U32)frame->Vector)) x86_kernel_stop(0x4b495251554e0004ULL);
     } else if (frame->Vector == 0xf0) {
         if (!armed || returned) x86_kernel_stop(0x4b495251554e0002ULL);
         if (!increment(&returned)) x86_kernel_stop(0x4b495251554e0003ULL);
     } else {
         if (!increment(&spurious)) x86_kernel_stop(0x4b495251554e0003ULL);
     }
+}
+
+// ====== registro persistente accessibile dopo installazione sul BSP con IF zero ===== //
+
+X86_IRQ_REGISTRY *x86_irq_registry(void)
+{
+    return installed && x86_exception_environment() && x86_irq_registry_validate(&irq_registry) ? &irq_registry : 0;
 }

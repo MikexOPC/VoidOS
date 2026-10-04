@@ -1,9 +1,10 @@
 # IDT completa, ritorno e controller controllati
 
 Questo blocco prepara il percorso di interrupt ring zero del kernel.
-IF rimane zero. I test INT 0xf0 e INT 0xff provano ingresso e ritorno
+IF rimane zero fuori dalle finestre controllate del driver. I test INT 0xf0 e INT 0xff provano ingresso e ritorno
 senza passare dal LAPIC; non dimostrano ancora la consegna di un IRQ
-hardware. La prossima task collega una sola sorgente seriale controllata.
+hardware. COM1 prova separatamente la consegna hardware attraverso
+il [registro persistente degli handler](registry.md).
 
 ## IDT e frame
 
@@ -40,7 +41,9 @@ cosi la prova richiede davvero il ripristino. Il chiamante recupera
 anche i registri non volatili della propria ABI e ritorna con DF=0.
 Il test 0xff esercita il ramo spurious; non emette EOI. Gli altri
 vettori non assegnati arrestano il kernel con un marker, senza
-allocazioni o logging nel dispatch. Non esistono ancora callback driver.
+allocazioni o logging nel dispatch. I vettori hardware 0x40 e 0x41
+passano dal registro e richiedono una subscription valida; 0x41 e
+riservato al futuro timer, attualmente non configurato.
 
 ## Controller
 
@@ -59,7 +62,7 @@ Sulle piattaforme PCAT, i PIC legacy vengono mascherati alle porte IMR
 Ogni ingresso I/O APIC e prima mascherato, poi riceve destinazione BSP
 fisica e vettore 0x40, fixed, active-high, edge, ancora mascherato.
 Il vettore 0x40 e una destinazione di parcheggio: non e un driver attivo.
-La programmazione della vera rotta dovra applicare override e conflitti
+La programmazione della vera rotta COM1 applica override e conflitti
 NMI globali prima di aprire l'ingresso. IOREGSEL viene ripristinato
 e riletto; tutte le rotte vengono verificate in un secondo passaggio.
 
@@ -89,8 +92,8 @@ QEMU: monitor indipendente di IDTR/gate, LVT, SVR, ISR/IRR, rotte I/O
 APIC e IMR PIC, oltre alla regressione NMI, guardie, NX e double fault.
 
 Il modello e UP, solo stack kernel, senza nesting maskable o user mode.
-SMP, ritorno a ring 3, XSAVE, EOI per IRQ reali e mapping dispositivi
-persistenti non sono implementati da questa task. La seriale di log
+SMP, ritorno a ring 3 e XSAVE non sono implementati. COM1 usa EOI
+verificato e un mapping LAPIC persistente. La seriale di log
 continua a funzionare in polling.
 
 ## Riferimenti

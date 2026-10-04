@@ -2,6 +2,7 @@
 #include "arch/x86/kernel/serial/queue/queue.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
+#include "arch/x86/kernel/interrupts/registry/registry.h"
 #include "kernel/diagnostics/log.h"
 typedef struct {
     const X86_UART_ROUTE *Route;
@@ -127,6 +128,9 @@ static X86_UART_ROUTE route;
 static X86_UART_TX tx;
 static X86_UART_QUEUE queue;
 static BOOT_U32 backpressure;
+static X86_IRQ_TOKEN subscription;
+static BOOT_U64 registry_delivered;
+static BOOT_U32 route_closed = 1;
 static const unsigned char payload[] = "\r\nKERNEL_UART_TX_PAYLOAD: 0123456789abcdef\r\n";
 static const unsigned char full_payload[] = "KERNEL_UART_TX_REUSE: 0123456789abcdef0123456789abcdef01234567\r\n";
 static const unsigned char final_payload[] = "KERNEL_UART_TX_FINAL: OK\r\n";
@@ -215,6 +219,14 @@ static int uart_restore(unsigned char mcr)
     return disabled && x86_read_port(COM1+4) == mcr;
 }
 
+// ====== handler rimuovibile solo dopo chiusura rotta IER e LAPIC inattivo ===== //
+
+static int uart_quiet(void)
+{
+    return route_closed && !owner.Active && x86_read_port(COM1+3) == 3 &&
+        !x86_read_port(COM1+1) && x86_lapic_idle(&mapping);
+}
+
 // ====== fotografia dopo ACK EOI e chiusura della sorgente ===== //
 
 static int report(void)
@@ -231,6 +243,9 @@ static int report(void)
         kernel_text("\nKERNEL_UART_TX_COMPLETED: ") && kernel_number(owner.TxCompleted) &&
         kernel_text("\nKERNEL_UART_QUEUE_OWNER: ") && kernel_number((BOOT_U64)&queue) &&
         kernel_text("\nKERNEL_UART_QUEUE_FULL: ") && kernel_number(backpressure) &&
+        kernel_text("\nKERNEL_IRQ_REGISTRY: ") && kernel_number((BOOT_U64)x86_irq_registry()) &&
+        kernel_text("\nKERNEL_IRQ_REGISTRY_DELIVERED: ") && kernel_number(registry_delivered) &&
+        kernel_text("\n") && kernel_log(0,"KERNEL_IRQ_REGISTRY_OK") &&
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_QUEUE_OK") &&
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_TX_OK") &&
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_IRQ_OK");
@@ -308,7 +323,7 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
 {
     BOOT_U32 goal;
     unsigned char saved;
-    int result = 0, closed, restored;
+    int result = 0, closed, restored, detached = 1;
     if (finished || owner.Active || !x86_irq_ready() ||
         !x86_apic_mapping_ready(context,window,inventory,topology,profile) ||
         !x86_uart_route_plan(topology,caps,&route) || !uart_disable() || !uart_idle()) return 0;
@@ -316,12 +331,15 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
     if (saved & ~3U) return 0;
     if (!x86_lapic_bind(context,window,inventory,topology,profile,&mapping)) return 0;
     owner.Mapping = &mapping; owner.Profile = profile;
-    owner.Count = owner.Error = 0; owner.Active = 1;
+    owner.Count = owner.Error = 0; owner.Active = 0;
     if (!x86_paging_inventory_capture_lapic(context,window->Pool,&mapping,inventory) ||
         !x86_paging_inventory_verify_lapic(context,window->Pool,&mapping,inventory)) goto cleanup;
+    if (!x86_irq_registry_bind(x86_irq_registry(),0x40,x86_uart_irq_handle,uart_quiet,&subscription)) goto cleanup;
+    owner.Active = 1;
     x86_write_port(COM1+4,saved | 8);
-    if (x86_read_port(COM1+4) != (saved | 8) ||
-        !x86_uart_route_apply(window,profile,caps,&route,0)) goto cleanup;
+    if (x86_read_port(COM1+4) != (saved | 8)) goto cleanup;
+    route_closed = 0;
+    if (!x86_uart_route_apply(window,profile,caps,&route,0)) goto cleanup;
     for (goal = 1; goal <= 3; ++goal) {
         if (!x86_exception_environment() || !uart_idle() ||
             !x86_lapic_idle(&mapping)) goto cleanup;
@@ -336,14 +354,19 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
 cleanup:
     restored = uart_restore(saved);
     closed = x86_uart_route_apply(window,profile,caps,&route,1);
+    route_closed = closed ? 1 : 0;
     owner.Active = 0;
+    if (subscription.Id) {
+        registry_delivered = x86_irq_registry_deliveries(x86_irq_registry(),&subscription);
+        detached = restored && closed && x86_irq_registry_unbind(x86_irq_registry(),&subscription);
+    }
     finished = 1;
-    if (restored && closed && result && x86_irq_ready() && x86_lapic_idle(&mapping) &&
+    if (restored && closed && detached && registry_delivered == owner.Count && result && x86_irq_ready() && x86_lapic_idle(&mapping) &&
         x86_page_window_idle_valid(window) &&
         x86_paging_inventory_verify_lapic(context,window->Pool,&mapping,inventory))
         return report_inventory(inventory) && report();
     // Un errore non autorizza a conservare uno snapshot misto non verificato.
-    if (restored && closed && x86_lapic_unbind(&mapping))
+    if (restored && closed && detached && x86_lapic_unbind(&mapping))
         x86_paging_inventory_capture(context,window->Pool,inventory);
     return 0;
 }

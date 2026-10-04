@@ -62,7 +62,7 @@ foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch
     'arch/x86/kernel/interrupts/apic/profile.c',
     'arch/x86/kernel/interrupts/apic/probe.c','arch/x86/kernel/interrupts/apic/access.c',
     'arch/x86/kernel/interrupts/apic/control/masked.c','arch/x86/kernel/interrupts/apic/control/access.c',
-    'arch/x86/kernel/interrupts/return/table.c',
+    'arch/x86/kernel/interrupts/return/table.c','arch/x86/kernel/interrupts/registry/registry.c',
     'arch/x86/kernel/serial/interrupts/driver.c','arch/x86/kernel/serial/transmit/buffer.c','arch/x86/kernel/serial/queue/queue.c',
     'arch/x86/mm/devices/access.c','arch/x86/mm/devices/lapic.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
@@ -133,6 +133,10 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/interrupts/return/rust/frame/validation.rs'),
     '-o',($output + '/irq-frame.obj'))
 $objects += ($output + '/irq-frame.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/interrupts/registry/rust/subscription/validation.rs'),
+    '-o',($output + '/irq-subscription.obj'))
+$objects += ($output + '/irq-subscription.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/interrupts/apic/control/rust/encoding/validation.rs'),
     '-o',($output + '/irq-control.obj'))

@@ -6,7 +6,7 @@ $objects = @()
 # ====== probe isolato con backend host senza accessi hardware ===== #
 
 foreach ($source in @('arch/x86/kernel/interrupts/apic/probe.c','arch/x86/kernel/interrupts/apic/profile.c',
-    'arch/x86/kernel/interrupts/apic/control/masked.c','arch/x86/kernel/interrupts/return/table.c',
+    'arch/x86/kernel/interrupts/apic/control/masked.c','arch/x86/kernel/interrupts/return/table.c','arch/x86/kernel/interrupts/registry/registry.c',
     'arch/x86/kernel/serial/interrupts/driver.c','arch/x86/kernel/serial/transmit/buffer.c','arch/x86/kernel/serial/queue/queue.c',
     'arch/x86/mm/devices/lapic.c','kernel/test/mm/devices/lapic_test.c',
     'kernel/test/interrupts/apic/control_test.c','kernel/test/interrupts/return/table_test.c',
@@ -24,6 +24,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione validatori registri APIC fallita.
 & $rustc --edition=2024 --crate-type=lib --emit=obj -C panic=abort -C opt-level=2 -D warnings `
     (Join-Path $project 'arch/x86/kernel/interrupts/return/rust/frame/validation.rs') -o ($OutputDirectory+'/irq-frame.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione validatori IRQ fallita.' }
+& $rustc --edition=2024 --crate-type=lib --emit=obj -C panic=abort -C opt-level=2 -D warnings `
+    (Join-Path $project 'arch/x86/kernel/interrupts/registry/rust/subscription/validation.rs') -o ($OutputDirectory+'/irq-subscription.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Compilazione subscription IRQ fallita.' }
 & $rustc --edition=2024 --crate-type=lib --emit=obj -C panic=abort -C opt-level=2 -D warnings `
     (Join-Path $project 'arch/x86/kernel/interrupts/apic/control/rust/encoding/validation.rs') -o ($OutputDirectory+'/irq-control.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione encoding controller fallita.' }
@@ -43,7 +46,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione stato coda TX fallita.' }
 & (Join-Path $ToolchainBin 'link.exe') /nologo /dll /noentry /nodefaultlib /incremental:no ('/out:'+$dll) @objects `
     ($OutputDirectory+'/apic-registers.obj') ($OutputDirectory+'/apic-profile.obj') ($OutputDirectory+'/madt-records.obj') `
     ($OutputDirectory+'/acpi-root-layout.obj') ($OutputDirectory+'/validation.obj') `
-    ($OutputDirectory+'/irq-frame.obj') ($OutputDirectory+'/irq-control.obj') ($OutputDirectory+'/exception-frame.obj') ($OutputDirectory+'/uart-routing.obj') ($OutputDirectory+'/lapic-encoding.obj') ($OutputDirectory+'/uart-tx-bounds.obj') ($OutputDirectory+'/uart-queue-state.obj')
+    ($OutputDirectory+'/irq-frame.obj') ($OutputDirectory+'/irq-subscription.obj') ($OutputDirectory+'/irq-control.obj') ($OutputDirectory+'/exception-frame.obj') ($OutputDirectory+'/uart-routing.obj') ($OutputDirectory+'/lapic-encoding.obj') ($OutputDirectory+'/uart-tx-bounds.obj') ($OutputDirectory+'/uart-queue-state.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Link test probe MMIO fallito.' }
 $typeName = 'ApicProbe'+[guid]::NewGuid().ToString('N')
 $source = 'using System.Runtime.InteropServices; public static class '+$typeName+' { '+

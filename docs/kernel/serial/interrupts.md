@@ -5,6 +5,8 @@ del modello UART 16550A di QEMU, poi trasmette 134 byte in tre invii usando un
 buffer TX limitato. La console diagnostica continua a usare polling.
 E una prova delimitata
 della catena UART -> I/O APIC -> LAPIC -> IDT -> handler -> IRETQ.
+L'handler viene registrato nel [registro IRQ persistente](../interrupts/registry.md)
+prima di aprire la sorgente e rimosso solo dopo la chiusura verificata.
 
 ## Rotta e stato
 

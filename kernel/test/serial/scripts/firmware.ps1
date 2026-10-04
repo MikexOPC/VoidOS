@@ -1,6 +1,7 @@
 # ====== snapshot owner UART dopo la chiusura della sorgente ===== #
 
 function Write-UartMonitor($log, $vm) {
+    Write-IrqRegistryMonitor $log $vm
     $owner = Read-Hex $log 'KERNEL_UART_IRQ_OWNER: 0x([0-9a-f]{16})'
     $vm.StandardInput.WriteLine('x /6gx 0x' + $owner.ToString('x16'))
     $tx = Read-Hex $log 'KERNEL_UART_TX_OWNER: 0x([0-9a-f]{16})'
@@ -25,6 +26,7 @@ function Test-UartFirmware($log, $registers, $cpuLog) {
     Test-LapicRetention $log $registers
     Test-UartTransmit $log $registers $owner
     Test-UartQueue $log $registers
+    Test-IrqRegistryFirmware $log $registers
     if (!$log.Contains('KERNEL_UART_IRQ_OK') -or ($owner -band 7) -or
         $owner -lt 0x100000000 -or $owner+48 -gt 0x100100000 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 140 -or
