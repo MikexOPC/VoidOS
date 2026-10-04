@@ -43,7 +43,7 @@ Il test 0xff esercita il ramo spurious; non emette EOI. Gli altri
 vettori non assegnati arrestano il kernel con un marker, senza
 allocazioni o logging nel dispatch. I vettori hardware 0x40 e 0x41
 passano dal registro e richiedono una subscription valida; 0x41 e
-riservato al futuro timer, attualmente non configurato.
+usato dalla prova calibrata del timer LAPIC con tre scadenze oneshot.
 
 ## Controller
 

@@ -44,7 +44,7 @@ function Test-IrqRegistryFirmware($log, $registers) {
     [BitConverter]::GetBytes([uint64]$registry).CopyTo($expected,0)
     [BitConverter]::GetBytes([uint64]0x100000000).CopyTo($expected,8)
     [BitConverter]::GetBytes([uint64]0x100100000).CopyTo($expected,16)
-    [BitConverter]::GetBytes([uint64]2).CopyTo($expected,24)
+    [BitConverter]::GetBytes([uint64]3).CopyTo($expected,24)
     for ($offset=0; $offset -lt 120; $offset+=16) {
         $pattern = '(?im)^'+($registry+$offset).ToString('x16')+':\s+0x'+[BitConverter]::ToUInt64($expected,$offset).ToString('x16')
         if ($offset+8 -lt 120) { $pattern += '\s+0x'+[BitConverter]::ToUInt64($expected,$offset+8).ToString('x16') }

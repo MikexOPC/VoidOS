@@ -21,6 +21,7 @@ int x86_lapic_authority(const X86_LAPIC_MAPPING *owner);
 int x86_lapic_unbind(X86_LAPIC_MAPPING *owner);
 int x86_lapic_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *value);
 int x86_lapic_eoi(const X86_LAPIC_MAPPING *owner);
+int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector);
 int x86_lapic_idle(const X86_LAPIC_MAPPING *owner);
 int x86_lapic_report(const X86_LAPIC_MAPPING *owner);
 int x86_lapic_native_read(BOOT_U32 offset, BOOT_U32 *value);

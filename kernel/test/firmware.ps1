@@ -6,6 +6,7 @@ $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $PSScriptRoot 'interrupts/apic/scripts/firmware.ps1')
 . (Join-Path $PSScriptRoot 'serial/scripts/firmware.ps1')
 . (Join-Path $PSScriptRoot 'interrupts/registry/scripts/firmware.ps1')
+. (Join-Path $PSScriptRoot 'timer/lapic/scripts/firmware.ps1')
 $output = Join-Path $project ('kernel/build/firmware-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $image = Join-Path $project 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
@@ -376,5 +377,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
 if ($candidatePages['ready-256'] -le $candidatePages['ready-128']) { throw 'RAM aggiuntiva non riconosciuta.' }
 & (Join-Path $PSScriptRoot 'serial/queue/scripts/monitor-test.ps1') -ScenarioDirectory (Join-Path $output 'ready-128')
 Test-IrqRegistryMonitorRejections (Get-Content (Join-Path $output 'ready-128/serial.log') -Raw) (Get-Content (Join-Path $output 'ready-128/registers.log') -Raw)
+Test-LapicTimerMonitorRejections (Get-Content (Join-Path $output 'ready-128/serial.log') -Raw) `
+    (Get-Content (Join-Path $output 'ready-128/registers.log') -Raw) (Join-Path $output 'ready-128/qemu.log')
 Write-BootStatus INFO "Log: $output"
 Write-BootStatus OK '23/23 scenari: MADT con 1/4 CPU, ACPI, mapping, stack, guardie, NX, NMI e double fault verificati.'

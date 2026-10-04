@@ -2,7 +2,7 @@
 
 Il dispatcher ring zero non dipende piu dal driver COM1. Un registro
 kernel statico di 120 byte gestisce due subscription: vettore 0x40 per
-COM1 e 0x41 riservato al futuro timer. Il timer non e ancora configurato.
+COM1 e 0x41 per il timer LAPIC calibrato, provato con tre scadenze finite.
 INT 0xf0 e il vettore spurious 0xff restano percorsi separati senza EOI.
 Un vettore senza subscription valida arresta il kernel.
 
@@ -57,11 +57,11 @@ Host verifica due subscription indipendenti, ID e token scaduti,
 IF, alias, corruzione, mancata quiescenza e saturazione dei contatori.
 Due nuovi test Rust verificano vettori, fault e generazioni.
 QEMU confronta tutte le 140 consegne COM1 e tutti i 120 byte del registro
-finale: owner vivo, Next=2, Busy=0 e slot azzerati dopo rimozione.
+finale: owner vivo, Next=3, Busy=0 e slot azzerati dopo rimozione dei due driver.
 
 Questo e il primo blocco del piano IRQ persistenti: il registro ha durata
 kernel, ma l'esecuzione resta la prova finita di bootstrap. Non sono ancora
-presenti un event loop con IF=1 stabile, timer attivo, scheduler, ritorno
+presenti un event loop con IF=1 stabile, timer permanente, scheduler, ritorno
 user mode o supporto SMP. Hardware fisico non testato.
 
 [Intel SDM: interrupt gate, IF e ritorno](https://cdrdv2-public.intel.com/825758/253668-sdm-vol-3a.pdf).

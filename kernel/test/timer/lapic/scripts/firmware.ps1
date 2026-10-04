@@ -1,0 +1,89 @@
+# ============ owner timer e registri xAPIC dopo arresto e ripristino ============ #
+
+function Write-LapicTimerMonitor($log, $vm) {
+    $owner = Read-Hex $log 'KERNEL_TIMER_OWNER: 0x([0-9a-f]{16})'
+    $vm.StandardInput.WriteLine('x /15gx 0x'+$owner.ToString('x16'))
+    # Il monitor QEMU espone i registri APIC tramite info lapic, non x MMIO.
+}
+
+# ============ qword letta dal monitor senza fidarsi dei soli messaggi OK ============ #
+
+function Read-TimerWord($registers, [uint64]$address) {
+    $row = $address -band -16L
+    $match = [regex]::Match($registers,'(?im)^'+$row.ToString('x16')+':\s+0x([0-9a-f]{16})(?:\s+0x([0-9a-f]{16}))?')
+    if (!$match.Success) { throw 'Owner timer incompleto nel monitor.' }
+    return [Convert]::ToUInt64($match.Groups[1+([int](($address -band 8)/8))].Value,16)
+}
+
+# ============ alterazioni degli stati live e del ripristino devono essere rifiutate ============ #
+
+function Test-LapicTimerMonitorRejections($log, $registers, $cpuLog) {
+    Test-LapicTimerFirmware $log $registers $cpuLog
+    $owner = Read-Hex $log 'KERNEL_TIMER_OWNER: 0x([0-9a-f]{16})'
+    foreach ($offset in @(0,8,24,32,72,80,88,96,112)) {
+        $address = ($owner+($offset -band -16)).ToString('x16')
+        $row = [regex]::Match($registers,'(?im)^'+$address+':\s+0x([0-9a-f]{16})(?:\s+0x([0-9a-f]{16}))?')
+        if (!$row.Success) { throw 'Fixture timer incompleta.' }
+        $left = [Convert]::ToUInt64($row.Groups[1].Value,16)
+        $right = if ($row.Groups[2].Success) { [Convert]::ToUInt64($row.Groups[2].Value,16) } else { 0 }
+        $bit = if ($offset -in @(24,72,112)) { 4294967296L } else { 1 }
+        if ($offset -band 8) { $right = $right -bxor $bit } else { $left = $left -bxor $bit }
+        $changed = $address+': 0x'+$left.ToString('x16')
+        if ($row.Groups[2].Success) { $changed += ' 0x'+$right.ToString('x16') }
+        $rejected = $false
+        try { Test-LapicTimerFirmware $log ($registers.Replace($row.Value,$changed)) $cpuLog } catch { $rejected=$true }
+        if (!$rejected) { throw "Corruzione timer accettata a offset $offset." }
+    }
+    Write-Output 'Timer LAPIC: fotografia reale valida e 9 alterazioni rifiutate.'
+}
+
+# ============ due conversioni ricalcolate dai campioni raw ============ #
+
+function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
+    $owner = Read-Hex $log 'KERNEL_TIMER_OWNER: 0x([0-9a-f]{16})'
+    $mapping = Read-Hex $log 'KERNEL_LAPIC_MAPPING: 0x([0-9a-f]{16})'
+    $reload = Read-Hex $log 'KERNEL_TIMER_RELOAD: 0x([0-9a-f]{16})'
+    $mask = Read-Hex $log 'KERNEL_TIMER_PM_MASK: 0x([0-9a-f]{16})'
+    $port = Read-Hex $log 'KERNEL_TIMER_PM_PORT: 0x([0-9a-f]{16})'
+    if (!$log.Contains('KERNEL_TIMER_OK') -or ($owner -band 7) -or
+        $owner -lt 0x100000000 -or $owner+120 -gt 0x100100000 -or
+        !$reload -or $reload -gt 4294967295L -or $mask -notin @(16777215L,4294967295L) -or
+        $port -lt 256 -or $port -gt 65532 -or ($port -band 3) -or ($port -ge 1016 -and $port -lt 1024) -or
+        (Read-Hex $log 'KERNEL_TIMER_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 3 -or
+        (Read-Hex $log 'KERNEL_TIMER_ERROR: 0x([0-9a-f]{16})') -ne 0 -or
+        (Read-Hex $log 'KERNEL_TIMER_DELIVERED: 0x([0-9a-f]{16})') -ne 3 -or
+        (Read-TimerWord $registers $owner) -ne 3 -or
+        (Read-TimerWord $registers ($owner+8)) -ne $mapping -or
+        (Read-TimerWord $registers ($owner+72)) -ne $reload -or
+        (Read-TimerWord $registers ($owner+80)) -ne 0 -or
+        (Read-TimerWord $registers ($owner+88)) -ne 0) { throw 'Timer: owner o consegne non conformi.' }
+    $clock = Read-TimerWord $registers ($owner+24)
+    $length = $clock -band 4294967295L
+    if ($length -lt 116 -or $length -gt 4096 -or ($clock -shr 32) -ne $port -or
+        (Read-TimerWord $registers ($owner+32)) -ne (4294967296L+$mask)) { throw 'Reference clock non conforme.' }
+    $counts = @()
+    for ($index=0; $index -lt 2; ++$index) {
+        $sample = Read-TimerWord $registers ($owner+40+$index*16)
+        $result = Read-TimerWord $registers ($owner+48+$index*16)
+        $start = $sample -band 4294967295L; $end = $sample -shr 32
+        $elapsed = $result -band 4294967295L; $count = $result -shr 32
+        if (!$end -or $start -le $end -or $elapsed -lt 35795 -or $elapsed -gt 143180 -or
+            [Math]::Ceiling(($start-$end)*35795.0/$elapsed) -ne $count) { throw 'Campione timer incoerente.' }
+        $counts += $count
+    }
+    $low = [Math]::Min($counts[0],$counts[1]); $high = [Math]::Max($counts[0],$counts[1])
+    if ($reload -ne $low -or $high-$low -gt [Math]::Floor($low/4)) { throw 'Campioni discordanti.' }
+    $periods = Read-TimerWord $registers ($owner+104)
+    $last = Read-TimerWord $registers ($owner+112)
+    foreach ($elapsed in @(($periods -band 4294967295L),($periods -shr 32),($last -band 4294967295L))) {
+        if ($elapsed -lt 17897 -or $elapsed -gt 715900) { throw 'Scadenza senza intervallo PM verificato.' }
+    }
+    if (($last -shr 32) -ne 0 -or [regex]::Matches((Get-Content -LiteralPath $cpuLog -Raw),'Servicing hardware INT=0x41').Count -ne 3) {
+        throw 'Timer: Reserved o traccia IRQ non conformi.'
+    }
+    $original = Read-TimerWord $registers ($owner+96)
+    if ($registers -notmatch ('(?im)^LVTT\s+0x'+([uint32]($original -band 4294967295L)).ToString('x8')) -or
+        $registers -notmatch ('(?im)^Timer\s+DCR=0x'+($original -shr 32).ToString('x')+'\s+.*initial_count = 0 current_count = 0')) {
+        throw 'Timer non fermato o ripristinato.'
+    }
+}

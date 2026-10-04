@@ -157,7 +157,7 @@ __declspec(dllexport) int run_apic_control_tests(void)
 int x86_lapic_native_eoi(void)
 {
     if ((test_lapic_entry() & 0x000ffffffffff000ULL) != 0xfee00000 ||
-        in_service != 1 || (ier && !tx_writes)) return 0;
+        (in_service != 1 && in_service != 2) || (in_service == 1 && ier && !tx_writes)) return 0;
     ++eois;
     if (uart_bad != 2) in_service = 0;
     return 1;
@@ -176,6 +176,25 @@ int x86_lapic_native_read(BOOT_U32 offset, BOOT_U32 *value)
 int x86_uart_irq_wait(volatile BOOT_U32 *counts, BOOT_U32 goal, BOOT_U32 budget)
 {
     (void)counts; (void)goal; (void)budget;
+    return 0;
+}
+
+// ====== unico ISR timer e rifiuto di EOI per vettore errato o due ISR ===== //
+
+__declspec(dllexport) int run_lapic_timer_eoi_tests(void)
+{
+    X86_UART_IRQ_OWNER state;
+    if (!reset()) return 1;
+    test_uart_owner(&state);
+    in_service = 2;
+    if (x86_lapic_eoi(state.Mapping) || eois ||
+        !x86_lapic_eoi_vector(state.Mapping,0x41) || eois != 1 || in_service) return 2;
+    in_service = 3;
+    if (x86_lapic_eoi_vector(state.Mapping,0x41) || eois != 1 || in_service != 3) return 3;
+    in_service = 2; uart_bad = 2;
+    if (x86_lapic_eoi_vector(state.Mapping,0x41) || eois != 2 || in_service != 2) return 4;
+    uart_bad = 0;
+    if (!x86_lapic_eoi_vector(state.Mapping,0x41) || !reset()) return 5;
     return 0;
 }
 

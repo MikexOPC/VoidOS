@@ -210,6 +210,14 @@ int x86_uart_irq_handle(void)
     return x86_uart_irq_service(&owner);
 }
 
+// ====== prestito del mapping kernel persistente solo dopo chiusura COM1 ===== //
+
+const X86_LAPIC_MAPPING *x86_uart_lapic_mapping(void)
+{
+    return finished && !owner.Active && !subscription.Id && route_closed &&
+        x86_lapic_idle(&mapping) ? &mapping : 0;
+}
+
 // ====== ripristino OUT2 originale con readback e UART interrupt chiusi ===== //
 
 static int uart_restore(unsigned char mcr)

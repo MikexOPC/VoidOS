@@ -3,7 +3,9 @@ option casemap:none
 
 ; ====== IF uno soltanto nella prova delimitata senza accessi RAM concorrenti ===== ;
 
+PUBLIC x86_irq_wait
 PUBLIC x86_uart_irq_wait
+x86_irq_wait LABEL NEAR
 x86_uart_irq_wait PROC
     pushfq
     pop rax

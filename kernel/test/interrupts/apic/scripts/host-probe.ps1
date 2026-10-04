@@ -55,9 +55,10 @@ $source = 'using System.Runtime.InteropServices; public static class '+$typeName
     '[DllImport(@"'+$dll+'")] public static extern int run_irq_table_tests(); '+
     '[DllImport(@"'+$dll+'")] public static extern int run_uart_irq_tests(); '+
     '[DllImport(@"'+$dll+'")] public static extern int run_uart_tx_irq_tests(); '+
+    '[DllImport(@"'+$dll+'")] public static extern int run_lapic_timer_eoi_tests(); '+
     '[DllImport(@"'+$dll+'")] public static extern int run_lapic_mapping_tests(); }'
 $type = Add-Type -TypeDefinition $source -PassThru
-foreach ($method in @('run_apic_probe_tests','run_apic_control_tests','run_irq_table_tests','run_uart_irq_tests','run_uart_tx_irq_tests','run_lapic_mapping_tests')) {
+foreach ($method in @('run_apic_probe_tests','run_apic_control_tests','run_irq_table_tests','run_uart_irq_tests','run_uart_tx_irq_tests','run_lapic_timer_eoi_tests','run_lapic_mapping_tests')) {
     $result = $type.GetMethod($method).Invoke($null,@())
     if ($result -ne 0) { throw "Test $method fallito: $result" }
 }
