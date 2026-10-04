@@ -1,6 +1,23 @@
 #[path = "../../../../../../arch/x86/kernel/timer/lapic/rust/calibration/validation.rs"]
 mod validation;
 
+// ====== risultati attesa finita senza confondere budget e tempo massimo ===== //
+
+#[test]
+fn wait_result() {
+    for goal in 1..=3 {
+        for sleeps in 0..=8 {
+            assert_eq!(validation::x86_timer_wait_result(sleeps+1,8,goal,0,goal),1);
+        }
+        for (result,budget,count,error) in [(0,8,goal,0),(10,8,goal,0),
+            (1,0,goal,0),(1,1025,goal,0),(1,8,goal-1,0),(1,8,goal,1)] {
+            assert_eq!(validation::x86_timer_wait_result(result,budget,count,error,goal),0);
+        }
+    }
+    assert_eq!(validation::x86_timer_wait_result(1,8,0,0,0),0);
+    assert_eq!(validation::x86_timer_wait_result(1,8,4,0,4),0);
+}
+
 // ====== snapshot firmware scaduto oppure ancora attivo ===== //
 
 #[test]

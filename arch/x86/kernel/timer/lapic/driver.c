@@ -92,7 +92,9 @@ static int report(BOOT_U64 deliveries)
         kernel_text("\nKERNEL_TIMER_IRQ_COUNT: ") && kernel_number(timer.Count) &&
         kernel_text("\nKERNEL_TIMER_ERROR: ") && kernel_number(timer.Error) &&
         kernel_text("\nKERNEL_TIMER_DELIVERED: ") && kernel_number(deliveries) &&
-        kernel_text("\n") && kernel_log(0,"KERNEL_TIMER_OK");
+        kernel_text("\nKERNEL_TIMER_SLEEP_RESUME: ") && kernel_number(x86_irq_sleep_resume()) &&
+        kernel_text("\nKERNEL_TIMER_PENDING_PROBE: ") && kernel_number(timer.PendingProbe) &&
+        kernel_text("\n") && kernel_log(0,"KERNEL_IRQ_SLEEP_REJECT_OK") && kernel_log(0,"KERNEL_TIMER_OK");
 }
 
 // ====== elapsed PM della singola scadenza senza confonderlo con un timestamp globale ===== //
@@ -117,7 +119,7 @@ static int record_deadline(BOOT_U32 goal, BOOT_U32 start)
 
 static int deadlines(void)
 {
-    BOOT_U32 goal, start;
+    BOOT_U32 goal, start, waited;
     if (!x86_irq_registry_bind(x86_irq_registry(),0x41,handle,quiet,&timer.Token)) {
         return 0;
     }
@@ -128,12 +130,21 @@ static int deadlines(void)
         start = x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask;
         timer.Active = 1;
         if (!write(timer.Mapping,0x320,0x41) ||
-            !write(timer.Mapping,0x380,timer.Reload) ||
-            !x86_irq_wait(&timer.Count,goal,10000000) ||
+            !write(timer.Mapping,0x380,timer.Reload)) {
+            return 0;
+        }
+        waited = x86_irq_sleep(&timer.Count,goal,8);
+        if (!x86_timer_wait_result(waited,8,timer.Count,timer.Error,goal) ||
             timer.Count != goal || timer.Error || !x86_lapic_idle(timer.Mapping)) {
             return 0;
         }
         timer.Active = 0;
+        timer.SleepWakes[goal-1] = waited-1;
+        // Una consegna gia osservata deve ritornare subito senza HLT aggiuntivi.
+        if (x86_irq_sleep(&timer.Count,goal,8) != 1) {
+            return 0;
+        }
+        ++timer.PendingProbe;
         if (!record_deadline(goal,start)) {
             return 0;
         }
@@ -154,6 +165,20 @@ static int acquire(void)
         // Solo Current Count zero prova che non c'e un conto alla rovescia live.
         x86_timer_read(timer.Mapping,0x390,&value) &&
         x86_timer_previous_valid(timer.OriginalLvt,timer.OriginalDivide,value);
+}
+
+// ====== prove ring zero di precondizioni rifiutate senza HLT o accessi invalidi ===== //
+
+static int sleep_rejections(void)
+{
+    __declspec(align(8)) volatile BOOT_U32 source[2] = {3,1};
+    if (x86_irq_sleep(source,3,8) || x86_irq_sleep(0,3,8) ||
+        x86_irq_sleep((volatile BOOT_U32 *)1,3,8) ||
+        x86_irq_sleep(source,0,8) || x86_irq_sleep(source,3,0) ||
+        x86_irq_sleep(source,3,1025) || source[0] != 3 || source[1] != 1) {
+        return 0;
+    }
+    return x86_exception_environment() != 0;
 }
 
 // ====== calibrazione masked poi handler poi attesa e cleanup senza perdere owner live ===== //
@@ -183,7 +208,7 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
         goto cleanup;
     }
     kernel_log(1,"TIMER_CALIBRATED");
-    if (!deadlines()) {
+    if (!deadlines() || !sleep_rejections()) {
         kernel_log(3,"TIMER_DEADLINES_FAILED");
         goto cleanup;
     }

@@ -1,5 +1,13 @@
 #![cfg_attr(not(test), no_std)]
 
+// ====== consegna esatta e numero di risvegli entro il budget dichiarato ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_timer_wait_result(result: u32, budget: u32, count: u32, error: u32, goal: u32) -> u32 {
+    u32::from((1..=1024).contains(&budget) && result > 0 && result <= budget+1 &&
+        (1..=3).contains(&goal) && count == goal && error == 0)
+}
+
 // ====== timer oneshot mascherato e scaduto senza interpretare il reload storico ===== //
 
 #[unsafe(no_mangle)]

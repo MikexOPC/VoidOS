@@ -26,4 +26,8 @@ int x86_irq_registry_deliver(X86_IRQ_REGISTRY *registry, BOOT_U32 vector);
 BOOT_U64 x86_irq_registry_deliveries(const X86_IRQ_REGISTRY *registry, const X86_IRQ_TOKEN *token);
 X86_IRQ_REGISTRY *x86_irq_registry(void);
 int x86_irq_wait(volatile BOOT_U32 *counts, BOOT_U32 goal, BOOT_U32 budget);
+// Chiamante ring zero, source Count/Error valida per tutta l'attesa, IF=0.
+// Ritorna 1+HLT eseguiti oppure zero; budget di risvegli, non timeout.
+BOOT_U32 x86_irq_sleep(volatile BOOT_U32 *counts, BOOT_U32 goal, BOOT_U32 budget);
+BOOT_U64 x86_irq_sleep_resume(void);
 #endif

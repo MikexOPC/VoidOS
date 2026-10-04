@@ -21,7 +21,8 @@ LAPIC idle. Initial Count puo conservare il reload di una scadenza
 firmware gia terminata: non viene confuso con un timer ancora attivo.
 Prima della calibrazione viene comunque azzerato e verificato.
 
-L'owner statico occupa 120 byte. Non vengono allocate nuove pagine
+L'owner statico occupa 136 byte, inclusi contatori del sonno e delle prove
+di evento gia consegnato. Non vengono allocate nuove pagine
 RAM o nuovi mapping MMIO. C controlla ownership, letture e cleanup;
 Rust verifica profilo, wrap PM, snapshot precedente e conversione;
 Assembly legge la porta e riusa l'attesa IRQ delimitata.
@@ -34,7 +35,11 @@ Count. Non alloca memoria, non stampa e non riarma durante l'IRQ.
 Dopo ciascuna scadenza viene confrontato anche l'intervallo PM:
 circa 5–200 ms, una tolleranza diagnostica ampia per TCG. Non costituisce
 una garanzia temporale per uno scheduler. Attese e calibrazione hanno
-budget finito; errori interrompono il bootstrap.
+budget finito di letture o risvegli; errori interrompono il bootstrap.
+L'attesa IRQ usa ora STI/HLT/CLI con controllo del contatore prima del
+sonno; un evento gia consegnato ritorna senza dormire. Il budget di
+risvegli non e un timeout: se il timer non consegna alcun IRQ, serve
+un watchdog indipendente. In QEMU lo script impone un limite esterno.
 
 Il cleanup tenta maschera e arresto, richiede quiescenza prima di unbind,
 poi ripristina LVT e divisore precedenti. Initial Count resta zero;
@@ -43,7 +48,8 @@ La subscription non viene rimossa se la sorgente non risulta fermata.
 
 ## Limiti e riferimenti
 
-Questa e una prova finita su BSP: dopo il bootstrap IF resta zero.
+Questa e una prova finita su BSP: IF e attivo durante HLT e viene
+disabilitato dopo ogni risveglio. Dopo il bootstrap IF resta zero.
 Non sono ancora presenti tick permanente, event loop, scheduler,
 AP attivi o validazione su hardware fisico.
 

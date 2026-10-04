@@ -20,10 +20,6 @@ BOOT_U64 x86_irq_registry_deliveries(const X86_IRQ_REGISTRY *registry, const X86
 {
     (void)registry; (void)token; return 0;
 }
-int x86_irq_wait(volatile BOOT_U32 *count, BOOT_U32 goal, BOOT_U32 budget)
-{
-    (void)count; (void)goal; (void)budget; return 0;
-}
 int x86_page_window_read_acpi(X86_PAGE_WINDOW *window, const KERNEL_BOOT_CONTEXT *context,
     BOOT_U64 physical, BOOT_U64 bytes, unsigned char *output)
 {
@@ -40,3 +36,15 @@ int kernel_text(const char *text) { return text != 0; }
 int kernel_section(const char *text) { return text != 0; }
 int kernel_log(unsigned int level, const char *message) { (void)level; return message != 0; }
 int kernel_number(BOOT_U64 value) { (void)value; return 1; }
+
+// ====== codice Assembly reale rifiuta IF uno senza toccare source o eseguire HLT ===== //
+
+__declspec(dllexport) int run_irq_sleep_host_tests(void)
+{
+    __declspec(align(8)) volatile BOOT_U32 counts[2] = {7,0};
+    if (x86_irq_sleep(counts,7,8) || counts[0] != 7 || counts[1]) return 1;
+    if (x86_irq_sleep(0,1,8) || x86_irq_sleep((volatile BOOT_U32 *)1,1,8)) return 2;
+    if (x86_irq_sleep(counts,0,8) || x86_irq_sleep(counts,8,0) ||
+        x86_irq_sleep(counts,8,1025)) return 3;
+    return x86_irq_sleep_resume() != 0 ? 0 : 4;
+}

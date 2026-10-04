@@ -2,7 +2,9 @@
 
 function Write-LapicTimerMonitor($log, $vm) {
     $owner = Read-Hex $log 'KERNEL_TIMER_OWNER: 0x([0-9a-f]{16})'
-    $vm.StandardInput.WriteLine('x /15gx 0x'+$owner.ToString('x16'))
+    $vm.StandardInput.WriteLine('x /17gx 0x'+$owner.ToString('x16'))
+    $resume = Read-Hex $log 'KERNEL_TIMER_SLEEP_RESUME: 0x([0-9a-f]{16})'
+    $vm.StandardInput.WriteLine('x /3bx 0x'+($resume-2).ToString('x16'))
     # Il monitor QEMU espone i registri APIC tramite info lapic, non x MMIO.
 }
 
@@ -20,7 +22,7 @@ function Read-TimerWord($registers, [uint64]$address) {
 function Test-LapicTimerMonitorRejections($log, $registers, $cpuLog) {
     Test-LapicTimerFirmware $log $registers $cpuLog
     $owner = Read-Hex $log 'KERNEL_TIMER_OWNER: 0x([0-9a-f]{16})'
-    foreach ($offset in @(0,8,24,32,72,80,88,96,112)) {
+    foreach ($offset in @(0,8,24,32,72,80,88,96,112,120,128)) {
         $address = ($owner+($offset -band -16)).ToString('x16')
         $row = [regex]::Match($registers,'(?im)^'+$address+':\s+0x([0-9a-f]{16})(?:\s+0x([0-9a-f]{16}))?')
         if (!$row.Success) { throw 'Fixture timer incompleta.' }
@@ -34,7 +36,16 @@ function Test-LapicTimerMonitorRejections($log, $registers, $cpuLog) {
         try { Test-LapicTimerFirmware $log ($registers.Replace($row.Value,$changed)) $cpuLog } catch { $rejected=$true }
         if (!$rejected) { throw "Corruzione timer accettata a offset $offset." }
     }
-    Write-Output 'Timer LAPIC: fotografia reale valida e 9 alterazioni rifiutate.'
+    $opcode = [regex]::Match($registers,'(?im)^00000001[0-9a-f]+:\s+0xfb\s+0xf4\s+0xfa')
+    if (!$opcode.Success) { throw 'Fixture opcodes attesa assente.' }
+    $rejected = $false
+    try { Test-LapicTimerFirmware $log ($registers.Replace($opcode.Value,$opcode.Value.Replace('0xf4','0x90'))) $cpuLog } catch { $rejected=$true }
+    if (!$rejected) { throw 'Attesa senza HLT accettata.' }
+    $resume = Read-Hex $log 'KERNEL_TIMER_SLEEP_RESUME: 0x([0-9a-f]{16})'
+    $rejected = $false
+    try { Test-LapicTimerFirmware ($log.Replace($resume.ToString('x16'),($resume+1).ToString('x16'))) $registers $cpuLog } catch { $rejected=$true }
+    if (!$rejected) { throw 'Ritorno dal sonno falso accettato.' }
+    Write-Output 'Timer LAPIC: fotografia reale valida e 13 alterazioni rifiutate.'
 }
 
 # ============ due conversioni ricalcolate dai campioni raw ============ #
@@ -45,8 +56,8 @@ function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
     $reload = Read-Hex $log 'KERNEL_TIMER_RELOAD: 0x([0-9a-f]{16})'
     $mask = Read-Hex $log 'KERNEL_TIMER_PM_MASK: 0x([0-9a-f]{16})'
     $port = Read-Hex $log 'KERNEL_TIMER_PM_PORT: 0x([0-9a-f]{16})'
-    if (!$log.Contains('KERNEL_TIMER_OK') -or ($owner -band 7) -or
-        $owner -lt 0x100000000 -or $owner+120 -gt 0x100100000 -or
+    if (!$log.Contains('KERNEL_TIMER_OK') -or !$log.Contains('KERNEL_IRQ_SLEEP_REJECT_OK') -or ($owner -band 7) -or
+        $owner -lt 0x100000000 -or $owner+136 -gt 0x100100000 -or
         !$reload -or $reload -gt 4294967295L -or $mask -notin @(16777215L,4294967295L) -or
         $port -lt 256 -or $port -gt 65532 -or ($port -band 3) -or ($port -ge 1016 -and $port -lt 1024) -or
         (Read-Hex $log 'KERNEL_TIMER_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 3 -or
@@ -82,6 +93,23 @@ function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
         throw 'Timer: Reserved o traccia IRQ non conformi.'
     }
     $original = Read-TimerWord $registers ($owner+96)
+    $wakes = Read-TimerWord $registers ($owner+120)
+    $probe = Read-TimerWord $registers ($owner+128)
+    if ($wakes -ne 4294967297L -or $probe -ne 12884901889L -or
+        (Read-Hex $log 'KERNEL_TIMER_PENDING_PROBE: 0x([0-9a-f]{16})') -ne 3) {
+        throw 'Timer: sonno o consegna gia presente non verificati.'
+    }
+    $resume = Read-Hex $log 'KERNEL_TIMER_SLEEP_RESUME: 0x([0-9a-f]{16})'
+    if ($resume -lt 0x100000002 -or $resume -ge 0x100100000 -or
+        $registers -notmatch ('(?im)^'+($resume-2).ToString('x16')+':\s+0xfb\s+0xf4\s+0xfa')) {
+        throw 'Sequenza STI HLT CLI assente nell''immagine eseguita.'
+    }
+    $trace = Get-Content -LiteralPath $cpuLog -Raw
+    $events = [regex]::Matches($trace,'(?s)Servicing hardware INT=0x41\s+.*?RIP=([0-9a-f]{16}) RFL=([0-9a-f]+)')
+    foreach ($event in $events) {
+        if ([Convert]::ToUInt64($event.Groups[1].Value,16) -ne $resume -or
+            !([Convert]::ToUInt64($event.Groups[2].Value,16) -band 512)) { throw 'IRQ timer fuori dal sonno con IF=1.' }
+    }
     if ($registers -notmatch ('(?im)^LVTT\s+0x'+([uint32]($original -band 4294967295L)).ToString('x8')) -or
         $registers -notmatch ('(?im)^Timer\s+DCR=0x'+($original -shr 32).ToString('x')+'\s+.*initial_count = 0 current_count = 0')) {
         throw 'Timer non fermato o ripristinato.'
