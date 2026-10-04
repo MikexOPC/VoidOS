@@ -203,3 +203,20 @@ int x86_uart_tx_drain(const X86_UART_TX *buffer)
     }
     return 0;
 }
+
+// ====== riuso solo dopo completamento confermato e sorgente completamente chiusa ===== //
+
+int x86_uart_tx_release(X86_UART_TX *buffer, BOOT_U32 deliveries)
+{
+    BOOT_U32 byte;
+    unsigned char iir;
+    if (!x86_exception_environment() || !x86_uart_tx_progress(buffer,deliveries) ||
+        !x86_uart_tx_drain(buffer)) return 0;
+    // Il chiamante ha gia verificato EOI, ISR/IRR vuoti e staccato l'owner IRQ.
+    iir = x86_read_port(COM1+2);
+    if (iir != 1 && iir != 0xc1) return 0;
+    for (byte = 0; byte < sizeof(*buffer); ++byte) {
+        ((volatile unsigned char *)buffer)[byte] = 0;
+    }
+    return virgin(buffer);
+}

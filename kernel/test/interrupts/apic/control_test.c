@@ -188,7 +188,7 @@ __declspec(dllexport) int run_uart_tx_irq_tests(void)
     unsigned char source[2] = {0x31,0x72};
     BOOT_U32 step;
     if (!reset()) return 1;
-    test_uart_owner(&state); state.Count = 3; state.Tx = &buffer;
+    test_uart_owner(&state); state.Count = 3; state.TxBase = 3; state.Tx = &buffer;
     if (!x86_uart_tx_prepare(&buffer,source,2)) return 2;
     for (step = 0; step < 3; ++step) {
         in_service = 1;
@@ -197,13 +197,31 @@ __declspec(dllexport) int run_uart_tx_irq_tests(void)
             (step < 2 && tx_last != source[step])) return 3;
     }
     if (!buffer.Done || ier || !x86_uart_tx_drain(&buffer)) return 4;
+    state.Active = 0; state.Tx = 0;
+    if (!x86_uart_tx_release(&buffer,state.Count-state.TxBase) ||
+        !x86_uart_tx_prepare(&buffer,source,1)) return 9;
+    state.TxBase = state.Count; state.Tx = &buffer; state.Active = 1;
+    ier = 2; iir = 0xc2; in_service = 1;
+    if (!x86_uart_irq_service(&state) || state.Count != 7 || tx_writes != 3) return 10;
+    in_service = 1;
+    if (!x86_uart_irq_service(&state) || state.Count != 8 || eois != 5 ||
+        !buffer.Done || !x86_uart_tx_release(&buffer,state.Count-state.TxBase)) return 11;
     for (step = 0; step < sizeof(buffer); ++step) ((unsigned char *)&buffer)[step] = 0;
     if (!reset()) return 5;
-    test_uart_owner(&state); state.Count = 3; state.Tx = &buffer; in_service = 1;
+    test_uart_owner(&state); state.Count = 3; state.TxBase = 3; state.Tx = &buffer; in_service = 1;
     if (!x86_uart_tx_prepare(&buffer,source,2)) return 6;
     uart_bad = 2;
     if (x86_uart_irq_service(&state) || state.Count != 3 || state.Error != 2 ||
         tx_writes != 1 || !in_service || eois != 1 || ier) return 7;
+    for (step = 0; step < sizeof(buffer); ++step) ((unsigned char *)&buffer)[step] = 0;
+    if (!reset()) return 12;
+    test_uart_owner(&state); state.Count = 3; state.TxBase = 3; state.Tx = &buffer;
+    if (!x86_uart_tx_prepare(&buffer,source,1)) return 13;
+    in_service = 1;
+    if (!x86_uart_irq_service(&state)) return 14;
+    in_service = 1; uart_bad = 2;
+    if (x86_uart_irq_service(&state) || state.Count != 4 || state.Error != 2 || !buffer.Done ||
+        x86_uart_tx_release(&buffer,state.Count-state.TxBase) || !buffer.Self) return 15;
     if (!reset()) return 8;
     return 0;
 }

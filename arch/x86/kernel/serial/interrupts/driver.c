@@ -125,6 +125,10 @@ static X86_LAPIC_MAPPING mapping;
 static X86_UART_ROUTE route;
 static X86_UART_TX tx;
 static const unsigned char payload[] = "\r\nKERNEL_UART_TX_PAYLOAD: 0123456789abcdef\r\n";
+static const unsigned char full_payload[] = "KERNEL_UART_TX_REUSE: 0123456789abcdef0123456789abcdef01234567\r\n";
+static const unsigned char final_payload[] = "KERNEL_UART_TX_FINAL: OK\r\n";
+_Static_assert(sizeof(full_payload)-1 == X86_UART_TX_CAPACITY, "Prova capacita completa TX");
+static BOOT_U32 bytes_total;
 static BOOT_U32 finished;
 
 // ====== IER zero con DLAB gia azzerato nel profilo UART diagnostico ===== //
@@ -158,7 +162,8 @@ static int owner_valid(const X86_UART_IRQ_OWNER *state)
         state->Mapping && state->Profile && !state->Reserved &&
         !os_address_ranges_overlap(target,sizeof(*state),(BOOT_U64)state->Mapping,sizeof(*state->Mapping)) &&
         !os_address_ranges_overlap(target,sizeof(*state),(BOOT_U64)state->Profile,sizeof(*state->Profile)) &&
-        (!state->Tx || (x86_uart_tx_validate(state->Tx) &&
+        (!state->Tx || (x86_uart_tx_validate(state->Tx) && state->TxBase >= 3 &&
+        x86_uart_tx_goal(state->TxBase,state->Tx->Length) &&
         !os_address_ranges_overlap((BOOT_U64)state->Tx,sizeof(*state->Tx),target,sizeof(*state)) &&
         !os_address_ranges_overlap((BOOT_U64)state->Tx,sizeof(*state->Tx),(BOOT_U64)state->Mapping,sizeof(*state->Mapping)) &&
         !os_address_ranges_overlap((BOOT_U64)state->Tx,sizeof(*state->Tx),(BOOT_U64)state->Profile,sizeof(*state->Profile)))) &&
@@ -173,9 +178,10 @@ int x86_uart_irq_service(X86_UART_IRQ_OWNER *state)
     int acknowledged, completed;
     if (!x86_exception_environment() || !owner_valid(state) ||
         state->Active != 1 || state->Error ||
-        state->Count >= (state->Tx ? 3+state->Tx->Length+1 : 3)) return 0;
+        state->Count >= (state->Tx ? x86_uart_tx_goal(state->TxBase,state->Tx->Length) : 3)) return 0;
     if (state->Tx) {
-        acknowledged = state->Count >= 3 && x86_uart_tx_progress(state->Tx,state->Count-3) &&
+        acknowledged = state->Count >= state->TxBase &&
+            x86_uart_tx_progress(state->Tx,state->Count-state->TxBase) &&
             x86_uart_tx_service(state->Tx);
     } else {
         iir = x86_read_port(COM1+2);
@@ -218,8 +224,37 @@ static int report(void)
         kernel_text("\nKERNEL_UART_IRQ_OWNER: ") && kernel_number((BOOT_U64)&owner) &&
         kernel_text("\nKERNEL_UART_TX_OWNER: ") && kernel_number((BOOT_U64)&tx) &&
         kernel_text("\nKERNEL_UART_TX_BYTES: ") && kernel_number(tx.Next) &&
+        kernel_text("\nKERNEL_UART_TX_TOTAL: ") && kernel_number(bytes_total) &&
+        kernel_text("\nKERNEL_UART_TX_COMPLETED: ") && kernel_number(owner.TxCompleted) &&
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_TX_OK") &&
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_IRQ_OK");
+}
+
+// ====== singolo invio con riuso solo dopo distacco e completamento verificato ===== //
+
+static int transmit(const unsigned char *data, BOOT_U32 bytes)
+{
+    BOOT_U32 goal = x86_uart_tx_goal(owner.Count,bytes);
+    if (!goal || owner.Error || owner.TxCompleted == ~0U || bytes_total > ~0U-bytes ||
+        !x86_irq_ready() || !x86_lapic_idle(&mapping)) return 0;
+    owner.Active = 0;
+    if (owner.Tx) {
+        BOOT_U32 deliveries;
+        if (owner.Tx != &tx || owner.Count < owner.TxBase) return 0;
+        deliveries = owner.Count-owner.TxBase;
+        owner.Tx = 0;
+        if (!x86_uart_tx_release(&tx,deliveries)) return 0;
+    }
+    if (!x86_uart_tx_prepare(&tx,data,bytes)) return 0;
+    owner.TxBase = owner.Count;
+    owner.Tx = &tx;
+    owner.Active = 1;
+    if (!x86_uart_tx_start(&tx) || !x86_uart_irq_wait(&owner.Count,goal,10000000) ||
+        owner.Count != goal || owner.Error || !x86_uart_tx_drain(&tx) ||
+        !x86_irq_ready() || !x86_lapic_idle(&mapping)) return 0;
+    ++owner.TxCompleted;
+    bytes_total += bytes;
+    return 1;
 }
 
 // ====== inventario corrente include il dispositivo mantenuto per il kernel ===== //
@@ -265,11 +300,8 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
         if (x86_read_port(COM1+1) != 2 || !x86_uart_irq_wait(&owner.Count,goal,10000000) ||
             owner.Count != goal || owner.Error || !x86_exception_environment()) goto cleanup;
     }
-    if (!x86_uart_tx_prepare(&tx,payload,sizeof(payload)-1) || !x86_lapic_idle(&mapping)) goto cleanup;
-    owner.Tx = &tx;
-    if (!x86_uart_tx_start(&tx) ||
-        !x86_uart_irq_wait(&owner.Count,3+tx.Length+1,10000000) ||
-        owner.Count != 3+tx.Length+1 || owner.Error || !x86_uart_tx_drain(&tx)) goto cleanup;
+    if (!transmit(payload,sizeof(payload)-1) || !transmit(full_payload,sizeof(full_payload)-1) ||
+        !transmit(final_payload,sizeof(final_payload)-1)) goto cleanup;
     result = x86_lapic_report(&mapping);
 cleanup:
     restored = uart_restore(saved);

@@ -1,7 +1,7 @@
 # COM1: prima prova di IRQ hardware con ritorno
 
 Il modulo `arch/x86/kernel/serial/interrupts/` esercita tre eventi THRE
-del modello UART 16550A di QEMU, poi trasmette 44 byte reali usando un
+del modello UART 16550A di QEMU, poi trasmette 134 byte in tre invii usando un
 buffer TX limitato. La console diagnostica continua a usare polling.
 E una prova delimitata
 della catena UART -> I/O APIC -> LAPIC -> IDT -> handler -> IRETQ.
@@ -22,10 +22,11 @@ cambiarne destinazione e riletta dopo l'apertura. Il selettore IOREGSEL
 viene salvato e ripristinato. Un errore impedisce il successo; non si
 riaprono deliberatamente le rotte firmware.
 
-Lo stato statico occupa 40 byte, con Count/Error ai primi due offset
+Lo stato statico occupa 48 byte, con Count/Error ai primi due offset
 u32 verificati dal contratto ABI. La rotta occupa 24 byte, oltre al
 flag di esecuzione singola. Il puntatore TX segue il prefisso precedente
-di 32 byte. Il buffer TX posseduto occupa 88 byte, con 64 byte di dati.
+di 32 byte, seguito da TxBase e TxCompleted. Il buffer TX posseduto
+occupa 88 byte, con 64 byte di dati.
 Non vengono allocati frame o buffer dinamici.
 
 ## Finestra con IF=1 e completamento
@@ -59,8 +60,9 @@ Il contratto resta UP, senza nesting o SMP.
 
 Dopo tre consegne, IER e chiuso e la prova iniziale e verificata.
 Prima della chiusura finale segue la
-[trasmissione TX delimitata](transmit.md): 44 IRQ scrivono un byte ciascuno
-e un ultimo IRQ chiude IER. Il contatore finale vale 48, inclusi i tre
+[trasmissione TX delimitata](transmit.md): tre invii da 44, 64 e 26 byte,
+con un IRQ di chiusura per invio e riuso esplicito del buffer. Il contatore
+finale vale 140, inclusi i tre
 IRQ iniziali. Poi OUT2 torna al valore iniziale, la
 rotta e mascherata, Active=0, IF=0, ISR/IRR vuoti, IDTR invariata e
 finestra temporanea revocata. Il mapping LAPIC resta presente, con owner
@@ -75,8 +77,8 @@ con un guasto per ogni accesso controller; ACK/EOI ordinati, IIR inatteso,
 IER non disabilitabile, EOI ignorato, ISR assente e guasti nelle letture
 ISR prima/dopo EOI. Rust verifica tutti i 256 flag/cause testati.
 
-QEMU: traccia indipendente di esattamente 48 `Servicing hardware
-INT=0x40`, snapshot in memoria Count=48/Error=0/Active=0, profilo
+QEMU: traccia indipendente di esattamente 140 `Servicing hardware
+INT=0x40`, snapshot in memoria Count=140/Error=0/Active=0, profilo
 persistente, gate e controller finali chiusi, PTE LAPIC UC presente e
 inventario misto confrontato con la memoria reale; regressione di 23 scenari.
 

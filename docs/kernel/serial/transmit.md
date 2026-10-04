@@ -39,20 +39,40 @@ THRE e TEMT per un massimo di 100000 letture, senza scrivere dati:
 buffer consumato non equivale ancora a registro di shift svuotato.
 Sono budget di iterazioni, non scadenze in millisecondi.
 
+## Riuso esplicito e contatori cumulativi
+
+Release richiede IF=0, progressione coerente con le consegne confermate,
+Done, Drain riuscito e IIR senza cause pendenti. Il chiamante ha gia
+verificato EOI, ISR/IRR vuoti e distaccato l'owner IRQ. Solo dopo queste
+prove vengono azzerati tutti gli 88 byte; un rifiuto conserva il buffer.
+Prepare puo allora acquisirlo nuovamente. Non si resetta un invio parziale.
+
+Count resta monotono. TxBase fotografa Count prima dell'invio corrente;
+Rust calcola il goal Base+Length+1, rifiutando overflow prima di aprire IER.
+TxCompleted e totale bytes aumentano solo dopo EOI, Drain e LAPIC idle.
+Se EOI finale fallisce, Done da solo non autorizza Release: manca la
+consegna confermata nel contatore.
+
 ## Prova e controllo indipendente
 
 Il bootstrap conserva la prova preliminare di tre IRQ e invia poi il
-payload di 44 byte `CR LF KERNEL_UART_TX_PAYLOAD: 0123456789abcdef CR LF`.
-Il totale e 48 IRQ: tre iniziali, 44 scritture e un IRQ di chiusura.
+payload di 44 byte `CR LF KERNEL_UART_TX_PAYLOAD: 0123456789abcdef CR LF`,
+seguito da una prova di 64 byte e una finale di 26. Lo stesso buffer
+viene rilasciato e riacquisito fra gli invii, senza nuova memoria.
+Il totale e 134 byte e 140 IRQ: tre iniziali, 134 scritture e tre chiusure.
 Il successo segue Drain, chiusura rotta, OUT2 ripristinato, ISR/IRR vuoti,
 IDTR invariata, finestra libera e inventario misto verificato.
 
 QEMU controlla il payload sul canale seriale, una sola occorrenza,
 contatore e traccia IRQ, copia in memoria di tutti gli 88 byte e puntatore
-TX nel nuovo owner IRQ di 40 byte. Il mapping LAPIC resta valido.
+TX nel nuovo owner IRQ di 48 byte, TxBase=113 e TxCompleted=3.
+Il mapping LAPIC resta valido. La coda del buffer finale e zero: nessun
+residuo dell'invio precedente di 64 byte viene esposto dal monitor.
 Host verifica tutte le lunghezze, copia indipendente, progressione,
 overflow, alias, metadati corrotti, cause inattese, DLAB, errori LSR,
 IER bloccato e timeout TEMT. Un test integrato collega TX, EOI e contatore.
+Sono verificati 256 cicli 64->1 e rifiuti del rilascio senza modifiche
+al buffer; il modello integrato copre anche EOI finale ignorato.
 
 Il contratto e UP: nessun produttore modifica dati durante IF=1 e
 nessun log polling compete con il trasferimento. Non e ancora un driver

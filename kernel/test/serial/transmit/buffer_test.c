@@ -202,6 +202,62 @@ static int address_bounds(void)
 
 // ====== esecuzione dei gruppi del buffer e del protocollo UART ===== //
 
+static int reuse(void)
+{
+    unsigned char source[64];
+    X86_UART_TX saved;
+    BOOT_U32 cycle, byte, length, base = 3;
+    reset(); ports[1] = 0;
+    for (cycle = 0; cycle < 256; ++cycle) {
+        length = cycle & 1 ? 1 : 64;
+        for (byte = 0; byte < 64; ++byte) source[byte] = (unsigned char)(cycle+byte);
+        if (!x86_uart_tx_prepare(&buffer,source,length) || x86_uart_tx_release(&buffer,0)) return 1;
+        if (!x86_uart_tx_start(&buffer)) return 2;
+        for (byte = 0; byte <= length; ++byte) {
+            ports[2] = 0xc2;
+            if (!x86_uart_tx_service(&buffer)) return 3;
+        }
+        if (writes != length || !x86_uart_tx_drain(&buffer)) return 4;
+        saved = buffer;
+        if (x86_uart_tx_release(&buffer,length)) return 5;
+        for (byte = 0; byte < sizeof(buffer); ++byte)
+            if (((unsigned char *)&buffer)[byte] != ((unsigned char *)&saved)[byte]) return 6;
+        if (x86_uart_tx_goal(base,length) != base+length+1 ||
+            !x86_uart_tx_release(&buffer,length+1) || x86_uart_tx_release(&buffer,length+1)) return 7;
+        base += length+1;
+        for (byte = 0; byte < sizeof(buffer); ++byte) if (((unsigned char *)&buffer)[byte]) return 8;
+        writes = 0;
+    }
+    return 0;
+}
+
+// ====== reset rifiutato lascia intatta la prova precedente ===== //
+
+static int release_failures(void)
+{
+    unsigned char source = 8;
+    X86_UART_TX saved;
+    BOOT_U32 variant, byte;
+    for (variant = 0; variant < 6; ++variant) {
+        reset();
+        if (!x86_uart_tx_prepare(&buffer,&source,1) || !x86_uart_tx_service(&buffer) ||
+            !x86_uart_tx_service(&buffer)) return 1;
+        saved = buffer;
+        if (variant == 0) environment = 0;
+        if (variant == 1) busy = 1;
+        if (variant == 2) ports[1] = 2;
+        if (variant == 3) ports[3] = 0x83;
+        if (variant == 4) closed_iir = 255;
+        if (variant == 5) closed_iir = 0xc2;
+        if (x86_uart_tx_release(&buffer,2)) return 2;
+        for (byte = 0; byte < sizeof(buffer); ++byte)
+            if (((unsigned char *)&buffer)[byte] != ((unsigned char *)&saved)[byte]) return 3;
+    }
+    return 0;
+}
+
+// ====== test buffer trasmissione e riuso esplicito ===== //
+
 __declspec(dllexport) int run_uart_tx_tests(void)
 {
     int result = lengths();
@@ -212,5 +268,7 @@ __declspec(dllexport) int run_uart_tx_tests(void)
     result = draining(); if (result) return 500+result;
     result = starting(); if (result) return 600+result;
     result = address_bounds(); if (result) return 700+result;
+    result = reuse(); if (result) return 800+result;
+    result = release_failures(); if (result) return 900+result;
     return 0;
 }

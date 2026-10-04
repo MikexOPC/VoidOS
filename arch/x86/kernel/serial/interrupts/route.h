@@ -10,8 +10,9 @@ typedef struct {
     const X86_APIC_PROFILE *Profile;
     BOOT_U32 Active, Reserved;
     X86_UART_TX *Tx;
+    BOOT_U32 TxBase, TxCompleted;
 } X86_UART_IRQ_OWNER;
-_Static_assert(sizeof(X86_UART_IRQ_OWNER) == 40, "Stato UART IRQ bounded");
+_Static_assert(sizeof(X86_UART_IRQ_OWNER) == 48, "Stato UART IRQ bounded");
 _Static_assert(sizeof(X86_UART_ROUTE) == 24, "Rotta UART bounded");
 _Static_assert(offsetof(X86_UART_IRQ_OWNER, Count) == 0 &&
     offsetof(X86_UART_IRQ_OWNER, Error) == 4, "ABI attesa UART");

@@ -299,7 +299,7 @@ int test_uart_apply(const X86_UART_ROUTE *route, BOOT_U32 masked)
 }
 void test_uart_owner(X86_UART_IRQ_OWNER *state)
 {
-    X86_UART_IRQ_OWNER draft = {0,0,&uart_mapping,&profile,1,0,0};
+    X86_UART_IRQ_OWNER draft = {0,0,&uart_mapping,&profile,1,0,0,0,0};
     x86_lapic_bind(&context,&window,&ledger,&topology,&profile,&uart_mapping);
     *state = draft;
 }
