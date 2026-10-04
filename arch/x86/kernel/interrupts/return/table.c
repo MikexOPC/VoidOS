@@ -2,6 +2,7 @@
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/descriptors/stacks.h"
+#include "arch/x86/kernel/serial/interrupts/route.h"
 extern const BOOT_U64 x86_irq_targets[224];
 extern const unsigned char x86_irq_begin[], x86_irq_end[];
 extern const BOOT_U64 x86_kernel_fault_targets[32];
@@ -166,7 +167,7 @@ int x86_irq_initialize(void)
     return 1;
 }
 
-// ====== nessuna seriale allocazione o EOI nel percorso con ritorno ===== //
+// ====== frame preso in prestito dal solo stack principale persistente ===== //
 
 static int frame_owner(const X86_IRQ_FRAME *frame)
 {
@@ -187,13 +188,25 @@ static int increment(BOOT_U32 *counter)
     return 1;
 }
 
+// ====== IDTR attiva e ambiente verificati prima della prova hardware ===== //
+
+int x86_irq_ready(void)
+{
+    X86_KERNEL_IDTR actual = {{0}};
+    if (!installed || armed || returned != 1 || !x86_exception_environment() || !x86_irq_cpu_state()) return 0;
+    x86_exception_read_idt(&actual);
+    return equal(&actual,&irq_idtr);
+}
+
 // ====== i vettori non assegnati terminano senza confermare IRQ sconosciuti ===== //
 
 void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
 {
     if (!installed || !frame_owner(frame) || !x86_irq_frame(frame->Vector,frame->Cs,frame->Flags,frame->Ss))
         x86_kernel_stop(0x4b495251554e0001ULL);
-    if (frame->Vector == 0xf0) {
+    if (frame->Vector == 0x40) {
+        if (!x86_uart_irq_handle()) x86_kernel_stop(0x4b55415254460001ULL);
+    } else if (frame->Vector == 0xf0) {
         if (!armed || returned) x86_kernel_stop(0x4b495251554e0002ULL);
         if (!increment(&returned)) x86_kernel_stop(0x4b495251554e0003ULL);
     } else {

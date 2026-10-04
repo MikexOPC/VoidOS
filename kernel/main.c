@@ -18,6 +18,7 @@
 #include "arch/x86/kernel/interrupts/apic/probe.h"
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
+#include "arch/x86/kernel/serial/interrupts/route.h"
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
@@ -319,6 +320,10 @@ __declspec(noreturn) static void kernel_continue(void)
             !x86_apic_quiesce(context, &page_window, paging,
                 (const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&persistent_arena, &madt_object),
                 &apic_profile, &apic_capabilities)) kernel_panic("APIC_MASK_INVALID");
+        if (context->Info.Acpi.Source &&
+            !x86_uart_irq_run(context, &page_window, paging,
+                (const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&persistent_arena, &madt_object),
+                &apic_profile, &apic_capabilities)) kernel_panic("UART_IRQ_INVALID");
     }
 #ifdef KERNEL_TEST_REGION_FAULT
     {

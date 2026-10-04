@@ -1,5 +1,6 @@
 #include "arch/x86/kernel/interrupts/apic/probe.h"
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
+#include "arch/x86/kernel/serial/interrupts/route.h"
 static KERNEL_BOOT_CONTEXT context;
 static X86_PAGE_WINDOW window;
 static KERNEL_PHYSICAL_ALLOCATOR pool;
@@ -252,4 +253,30 @@ void test_mask_nmi(BOOT_U32 kind)
         topology.Length = 76; topology.NmiCount = 2; topology.Nmi[1] = topology.Nmi[0];
     }
     if (kind == 5) topology.Nmi[0].Flags = 12;
+}
+
+// ====== fixture UART con override collisioni e owner persistente ===== //
+
+int test_uart_plan(X86_UART_ROUTE *route) { return x86_uart_route_plan(&topology,&output,route); }
+int test_uart_apply(const X86_UART_ROUTE *route, BOOT_U32 masked)
+{
+    return x86_uart_route_apply(&window,&profile,&output,route,masked);
+}
+void test_uart_owner(X86_UART_IRQ_OWNER *state)
+{
+    X86_UART_IRQ_OWNER draft = {0,0,&window,&profile,1,0};
+    *state = draft;
+}
+void test_uart_variant(BOOT_U32 kind)
+{
+    topology.IsoCount = 1; topology.Length += 10;
+    topology.Iso[0].Source = 4; topology.Iso[0].Gsi = 20; topology.Iso[0].Flags = 15;
+    if (kind == 2) topology.Iso[0].Gsi = 5;
+    if (kind == 3) { topology.Iso[0].Source = 5; topology.Iso[0].Gsi = 4; }
+    if (kind == 4) {
+        topology.NmiCount = 1; topology.Length += 8;
+        topology.Nmi[0].Kind = 3; topology.Nmi[0].Value = 20;
+    }
+    if (kind == 5) topology.Iso[0].Gsi = 24;
+    if (kind == 6) output.Ready = 0;
 }

@@ -1,4 +1,9 @@
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
+#include "arch/x86/kernel/serial/interrupts/route.h"
+int test_uart_plan(X86_UART_ROUTE *route);
+int test_uart_apply(const X86_UART_ROUTE *route, BOOT_U32 masked);
+void test_uart_owner(X86_UART_IRQ_OWNER *state);
+void test_uart_variant(BOOT_U32 kind);
 int test_mask_reset(void);
 BOOT_U64 test_mask_physical(void);
 int test_mask_quiesce(void);
@@ -10,6 +15,8 @@ void test_mask_variant(BOOT_U32 maximum, BOOT_U32 inputs, BOOT_U32 pcat);
 void test_mask_nmi(BOOT_U32 kind);
 static BOOT_U32 local[64], routes[240], selector, calls, fail, stores, bad, port_writes;
 static unsigned char master, slave;
+static unsigned char ier, iir, lcr;
+static BOOT_U32 in_service, eois, uart_bad;
 
 // ====== backend controllato del LAPIC senza alcuna istruzione privilegiata ===== //
 
@@ -20,7 +27,8 @@ int x86_apic_control_read(BOOT_U32 offset, BOOT_U32 *output)
     if (physical == 0xfee00000) {
         if (offset == 0x20) *output = 7U << 24;
         else if (offset == 0x30) *output = test_mask_lapic_version();
-        else if (offset >= 0x100 && offset <= 0x270) *output = bad == 2 ? 1 : 0;
+        else if (offset >= 0x100 && offset <= 0x270)
+            *output = bad == 2 ? 1 : (offset == 0x120 ? in_service : 0);
         else *output = local[offset / 16];
     } else if (physical == 0xfec00000) {
         if (!offset) *output = selector;
@@ -48,10 +56,19 @@ int x86_apic_control_write(BOOT_U32 offset, BOOT_U32 value)
     } else return 0;
     return 1;
 }
-unsigned char x86_read_port(unsigned short port) { return port == 0x21 ? master : slave; }
+unsigned char x86_read_port(unsigned short port)
+{
+    if (port == 0x3f9) return ier;
+    if (port == 0x3fa) { unsigned char value = iir; iir = 0xc1; return value; }
+    if (port == 0x3fb) return lcr;
+    if (port == 0x3fd) return 0x60;
+    return port == 0x21 ? master : slave;
+}
 void x86_write_port(unsigned short port, unsigned char value)
 {
     if (bad == 6) { ++port_writes; return; }
+    if (port == 0x3f9) { if (uart_bad != 1) ier = value; return; }
+    if (port == 0x3fc) return;
     if (port == 0x21) master = value;
     else if (port == 0xa1) slave = value;
     else bad = 4;
@@ -66,6 +83,7 @@ static int reset(void)
     for (index = 0; index < 64; ++index) local[index] = 0;
     for (index = 0; index < 240; ++index) routes[index] = 0;
     selector = 17; calls = fail = stores = bad = port_writes = 0; master = slave = 0;
+    ier = 2; iir = 0xc2; lcr = 3; in_service = eois = uart_bad = 0;
     return test_mask_reset();
 }
 
@@ -125,5 +143,88 @@ __declspec(dllexport) int run_apic_control_tests(void)
         if (valid && (local[0x350/16] != (index == 2 ? 0x2400U : 0x10040U) ||
             local[0x360/16] != (index == 1 ? 0x400U : 0x10040U))) return 25;
     }
+    return 0;
+}
+
+// ====== EOI modello exige ACK precedente e non modifica altri ISR ===== //
+
+int x86_uart_lapic_eoi_zero(void)
+{
+    if (test_mask_physical() != 0xfee00000 || in_service != 1 || ier) return 0;
+    ++eois;
+    if (uart_bad != 2) in_service = 0;
+    return 1;
+}
+// ====== attesa privilegiata esclusa dal processo host ===== //
+
+int x86_uart_irq_wait(volatile BOOT_U32 *counts, BOOT_U32 goal, BOOT_U32 budget)
+{
+    (void)counts; (void)goal; (void)budget;
+    return 0;
+}
+
+// ====== rotta ACK EOI revoca e guasti su ogni accesso controller ===== //
+
+__declspec(dllexport) int run_uart_irq_tests(void)
+{
+    X86_UART_ROUTE route;
+    X86_UART_IRQ_OWNER owner;
+    BOOT_U32 index, total;
+    if (!reset() || !test_uart_plan(&route) || route.Gsi != 4 || route.Pin != 4 ||
+        route.Bits != 0x40 || route.Destination != 7) return 1;
+    if (!test_uart_apply(&route,0) || routes[8] != 0x40 || routes[9] != 7U << 24 ||
+        selector != 17 || !test_mask_clean()) return 2;
+    total = calls;
+    for (index = 1; index <= total; ++index) {
+        if (!reset() || !test_uart_plan(&route)) return 3;
+        fail = index;
+        if (test_uart_apply(&route,0) || !test_mask_clean()) return 4;
+    }
+    for (index = 1; index <= 6; ++index) {
+        if (!reset()) return 5;
+        test_uart_variant(index);
+        if (test_uart_plan(&route) != (index == 1)) return 6;
+        if (index == 1 && (route.Pin != 20 || route.Bits != 0xa040)) return 7;
+    }
+    if (!reset() || !test_uart_plan(&route)) return 8;
+    route.Pin = 120;
+    if (test_uart_apply(&route,0) || stores || !test_mask_clean()) return 9;
+    for (index = 0; index < 3; ++index) {
+        if (!reset()) return 10;
+        test_uart_owner(&owner); in_service = 1;
+        owner.Count = index;
+        if (!x86_uart_irq_service(&owner) || owner.Count != index+1 || owner.Error ||
+            ier || in_service || eois != 1 || !test_mask_clean()) return 11;
+    }
+    // Causa inattesa: IER chiuso ed EOI, senza attestare un evento riuscito.
+    if (!reset()) return 12;
+    test_uart_owner(&owner); in_service = 1; iir = 0xc4;
+    if (x86_uart_irq_service(&owner) || owner.Count || owner.Error != 1 ||
+        ier || in_service || eois != 1 || !test_mask_clean()) return 13;
+    for (index = 1; index <= 5; ++index) {
+        if (!reset()) return 14;
+        test_uart_owner(&owner); in_service = 1; uart_bad = index;
+        if (index == 3) in_service = 0;
+        if (index == 4) iir = 0x12;
+        if (index == 5) lcr = 0x83;
+        if (x86_uart_irq_service(&owner) || !owner.Error || owner.Count || !test_mask_clean()) return 15;
+        if (index == 1 && eois) return 16;
+    }
+    if (!reset()) return 17;
+    test_uart_owner(&owner); owner.Count = 3;
+    if (x86_uart_irq_service(&owner) || calls || eois) return 18;
+    if (!reset()) return 19;
+    test_uart_owner(&owner); in_service = 1;
+    if (!x86_uart_irq_service(&owner)) return 20;
+    total = calls;
+    for (index = 1; index <= total; ++index) {
+        if (!reset()) return 21;
+        test_uart_owner(&owner); in_service = 1; fail = index;
+        if (x86_uart_irq_service(&owner) || owner.Count || owner.Error != 2 ||
+            ier || !test_mask_clean()) return 22;
+    }
+    if (!reset()) return 23;
+    test_uart_owner(&owner); owner.Active = 0;
+    if (x86_uart_irq_service(&owner) || calls || eois) return 24;
     return 0;
 }
