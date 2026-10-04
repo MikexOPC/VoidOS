@@ -24,6 +24,7 @@ int x86_irq_registry_bind(X86_IRQ_REGISTRY *registry, BOOT_U32 vector,
 int x86_irq_registry_unbind(X86_IRQ_REGISTRY *registry, X86_IRQ_TOKEN *token);
 int x86_irq_registry_deliver(X86_IRQ_REGISTRY *registry, BOOT_U32 vector);
 BOOT_U64 x86_irq_registry_deliveries(const X86_IRQ_REGISTRY *registry, const X86_IRQ_TOKEN *token);
+int x86_irq_registry_token_live(const X86_IRQ_REGISTRY *registry, const X86_IRQ_TOKEN *token);
 X86_IRQ_REGISTRY *x86_irq_registry(void);
 int x86_irq_wait(volatile BOOT_U32 *counts, BOOT_U32 goal, BOOT_U32 budget);
 // Chiamante ring zero, source Count/Error valida per tutta l'attesa, IF=0.

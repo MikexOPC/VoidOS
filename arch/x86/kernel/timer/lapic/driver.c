@@ -2,6 +2,7 @@
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "kernel/diagnostics/log.h"
+#include "lib/memory/address_ranges.h"
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 finished;
 
@@ -30,7 +31,7 @@ int x86_timer_service(X86_LAPIC_TIMER *state)
 {
     BOOT_U32 value;
     if (!x86_timer_owner_valid(state) || !x86_exception_environment() || state->Active != 1 || state->Error ||
-        !state->Reload || state->Count >= 3 || !x86_lapic_validate(state->Mapping)) {
+        !state->Reload || state->Phase != X86_TIMER_ARMED || !x86_lapic_validate(state->Mapping)) {
         return 0;
     }
     if (!x86_timer_read(state->Mapping,0x320,&value) || value != 0x41 ||
@@ -47,6 +48,85 @@ int x86_timer_service(X86_LAPIC_TIMER *state)
         return 0;
     }
     ++state->Count;
+    state->Phase = X86_TIMER_PENDING;
+    return 1;
+}
+
+// ====== source mascherata ferma e senza IRQ prima di una transizione ===== //
+
+static int masked_idle(const X86_LAPIC_TIMER *state)
+{
+    BOOT_U32 value;
+    return x86_timer_read(state->Mapping,0x320,&value) && value == 0x10041 &&
+        x86_timer_read(state->Mapping,0x380,&value) && !value &&
+        x86_timer_read(state->Mapping,0x390,&value) && !value &&
+        x86_timer_read(state->Mapping,0x3e0,&value) && value == 3 && x86_lapic_idle(state->Mapping);
+}
+
+// ====== calibrazione completa prima di rendere riusabile la source ===== //
+
+int x86_timer_events_initialize(X86_LAPIC_TIMER *state)
+{
+    if (!x86_timer_owner_valid(state) || !x86_irq_ready() || state->Phase || state->Error ||
+        !state->Reload || state->Token.Id || state->Token.Vector || state->Token.Reserved || !masked_idle(state)) {
+        return 0;
+    }
+    state->Phase = X86_TIMER_READY;
+    return 1;
+}
+
+// ====== nessun riarmo sopra una consegna non consumata ===== //
+
+int x86_timer_arm(X86_LAPIC_TIMER *state)
+{
+    if (!x86_timer_owner_valid(state) || !x86_irq_ready() || state->Error || !state->Reload ||
+        state->Phase != X86_TIMER_READY || state->Count == ~0U || !state->Token.Id ||
+        state->Token.Vector != 0x41 || state->Token.Reserved ||
+        !x86_irq_registry_token_live(x86_irq_registry(),&state->Token) || !masked_idle(state)) {
+        return 0;
+    }
+    state->Active = 1;
+    state->Phase = X86_TIMER_ARMED;
+    if (!write(state->Mapping,0x320,0x41) || !write(state->Mapping,0x380,state->Reload)) {
+        if (stop(state->Mapping)) { state->Active = 0; state->Phase = X86_TIMER_READY; }
+        state->Error = 3;
+        return 0;
+    }
+    return 1;
+}
+
+// ====== consegna una volta sola a output disgiunto senza conservare prestiti ===== //
+
+int x86_timer_take(X86_LAPIC_TIMER *state, BOOT_U32 *event)
+{
+    BOOT_U64 address = (BOOT_U64)event;
+    if (!event || (address & 3) || address > ~0ULL-sizeof(*event) ||
+        os_address_ranges_overlap(address,sizeof(*event),(BOOT_U64)state,sizeof(*state)) ||
+        os_address_ranges_overlap(address,sizeof(*event),X86_LAPIC_VIRTUAL-4096,12288) ||
+        os_address_ranges_overlap(address,sizeof(*event),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
+        os_address_ranges_overlap(address,sizeof(*event),128ULL<<39,1ULL<<39) ||
+        !x86_timer_owner_valid(state) || !x86_irq_ready() || state->Error ||
+        state->Phase != X86_TIMER_PENDING || !masked_idle(state) ||
+        os_address_ranges_overlap(address,sizeof(*event),(BOOT_U64)state->Mapping,sizeof(*state->Mapping))) {
+        return 0;
+    }
+    *event = state->Count;
+    state->Consumed = state->Count;
+    state->Active = 0;
+    state->Phase = X86_TIMER_READY;
+    return 1;
+}
+
+// ====== chiusura solo dopo consumo e rimozione della subscription ===== //
+
+int x86_timer_events_close(X86_LAPIC_TIMER *state)
+{
+    if (!x86_timer_owner_valid(state) || !x86_irq_ready() || state->Error ||
+        state->Phase != X86_TIMER_READY || state->Token.Id || state->Token.Vector ||
+        state->Token.Reserved || !masked_idle(state)) {
+        return 0;
+    }
+    state->Phase = X86_TIMER_CLOSED;
     return 1;
 }
 
@@ -94,7 +174,10 @@ static int report(BOOT_U64 deliveries)
         kernel_text("\nKERNEL_TIMER_DELIVERED: ") && kernel_number(deliveries) &&
         kernel_text("\nKERNEL_TIMER_SLEEP_RESUME: ") && kernel_number(x86_irq_sleep_resume()) &&
         kernel_text("\nKERNEL_TIMER_PENDING_PROBE: ") && kernel_number(timer.PendingProbe) &&
-        kernel_text("\n") && kernel_log(0,"KERNEL_IRQ_SLEEP_REJECT_OK") && kernel_log(0,"KERNEL_TIMER_OK");
+        kernel_text("\nKERNEL_TIMER_CONSUMED: ") && kernel_number(timer.Consumed) &&
+        kernel_text("\nKERNEL_TIMER_PHASE: ") && kernel_number(timer.Phase) &&
+        kernel_text("\n") && kernel_log(0,"KERNEL_IRQ_SLEEP_REJECT_OK") &&
+        kernel_log(0,"KERNEL_TIMER_EVENTS_OK") && kernel_log(0,"KERNEL_TIMER_OK");
 }
 
 // ====== elapsed PM della singola scadenza senza confonderlo con un timestamp globale ===== //
@@ -119,7 +202,7 @@ static int record_deadline(BOOT_U32 goal, BOOT_U32 start)
 
 static int deadlines(void)
 {
-    BOOT_U32 goal, start, waited;
+    BOOT_U32 goal, start, waited, event;
     if (!x86_irq_registry_bind(x86_irq_registry(),0x41,handle,quiet,&timer.Token)) {
         return 0;
     }
@@ -128,9 +211,7 @@ static int deadlines(void)
             return 0;
         }
         start = x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask;
-        timer.Active = 1;
-        if (!write(timer.Mapping,0x320,0x41) ||
-            !write(timer.Mapping,0x380,timer.Reload)) {
+        if (!x86_timer_arm(&timer)) {
             return 0;
         }
         waited = x86_irq_sleep(&timer.Count,goal,8);
@@ -138,7 +219,10 @@ static int deadlines(void)
             timer.Count != goal || timer.Error || !x86_lapic_idle(timer.Mapping)) {
             return 0;
         }
-        timer.Active = 0;
+        if (x86_timer_arm(&timer) || !x86_timer_take(&timer,&event) ||
+            event != goal || x86_timer_take(&timer,&event)) {
+            return 0;
+        }
         timer.SleepWakes[goal-1] = waited-1;
         // Una consegna gia osservata deve ritornare subito senza HLT aggiuntivi.
         if (x86_irq_sleep(&timer.Count,goal,8) != 1) {
@@ -208,7 +292,7 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
         goto cleanup;
     }
     kernel_log(1,"TIMER_CALIBRATED");
-    if (!deadlines() || !sleep_rejections()) {
+    if (!x86_timer_events_initialize(&timer) || !deadlines() || !sleep_rejections()) {
         kernel_log(3,"TIMER_DEADLINES_FAILED");
         goto cleanup;
     }
@@ -220,7 +304,7 @@ cleanup:
         delivered = x86_irq_registry_deliveries(x86_irq_registry(),&timer.Token);
         detached = stopped && x86_irq_registry_unbind(x86_irq_registry(),&timer.Token);
     }
-    if (stopped && detached && x86_lapic_idle(mapping)) {
+    if (stopped && detached && x86_timer_events_close(&timer) && x86_lapic_idle(mapping)) {
         int divider = write(mapping,0x3e0,timer.OriginalDivide);
         int lvt = write(mapping,0x320,timer.OriginalLvt);
         restored = divider && lvt;

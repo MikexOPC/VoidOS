@@ -21,7 +21,7 @@ LAPIC idle. Initial Count puo conservare il reload di una scadenza
 firmware gia terminata: non viene confuso con un timer ancora attivo.
 Prima della calibrazione viene comunque azzerato e verificato.
 
-L'owner statico occupa 136 byte, inclusi contatori del sonno e delle prove
+L'owner statico occupa 144 byte, inclusi contatori del sonno e delle prove
 di evento gia consegnato. Non vengono allocate nuove pagine
 RAM o nuovi mapping MMIO. C controlla ownership, letture e cleanup;
 Rust verifica profilo, wrap PM, snapshot precedente e conversione;
@@ -31,6 +31,9 @@ Il vettore 0x41 viene registrato prima di armare tre scadenze oneshot.
 Ogni gestore, con IF=0, verifica il profilo, ferma e maschera la sorgente,
 manda EOI solo se 0x41 e l'unico vettore in servizio, poi incrementa
 Count. Non alloca memoria, non stampa e non riarma durante l'IRQ.
+La consegna resta pending finche il kernel la consuma; il successivo
+riarmo richiede consumo completato e token ancora vivo nel registro IRQ.
+Il [contratto eventi](events.md) descrive inizializzazione, riarmo e chiusura.
 
 Dopo ciascuna scadenza viene confrontato anche l'intervallo PM:
 circa 5–200 ms, una tolleranza diagnostica ampia per TCG. Non costituisce
@@ -41,7 +44,8 @@ sonno; un evento gia consegnato ritorna senza dormire. Il budget di
 risvegli non e un timeout: se il timer non consegna alcun IRQ, serve
 un watchdog indipendente. In QEMU lo script impone un limite esterno.
 
-Il cleanup tenta maschera e arresto, richiede quiescenza prima di unbind,
+Il cleanup tenta maschera e arresto e richiede quiescenza prima di unbind.
+La conclusione riuscita richiede consumo completo e chiusura degli eventi,
 poi ripristina LVT e divisore precedenti. Initial Count resta zero;
 riscrivere il vecchio reload riavvierebbe il timer firmware scaduto.
 La subscription non viene rimossa se la sorgente non risulta fermata.

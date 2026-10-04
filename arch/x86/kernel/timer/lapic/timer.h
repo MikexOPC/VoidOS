@@ -5,6 +5,10 @@
 #include "arch/x86/kernel/interrupts/registry/registry.h"
 #define X86_PM_CLOCK_HZ 3579545U
 #define X86_PM_SAMPLE_TICKS (X86_PM_CLOCK_HZ/100U)
+#define X86_TIMER_READY 1U
+#define X86_TIMER_ARMED 2U
+#define X86_TIMER_PENDING 3U
+#define X86_TIMER_CLOSED 4U
 typedef struct { BOOT_U64 Physical; BOOT_U32 Length, Port, Mask, Ready; } X86_PM_CLOCK;
 typedef struct { BOOT_U32 Start, End, PmTicks, Reload; } X86_TIMER_SAMPLE;
 typedef struct {
@@ -17,14 +21,20 @@ typedef struct {
     BOOT_U32 OriginalLvt, OriginalDivide;
     BOOT_U32 DeadlinePm[3], Reserved;
     BOOT_U32 SleepWakes[3], PendingProbe;
+    BOOT_U32 Consumed, Phase;
 } X86_LAPIC_TIMER;
-_Static_assert(sizeof(X86_LAPIC_TIMER) == 136, "Owner timer e ABI wait");
+_Static_assert(sizeof(X86_LAPIC_TIMER) == 144, "Owner timer e ABI wait");
 _Static_assert(offsetof(X86_LAPIC_TIMER, Error) == 4, "Prefisso attesa IRQ");
 BOOT_U32 x86_pm_clock_port(BOOT_U64 port, BOOT_U32 flags, BOOT_U32 length);
 BOOT_U32 x86_pm_elapsed(BOOT_U32 start, BOOT_U32 end, BOOT_U32 mask);
 BOOT_U32 x86_timer_reload(BOOT_U32 start, BOOT_U32 end, BOOT_U32 elapsed);
 BOOT_U32 x86_timer_previous_valid(BOOT_U32 lvt, BOOT_U32 divide, BOOT_U32 current);
 BOOT_U32 x86_timer_wait_result(BOOT_U32 result, BOOT_U32 budget, BOOT_U32 count, BOOT_U32 error, BOOT_U32 goal);
+BOOT_U32 x86_timer_event_fields(BOOT_U32 count, BOOT_U32 consumed, BOOT_U32 phase, BOOT_U32 active);
+int x86_timer_events_initialize(X86_LAPIC_TIMER *timer);
+int x86_timer_arm(X86_LAPIC_TIMER *timer);
+int x86_timer_take(X86_LAPIC_TIMER *timer, BOOT_U32 *event);
+int x86_timer_events_close(X86_LAPIC_TIMER *timer);
 int x86_pm_clock_capture(const KERNEL_ACPI_DIRECTORY *directory, BOOT_U32 bits,
     KERNEL_ACPI_READ read, void *context, X86_PM_CLOCK *output);
 int x86_timer_read(const X86_LAPIC_MAPPING *mapping, BOOT_U32 offset, BOOT_U32 *output);

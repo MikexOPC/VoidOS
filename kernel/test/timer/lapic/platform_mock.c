@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/timer/lapic/timer.h"
+BOOT_U32 test_timer_token_live = 1;
 
 // ====== servizi non esercitati nei test di parsing calibrazione e handler ===== //
 
@@ -6,6 +7,11 @@ int x86_irq_ready(void) { return 1; }
 int x86_lapic_authority(const X86_LAPIC_MAPPING *mapping) { return mapping != 0; }
 BOOT_U32 x86_apic_lapic_version(BOOT_U32 value) { return value == 0x50014; }
 X86_IRQ_REGISTRY *x86_irq_registry(void) { return 0; }
+int x86_irq_registry_token_live(const X86_IRQ_REGISTRY *registry, const X86_IRQ_TOKEN *token)
+{
+    (void)registry;
+    return test_timer_token_live && token && token->Id == 2 && token->Vector == 0x41 && !token->Reserved;
+}
 int x86_irq_registry_bind(X86_IRQ_REGISTRY *registry, BOOT_U32 vector,
     X86_IRQ_CALLBACK handle, X86_IRQ_CALLBACK quiet, X86_IRQ_TOKEN *token)
 {

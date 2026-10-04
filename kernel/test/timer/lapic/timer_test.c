@@ -4,6 +4,7 @@ static KERNEL_ACPI_DIRECTORY directory;
 static X86_LAPIC_MAPPING mapping;
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 pm, lvt, initial, current, divide, stalled, eoi = 1, fail_write;
+extern BOOT_U32 test_timer_token_live;
 
 // ====== ambiente senza istruzioni privilegiate e byte firmware in memoria host ===== //
 
@@ -82,6 +83,7 @@ static void reset(void)
     timer.Clock.Port = 0x408; timer.Clock.Mask = 0xffffff; timer.Clock.Ready = 1;
     timer.Clock.Length = 244; timer.Clock.Physical = 0x2000;
     pm = 0xffff00; initial = current = divide = stalled = fail_write = 0; eoi = 1; lvt = 0x10040;
+    test_timer_token_live = 1;
     checksum();
 }
 
@@ -154,14 +156,57 @@ static int measurement(void)
 
 static int service(void)
 {
-    reset(); timer.Active = 1; timer.Reload = initial = 100; divide = 3; lvt = 0x41;
+    reset(); timer.Active = 1; timer.Phase = X86_TIMER_ARMED; timer.Reload = initial = 100; divide = 3; lvt = 0x41;
     if (!x86_timer_service(&timer) || timer.Count != 1 || timer.Error || lvt != 0x10041) return 1;
-    lvt = 0x41; initial = 100; eoi = 0;
+    timer.Phase = X86_TIMER_ARMED; timer.Consumed = 1; lvt = 0x41; initial = 100; eoi = 0;
     if (x86_timer_service(&timer) || timer.Count != 1 || !timer.Error) return 2;
-    reset(); timer.Active = 1; timer.Reload = initial = 100; lvt = 0x41; divide = 3; current = 1;
+    reset(); timer.Active = 1; timer.Phase = X86_TIMER_ARMED; timer.Reload = initial = 100; lvt = 0x41; divide = 3; current = 1;
     if (x86_timer_service(&timer) || timer.Count) return 3;
-    reset(); timer.Active = 1; timer.Reload = initial = 100; lvt = 0x20041; divide = 3;
+    reset(); timer.Active = 1; timer.Phase = X86_TIMER_ARMED; timer.Reload = initial = 100; lvt = 0x20041; divide = 3;
     if (x86_timer_service(&timer) || timer.Count) return 4;
+    return 0;
+}
+
+// ====== mille cicli senza perdere eventi sovrascrivere output o riarmare pending ===== //
+
+static int event_cycles(void)
+{
+    BOOT_U32 index, event = 77;
+    reset(); timer.Reload = 100; lvt = 0x10041; divide = 3;
+    if (!x86_timer_events_initialize(&timer) || x86_timer_events_initialize(&timer)) return 1;
+    if (x86_timer_arm(&timer) || x86_timer_take(&timer,&event) || event != 77) return 2;
+    timer.Token.Id = 2; timer.Token.Vector = 0x41;
+    test_timer_token_live = 0;
+    if (x86_timer_arm(&timer) || timer.Active || initial || current) return 12;
+    test_timer_token_live = 1;
+    if (x86_timer_events_close(&timer)) return 3;
+    for (index = 1; index <= 1000; ++index) {
+        if (!x86_timer_arm(&timer) || x86_timer_arm(&timer) || x86_timer_take(&timer,&event)) return 4;
+        current = 0;
+        if (!x86_timer_service(&timer) || x86_timer_arm(&timer) ||
+            x86_timer_events_close(&timer) || timer.Consumed != index-1) return 5;
+        if (x86_timer_take(&timer,(BOOT_U32 *)&timer) ||
+            x86_timer_take(&timer,(BOOT_U32 *)X86_LAPIC_VIRTUAL) ||
+            x86_timer_take(&timer,(BOOT_U32 *)((unsigned char *)&event+1))) return 6;
+        if (!x86_timer_take(&timer,&event) || event != index ||
+            x86_timer_take(&timer,&event) || timer.Consumed != index || timer.Active) return 7;
+    }
+    timer.Token.Id = 0; timer.Token.Vector = 0;
+    if (!x86_timer_events_close(&timer) || x86_timer_events_close(&timer) ||
+        x86_timer_arm(&timer) || x86_timer_take(&timer,&event)) return 8;
+    reset(); timer.Reload = 100; lvt = 0x10041; divide = 3;
+    if (!x86_timer_events_initialize(&timer)) return 9;
+    timer.Token.Id = 2; timer.Token.Vector = 0x41; fail_write = 1;
+    if (x86_timer_arm(&timer) || timer.Error != 3 || x86_timer_take(&timer,&event)) return 10;
+    reset(); timer.Phase = X86_TIMER_READY; timer.Count = timer.Consumed = ~0U;
+    lvt = 0x10041; divide = 3;
+    timer.Reload = 100; timer.Token.Id = 2; timer.Token.Vector = 0x41;
+    if (x86_timer_arm(&timer) || timer.Count != ~0U) return 11;
+    timer.Count = timer.Consumed = ~0U-1;
+    if (!x86_timer_arm(&timer)) return 13;
+    current = 0;
+    if (!x86_timer_service(&timer) || timer.Count != ~0U ||
+        !x86_timer_take(&timer,&event) || event != ~0U || x86_timer_arm(&timer)) return 14;
     return 0;
 }
 
@@ -196,5 +241,7 @@ __declspec(dllexport) int run_lapic_timer_tests(void)
     result = service(); if (result) return 400+result;
     result = lifetimes();
     if (result) return 500+result;
+    result = event_cycles();
+    if (result) return 600+result;
     return 0;
 }

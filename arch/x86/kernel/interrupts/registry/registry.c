@@ -202,3 +202,13 @@ BOOT_U64 x86_irq_registry_deliveries(const X86_IRQ_REGISTRY *registry, const X86
     item = lookup(registry,token);
     return item ? item->Delivered : 0;
 }
+
+// ====== token corrente senza fault prima di riarmare una sorgente ===== //
+
+int x86_irq_registry_token_live(const X86_IRQ_REGISTRY *registry, const X86_IRQ_TOKEN *token)
+{
+    const X86_IRQ_SUBSCRIPTION *item;
+    if (!control(registry)) return 0;
+    item = lookup(registry,token);
+    return item && !item->Fault;
+}

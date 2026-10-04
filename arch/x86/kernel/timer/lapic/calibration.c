@@ -136,7 +136,7 @@ int x86_timer_owner_valid(const X86_LAPIC_TIMER *timer)
         os_address_ranges_overlap(address,sizeof(*timer),128ULL<<39,1ULL<<39)) {
         return 0;
     }
-    return !timer->Reserved && timer->Active <= 1 && timer->Count <= 3 &&
+    return !timer->Reserved && x86_timer_event_fields(timer->Count,timer->Consumed,timer->Phase,timer->Active) &&
         timer->Mapping && clock_valid(&timer->Clock) &&
         !os_address_ranges_overlap(address,sizeof(*timer),(BOOT_U64)timer->Mapping,sizeof(*timer->Mapping)) &&
         x86_lapic_validate(timer->Mapping);

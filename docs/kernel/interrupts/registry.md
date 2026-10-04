@@ -15,6 +15,9 @@ callback non nulle nell'intervallo dichiarato e dispositivo quiescente.
 Il registro non sostituisce implicitamente una subscription viva.
 I token di 16 byte contengono ID monotono, vettore e Reserved=0.
 Next non va in wrap: l'esaurimento rifiuta nuove registrazioni.
+Token-live verifica ID e vettore correnti, assenza di fault e Busy=0
+prima di consentire al driver timer un nuovo riarmo. Non basta che
+un token conservato contenga un ID nonzero.
 
 Le callback sono funzioni kernel fidate con durata pari al kernel;
 gli indirizzi sono confrontati con l'intervallo immagine, senza pretendere

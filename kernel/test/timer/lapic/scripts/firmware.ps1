@@ -2,7 +2,7 @@
 
 function Write-LapicTimerMonitor($log, $vm) {
     $owner = Read-Hex $log 'KERNEL_TIMER_OWNER: 0x([0-9a-f]{16})'
-    $vm.StandardInput.WriteLine('x /17gx 0x'+$owner.ToString('x16'))
+    $vm.StandardInput.WriteLine('x /18gx 0x'+$owner.ToString('x16'))
     $resume = Read-Hex $log 'KERNEL_TIMER_SLEEP_RESUME: 0x([0-9a-f]{16})'
     $vm.StandardInput.WriteLine('x /3bx 0x'+($resume-2).ToString('x16'))
     # Il monitor QEMU espone i registri APIC tramite info lapic, non x MMIO.
@@ -22,7 +22,7 @@ function Read-TimerWord($registers, [uint64]$address) {
 function Test-LapicTimerMonitorRejections($log, $registers, $cpuLog) {
     Test-LapicTimerFirmware $log $registers $cpuLog
     $owner = Read-Hex $log 'KERNEL_TIMER_OWNER: 0x([0-9a-f]{16})'
-    foreach ($offset in @(0,8,24,32,72,80,88,96,112,120,128)) {
+    foreach ($offset in @(0,8,24,32,72,80,88,96,112,120,128,136)) {
         $address = ($owner+($offset -band -16)).ToString('x16')
         $row = [regex]::Match($registers,'(?im)^'+$address+':\s+0x([0-9a-f]{16})(?:\s+0x([0-9a-f]{16}))?')
         if (!$row.Success) { throw 'Fixture timer incompleta.' }
@@ -45,7 +45,7 @@ function Test-LapicTimerMonitorRejections($log, $registers, $cpuLog) {
     $rejected = $false
     try { Test-LapicTimerFirmware ($log.Replace($resume.ToString('x16'),($resume+1).ToString('x16'))) $registers $cpuLog } catch { $rejected=$true }
     if (!$rejected) { throw 'Ritorno dal sonno falso accettato.' }
-    Write-Output 'Timer LAPIC: fotografia reale valida e 13 alterazioni rifiutate.'
+    Write-Output 'Timer LAPIC: fotografia reale valida e 14 alterazioni rifiutate.'
 }
 
 # ============ due conversioni ricalcolate dai campioni raw ============ #
@@ -56,8 +56,9 @@ function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
     $reload = Read-Hex $log 'KERNEL_TIMER_RELOAD: 0x([0-9a-f]{16})'
     $mask = Read-Hex $log 'KERNEL_TIMER_PM_MASK: 0x([0-9a-f]{16})'
     $port = Read-Hex $log 'KERNEL_TIMER_PM_PORT: 0x([0-9a-f]{16})'
-    if (!$log.Contains('KERNEL_TIMER_OK') -or !$log.Contains('KERNEL_IRQ_SLEEP_REJECT_OK') -or ($owner -band 7) -or
-        $owner -lt 0x100000000 -or $owner+136 -gt 0x100100000 -or
+    if (!$log.Contains('KERNEL_TIMER_OK') -or !$log.Contains('KERNEL_TIMER_EVENTS_OK') -or
+        !$log.Contains('KERNEL_IRQ_SLEEP_REJECT_OK') -or ($owner -band 7) -or
+        $owner -lt 0x100000000 -or $owner+144 -gt 0x100100000 -or
         !$reload -or $reload -gt 4294967295L -or $mask -notin @(16777215L,4294967295L) -or
         $port -lt 256 -or $port -gt 65532 -or ($port -band 3) -or ($port -ge 1016 -and $port -lt 1024) -or
         (Read-Hex $log 'KERNEL_TIMER_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 3 -or
@@ -67,7 +68,10 @@ function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
         (Read-TimerWord $registers ($owner+8)) -ne $mapping -or
         (Read-TimerWord $registers ($owner+72)) -ne $reload -or
         (Read-TimerWord $registers ($owner+80)) -ne 0 -or
-        (Read-TimerWord $registers ($owner+88)) -ne 0) { throw 'Timer: owner o consegne non conformi.' }
+        (Read-TimerWord $registers ($owner+88)) -ne 0 -or
+        (Read-TimerWord $registers ($owner+136)) -ne 17179869187L -or
+        (Read-Hex $log 'KERNEL_TIMER_CONSUMED: 0x([0-9a-f]{16})') -ne 3 -or
+        (Read-Hex $log 'KERNEL_TIMER_PHASE: 0x([0-9a-f]{16})') -ne 4) { throw 'Timer: owner o consegne non conformi.' }
     $clock = Read-TimerWord $registers ($owner+24)
     $length = $clock -band 4294967295L
     if ($length -lt 116 -or $length -gt 4096 -or ($clock -shr 32) -ne $port -or

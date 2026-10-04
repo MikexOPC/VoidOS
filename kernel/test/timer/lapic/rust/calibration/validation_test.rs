@@ -1,6 +1,26 @@
 #[path = "../../../../../../arch/x86/kernel/timer/lapic/rust/calibration/validation.rs"]
 mod validation;
 
+// ====== un solo evento non consumato e nessun wrap delle sequenze ===== //
+
+#[test]
+fn event_states() {
+    for count in [0,1,3,1024,u32::MAX] {
+        assert_eq!(validation::x86_timer_event_fields(count,count,1,0),1);
+        assert_eq!(validation::x86_timer_event_fields(count,count,4,0),1);
+        assert_eq!(validation::x86_timer_event_fields(count,count,2,1),u32::from(count < u32::MAX));
+        if count > 0 {
+            assert_eq!(validation::x86_timer_event_fields(count,count-1,3,1),1);
+            assert_eq!(validation::x86_timer_event_fields(count,count-1,1,0),0);
+        }
+    }
+    for (count,consumed,phase,active) in [(0,0,0,0),(1,0,0,0),(2,0,3,1),
+        (0,1,1,0),(0,0,5,0),(0,0,1,1),(1,0,3,0)] {
+        assert_eq!(validation::x86_timer_event_fields(count,consumed,phase,active),
+            u32::from((count,consumed,phase,active)==(0,0,0,0)));
+    }
+}
+
 // ====== risultati attesa finita senza confondere budget e tempo massimo ===== //
 
 #[test]

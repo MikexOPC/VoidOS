@@ -1,5 +1,18 @@
 #![cfg_attr(not(test), no_std)]
 
+// ====== stati della source con backpressure prima del prossimo riarmo ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_timer_event_fields(count: u32, consumed: u32, phase: u32, active: u32) -> u32 {
+    u32::from(match phase {
+        0 => count == 0 && consumed == 0 && active == 0,
+        1 | 4 => count == consumed && active == 0,
+        2 => count == consumed && active == 1 && count < u32::MAX,
+        3 => consumed.checked_add(1) == Some(count) && active == 1,
+        _ => false,
+    })
+}
+
 // ====== consegna esatta e numero di risvegli entro il budget dichiarato ===== //
 
 #[unsafe(no_mangle)]

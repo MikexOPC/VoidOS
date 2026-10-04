@@ -24,7 +24,7 @@ static int handler(void)
     ++calls;
     if (x86_irq_registry_bind(&registry,0x41,handler,quiet,&output) ||
         x86_irq_registry_unbind(&registry,&first) ||
-        x86_irq_registry_deliver(&registry,0x40)) return 0;
+        x86_irq_registry_deliver(&registry,0x40) || x86_irq_registry_token_live(&registry,&first)) return 0;
     return (int)handle_result;
 }
 
@@ -70,6 +70,7 @@ static int lifecycle(void)
     if (!x86_irq_registry_bind(&registry,0x40,handler,quiet,&first) || first.Id != 1 ||
         !x86_irq_registry_bind(&registry,0x41,handler,quiet,&second) || second.Id != 2) return 2;
     save();
+    if (!x86_irq_registry_token_live(&registry,&first) || !x86_irq_registry_token_live(&registry,&second)) return 12;
     if (x86_irq_registry_bind(&registry,0x40,handler,quiet,&other) || !unchanged() || other.Id) return 3;
     if (!x86_irq_registry_deliver(&registry,0x40) || calls != 1 ||
         x86_irq_registry_deliveries(&registry,&first) != 1 ||
@@ -79,9 +80,11 @@ static int lifecycle(void)
     if (x86_irq_registry_unbind(&registry,&first) || !unchanged() || first.Id != stale.Id) return 5;
     quiet_result = 1;
     if (!x86_irq_registry_unbind(&registry,&first) || first.Id || first.Vector || first.Reserved) return 6;
-    if (x86_irq_registry_unbind(&registry,&stale) || x86_irq_registry_deliver(&registry,0x40)) return 7;
+    if (x86_irq_registry_unbind(&registry,&stale) || x86_irq_registry_deliver(&registry,0x40) ||
+        x86_irq_registry_token_live(&registry,&stale)) return 7;
     if (!x86_irq_registry_bind(&registry,0x40,handler,quiet,&first) || first.Id != 3 ||
-        x86_irq_registry_unbind(&registry,&stale)) return 8;
+        x86_irq_registry_unbind(&registry,&stale) || x86_irq_registry_token_live(&registry,&stale) ||
+        !x86_irq_registry_token_live(&registry,&first)) return 8;
     if (!x86_irq_registry_unbind(&registry,&first) || !x86_irq_registry_unbind(&registry,&second)) return 9;
     for (byte = 0; byte < sizeof(registry.Slots); ++byte)
         if (((unsigned char *)registry.Slots)[byte]) return 10;
@@ -95,7 +98,8 @@ static int failure(void)
     if (!reset() || !x86_irq_registry_bind(&registry,0x40,handler,quiet,&first)) return 1;
     handle_result = 0;
     if (x86_irq_registry_deliver(&registry,0x40) || calls != 1 ||
-        x86_irq_registry_deliveries(&registry,&first) || registry.Slots[0].Fault != 1 || registry.Busy) return 2;
+        x86_irq_registry_deliveries(&registry,&first) || registry.Slots[0].Fault != 1 || registry.Busy ||
+        x86_irq_registry_token_live(&registry,&first)) return 2;
     handle_result = 1;
     if (x86_irq_registry_deliver(&registry,0x40) || calls != 1) return 3;
     quiet_result = 0;
