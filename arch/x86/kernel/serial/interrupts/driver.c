@@ -119,35 +119,9 @@ int x86_uart_route_apply(X86_PAGE_WINDOW *window, const X86_APIC_PROFILE *profil
     return x86_apic_borrow(window,request.Io->Address,profile->CacheBits,1,configure,&request);
 }
 
-// ====== ISR contiene soltanto il vettore reale assegnato alla seriale ===== //
-
-static int service_bitmap(BOOT_U32 expected)
-{
-    BOOT_U32 index, value;
-    for (index = 0; index < 8; ++index) {
-        if (!x86_apic_control_read(0x100+index*16,&value) ||
-            value != (index == 2 ? expected : 0)) return 0;
-    }
-    return 1;
-}
-
-// ====== ACK UART precede EOI zero e ISR vuoto dopo la scrittura ===== //
-
-static int complete(void *state)
-{
-    (void)state;
-    return service_bitmap(1) && x86_uart_lapic_eoi_zero() && service_bitmap(0);
-}
-// ====== prestito LAPIC revocato anche se il completamento fallisce ===== //
-
-int x86_uart_eoi(X86_PAGE_WINDOW *window, const X86_APIC_PROFILE *profile)
-{
-    return x86_exception_environment() && profile &&
-        x86_apic_borrow(window,profile->Lapic,profile->CacheBits,1,complete,(void *)profile);
-}
-
 #define COM1 0x3f8U
 static X86_UART_IRQ_OWNER owner;
+static X86_LAPIC_MAPPING mapping;
 static X86_UART_ROUTE route;
 static BOOT_U32 finished;
 
@@ -179,9 +153,8 @@ static int owner_valid(const X86_UART_IRQ_OWNER *state)
 {
     BOOT_U64 target = (BOOT_U64)state;
     return state && !(target & 7) && target <= ~0ULL-sizeof(*state) &&
-        state->Window && state->Window->Pool && state->Profile && !state->Reserved &&
-        !os_address_ranges_overlap(target,sizeof(*state),(BOOT_U64)state->Window,sizeof(*state->Window)) &&
-        !os_address_ranges_overlap(target,sizeof(*state),(BOOT_U64)state->Window->Pool,sizeof(*state->Window->Pool)) &&
+        state->Mapping && state->Profile && !state->Reserved &&
+        !os_address_ranges_overlap(target,sizeof(*state),(BOOT_U64)state->Mapping,sizeof(*state->Mapping)) &&
         !os_address_ranges_overlap(target,sizeof(*state),(BOOT_U64)state->Profile,sizeof(*state->Profile)) &&
         !os_address_ranges_overlap(target,sizeof(*state),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES);
 }
@@ -199,7 +172,7 @@ int x86_uart_irq_service(X86_UART_IRQ_OWNER *state)
         (x86_read_port(COM1+2) & 1);
     // Disabilitare IER anche se un dispositivo presenta una causa inattesa.
     if (!acknowledged) { uart_disable(); state->Error = 1; }
-    completed = x86_uart_eoi(state->Window,state->Profile);
+    completed = x86_lapic_eoi(state->Mapping);
     if (!completed) state->Error = 2;
     if (!acknowledged || !completed) return 0;
     ++state->Count;
@@ -211,19 +184,6 @@ int x86_uart_irq_service(X86_UART_IRQ_OWNER *state)
 int x86_uart_irq_handle(void)
 {
     return x86_uart_irq_service(&owner);
-}
-
-// ====== pending LAPIC vuoti dopo il completamento e prima del prossimo arm ===== //
-
-static int pending_empty(void *state)
-{
-    BOOT_U32 index, value;
-    (void)state;
-    for (index = 0; index < 8; ++index) {
-        if (!x86_apic_control_read(0x100+index*16,&value) || value ||
-            !x86_apic_control_read(0x200+index*16,&value) || value) return 0;
-    }
-    return 1;
 }
 
 // ====== ripristino OUT2 originale con readback e UART interrupt chiusi ===== //
@@ -256,34 +216,35 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
 {
     BOOT_U32 goal;
     unsigned char saved;
-    int result = 0, closed, restored;
+    int result = 0, closed, restored, unmapped;
     if (finished || owner.Active || !x86_irq_ready() ||
         !x86_apic_mapping_ready(context,window,inventory,topology,profile) ||
         !x86_uart_route_plan(topology,caps,&route) || !uart_disable() || !uart_idle()) return 0;
     saved = x86_read_port(COM1+4);
     if (saved & ~3U) return 0;
-    owner.Window = window; owner.Profile = profile;
+    if (!x86_lapic_bind(context,window,inventory,topology,profile,&mapping)) return 0;
+    owner.Mapping = &mapping; owner.Profile = profile;
     owner.Count = owner.Error = 0; owner.Active = 1;
     x86_write_port(COM1+4,saved | 8);
     if (x86_read_port(COM1+4) != (saved | 8) ||
         !x86_uart_route_apply(window,profile,caps,&route,0)) goto cleanup;
     for (goal = 1; goal <= 3; ++goal) {
         if (!x86_exception_environment() || !uart_idle() ||
-            !x86_apic_borrow(window,profile->Lapic,profile->CacheBits,0,pending_empty,&owner)) goto cleanup;
+            !x86_lapic_idle(&mapping)) goto cleanup;
         x86_write_port(COM1+1,2);
         // Il riarmo a THRE gia alto e verificato sul modello QEMU 16550A.
         // UART fisiche possono richiedere una vera transizione TX: timeout = rifiuto.
         if (x86_read_port(COM1+1) != 2 || !x86_uart_irq_wait(&owner.Count,goal,10000000) ||
             owner.Count != goal || owner.Error || !x86_exception_environment()) goto cleanup;
     }
-    result = 1;
+    result = x86_lapic_report(&mapping);
 cleanup:
     restored = uart_restore(saved);
     closed = x86_uart_route_apply(window,profile,caps,&route,1);
     owner.Active = 0;
     finished = 1;
-    if (!restored || !closed || !result || !x86_irq_ready() ||
-        !x86_apic_borrow(window,profile->Lapic,profile->CacheBits,0,pending_empty,&owner) ||
+    unmapped = restored && closed && x86_lapic_idle(&mapping) && x86_lapic_unbind(&mapping);
+    if (!unmapped || !result || !x86_irq_ready() ||
         !x86_apic_mapping_ready(context,window,inventory,topology,profile)) return 0;
     return report();
 }

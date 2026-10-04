@@ -10,6 +10,9 @@ static X86_APIC_PROFILE profile;
 static X86_APIC_CAPABILITIES output;
 static unsigned char map[80];
 static BOOT_U64 entries[512];
+static BOOT_U64 parents[3][512];
+static X86_LAPIC_MAPPING uart_mapping;
+static BOOT_U32 lapic_fault;
 static BOOT_U32 selector, invalidations, writes, reads, fault, order_error, cache_bad;
 static BOOT_U32 lapic_id, lapic_version, io_id, io_version;
 
@@ -22,7 +25,8 @@ int kernel_text(const char *text) { return text != 0; }
 int kernel_number(BOOT_U64 value) { (void)value; return 1; }
 int kernel_log(unsigned int level, const char *text) { (void)level; return text != 0; }
 const volatile BOOT_U64 *x86_paging_view(BOOT_U64 address) { (void)address; return entries; }
-volatile BOOT_U64 *x86_window_entries(BOOT_U32 level) { return level == 3 ? entries : 0; }
+volatile BOOT_U64 *x86_window_entries(BOOT_U32 level) { return level == 3 ? entries : level < 3 ? parents[level] : 0; }
+BOOT_U64 x86_kernel_root(void) { return 0x1000; }
 int x86_paging_inventory_verify(const KERNEL_BOOT_CONTEXT *ctx, const KERNEL_PHYSICAL_ALLOCATOR *owner,
                                 const X86_PAGING_INVENTORY *inventory)
 {
@@ -37,6 +41,11 @@ int x86_page_window_idle_valid(const X86_PAGE_WINDOW *target)
 }
 void x86_invalidate_page(BOOT_U64 address)
 {
+    if (address == X86_LAPIC_VIRTUAL) {
+        if (window.Active || pool.FreePages != 123) order_error = 1;
+        if (lapic_fault == 3 && entries[X86_LAPIC_LEAF]) entries[X86_LAPIC_LEAF] |= 4;
+        return;
+    }
     if (address != X86_KERNEL_PAGE_WINDOW || window.Active != 2 || pool.FreePages != 123) order_error = 1;
     ++invalidations;
     if (fault == 99 && invalidations == 1) entries[32] |= 4;
@@ -85,6 +94,10 @@ static void fixture(void)
     clear(&context, sizeof(context)); clear(&pool, sizeof(pool)); clear(&window, sizeof(window));
     clear(&ledger, sizeof(ledger)); clear(&topology, sizeof(topology)); clear(&profile, sizeof(profile));
     clear(&output, sizeof(output)); clear(map, sizeof(map)); clear(entries, sizeof(entries));
+    clear(parents,sizeof(parents)); clear(&uart_mapping,sizeof(uart_mapping)); lapic_fault = 0;
+    parents[0][128] = (1ULL<<63) | 0x1003; parents[0][224] = 0x2003;
+    parents[1][0] = 0x3003; parents[2][0] = 0x4003;
+    window.Root = context.Info.PageTableRoot = 0x1000;
     map[0] = 7; put(map + 8, 0x100000); put(map + 24, 128); map[32] = 8;
     context.MemoryMap = map; context.Info.MemoryMapBytes = 40; context.Info.MemoryMapCapacity = 80;
     context.Info.MemoryDescriptorBytes = 40;
@@ -264,8 +277,29 @@ int test_uart_apply(const X86_UART_ROUTE *route, BOOT_U32 masked)
 }
 void test_uart_owner(X86_UART_IRQ_OWNER *state)
 {
-    X86_UART_IRQ_OWNER draft = {0,0,&window,&profile,1,0};
+    X86_UART_IRQ_OWNER draft = {0,0,&uart_mapping,&profile,1,0};
+    x86_lapic_bind(&context,&window,&ledger,&topology,&profile,&uart_mapping);
     *state = draft;
+}
+
+// ====== backend mapping LAPIC separato dalla lease RAM ===== //
+
+int test_lapic_bind(X86_LAPIC_MAPPING *owner)
+{
+    return x86_lapic_bind(&context,&window,&ledger,&topology,&profile,owner);
+}
+BOOT_U64 test_lapic_entry(void) { return entries[X86_LAPIC_LEAF]; }
+void test_lapic_ram_busy(BOOT_U32 busy)
+{
+    window.Active = busy;
+    entries[32] = busy ? 0x5003 | (1ULL<<63) : 0;
+}
+void test_lapic_fault(BOOT_U32 kind)
+{
+    if (kind == 1) entries[X86_LAPIC_LEAF] = 0x5003;
+    if (kind == 2) entries[X86_LAPIC_LEAF-1] = 0x5003;
+    if (kind == 3) lapic_fault = 3;
+    if (kind == 4) entries[X86_LAPIC_LEAF] |= 4;
 }
 void test_uart_variant(BOOT_U32 kind)
 {

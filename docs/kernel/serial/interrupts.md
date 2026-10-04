@@ -46,16 +46,18 @@ ISR contenga esclusivamente il vettore 0x40, scrive zero in EOI LAPIC
 e verifica ISR vuoto. Count aumenta soltanto dopo tutti questi passi.
 Errori dell'handler sono terminali, senza attestare una consegna riuscita.
 
-Il prestito LAPIC usa la finestra esistente con cache UC, supervisor,
-RW e NX. L'handler puo usarla perche il solo foreground durante IF=1
-legge i contatori; Active protegge il prestito e ogni ritorno recuperabile
-revoca PTE e invalida TLB. NMI/fault restano terminali. Questo contratto
-UP non e sufficiente per handler generali, nesting o SMP: serviranno
-mapping dispositivi permanenti e ownership appropriata prima di ampliarli.
+Il LAPIC usa ora una pagina dedicata, UC, supervisor, RW e NX,
+presente per l'intera vita della prova: l'handler non modifica piu
+la finestra RAM. Setup e chiusura I/O APIC continuano a usare prestiti
+temporanei con IF=0. NMI/fault restano terminali. Il foreground della
+prova continua a leggere soltanto i contatori mentre IF=1.
+Il contratto resta UP, senza nesting o SMP.
 
 Dopo tre consegne, IER e chiuso, OUT2 torna al valore iniziale, la
 rotta e mascherata, Active=0, IF=0, ISR/IRR vuoti, IDTR invariata e
-finestra revocata. `KERNEL_UART_IRQ_OK` segue queste verifiche.
+finestra revocata. Anche il mapping LAPIC viene revocato solo dopo
+la chiusura della sorgente. `KERNEL_UART_IRQ_OK` segue queste verifiche.
+[Ownership e durata del mapping dedicato](../../mm/devices/lapic.md).
 
 ## Test e limiti
 

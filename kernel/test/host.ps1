@@ -183,4 +183,4 @@ foreach ($method in @('run_stack_tests','run_segment_tests','run_main_stack_test
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
-Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 43 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 45 test Rust complessivi.'

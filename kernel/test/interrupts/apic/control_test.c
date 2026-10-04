@@ -13,6 +13,8 @@ BOOT_U32 test_mask_lapic_version(void);
 BOOT_U32 test_mask_io_version(void);
 void test_mask_variant(BOOT_U32 maximum, BOOT_U32 inputs, BOOT_U32 pcat);
 void test_mask_nmi(BOOT_U32 kind);
+BOOT_U64 test_lapic_entry(void);
+void test_lapic_ram_busy(BOOT_U32 busy);
 static BOOT_U32 local[64], routes[240], selector, calls, fail, stores, bad, port_writes;
 static unsigned char master, slave;
 static unsigned char ier, iir, lcr;
@@ -148,11 +150,20 @@ __declspec(dllexport) int run_apic_control_tests(void)
 
 // ====== EOI modello exige ACK precedente e non modifica altri ISR ===== //
 
-int x86_uart_lapic_eoi_zero(void)
+int x86_lapic_native_eoi(void)
 {
-    if (test_mask_physical() != 0xfee00000 || in_service != 1 || ier) return 0;
+    if ((test_lapic_entry() & 0x000ffffffffff000ULL) != 0xfee00000 || in_service != 1 || ier) return 0;
     ++eois;
     if (uart_bad != 2) in_service = 0;
+    return 1;
+}
+
+// ====== lettura LAPIC persistente senza usare la finestra RAM ===== //
+
+int x86_lapic_native_read(BOOT_U32 offset, BOOT_U32 *value)
+{
+    if (++calls == fail) return 0;
+    *value = offset == 0x120 ? in_service : 0;
     return 1;
 }
 // ====== attesa privilegiata esclusa dal processo host ===== //
@@ -226,5 +237,11 @@ __declspec(dllexport) int run_uart_irq_tests(void)
     if (!reset()) return 23;
     test_uart_owner(&owner); owner.Active = 0;
     if (x86_uart_irq_service(&owner) || calls || eois) return 24;
+    if (!reset()) return 25;
+    test_uart_owner(&owner); in_service = 1;
+    test_lapic_ram_busy(1);
+    if (!x86_uart_irq_service(&owner) || owner.Count != 1 || eois != 1) return 26;
+    test_lapic_ram_busy(0);
+    if (!test_mask_clean()) return 27;
     return 0;
 }
