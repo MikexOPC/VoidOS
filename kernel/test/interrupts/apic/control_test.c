@@ -19,6 +19,8 @@ static BOOT_U32 local[64], routes[240], selector, calls, fail, stores, bad, port
 static unsigned char master, slave;
 static unsigned char ier, iir, lcr;
 static BOOT_U32 in_service, eois, uart_bad;
+static BOOT_U32 tx_writes;
+static unsigned char tx_last;
 
 // ====== backend controllato del LAPIC senza alcuna istruzione privilegiata ===== //
 
@@ -71,6 +73,7 @@ void x86_write_port(unsigned short port, unsigned char value)
     if (bad == 6) { ++port_writes; return; }
     if (port == 0x3f9) { if (uart_bad != 1) ier = value; return; }
     if (port == 0x3fc) return;
+    if (port == 0x3f8) { ++tx_writes; tx_last = value; iir = 0xc2; return; }
     if (port == 0x21) master = value;
     else if (port == 0xa1) slave = value;
     else bad = 4;
@@ -86,6 +89,7 @@ static int reset(void)
     for (index = 0; index < 240; ++index) routes[index] = 0;
     selector = 17; calls = fail = stores = bad = port_writes = 0; master = slave = 0;
     ier = 2; iir = 0xc2; lcr = 3; in_service = eois = uart_bad = 0;
+    tx_writes = 0; tx_last = 0;
     return test_mask_reset();
 }
 
@@ -152,7 +156,8 @@ __declspec(dllexport) int run_apic_control_tests(void)
 
 int x86_lapic_native_eoi(void)
 {
-    if ((test_lapic_entry() & 0x000ffffffffff000ULL) != 0xfee00000 || in_service != 1 || ier) return 0;
+    if ((test_lapic_entry() & 0x000ffffffffff000ULL) != 0xfee00000 ||
+        in_service != 1 || (ier && !tx_writes)) return 0;
     ++eois;
     if (uart_bad != 2) in_service = 0;
     return 1;
@@ -171,6 +176,35 @@ int x86_lapic_native_read(BOOT_U32 offset, BOOT_U32 *value)
 int x86_uart_irq_wait(volatile BOOT_U32 *counts, BOOT_U32 goal, BOOT_U32 budget)
 {
     (void)counts; (void)goal; (void)budget;
+    return 0;
+}
+
+// ====== TX integra scrittura ACK EOI e contatori senza confermare guasti ===== //
+
+__declspec(dllexport) int run_uart_tx_irq_tests(void)
+{
+    X86_UART_IRQ_OWNER state;
+    X86_UART_TX buffer = {0};
+    unsigned char source[2] = {0x31,0x72};
+    BOOT_U32 step;
+    if (!reset()) return 1;
+    test_uart_owner(&state); state.Count = 3; state.Tx = &buffer;
+    if (!x86_uart_tx_prepare(&buffer,source,2)) return 2;
+    for (step = 0; step < 3; ++step) {
+        in_service = 1;
+        if (!x86_uart_irq_service(&state) || state.Count != step+4 || state.Error ||
+            eois != step+1 || in_service || tx_writes != (step < 2 ? step+1 : 2) ||
+            (step < 2 && tx_last != source[step])) return 3;
+    }
+    if (!buffer.Done || ier || !x86_uart_tx_drain(&buffer)) return 4;
+    for (step = 0; step < sizeof(buffer); ++step) ((unsigned char *)&buffer)[step] = 0;
+    if (!reset()) return 5;
+    test_uart_owner(&state); state.Count = 3; state.Tx = &buffer; in_service = 1;
+    if (!x86_uart_tx_prepare(&buffer,source,2)) return 6;
+    uart_bad = 2;
+    if (x86_uart_irq_service(&state) || state.Count != 3 || state.Error != 2 ||
+        tx_writes != 1 || !in_service || eois != 1 || ier) return 7;
+    if (!reset()) return 8;
     return 0;
 }
 

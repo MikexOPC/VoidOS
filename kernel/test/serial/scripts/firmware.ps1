@@ -2,7 +2,9 @@
 
 function Write-UartMonitor($log, $vm) {
     $owner = Read-Hex $log 'KERNEL_UART_IRQ_OWNER: 0x([0-9a-f]{16})'
-    $vm.StandardInput.WriteLine('x /4gx 0x' + $owner.ToString('x16'))
+    $vm.StandardInput.WriteLine('x /5gx 0x' + $owner.ToString('x16'))
+    $tx = Read-Hex $log 'KERNEL_UART_TX_OWNER: 0x([0-9a-f]{16})'
+    $vm.StandardInput.WriteLine('x /11gx 0x' + $tx.ToString('x16'))
     $mapping = Read-Hex $log 'KERNEL_LAPIC_MAPPING: 0x([0-9a-f]{16})'
     $vm.StandardInput.WriteLine('x /5gx 0x' + $mapping.ToString('x16'))
     $ist = Read-Hex $log 'KERNEL_IST_PTE: 0x([0-9a-f]{16})'
@@ -11,7 +13,7 @@ function Write-UartMonitor($log, $vm) {
     $vm.StandardInput.WriteLine('x /6gx 0x' + ($paging+3096).ToString('x16'))
 }
 
-# ====== tre IRQ hardware distinti e owner persistente non piu attivo ===== #
+# ====== prova iniziale e bytes TX tramite IRQ con owner finale inattivo ===== #
 
 function Test-UartFirmware($log, $registers, $cpuLog) {
     $owner = Read-Hex $log 'KERNEL_UART_IRQ_OWNER: 0x([0-9a-f]{16})'
@@ -19,15 +21,41 @@ function Test-UartFirmware($log, $registers, $cpuLog) {
     $row = [regex]::Match($registers,'(?im)^'+($owner+16).ToString('x16')+':\s+0x'+$profile.ToString('x16')+'\s+0x0000000000000000')
     $trace = Get-Content -LiteralPath $cpuLog -Raw
     Test-LapicRetention $log $registers
+    Test-UartTransmit $log $registers $owner
     if (!$log.Contains('KERNEL_UART_IRQ_OK') -or ($owner -band 7) -or
-        $owner -lt 0x100000000 -or $owner+32 -gt 0x100100000 -or
-        (Read-Hex $log 'KERNEL_UART_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 3 -or
+        $owner -lt 0x100000000 -or $owner+40 -gt 0x100100000 -or
+        (Read-Hex $log 'KERNEL_UART_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 48 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_ERROR: 0x([0-9a-f]{16})') -ne 0 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_VECTOR: 0x([0-9a-f]{16})') -ne 64 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_GSI: 0x([0-9a-f]{16})') -ne 4 -or
-        !$row.Success -or $registers -notmatch ('(?im)^'+$owner.ToString('x16')+':\s+0x0000000000000003\s+0x[0-9a-f]{16}') -or
-        [regex]::Matches($trace,'Servicing hardware INT=0x40').Count -ne 3) {
+        !$row.Success -or $registers -notmatch ('(?im)^'+$owner.ToString('x16')+':\s+0x0000000000000030\s+0x[0-9a-f]{16}') -or
+        [regex]::Matches($trace,'Servicing hardware INT=0x40').Count -ne 48) {
         throw 'COM1: consegne hardware, contatore, EOI o owner finale non conformi.'
+    }
+}
+
+# ====== dati sul canale seriale e buffer posseduto confrontati indipendentemente ===== #
+
+function Test-UartTransmit($log, $registers, $owner) {
+    $tx = Read-Hex $log 'KERNEL_UART_TX_OWNER: 0x([0-9a-f]{16})'
+    $payload = [Text.Encoding]::ASCII.GetBytes("`r`nKERNEL_UART_TX_PAYLOAD: 0123456789abcdef`r`n")
+    if (!$log.Contains('KERNEL_UART_TX_OK') -or ($tx -band 7) -or
+        $tx -lt 0x100000000 -or $tx+88 -gt 0x100100000 -or
+        (Read-Hex $log 'KERNEL_UART_TX_BYTES: 0x([0-9a-f]{16})') -ne $payload.Length -or
+        [regex]::Matches($log,'\r?\nKERNEL_UART_TX_PAYLOAD: 0123456789abcdef\r?\n').Count -ne 1 -or
+        $registers -notmatch ('(?im)^'+($owner+32).ToString('x16')+':\s+0x'+$tx.ToString('x16'))) {
+        throw 'Payload TX, lunghezza o owner non conformi.'
+    }
+    $expected = [byte[]]::new(88)
+    [BitConverter]::GetBytes([uint64]$tx).CopyTo($expected,0)
+    [BitConverter]::GetBytes([uint32]$payload.Length).CopyTo($expected,8)
+    [BitConverter]::GetBytes([uint32]$payload.Length).CopyTo($expected,12)
+    [BitConverter]::GetBytes([uint32]1).CopyTo($expected,16)
+    $payload.CopyTo($expected,24)
+    for ($offset=0; $offset -lt 88; $offset+=16) {
+        $pattern = '(?im)^'+($tx+$offset).ToString('x16')+':\s+0x'+[BitConverter]::ToUInt64($expected,$offset).ToString('x16')
+        if ($offset+8 -lt 88) { $pattern += '\s+0x'+[BitConverter]::ToUInt64($expected,$offset+8).ToString('x16') }
+        if ($registers -notmatch $pattern) { throw 'Dati o metadati TX diversi dalla copia posseduta.' }
     }
 }
 

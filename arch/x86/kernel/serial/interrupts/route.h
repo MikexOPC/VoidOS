@@ -2,14 +2,16 @@
 #define OS_X86_UART_IRQ_ROUTE_H
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
 #include "arch/x86/mm/devices/lapic.h"
+#include "arch/x86/kernel/serial/transmit/buffer.h"
 typedef struct { BOOT_U32 Io, Pin, Gsi, Bits, Destination, Reserved; } X86_UART_ROUTE;
 typedef struct {
     volatile BOOT_U32 Count, Error;
     X86_LAPIC_MAPPING *Mapping;
     const X86_APIC_PROFILE *Profile;
     BOOT_U32 Active, Reserved;
+    X86_UART_TX *Tx;
 } X86_UART_IRQ_OWNER;
-_Static_assert(sizeof(X86_UART_IRQ_OWNER) == 32, "Stato UART IRQ bounded");
+_Static_assert(sizeof(X86_UART_IRQ_OWNER) == 40, "Stato UART IRQ bounded");
 _Static_assert(sizeof(X86_UART_ROUTE) == 24, "Rotta UART bounded");
 _Static_assert(offsetof(X86_UART_IRQ_OWNER, Count) == 0 &&
     offsetof(X86_UART_IRQ_OWNER, Error) == 4, "ABI attesa UART");

@@ -1,8 +1,9 @@
 # COM1: prima prova di IRQ hardware con ritorno
 
 Il modulo `arch/x86/kernel/serial/interrupts/` esercita tre eventi THRE
-del modello UART 16550A di QEMU. Non trasferisce dati con una coda TX/RX:
-la console diagnostica continua a usare polling. E una prova delimitata
+del modello UART 16550A di QEMU, poi trasmette 44 byte reali usando un
+buffer TX limitato. La console diagnostica continua a usare polling.
+E una prova delimitata
 della catena UART -> I/O APIC -> LAPIC -> IDT -> handler -> IRETQ.
 
 ## Rotta e stato
@@ -21,9 +22,11 @@ cambiarne destinazione e riletta dopo l'apertura. Il selettore IOREGSEL
 viene salvato e ripristinato. Un errore impedisce il successo; non si
 riaprono deliberatamente le rotte firmware.
 
-Lo stato statico occupa 32 byte, con Count/Error ai primi due offset
+Lo stato statico occupa 40 byte, con Count/Error ai primi due offset
 u32 verificati dal contratto ABI. La rotta occupa 24 byte, oltre al
-flag di esecuzione singola. Non vengono allocati frame o buffer dinamici.
+flag di esecuzione singola. Il puntatore TX segue il prefisso precedente
+di 32 byte. Il buffer TX posseduto occupa 88 byte, con 64 byte di dati.
+Non vengono allocati frame o buffer dinamici.
 
 ## Finestra con IF=1 e completamento
 
@@ -38,7 +41,8 @@ non usa allocazioni, log o finestra RAM mentre IF=1.
 
 L'IRQ gate azzera IF, salva GPR/FXSAVE64 ed esegue CLD. Il frame 0x40
 richiede IF=1 salvato, CS=8, SS=16 e stack principale persistente.
-L'handler legge IIR e accetta soltanto THRE con FIFO disabilitata o
+Nelle tre consegne preliminari l'handler legge IIR e accetta soltanto
+THRE con FIFO disabilitata o
 funzionante (0x02/0xc2); rifiuta bit riservati o stato FIFO guasto.
 Chiude IER con readback
 e verifica che IIR non indichi interrupt pendenti. Poi controlla che
@@ -53,7 +57,11 @@ temporanei con IF=0. NMI/fault restano terminali. Il foreground della
 prova continua a leggere soltanto i contatori mentre IF=1.
 Il contratto resta UP, senza nesting o SMP.
 
-Dopo tre consegne, IER e chiuso, OUT2 torna al valore iniziale, la
+Dopo tre consegne, IER e chiuso e la prova iniziale e verificata.
+Prima della chiusura finale segue la
+[trasmissione TX delimitata](transmit.md): 44 IRQ scrivono un byte ciascuno
+e un ultimo IRQ chiude IER. Il contatore finale vale 48, inclusi i tre
+IRQ iniziali. Poi OUT2 torna al valore iniziale, la
 rotta e mascherata, Active=0, IF=0, ISR/IRR vuoti, IDTR invariata e
 finestra temporanea revocata. Il mapping LAPIC resta presente, con owner
 valido e inventario RAM/MMIO ricatturato e verificato. Non richiede nuovi
@@ -67,8 +75,8 @@ con un guasto per ogni accesso controller; ACK/EOI ordinati, IIR inatteso,
 IER non disabilitabile, EOI ignorato, ISR assente e guasti nelle letture
 ISR prima/dopo EOI. Rust verifica tutti i 256 flag/cause testati.
 
-QEMU: traccia indipendente di esattamente tre `Servicing hardware
-INT=0x40`, snapshot in memoria Count=3/Error=0/Active=0, profilo
+QEMU: traccia indipendente di esattamente 48 `Servicing hardware
+INT=0x40`, snapshot in memoria Count=48/Error=0/Active=0, profilo
 persistente, gate e controller finali chiusi, PTE LAPIC UC presente e
 inventario misto confrontato con la memoria reale; regressione di 23 scenari.
 
@@ -76,7 +84,8 @@ Il riarmo THRE con IER mentre THRE e gia alto e esplicito nel sorgente
 QEMU, che segnala che non e specificato nel datasheet. Il test non
 dimostra la portabilita di questo riarmo a tutte le UART fisiche.
 Su un modello che richiede una transizione TX reale puo fallire per
-timeout. Non sono ancora implementati TX/RX a IRQ, RX FIFO, discovery
+timeout. TX invia ora dati reali, ma rimane una prova finita, senza
+produttori concorrenti. Non sono ancora implementati RX a IRQ, RX FIFO, discovery
 PCI/ACPI della UART, SMP, AVX/XSAVE o ritorno a user mode.
 Hardware fisico non testato.
 

@@ -123,6 +123,8 @@ int x86_uart_route_apply(X86_PAGE_WINDOW *window, const X86_APIC_PROFILE *profil
 static X86_UART_IRQ_OWNER owner;
 static X86_LAPIC_MAPPING mapping;
 static X86_UART_ROUTE route;
+static X86_UART_TX tx;
+static const unsigned char payload[] = "\r\nKERNEL_UART_TX_PAYLOAD: 0123456789abcdef\r\n";
 static BOOT_U32 finished;
 
 // ====== IER zero con DLAB gia azzerato nel profilo UART diagnostico ===== //
@@ -156,6 +158,10 @@ static int owner_valid(const X86_UART_IRQ_OWNER *state)
         state->Mapping && state->Profile && !state->Reserved &&
         !os_address_ranges_overlap(target,sizeof(*state),(BOOT_U64)state->Mapping,sizeof(*state->Mapping)) &&
         !os_address_ranges_overlap(target,sizeof(*state),(BOOT_U64)state->Profile,sizeof(*state->Profile)) &&
+        (!state->Tx || (x86_uart_tx_validate(state->Tx) &&
+        !os_address_ranges_overlap((BOOT_U64)state->Tx,sizeof(*state->Tx),target,sizeof(*state)) &&
+        !os_address_ranges_overlap((BOOT_U64)state->Tx,sizeof(*state->Tx),(BOOT_U64)state->Mapping,sizeof(*state->Mapping)) &&
+        !os_address_ranges_overlap((BOOT_U64)state->Tx,sizeof(*state->Tx),(BOOT_U64)state->Profile,sizeof(*state->Profile)))) &&
         !os_address_ranges_overlap(target,sizeof(*state),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES);
 }
 
@@ -166,14 +172,19 @@ int x86_uart_irq_service(X86_UART_IRQ_OWNER *state)
     unsigned char iir;
     int acknowledged, completed;
     if (!x86_exception_environment() || !owner_valid(state) ||
-        state->Active != 1 || state->Error || state->Count >= 3) return 0;
-    iir = x86_read_port(COM1+2);
-    acknowledged = x86_uart_thre(iir) && uart_disable() &&
-        (x86_read_port(COM1+2) & 1);
+        state->Active != 1 || state->Error ||
+        state->Count >= (state->Tx ? 3+state->Tx->Length+1 : 3)) return 0;
+    if (state->Tx) {
+        acknowledged = state->Count >= 3 && x86_uart_tx_progress(state->Tx,state->Count-3) &&
+            x86_uart_tx_service(state->Tx);
+    } else {
+        iir = x86_read_port(COM1+2);
+        acknowledged = x86_uart_thre(iir) && uart_disable() && (x86_read_port(COM1+2) & 1);
+    }
     // Disabilitare IER anche se un dispositivo presenta una causa inattesa.
     if (!acknowledged) { uart_disable(); state->Error = 1; }
     completed = x86_lapic_eoi(state->Mapping);
-    if (!completed) state->Error = 2;
+    if (!completed) { uart_disable(); state->Error = 2; }
     if (!acknowledged || !completed) return 0;
     ++state->Count;
     return 1;
@@ -205,6 +216,9 @@ static int report(void)
         kernel_text("\nKERNEL_UART_IRQ_GSI: ") && kernel_number(route.Gsi) &&
         kernel_text("\nKERNEL_UART_IRQ_VECTOR: ") && kernel_number(0x40) &&
         kernel_text("\nKERNEL_UART_IRQ_OWNER: ") && kernel_number((BOOT_U64)&owner) &&
+        kernel_text("\nKERNEL_UART_TX_OWNER: ") && kernel_number((BOOT_U64)&tx) &&
+        kernel_text("\nKERNEL_UART_TX_BYTES: ") && kernel_number(tx.Next) &&
+        kernel_text("\n") && kernel_log(0,"KERNEL_UART_TX_OK") &&
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_IRQ_OK");
 }
 
@@ -251,6 +265,11 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
         if (x86_read_port(COM1+1) != 2 || !x86_uart_irq_wait(&owner.Count,goal,10000000) ||
             owner.Count != goal || owner.Error || !x86_exception_environment()) goto cleanup;
     }
+    if (!x86_uart_tx_prepare(&tx,payload,sizeof(payload)-1) || !x86_lapic_idle(&mapping)) goto cleanup;
+    owner.Tx = &tx;
+    if (!x86_uart_tx_start(&tx) ||
+        !x86_uart_irq_wait(&owner.Count,3+tx.Length+1,10000000) ||
+        owner.Count != 3+tx.Length+1 || owner.Error || !x86_uart_tx_drain(&tx)) goto cleanup;
     result = x86_lapic_report(&mapping);
 cleanup:
     restored = uart_restore(saved);

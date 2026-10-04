@@ -53,7 +53,8 @@ I/O APIC usa ancora la finestra durante il setup con IF=0.
 Host: bind/unbind, doppio bind, slot/guardie occupati, rollback, foglia
 corrotta, owner spostato, bounds/offset/output e IRQ con finestra RAM
 simulata occupata. Due test Rust coprono limiti fisici e flag cache.
-QEMU controlla tre consegne reali, owner LAPIC finale attivo, PTE presente
+QEMU controlla le consegne reali della prova iniziale e del trasferimento TX,
+owner LAPIC finale attivo, PTE presente
 e guardie vuote dal monitor indipendente, oltre alle regressioni esistenti.
 
 [Intel SDM Vol. 3A, paging, PAT e invalidazione TLB](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf).

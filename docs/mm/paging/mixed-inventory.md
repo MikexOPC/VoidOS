@@ -43,8 +43,8 @@ dall'owner, dalla vista ricorsiva e dalla regione LAPIC con le sue guardie.
 
 La prova COM1 cattura l'inventario dopo il bind, prima di abilitare IER,
 e lo verifica dopo aver chiuso UART e rotta. A KERNEL_READY il mapping
-resta presente e IF resta zero. Il dispositivo e disponibile per le
-prossime implementazioni; non implica IRQ permanenti o trasferimento TX/RX.
+resta presente e IF resta zero. Il dispositivo supporta anche il primo
+trasferimento TX delimitato; non implica IRQ permanenti o ricezione RX.
 Il setup I/O APIC usa ancora la finestra temporanea, con IF=0.
 
 ## Validazione e limiti
