@@ -142,7 +142,7 @@ if ($result -ne 0) { throw "Test inventario paging fallito: $result" }
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test formato paging fallita.' }
 & ($output + '/paging-entries-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test formato paging Rust falliti.' }
-Write-BootStatus OK 'Inventario paging: cicli, alias, riserve, 128 tabelle e 24768 alterazioni dei metadati verificati.'
+Write-BootStatus OK 'Inventario RAM/MMIO: alias, riserve, owner, 128 tabelle e 25152 alterazioni dei metadati verificati.'
 $windowSource = 'using System.Runtime.InteropServices; public static class ' + $typeName + 'Window { [DllImport(@"' + $dll + '")] public static extern int run_window_tests(); }'
 $windowType = Add-Type -TypeDefinition $windowSource -PassThru
 $result = $windowType.GetMethod('run_window_tests').Invoke($null, @())
@@ -183,4 +183,4 @@ foreach ($method in @('run_stack_tests','run_segment_tests','run_main_stack_test
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test IST fallita.' }
 & ($output + '/ist-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
-Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 45 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS e stack: ownership, rollback, revoca loader e corruzioni verificati; 46 test Rust complessivi.'

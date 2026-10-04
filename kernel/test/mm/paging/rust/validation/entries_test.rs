@@ -3,6 +3,26 @@ mod entries;
 use entries::{x86_paging_child_view as child, x86_paging_entry_valid as valid};
 const ROOT: u64 = (128 << 39) | (128 << 30) | (128 << 21) | (128 << 12);
 
+// ====== virtuale LAPIC ricostruito e classificazione scalare senza unsafe ===== //
+
+#[test]
+fn mixed_leaf() {
+    let pt = child(child(child(ROOT,0,224),1,0),2,0);
+    let address = entries::x86_paging_leaf_virtual(pt,288);
+    assert_eq!(address,0x700000120000);
+    let entry = 0x80000000fee0001b;
+    assert_eq!(entries::x86_paging_leaf_kind(entry,address,0xfee00000,0x18,36),2);
+    for bit in 0..64 {
+        assert_eq!(entries::x86_paging_leaf_kind(entry ^ (1u64<<bit),address,0xfee00000,0x18,36) != 0,
+            bit == 5 || bit == 6);
+    }
+    assert_eq!(entries::x86_paging_leaf_kind(entry,address,0,0,36),0);
+    assert_eq!(entries::x86_paging_leaf_kind(0x80000000fee00003,address+4096,0xfee00000,0x18,36),0);
+    assert_eq!(entries::x86_paging_leaf_kind(entry,address+4096,0xfee00000,0x18,36),0);
+    assert_eq!(entries::x86_paging_leaf_virtual(pt,512),0);
+    assert_eq!(entries::x86_paging_leaf_virtual(pt+1,288),0);
+}
+
 // ====== flags esclusivamente supervisor e nessuna pagina scrivibile eseguibile ===== //
 
 #[test]

@@ -35,3 +35,29 @@ pub extern "C" fn x86_paging_child_view(parent: u64, level: u32, slot: u32) -> u
     if level == 0 && (slot >= 256 || u64::from(slot) == RECURSIVE) { return 0; }
     (RECURSIVE << 39) | ((parent << 9) & ((1u64 << 39) - 1)) | (u64::from(slot) << 12)
 }
+
+// ====== indirizzo foglia ricostruito dalla vista PT prima della classificazione ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_paging_leaf_virtual(view: u64, slot: u32) -> u64 {
+    let a = (view >> 30) & 511;
+    if view >> 39 != RECURSIVE || view & 4095 != 0 || slot >= 512 || a >= 256 || a == RECURSIVE {
+        return 0;
+    }
+    (a << 39) | (((view >> 21) & 511) << 30) | (((view >> 12) & 511) << 21) | (u64::from(slot) << 12)
+}
+
+// ====== un solo slot MMIO autorizzato senza accettare alias WB ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_paging_leaf_kind(entry: u64, address: u64, physical: u64, cache: u64, bits: u32) -> u32 {
+    if !(32..=52).contains(&bits) { return 0; }
+    if address == 0x0000_7000_0012_0000 {
+        if physical == 0 || physical & 4095 != 0 || physical >= (1u64 << bits) || cache & !0x98 != 0 {
+            return 0;
+        }
+        return if (entry & !0x60) == (physical | cache | NX | 3) { 2 } else { 0 };
+    }
+    if physical != 0 && entry & ADDRESS == physical { return 0; }
+    x86_paging_entry_valid(entry,3,bits)
+}

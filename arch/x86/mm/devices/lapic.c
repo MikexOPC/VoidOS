@@ -60,6 +60,22 @@ int x86_lapic_validate(const X86_LAPIC_MAPPING *owner)
     return (x86_window_entries(3)[X86_LAPIC_LEAF] & ~AD) == expected;
 }
 
+// ====== identita xAPIC e UC forte confermate dal PAT corrente ===== //
+
+int x86_lapic_authority(const X86_LAPIC_MAPPING *owner)
+{
+    X86_APIC_RAW raw = {0};
+    BOOT_U32 slot;
+    if (!x86_lapic_validate(owner) || !x86_apic_cache_state() || !x86_apic_read_profile(&raw) ||
+        raw.MaxLeaf < 1 || raw.Reserved || raw.PhysicalBits != owner->PhysicalBits ||
+        (raw.Rflags & 0x202) != 2 ||
+        x86_apic_mode(raw.ApicBase,raw.Leaf1Ecx,raw.Leaf1Edx,owner->PhysicalBits) != 1 ||
+        (raw.ApicBase & ADDRESS) != owner->Physical || !x86_apic_uc_slot(raw.Pat)) return 0;
+    slot = (BOOT_U32)((owner->Cache & 8) >> 3) +
+        (BOOT_U32)((owner->Cache & 16) >> 3) + (BOOT_U32)((owner->Cache & 128) >> 5);
+    return ((raw.Pat >> (slot*8)) & 255) == 0;
+}
+
 // ====== stato vergine senza adozione di pagine o owner estranei ===== //
 
 static int virgin(const X86_LAPIC_MAPPING *owner)

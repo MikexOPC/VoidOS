@@ -55,8 +55,9 @@ Il contratto resta UP, senza nesting o SMP.
 
 Dopo tre consegne, IER e chiuso, OUT2 torna al valore iniziale, la
 rotta e mascherata, Active=0, IF=0, ISR/IRR vuoti, IDTR invariata e
-finestra revocata. Anche il mapping LAPIC viene revocato solo dopo
-la chiusura della sorgente. `KERNEL_UART_IRQ_OK` segue queste verifiche.
+finestra temporanea revocata. Il mapping LAPIC resta presente, con owner
+valido e inventario RAM/MMIO ricatturato e verificato. Non richiede nuovi
+frame RAM. `KERNEL_UART_IRQ_OK` segue queste verifiche.
 [Ownership e durata del mapping dedicato](../../mm/devices/lapic.md).
 
 ## Test e limiti
@@ -68,7 +69,8 @@ ISR prima/dopo EOI. Rust verifica tutti i 256 flag/cause testati.
 
 QEMU: traccia indipendente di esattamente tre `Servicing hardware
 INT=0x40`, snapshot in memoria Count=3/Error=0/Active=0, profilo
-persistente, gate e controller finali chiusi; regressione di 23 scenari.
+persistente, gate e controller finali chiusi, PTE LAPIC UC presente e
+inventario misto confrontato con la memoria reale; regressione di 23 scenari.
 
 Il riarmo THRE con IER mentre THRE e gia alto e esplicito nel sorgente
 QEMU, che segnala che non e specificato nel datasheet. Il test non

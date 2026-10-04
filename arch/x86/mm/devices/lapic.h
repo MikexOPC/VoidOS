@@ -3,7 +3,7 @@
 #include "arch/x86/kernel/interrupts/apic/probe.h"
 #define X86_LAPIC_VIRTUAL 0x0000700000120000ULL
 #define X86_LAPIC_LEAF 288U
-typedef struct {
+typedef struct X86_LAPIC_MAPPING {
     BOOT_U64 Self, Root, Physical, Cache;
     BOOT_U32 Ready, PhysicalBits;
 } X86_LAPIC_MAPPING;
@@ -17,6 +17,7 @@ int x86_lapic_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     const X86_PAGING_INVENTORY *inventory, const KERNEL_MADT_TOPOLOGY *topology,
     const X86_APIC_PROFILE *profile, X86_LAPIC_MAPPING *owner);
 int x86_lapic_validate(const X86_LAPIC_MAPPING *owner);
+int x86_lapic_authority(const X86_LAPIC_MAPPING *owner);
 int x86_lapic_unbind(X86_LAPIC_MAPPING *owner);
 int x86_lapic_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *value);
 int x86_lapic_eoi(const X86_LAPIC_MAPPING *owner);

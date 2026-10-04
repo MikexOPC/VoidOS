@@ -195,7 +195,7 @@ static int uart_restore(unsigned char mcr)
     return disabled && x86_read_port(COM1+4) == mcr;
 }
 
-// ====== fotografia dopo ACK EOI e revoca dei mapping ===== //
+// ====== fotografia dopo ACK EOI e chiusura della sorgente ===== //
 
 static int report(void)
 {
@@ -208,15 +208,27 @@ static int report(void)
         kernel_text("\n") && kernel_log(0,"KERNEL_UART_IRQ_OK");
 }
 
+// ====== inventario corrente include il dispositivo mantenuto per il kernel ===== //
+
+static int report_inventory(const X86_PAGING_INVENTORY *inventory)
+{
+    return kernel_section("inventario RAM e MMIO persistente") &&
+        kernel_text("KERNEL_PAGING_MIXED_BASE: ") && kernel_number((BOOT_U64)inventory) &&
+        kernel_text("\nKERNEL_PAGING_MIXED_RAM: ") && kernel_number(inventory->RamPages) &&
+        kernel_text("\nKERNEL_PAGING_MIXED_MMIO: ") && kernel_number(inventory->MmioPages) &&
+        kernel_text("\nKERNEL_PAGING_MIXED_LEAVES: ") && kernel_number(inventory->LeafPages) &&
+        kernel_text("\n") && kernel_log(0,"KERNEL_PAGING_MIXED_OK");
+}
+
 // ====== tre consegne reali con attesa limitata e IF zero fra gli arm ===== //
 
 int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
-    const X86_PAGING_INVENTORY *inventory, const KERNEL_MADT_TOPOLOGY *topology,
+    X86_PAGING_INVENTORY *inventory, const KERNEL_MADT_TOPOLOGY *topology,
     const X86_APIC_PROFILE *profile, const X86_APIC_CAPABILITIES *caps)
 {
     BOOT_U32 goal;
     unsigned char saved;
-    int result = 0, closed, restored, unmapped;
+    int result = 0, closed, restored;
     if (finished || owner.Active || !x86_irq_ready() ||
         !x86_apic_mapping_ready(context,window,inventory,topology,profile) ||
         !x86_uart_route_plan(topology,caps,&route) || !uart_disable() || !uart_idle()) return 0;
@@ -225,6 +237,8 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
     if (!x86_lapic_bind(context,window,inventory,topology,profile,&mapping)) return 0;
     owner.Mapping = &mapping; owner.Profile = profile;
     owner.Count = owner.Error = 0; owner.Active = 1;
+    if (!x86_paging_inventory_capture_lapic(context,window->Pool,&mapping,inventory) ||
+        !x86_paging_inventory_verify_lapic(context,window->Pool,&mapping,inventory)) goto cleanup;
     x86_write_port(COM1+4,saved | 8);
     if (x86_read_port(COM1+4) != (saved | 8) ||
         !x86_uart_route_apply(window,profile,caps,&route,0)) goto cleanup;
@@ -243,8 +257,12 @@ cleanup:
     closed = x86_uart_route_apply(window,profile,caps,&route,1);
     owner.Active = 0;
     finished = 1;
-    unmapped = restored && closed && x86_lapic_idle(&mapping) && x86_lapic_unbind(&mapping);
-    if (!unmapped || !result || !x86_irq_ready() ||
-        !x86_apic_mapping_ready(context,window,inventory,topology,profile)) return 0;
-    return report();
+    if (restored && closed && result && x86_irq_ready() && x86_lapic_idle(&mapping) &&
+        x86_page_window_idle_valid(window) &&
+        x86_paging_inventory_verify_lapic(context,window->Pool,&mapping,inventory))
+        return report_inventory(inventory) && report();
+    // Un errore non autorizza a conservare uno snapshot misto non verificato.
+    if (restored && closed && x86_lapic_unbind(&mapping))
+        x86_paging_inventory_capture(context,window->Pool,inventory);
+    return 0;
 }

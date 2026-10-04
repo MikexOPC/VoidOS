@@ -4,6 +4,7 @@ int test_mask_clean(void);
 int test_lapic_bind(X86_LAPIC_MAPPING *owner);
 void test_lapic_fault(BOOT_U32 kind);
 BOOT_U64 test_lapic_entry(void);
+void test_mask_corrupt(BOOT_U32 kind);
 static X86_LAPIC_MAPPING mapping;
 
 // ====== fixture vergine per ogni ciclo di ownership ===== //
@@ -42,5 +43,8 @@ __declspec(dllexport) int run_lapic_mapping_tests(void)
         x86_lapic_read(&mapping,0x180,&index) || x86_lapic_read(&mapping,0x280,&index)) return 11;
     mapping.PhysicalBits = 31;
     if (x86_lapic_validate(&mapping) || x86_lapic_unbind(&mapping)) return 12;
+    if (!reset() || !test_lapic_bind(&mapping) || !x86_lapic_authority(&mapping)) return 13;
+    test_mask_corrupt(7);
+    if (x86_lapic_authority(&mapping)) return 14;
     return 0;
 }

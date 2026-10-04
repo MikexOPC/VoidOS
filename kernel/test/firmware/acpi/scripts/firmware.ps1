@@ -16,7 +16,7 @@ function Test-AcpiFirmware($log, $registers, $arenaContext, $pagingInventory, $c
     $acpiBytes = Read-Hex $log 'KERNEL_ACPI_TABLE_BYTES: 0x([0-9a-f]{16})'
     if (!$log.Contains('KERNEL_ACPI_XSDT_OK') -or !$log.Contains('KERNEL_ACPI_DIRECTORY_OK') -or
         !$acpiCount -or $acpiCount -gt 256 -or $acpiBytes -ne 36 + 8 * $acpiCount -or
-        ($acpiDirectory -band 7) -or $acpiDirectory -lt $pagingInventory + 3096 -or
+        ($acpiDirectory -band 7) -or $acpiDirectory -lt $pagingInventory + 3144 -or
         $acpiDirectory + 2072 -gt 0x7000000b3000 -or
         $registers -notmatch ('(?im)^' + $acpiDirectory.ToString('x16') + ':\s+0x' + $acpiRoot.ToString('x16') + '\s+0x' + (($acpiCount -shl 32) + $acpiBytes).ToString('x16')) -or
         $registers -notmatch ('(?im)^' + ($acpiDirectory + 16).ToString('x16') + ':\s+0x0000000000000008')) {

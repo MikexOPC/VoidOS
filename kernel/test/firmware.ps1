@@ -178,10 +178,10 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $region0 = Read-Hex $log 'KERNEL_REGION0_PHYSICAL: 0x([0-9a-f]{16})'
         $region1 = Read-Hex $log 'KERNEL_REGION1_PHYSICAL: 0x([0-9a-f]{16})'
         $pagingCount = Read-Hex $log 'KERNEL_PAGING_TABLES: 0x([0-9a-f]{16})'
-        $pagingLeaves = Read-Hex $log 'KERNEL_PAGING_LEAVES: 0x([0-9a-f]{16})'
+        $pagingLeaves = Read-Hex $log 'KERNEL_PAGING_MIXED_LEAVES: 0x([0-9a-f]{16})'
         $pagingRoot = [Convert]::ToUInt64($root,16)
         if (!$pagingCount -or $pagingCount -gt 128 -or !$pagingLeaves -or ($pagingInventory -band 7) -or
-            $pagingInventory -lt $arenaInventory + 24 -or $pagingInventory + 3096 -gt 0x7000000b3000 -or
+            $pagingInventory -lt $arenaInventory + 24 -or $pagingInventory + 3144 -gt 0x7000000b3000 -or
             $registers -notmatch ('(?im)^' + $pagingInventory.ToString('x16') + ':\s+0x' + $pagingRoot.ToString('x16') + '\s+0x' + $pagingLeaves.ToString('x16')) -or
             $registers -notmatch ('(?im)^' + ($pagingInventory + 16).ToString('x16') + ':\s+0x' + ((1L -shl 32) + $pagingCount).ToString('x16'))) {
             throw 'Inventario paging fuori arena o diverso dalla fotografia verificata.'

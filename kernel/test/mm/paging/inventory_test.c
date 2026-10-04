@@ -1,10 +1,24 @@
 #include "arch/x86/mm/paging/inventory.h"
+#include "arch/x86/mm/devices/lapic.h"
 static BOOT_U64 tables[129][512], views[129];
 static BOOT_U32 table_count, reads, missing;
-static unsigned char map[96];
+static unsigned char map[144];
 static KERNEL_BOOT_CONTEXT context;
 static KERNEL_PHYSICAL_ALLOCATOR pool;
 static X86_PAGING_INVENTORY ledger, saved;
+static X86_LAPIC_MAPPING mapping;
+static BOOT_U32 authority_bad, authority_calls, authority_failure;
+
+// ====== autorita hardware simulata distinta dalla scansione delle tabelle ===== //
+
+int x86_lapic_authority(const X86_LAPIC_MAPPING *owner)
+{
+    ++authority_calls;
+    return !authority_bad && authority_calls != authority_failure && owner == &mapping &&
+        owner->Self == (BOOT_U64)owner && owner->Ready == 1 && owner->Root == 4096 &&
+        owner->PhysicalBits == 32 && owner->Physical == 0xfee00000 && owner->Cache == 0x18 &&
+        (tables[3][288] & ~0x60ULL) == 0x80000000fee0001bULL;
+}
 
 // ====== backend indipendente che conta ogni pagina realmente consultata ===== //
 
@@ -51,6 +65,7 @@ static int fixture(void)
     clear(tables, sizeof(tables)); clear(views, sizeof(views)); clear(map, sizeof(map));
     clear(&context, sizeof(context)); clear(&pool, sizeof(pool)); clear(&ledger, sizeof(ledger));
     table_count = 5; reads = missing = 0;
+    clear(&mapping,sizeof(mapping)); authority_bad = authority_calls = authority_failure = 0;
     map[0] = 2; number(map + 8, 4096); number(map + 24, 129); map[32] = 8;
     map[48] = 7; number(map + 56, 0x100000); number(map + 72, 128); map[80] = 8;
     context.MemoryMap = map; context.Info.MemoryMapBytes = 96;
@@ -187,6 +202,53 @@ static int metadata(void)
     return 0;
 }
 
+// ====== inventario misto con MMIO distinto e nessuna PTE UC implicita ===== //
+
+static int mixed(void)
+{
+    BOOT_U32 bit;
+    if (!fixture()) return 1;
+    mapping.Self = (BOOT_U64)&mapping; mapping.Ready = 1; mapping.Root = 4096;
+    mapping.Physical = 0xfee00000; mapping.Cache = 0x18; mapping.PhysicalBits = 32;
+    tables[3][288] = 0x80000000fee0001bULL;
+    if (x86_paging_inventory_capture(&context,&pool,&ledger) ||
+        !x86_paging_inventory_capture_lapic(&context,&pool,&mapping,&ledger) ||
+        !x86_paging_inventory_verify_lapic(&context,&pool,&mapping,&ledger) ||
+        ledger.RamPages != 2 || ledger.MmioPages != 1 || ledger.LeafPages != 3 ||
+        ledger.Device.Owner != (BOOT_U64)&mapping || pool.FreePages != 128) return 2;
+    if (x86_paging_inventory_verify(&context,&pool,&ledger)) return 3;
+    for (bit = 0; bit < 64; ++bit) {
+        tables[3][288] ^= 1ULL<<bit;
+        if (x86_paging_inventory_verify_lapic(&context,&pool,&mapping,&ledger) != (bit == 5 || bit == 6)) return 4;
+        tables[3][288] ^= 1ULL<<bit;
+    }
+    for (bit = 3096*8; bit < sizeof(ledger)*8; ++bit) {
+        ((unsigned char *)&ledger)[bit/8] ^= (unsigned char)(1U<<(bit%8));
+        if (x86_paging_inventory_verify_lapic(&context,&pool,&mapping,&ledger)) return 5;
+        ((unsigned char *)&ledger)[bit/8] ^= (unsigned char)(1U<<(bit%8));
+    }
+    save_ledger(); authority_calls = 0; authority_failure = 2;
+    if (x86_paging_inventory_capture_lapic(&context,&pool,&mapping,&ledger)) return 6;
+    for (bit = 0; bit < sizeof(ledger); ++bit)
+        if (((unsigned char *)&ledger)[bit] != ((unsigned char *)&saved)[bit]) return 7;
+    authority_failure = 0;
+    tables[3][2] = 0x80000000fee00003ULL;
+    if (x86_paging_inventory_verify_lapic(&context,&pool,&mapping,&ledger)) return 8;
+    tables[3][2] = 0x800000000030001bULL;
+    if (x86_paging_inventory_capture_lapic(&context,&pool,&mapping,&ledger)) return 9;
+    tables[3][2] = 0;
+    if (x86_paging_inventory_capture_lapic(&context,&pool,&mapping,(X86_PAGING_INVENTORY *)&mapping)) return 10;
+    map[96] = 11; number(map+104,0xfee00000); number(map+120,1); map[128] = 1;
+    context.Info.MemoryMapBytes = 144;
+    if (!x86_paging_inventory_verify_lapic(&context,&pool,&mapping,&ledger)) return 11;
+    map[96] = 2; map[128] = 8;
+    if (x86_paging_inventory_verify_lapic(&context,&pool,&mapping,&ledger)) return 12;
+    map[96] = 11; map[128] = 1;
+    pool.Free[0].Base = 0xfee00000;
+    if (x86_paging_inventory_capture_lapic(&context,&pool,&mapping,&ledger)) return 13;
+    return 0;
+}
+
 // ====== esecuzione di gruppi con codici di errore identificabili ===== //
 
 __declspec(dllexport) int run_paging_inventory_tests(void)
@@ -197,5 +259,6 @@ __declspec(dllexport) int run_paging_inventory_tests(void)
     result = reservations(); if (result) return 300 + result;
     result = capacity(); if (result) return 400 + result;
     result = metadata(); if (result) return 500 + result;
+    result = mixed(); if (result) return 600 + result;
     return 0;
 }

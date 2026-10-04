@@ -32,6 +32,27 @@ int x86_paging_inventory_verify(const KERNEL_BOOT_CONTEXT *ctx, const KERNEL_PHY
 {
     return ctx == &context && owner == &pool && inventory == &ledger && ledger.Ready == 1 && !entries[32];
 }
+
+// ====== scansione mista reale coperta dal DLL inventory separato ===== //
+
+int x86_paging_inventory_capture_lapic(const KERNEL_BOOT_CONTEXT *ctx,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool_owner, const X86_LAPIC_MAPPING *device, X86_PAGING_INVENTORY *result)
+{
+    (void)ctx; (void)pool_owner; (void)device; (void)result;
+    return 0;
+}
+int x86_paging_inventory_verify_lapic(const KERNEL_BOOT_CONTEXT *ctx,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool_owner, const X86_LAPIC_MAPPING *device, const X86_PAGING_INVENTORY *result)
+{
+    (void)ctx; (void)pool_owner; (void)device; (void)result;
+    return 0;
+}
+int x86_paging_inventory_capture(const KERNEL_BOOT_CONTEXT *ctx,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool_owner, X86_PAGING_INVENTORY *result)
+{
+    (void)ctx; (void)pool_owner; (void)result;
+    return 0;
+}
 int x86_page_window_idle_valid(const X86_PAGE_WINDOW *target)
 {
     BOOT_U32 index;
@@ -241,6 +262,7 @@ void test_mask_corrupt(BOOT_U32 kind)
     if (kind == 3) output.Io[1].Address = 4096;
     if (kind == 4) cache_bad = 1;
     if (kind == 5) output.LapicVersion |= 0x80000000U;
+    if (kind == 7) profile.Raw.Pat |= 6ULL<<24;
 }
 BOOT_U32 test_mask_lapic_version(void) { return lapic_version; }
 BOOT_U32 test_mask_io_version(void) { return io_version; }

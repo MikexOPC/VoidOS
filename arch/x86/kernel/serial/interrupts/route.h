@@ -20,7 +20,7 @@ int x86_uart_route_plan(const KERNEL_MADT_TOPOLOGY *topology, const X86_APIC_CAP
 int x86_uart_route_apply(X86_PAGE_WINDOW *window, const X86_APIC_PROFILE *profile,
     const X86_APIC_CAPABILITIES *caps, const X86_UART_ROUTE *route, BOOT_U32 masked);
 int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
-    const X86_PAGING_INVENTORY *inventory, const KERNEL_MADT_TOPOLOGY *topology,
+    X86_PAGING_INVENTORY *inventory, const KERNEL_MADT_TOPOLOGY *topology,
     const X86_APIC_PROFILE *profile, const X86_APIC_CAPABILITIES *caps);
 int x86_uart_irq_handle(void);
 int x86_uart_irq_service(X86_UART_IRQ_OWNER *owner);
