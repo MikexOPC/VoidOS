@@ -50,11 +50,13 @@ Host verifica mille cicli sullo stesso owner con una fixture del token;
 il registro reale viene testato separatamente con token vivi, scaduti,
 riutilizzati, fault e callback in corso. QEMU usa la subscription reale.
 
-La durata ora e esplicita e riusabile; non e ancora presente un servizio
-timer permanentemente attivo dopo KERNEL_READY. Attesa HLT e watchdog
+La build opzionale `-EventLoop` usa ora queste API per un ciclo continuo:
+consuma ogni scadenza fuori dal gestore e riarma solo dopo il consumo.
+La modalita ordinaria conserva la prova finita di tre eventi.
+Il ciclo termina su richiesta fidata di arresto o saturazione di Count;
+KERNEL_READY viene stampato solo dopo chiusura e ripristino del timer.
+Vedere [ciclo continuo](runtime.md) per uso e limiti. Attesa HLT e watchdog
 restano soggetti ai limiti descritti in [attesa eventi](../interrupts/event-wait.md).
-Un futuro ciclo permanente deve definire chi decide arresto e timeout
-prima di aggiungere scheduling o altri driver concorrenti.
 
 [Intel SDM, timer APIC](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf)
 definisce oneshot e arresto tramite Initial Count zero. Il modello degli

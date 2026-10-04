@@ -52,10 +52,11 @@ La subscription non viene rimossa se la sorgente non risulta fermata.
 
 ## Limiti e riferimenti
 
-Questa e una prova finita su BSP: IF e attivo durante HLT e viene
-disabilitato dopo ogni risveglio. Dopo il bootstrap IF resta zero.
-Non sono ancora presenti tick permanente, event loop, scheduler,
-AP attivi o validazione su hardware fisico.
+La modalita ordinaria e una prova finita su BSP: IF e attivo durante
+HLT e viene disabilitato dopo ogni risveglio. Dopo il bootstrap IF resta
+zero. La build `-EventLoop` abilita il [ciclo continuo](runtime.md) fino
+alla richiesta di stop. Restano assenti scheduler, AP attivi e
+validazione su hardware fisico.
 
 [Intel SDM, sezione APIC timer](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf)
 definisce oneshot, registri Count, divisore e arresto tramite Initial Count zero.

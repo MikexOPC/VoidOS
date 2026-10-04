@@ -1,29 +1,16 @@
 #include "timer.h"
+#include "runtime.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 finished;
-
-// ====== scrittura readback prima di considerare un registro configurato ===== //
-
-static int write(const X86_LAPIC_MAPPING *mapping, BOOT_U32 offset, BOOT_U32 value)
-{
-    BOOT_U32 actual;
-    return x86_timer_write(mapping,offset,value) && x86_timer_read(mapping,offset,&actual) && actual == value;
-}
-
-// ====== sorgente fermata prima di verificare quiescenza o rimuovere l'handler ===== //
-
-static int stop(const X86_LAPIC_MAPPING *mapping)
-{
-    BOOT_U32 current;
-    // Tentare entrambe le scritture anche se la prima non viene confermata.
-    int masked = write(mapping,0x320,0x10041);
-    int stopped = write(mapping,0x380,0);
-    return masked && stopped && x86_timer_read(mapping,0x390,&current) && !current;
-}
+#ifdef KERNEL_EVENT_LOOP
+static const BOOT_U32 loop_mode = 1;
+#else
+static const BOOT_U32 loop_mode = 0;
+#endif
 
 // ====== proprieta live e profilo oneshot prima di gestire una scadenza ===== //
 
@@ -38,8 +25,8 @@ int x86_timer_service(X86_LAPIC_TIMER *state)
         !x86_timer_read(state->Mapping,0x3e0,&value) || value != 3 ||
         !x86_timer_read(state->Mapping,0x380,&value) || value != state->Reload ||
         !x86_timer_read(state->Mapping,0x390,&value) || value ||
-        !stop(state->Mapping)) {
-        stop(state->Mapping);
+        !x86_timer_stop(state->Mapping)) {
+        x86_timer_stop(state->Mapping);
         state->Error = 1;
         return 0;
     }
@@ -49,84 +36,6 @@ int x86_timer_service(X86_LAPIC_TIMER *state)
     }
     ++state->Count;
     state->Phase = X86_TIMER_PENDING;
-    return 1;
-}
-
-// ====== source mascherata ferma e senza IRQ prima di una transizione ===== //
-
-static int masked_idle(const X86_LAPIC_TIMER *state)
-{
-    BOOT_U32 value;
-    return x86_timer_read(state->Mapping,0x320,&value) && value == 0x10041 &&
-        x86_timer_read(state->Mapping,0x380,&value) && !value &&
-        x86_timer_read(state->Mapping,0x390,&value) && !value &&
-        x86_timer_read(state->Mapping,0x3e0,&value) && value == 3 && x86_lapic_idle(state->Mapping);
-}
-
-// ====== calibrazione completa prima di rendere riusabile la source ===== //
-
-int x86_timer_events_initialize(X86_LAPIC_TIMER *state)
-{
-    if (!x86_timer_owner_valid(state) || !x86_irq_ready() || state->Phase || state->Error ||
-        !state->Reload || state->Token.Id || state->Token.Vector || state->Token.Reserved || !masked_idle(state)) {
-        return 0;
-    }
-    state->Phase = X86_TIMER_READY;
-    return 1;
-}
-
-// ====== nessun riarmo sopra una consegna non consumata ===== //
-
-int x86_timer_arm(X86_LAPIC_TIMER *state)
-{
-    if (!x86_timer_owner_valid(state) || !x86_irq_ready() || state->Error || !state->Reload ||
-        state->Phase != X86_TIMER_READY || state->Count == ~0U || !state->Token.Id ||
-        state->Token.Vector != 0x41 || state->Token.Reserved ||
-        !x86_irq_registry_token_live(x86_irq_registry(),&state->Token) || !masked_idle(state)) {
-        return 0;
-    }
-    state->Active = 1;
-    state->Phase = X86_TIMER_ARMED;
-    if (!write(state->Mapping,0x320,0x41) || !write(state->Mapping,0x380,state->Reload)) {
-        if (stop(state->Mapping)) { state->Active = 0; state->Phase = X86_TIMER_READY; }
-        state->Error = 3;
-        return 0;
-    }
-    return 1;
-}
-
-// ====== consegna una volta sola a output disgiunto senza conservare prestiti ===== //
-
-int x86_timer_take(X86_LAPIC_TIMER *state, BOOT_U32 *event)
-{
-    BOOT_U64 address = (BOOT_U64)event;
-    if (!event || (address & 3) || address > ~0ULL-sizeof(*event) ||
-        os_address_ranges_overlap(address,sizeof(*event),(BOOT_U64)state,sizeof(*state)) ||
-        os_address_ranges_overlap(address,sizeof(*event),X86_LAPIC_VIRTUAL-4096,12288) ||
-        os_address_ranges_overlap(address,sizeof(*event),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
-        os_address_ranges_overlap(address,sizeof(*event),128ULL<<39,1ULL<<39) ||
-        !x86_timer_owner_valid(state) || !x86_irq_ready() || state->Error ||
-        state->Phase != X86_TIMER_PENDING || !masked_idle(state) ||
-        os_address_ranges_overlap(address,sizeof(*event),(BOOT_U64)state->Mapping,sizeof(*state->Mapping))) {
-        return 0;
-    }
-    *event = state->Count;
-    state->Consumed = state->Count;
-    state->Active = 0;
-    state->Phase = X86_TIMER_READY;
-    return 1;
-}
-
-// ====== chiusura solo dopo consumo e rimozione della subscription ===== //
-
-int x86_timer_events_close(X86_LAPIC_TIMER *state)
-{
-    if (!x86_timer_owner_valid(state) || !x86_irq_ready() || state->Error ||
-        state->Phase != X86_TIMER_READY || state->Token.Id || state->Token.Vector ||
-        state->Token.Reserved || !masked_idle(state)) {
-        return 0;
-    }
-    state->Phase = X86_TIMER_CLOSED;
     return 1;
 }
 
@@ -176,6 +85,7 @@ static int report(BOOT_U64 deliveries)
         kernel_text("\nKERNEL_TIMER_PENDING_PROBE: ") && kernel_number(timer.PendingProbe) &&
         kernel_text("\nKERNEL_TIMER_CONSUMED: ") && kernel_number(timer.Consumed) &&
         kernel_text("\nKERNEL_TIMER_PHASE: ") && kernel_number(timer.Phase) &&
+        kernel_text("\nKERNEL_TIMER_LOOP_MODE: ") && kernel_number(loop_mode) &&
         kernel_text("\n") && kernel_log(0,"KERNEL_IRQ_SLEEP_REJECT_OK") &&
         kernel_log(0,"KERNEL_TIMER_EVENTS_OK") && kernel_log(0,"KERNEL_TIMER_OK");
 }
@@ -286,34 +196,36 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
         return 0;
     }
     kernel_log(1,"TIMER_ACQUIRED");
-    if (!stop(mapping) || !write(mapping,0x3e0,3) ||
+    if (!x86_timer_stop(mapping) || !x86_timer_confirm_write(mapping,0x3e0,3) ||
         !x86_timer_measure(&timer)) {
         kernel_log(3,"TIMER_CALIBRATION_FAILED");
         goto cleanup;
     }
     kernel_log(1,"TIMER_CALIBRATED");
-    if (!x86_timer_events_initialize(&timer) || !deadlines() || !sleep_rejections()) {
+    if (!x86_timer_events_initialize(&timer) ||
+        !(loop_mode ? x86_timer_loop_run(&timer,handle,quiet) : deadlines()) || !sleep_rejections()) {
         kernel_log(3,"TIMER_DEADLINES_FAILED");
         goto cleanup;
     }
     result = 1;
 cleanup:
-    stopped = stop(mapping);
+    stopped = x86_timer_stop(mapping);
     timer.Active = 0;
     if (timer.Token.Id) {
         delivered = x86_irq_registry_deliveries(x86_irq_registry(),&timer.Token);
         detached = stopped && x86_irq_registry_unbind(x86_irq_registry(),&timer.Token);
     }
     if (stopped && detached && x86_timer_events_close(&timer) && x86_lapic_idle(mapping)) {
-        int divider = write(mapping,0x3e0,timer.OriginalDivide);
-        int lvt = write(mapping,0x320,timer.OriginalLvt);
+        int divider = x86_timer_confirm_write(mapping,0x3e0,timer.OriginalDivide);
+        int lvt = x86_timer_confirm_write(mapping,0x320,timer.OriginalLvt);
         restored = divider && lvt;
     }
     finished = 1;
-    if (!result || !stopped || !detached || !restored || delivered != 3 || timer.Count != 3 || timer.Error ||
+    if (!result || !stopped || !detached || !restored || delivered != timer.Count ||
+        (!loop_mode && timer.Count != 3) || timer.Error ||
         !x86_irq_ready() || !x86_lapic_idle(mapping) || !x86_page_window_idle_valid(window) ||
         !x86_paging_inventory_verify_lapic(context,window->Pool,mapping,inventory)) {
         return 0;
     }
-    return report(delivered);
+    return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);
 }

@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/timer/lapic/timer.h"
+#include "arch/x86/kernel/timer/lapic/runtime.h"
 static unsigned char fadt[300];
 static KERNEL_ACPI_DIRECTORY directory;
 static X86_LAPIC_MAPPING mapping;
@@ -243,5 +244,10 @@ __declspec(dllexport) int run_lapic_timer_tests(void)
     if (result) return 500+result;
     result = event_cycles();
     if (result) return 600+result;
+    if (x86_timer_loop_request_stop() || x86_timer_loop_closed(0) ||
+        x86_timer_loop_run(0,0,0)) return 701;
+    reset();
+    if (x86_timer_loop_closed(&timer) || x86_timer_loop_run(&timer,0,0) ||
+        x86_timer_loop_request_stop() || timer.Count || timer.Consumed || timer.Phase) return 702;
     return 0;
 }

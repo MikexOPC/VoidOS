@@ -1,4 +1,4 @@
-param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install,
+param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
@@ -32,6 +32,7 @@ if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project),
     ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')))
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
+if ($EventLoop) { $flags += '/DKERNEL_EVENT_LOOP=1' }
 if ($TestRegionFault -ne 'none') {
     $mode = switch ($TestRegionFault) { 'retired' {1} 'guard-low' {2} 'guard-high' {3} 'execute' {4} }
     $flags += ('/DKERNEL_TEST_REGION_FAULT=' + $mode)
@@ -65,6 +66,7 @@ foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch
     'arch/x86/kernel/interrupts/return/table.c','arch/x86/kernel/interrupts/registry/registry.c',
     'arch/x86/kernel/serial/interrupts/driver.c','arch/x86/kernel/serial/transmit/buffer.c','arch/x86/kernel/serial/queue/queue.c',
     'arch/x86/kernel/timer/lapic/calibration.c','arch/x86/kernel/timer/lapic/driver.c','arch/x86/kernel/timer/lapic/access.c',
+    'arch/x86/kernel/timer/lapic/runtime.c',
     'arch/x86/mm/devices/access.c','arch/x86/mm/devices/lapic.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
     'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {

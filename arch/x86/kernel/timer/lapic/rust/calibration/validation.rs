@@ -1,5 +1,14 @@
 #![cfg_attr(not(test), no_std)]
 
+// ====== decisione solo a evento consumato senza incrementare contatori saturi ===== //
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_timer_loop_action(request: u32, count: u32, consumed: u32) -> u32 {
+    if request > 1 || count != consumed { return 0; }
+    if request == 1 || count == u32::MAX { return 2; }
+    1
+}
+
 // ====== stati della source con backpressure prima del prossimo riarmo ===== //
 
 #[unsafe(no_mangle)]

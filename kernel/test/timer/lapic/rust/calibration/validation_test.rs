@@ -1,6 +1,18 @@
 #[path = "../../../../../../arch/x86/kernel/timer/lapic/rust/calibration/validation.rs"]
 mod validation;
 
+// ====== ciclo senza limite di tick con arresto esplicito oppure saturazione ===== //
+
+#[test]
+fn loop_action() {
+    for count in [0,3,8,1000,u32::MAX-1,u32::MAX] {
+        assert_eq!(validation::x86_timer_loop_action(0,count,count),if count==u32::MAX {2} else {1});
+        assert_eq!(validation::x86_timer_loop_action(1,count,count),2);
+        assert_eq!(validation::x86_timer_loop_action(2,count,count),0);
+        if count > 0 { assert_eq!(validation::x86_timer_loop_action(0,count,count-1),0); }
+    }
+}
+
 // ====== un solo evento non consumato e nessun wrap delle sequenze ===== //
 
 #[test]

@@ -6,6 +6,7 @@ $objects = @()
 # ============ timer LAPIC senza ipotesi di frequenza senza accessi privilegiati ============ #
 
 foreach ($source in @('arch/x86/kernel/timer/lapic/calibration.c','arch/x86/kernel/timer/lapic/driver.c',
+    'arch/x86/kernel/timer/lapic/runtime.c',
     'kernel/test/timer/lapic/timer_test.c','kernel/test/timer/lapic/platform_mock.c','lib/memory/address_ranges.c')) {
     $object = Join-Path $OutputDirectory ('timer-'+($source.Replace('/','-') -replace '\.c$','.obj'))
     & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O2 /c ('/I'+$project) `

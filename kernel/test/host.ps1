@@ -187,4 +187,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
 & (Join-Path $PSScriptRoot 'serial/queue/scripts/host.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
 & (Join-Path $PSScriptRoot 'interrupts/registry/scripts/host.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
 & (Join-Path $PSScriptRoot 'timer/lapic/scripts/host.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
-Write-BootStatus OK 'GDT TSS stack TX e timer: ownership, rollback, revoca e corruzioni verificati; 58 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS stack TX e timer: ownership, rollback, revoca e corruzioni verificati; 59 test Rust complessivi.'

@@ -44,11 +44,11 @@ questo caso attraverso il proprio timeout. Inoltre il timer APIC puo
 fermarsi in certi stati di risparmio energetico se ARAT non e presente;
 non viene dichiarato supporto generale all'idle su hardware fisico.
 
-Questo blocco e una primitiva di attesa verificata, non un event loop
-permanente: dopo la prova finita sorgenti e subscription sono chiuse.
-Restano da introdurre durata permanente dei driver, eventi consumabili,
-politica di timeout e solo successivamente scheduling. Non e un lock
-SMP o un'interfaccia chiamabile da user mode.
+Questa primitiva e usata sia dalla prova finita sia dal
+[ciclo continuo opzionale](../timer/runtime.md). Le API del timer
+gestiscono consumo e durata della subscription; restano da introdurre
+una politica di timeout indipendente dalla source attesa e poi scheduling.
+La primitiva non e un lock SMP o un'interfaccia chiamabile da user mode.
 
 [Intel SDM, STI e HLT](https://cdrdv2-public.intel.com/782151/253667-sdm-vol-2b.pdf)
 definisce il ritardo degli IRQ dopo STI e il ritorno dal sonno.
