@@ -20,6 +20,8 @@
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
 #include "arch/x86/kernel/timer/lapic/timer.h"
+#include "arch/x86/kernel/timer/hpet/description/integration/kernel.h"
+static X86_HPET_DESCRIPTION hpet_description;
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
 static KERNEL_PHYSICAL_ALLOCATOR physical_allocator;
@@ -35,7 +37,9 @@ static KERNEL_OBJECT_HANDLE acpi_object;
 static KERNEL_OBJECT_HANDLE madt_object;
 static X86_APIC_PROFILE apic_profile;
 static X86_APIC_CAPABILITIES apic_capabilities;
+
 __declspec(noreturn) static void kernel_continue(void);
+
 #if defined(KERNEL_TEST_MAIN_FAULT) && KERNEL_TEST_MAIN_FAULT == 4
 
 // ====== ritorno intenzionale soltanto nell'immagine di test isolata ===== //
@@ -306,6 +310,9 @@ __declspec(noreturn) static void kernel_continue(void)
             !kernel_text("\n") || !kernel_log(0, "KERNEL_PAGING_INVENTORY_OK")) kernel_panic("SERIAL_UNAVAILABLE");
         if (!kernel_acpi_initialize(context, &page_window, &persistent_arena, &acpi_object) ||
             !x86_paging_inventory_verify(context, &physical_allocator, paging)) kernel_panic("ACPI_DIRECTORY_INVALID");
+        if (context->Info.Acpi.Source && !x86_hpet_kernel_initialize(context, &page_window,
+            (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&persistent_arena, &acpi_object),
+            paging, &hpet_description)) kernel_panic("HPET_DISCOVERY_INVALID");
         if (!kernel_madt_initialize(context, &page_window, &persistent_arena, &acpi_object, &madt_object) ||
             !x86_paging_inventory_verify(context, &physical_allocator, paging)) kernel_panic("MADT_TOPOLOGY_INVALID");
         if (context->Info.Acpi.Source &&

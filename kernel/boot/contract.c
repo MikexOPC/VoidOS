@@ -23,8 +23,7 @@ int kernel_validate_contract(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U6
 
 // ====== copia del contratto e prestito della mappa ancora posseduta ====== //
 
-int kernel_capture_contract(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U64 entry,
-                            KERNEL_BOOT_CONTEXT *context)
+int kernel_capture_contract(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U64 entry, KERNEL_BOOT_CONTEXT *context)
 {
     if (!context || !kernel_validate_contract(info, root, entry)) return 0;
     if ((BOOT_U64)info > ~0ULL - sizeof(*info) || (BOOT_U64)context > ~0ULL - sizeof(*context) ||

@@ -2,8 +2,7 @@
 #define OS_KERNEL_ACPI_ROOT_H
 #include "lib/firmware/acpi/rsdp.h"
 #define KERNEL_ACPI_ROOT_ENTRIES 256U
-typedef int (*KERNEL_ACPI_READ)(void *context, OS_ACPI_U64 physical,
-                               OS_ACPI_U32 bytes, unsigned char *output);
+typedef int (*KERNEL_ACPI_READ)(void *context, OS_ACPI_U64 physical, OS_ACPI_U32 bytes, unsigned char *output);
 typedef struct {
     OS_ACPI_U64 Physical;
     OS_ACPI_U32 Length, Count, Width, Reserved;

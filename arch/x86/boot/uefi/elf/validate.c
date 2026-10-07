@@ -6,7 +6,7 @@ extern UINT32 elf_check_load_segment(UINT32 flags, UINT64 offset, UINT64 virtual
 typedef char check_segment_result_codes[(ELF_VALID == 0 && ELF_UNSUPPORTED_PROFILE == 3 &&
                                         ELF_BAD_SEGMENT == 5) ? 1 : -1];
 
-// ====== decodifica little endian senza cast del buffer ====== //
+// ====== decodifica little endian senza cast del buffer ======
 
 static UINT16 read16(const UINT8 *data) {
     return (UINT16)((UINT16)data[0] | ((UINT16)data[1] << 8));
@@ -20,7 +20,7 @@ static UINT64 read64(const UINT8 *data) {
     return (UINT64)read32(data) | ((UINT64)read32(data + 4) << 32);
 }
 
-// ====== controllo intervalli senza overflow ====== //
+// ====== controllo intervalli senza overflow ======
 
 static int file_range(UINT64 offset, UINT64 bytes, UINTN size)
 {
@@ -35,7 +35,7 @@ static int overlaps_pages(const ELF_LOAD_SEGMENT *first, const ELF_LOAD_SEGMENT 
     return first_start <= second_end && second_start <= first_end;
 }
 
-// ====== controlli di un segmento caricabile ====== //
+// ====== controlli di un segmento caricabile ======
 
 static ELF_VALIDATION_RESULT read_segment(const UINT8 *header, UINTN size, ELF_LOAD_SEGMENT *segment) {
 
@@ -50,10 +50,10 @@ static ELF_VALIDATION_RESULT read_segment(const UINT8 *header, UINTN size, ELF_L
         segment->VirtualAddress, segment->FileBytes, segment->MemoryBytes, alignment, size);
 }
 
-// ====== validazione header e tabella programmi ====== //
+// ====== validazione header e tabella programmi ======
 
 static ELF_VALIDATION_RESULT validate_file(const UINT8 *file, UINTN size, ELF_LOAD_PLAN *plan) {
-    
+
     UINT64 table_offset;
     UINT16 header_count;
     UINTN index, previous;
@@ -79,7 +79,7 @@ static ELF_VALIDATION_RESULT validate_file(const UINT8 *file, UINTN size, ELF_LO
         return ELF_BAD_TABLE;
     plan->Entry = read64(file + 24);
 
-    // ====== segmenti e permessi ====== //
+    // ====== segmenti e permessi ======
 
     for (index = 0; index < header_count; ++index) {
         const UINT8 *header = file + table_offset + index * 56;
@@ -126,7 +126,7 @@ static ELF_VALIDATION_RESULT validate_file(const UINT8 *file, UINTN size, ELF_LO
     return ELF_VALID;
 }
 
-// ====== interfaccia pubblica e invalidazione piano ====== //
+// ====== interfaccia pubblica e invalidazione piano ======
 
 ELF_VALIDATION_RESULT elf_validate(const UINT8 *file, UINTN size, ELF_LOAD_PLAN *plan)
 {
