@@ -33,8 +33,7 @@
 
 X86_BOOT_ASSERT(X86_BOOT_PAGE_BYTES == 4096, "Paging implementation requires 4 KiB pages");
 X86_BOOT_ASSERT(X86_BOOT_LOW_ADDRESS_LIMIT == (1ULL << 47), "Four-level lower canonical range required");
-X86_BOOT_ASSERT(X86_BOOT_STACK_PAGES > 0 && X86_BOOT_STACK_PAGES <= 16,
-                "Initial stack budget exceeds 64 KiB");
+X86_BOOT_ASSERT(X86_BOOT_STACK_PAGES > 0 && X86_BOOT_STACK_PAGES <= 16, "Initial stack budget exceeds 64 KiB");
 X86_BOOT_ASSERT(X86_BOOT_TABLE_LIMIT >= 4 && X86_BOOT_TABLE_LIMIT <= 128,
                 "Page table budget must fit the current ownership metadata");
 X86_BOOT_ASSERT(X86_BOOT_INFO_VIRTUAL >= X86_BOOT_PAGE_BYTES &&

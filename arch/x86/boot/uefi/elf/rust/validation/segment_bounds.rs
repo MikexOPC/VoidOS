@@ -5,7 +5,7 @@ const UNSUPPORTED_PROFILE: u32 = 3;
 const BAD_SEGMENT: u32 = 5;
 const VIRTUAL_LIMIT: u64 = 1 << 47;
 
-// ====== limiti e permessi dei segmenti ELF senza accesso a puntatori ====== //
+// ====== elf_check_load_segment ======
 
 #[unsafe(no_mangle)]
 pub extern "C" fn elf_check_load_segment(
@@ -48,4 +48,22 @@ pub extern "C" fn elf_check_load_segment(
         }
     }
     VALID
+}
+
+// ====== elf_check_staging_range ======
+
+// Intel SDM Vol. 3A, Section 4.5: lower 4-level canonical half ends at 2^47.
+// UEFI 2.10, Section 7.2.1: allocation size is Pages * 4096 bytes.
+#[unsafe(no_mangle)]
+pub extern "C" fn elf_check_staging_range(address: u64, pages: u64) -> u32 {
+    if !(4096..VIRTUAL_LIMIT).contains(&address) || address & 4095 != 0 || pages == 0 {
+        return 0;
+    }
+    let Some(bytes) = pages.checked_mul(4096) else {
+        return 0;
+    };
+    let Some(end) = address.checked_add(bytes) else {
+        return 0;
+    };
+    u32::from(end <= VIRTUAL_LIMIT)
 }

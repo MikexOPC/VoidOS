@@ -1,3 +1,24 @@
+# ====== Build directory ====== #
+
 arch/x86/boot/uefi/build/
-.tools/
 kernel/build/
+
+# ====== Tools directory ====== #
+
+.tools/
+.codex/
+
+# ====== Editor directory ====== #
+
+.idea/
+.vs/
+
+# ====== Other ====== #
+
+review_results/
+
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo

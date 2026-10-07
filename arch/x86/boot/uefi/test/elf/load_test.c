@@ -7,13 +7,16 @@ static UINTN calls, released, requested[2];
 static int fail_allocation, fail_release, bad_mock, invalid_address;
 static int alias_mode;
 static UINT64 services_address;
+static UINT64 returned[2], forced_address;
+static int force_address;
 
-// ====== allocazioni e rilasci controllati ====== //
+// ====== allocazioni e rilasci controllati ======
 
 static EFI_STATUS EFIAPI allocate(UINT32 mode, UINT32 type, UINTN pages, UINT64 *address)
 {
     UINTN index = calls++;
-    if (mode || type != 2 || !pages || pages > 2 || index >= 2) {
+    if (mode || *address || type != 2 ||
+        !pages || pages > 2 || index >= 2) {
         bad_mock = 1;
         return EFI_INVALID_PARAMETER;
     }
@@ -29,6 +32,8 @@ static EFI_STATUS EFIAPI allocate(UINT32 mode, UINT32 type, UINTN pages, UINT64 
             alias_mode == 3 ? (UINT64)memory[0] + 4095 :
             alias_mode == 4 ? (UINT64)fixture : services_address;
     }
+    if (index == 1 && force_address) *address = forced_address;
+    returned[index] = *address;
     return EFI_SUCCESS;
 }
 
@@ -37,7 +42,7 @@ static EFI_STATUS EFIAPI release(UINT64 address, UINTN pages)
     UINTN index;
     ++released;
     for (index = 0; index < 2; ++index)
-        if (address == (UINT64)memory[index] + (invalid_address && index == 1 ? 1ULL : 0ULL) &&
+        if (address == returned[index] &&
             pages == requested[index])
             return fail_release == 1 || (fail_release == 2 && index == 1) ?
                 EFI_DEVICE_ERROR : EFI_SUCCESS;
@@ -45,7 +50,7 @@ static EFI_STATUS EFIAPI release(UINT64 address, UINTN pages)
     return EFI_INVALID_PARAMETER;
 }
 
-// ====== fixture e memoria con sentinelle ====== //
+// ====== fixture e memoria con sentinelle ======
 
 static void prepare(EFI_BOOT_SERVICES_PREFIX *services, ELF_STAGED_IMAGE *image)
 {
@@ -53,6 +58,8 @@ static void prepare(EFI_BOOT_SERVICES_PREFIX *services, ELF_STAGED_IMAGE *image)
     calls = released = 0;
     fail_allocation = fail_release = bad_mock = invalid_address = 0;
     alias_mode = 0;
+    forced_address = returned[0] = returned[1] = 0;
+    force_address = 0;
     services_address = (UINT64)(UINTN)services;
     image->Count = 0;
     image->AllocatedBytes = 0;
@@ -69,7 +76,7 @@ static void prepare(EFI_BOOT_SERVICES_PREFIX *services, ELF_STAGED_IMAGE *image)
             memory[segment][byte] = 0xcc;
 }
 
-// ====== copia, BSS, confini e conservazione della proprieta ====== //
+// ====== copia, BSS, confini e conservazione della proprieta ======
 
 __declspec(dllexport) int run_load_tests(void)
 {
@@ -138,7 +145,7 @@ __declspec(dllexport) int run_load_tests(void)
     if (elf_stage_segments(&services, fixture, sizeof(fixture), 0) != EFI_INVALID_PARAMETER)
         return 515;
     prepare(&services, &image);
-    // ====== budget virtuale valido ma pagine arrotondate oltre il limite ====== //
+    // ====== budget virtuale valido ma pagine arrotondate oltre il limite ======
 
     fixture[104] = 192; fixture[105] = 255; fixture[106] = 255; fixture[107] = 7;
     fixture[136] = 128; fixture[137] = 1; fixture[138] = 0; fixture[139] = 16;
@@ -186,7 +193,27 @@ __declspec(dllexport) int run_load_tests(void)
         if (elf_release_segments(&services, &image) != EFI_SUCCESS || released != 2 ||
             image.Count || image.AllocatedBytes || bad_mock) return 570 + scenario;
     }
+    // ====== indirizzi fuori profilo e cleanup fallibile senza accessi ======
+
+    for (segment = 0; segment < 6; ++segment) {
+        static const UINT64 rejected[] = {
+            0, 1, ELF_STAGING_ADDRESS_LIMIT, ELF_STAGING_ADDRESS_LIMIT + 4096,
+            ~4095ULL, ELF_STAGING_ADDRESS_LIMIT - 4096
+        };
+        prepare(&services, &image);
+        force_address = 1;
+        forced_address = rejected[segment];
+        if (segment == 5) { fixture[160] = 0; fixture[161] = 16; }
+        fail_release = 2;
+        if (elf_stage_segments(&services, fixture, sizeof(fixture), &image) != EFI_DEVICE_ERROR ||
+            calls != 2 || released != 2 || bad_mock || image.Count != 2 ||
+            image.Segments[0].Pages || image.Segments[1].PhysicalBase != forced_address ||
+            image.AllocatedBytes != requested[1] * 4096) return 580 + (int)segment;
+        for (byte = 0; byte < sizeof(memory[1]); ++byte)
+            if (memory[1][byte] != 0xcc) return 590 + (int)segment;
+        fail_release = 0;
+        if (elf_release_segments(&services, &image) != EFI_SUCCESS || released != 3 ||
+            image.Count || image.AllocatedBytes || bad_mock) return 600 + (int)segment;
+    }
     return 0;
 }
-
-

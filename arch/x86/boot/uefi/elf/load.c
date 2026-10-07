@@ -1,7 +1,7 @@
 #include "elf/load.h"
 #include "lib/memory/address_ranges.h"
 
-// ====== verifica delle allocazioni gia possedute ====== //
+// ====== conflicts_with_owned_memory ======
 
 static int conflicts_with_owned_memory(const ELF_STAGED_IMAGE *image, const UINT8 *file, UINTN size, UINT64 address, UINT64 bytes)
 {
@@ -15,7 +15,7 @@ static int conflicts_with_owned_memory(const ELF_STAGED_IMAGE *image, const UINT
     return 0;
 }
 
-// ====== rilascio di tutte le allocazioni acquisite ====== //
+// ====== elf_release_segments ======
 
 EFI_STATUS elf_release_segments(EFI_BOOT_SERVICES_PREFIX *services, ELF_STAGED_IMAGE *image)
 {
@@ -41,7 +41,7 @@ EFI_STATUS elf_release_segments(EFI_BOOT_SERVICES_PREFIX *services, ELF_STAGED_I
     return result;
 }
 
-// ====== controllo budget includendo offset e arrotondamento ====== //
+// ====== check_budget ======
 
 static EFI_STATUS check_budget(const ELF_LOAD_PLAN *plan)
 {
@@ -57,7 +57,7 @@ static EFI_STATUS check_budget(const ELF_LOAD_PLAN *plan)
     return EFI_SUCCESS;
 }
 
-// ====== allocazione e copia senza esecuzione ====== //
+// ====== elf_stage_segments ======
 
 EFI_STATUS elf_stage_segments(EFI_BOOT_SERVICES_PREFIX *services, const UINT8 *file,
                               UINTN size, ELF_STAGED_IMAGE *image)
@@ -85,12 +85,15 @@ EFI_STATUS elf_stage_segments(EFI_BOOT_SERVICES_PREFIX *services, const UINT8 *f
         UINTN pages = (UINTN)((offset + segment->MemoryBytes + 4095) / 4096);
         UINT8 *destination;
         UINTN byte;
+        // UEFI 2.10, Section 7.2.1: AllocateAnyPages=0, EfiLoaderData=2.
+        // A successful allocation still needs validation before identity access.
         status = services->AllocatePages(0, 2, pages, &address);
         if (status != EFI_SUCCESS)
             break;
         if (conflicts_with_owned_memory(image, file, size, address, pages * 4096) ||
             os_address_ranges_overlap(address, pages * 4096, (UINT64)(UINTN)services, services->Hdr.HeaderSize) ||
             os_address_ranges_overlap(address, pages * 4096, (UINT64)(UINTN)&plan, sizeof(plan))) {
+            // An ambiguous alias is not ours to free or overwrite.
             status = EFI_DEVICE_ERROR;
             break;
         }
@@ -100,7 +103,8 @@ EFI_STATUS elf_stage_segments(EFI_BOOT_SERVICES_PREFIX *services, const UINT8 *f
         staged->Flags = segment->Flags;
         ++image->Count;
         image->AllocatedBytes += pages * 4096;
-        if (!address || (address & 4095) || address > ~0ULL - pages * 4096) {
+        // Retain a distinct allocation for cleanup, even if out of profile.
+        if (!elf_check_staging_range(address, pages)) {
             status = EFI_DEVICE_ERROR;
             break;
         }

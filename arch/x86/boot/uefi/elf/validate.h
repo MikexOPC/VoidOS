@@ -2,7 +2,7 @@
 #define OS_ELF_VALIDATE_H
 #include "uefi.h"
 
-// ====== limiti del profilo iniziale ====== //
+// ====== limiti del profilo iniziale ======
 
 #define ELF_MAX_PROGRAM_HEADERS 32
 #define ELF_MAX_LOAD_SEGMENTS 16
@@ -21,7 +21,7 @@ typedef enum {
     ELF_LIMIT_EXCEEDED
 } ELF_VALIDATION_RESULT;
 
-// ====== piano di caricamento senza allocazioni ====== //
+// ====== piano di caricamento senza allocazioni ======
 
 typedef struct {
     UINT64 FileOffset;
@@ -39,7 +39,7 @@ typedef struct {
 } ELF_LOAD_PLAN;
 typedef char check_load_plan_size[(sizeof(ELF_LOAD_PLAN) == 664) ? 1 : -1];
 
-// ====== validazione buffer immutabile ====== //
+// ====== validazione buffer immutabile ======
 
 ELF_VALIDATION_RESULT elf_validate(const UINT8 *file, UINTN size, ELF_LOAD_PLAN *plan);
 #endif

@@ -3,7 +3,13 @@
 #include "elf/validate.h"
 #include "file_protocol.h"
 
-// ====== segmenti preparati in pagine fisiche ====== //
+// ====== segmenti preparati in pagine fisiche ======
+
+// Intel SDM Vol. 3A, Section 4.5: 4-level canonical bits 63:47 identical.
+// Keep identity staging in the lower canonical half, excluding page zero.
+#define ELF_STAGING_ADDRESS_LIMIT (1ULL << 47)
+
+UINT32 elf_check_staging_range(UINT64 address, UINT64 pages);
 
 typedef struct {
     UINT64 PhysicalBase;

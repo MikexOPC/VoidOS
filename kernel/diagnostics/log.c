@@ -42,8 +42,7 @@ int kernel_number(BOOT_U64 value)
 
 // ====== panic terminale anche quando la seriale smette di rispondere ====== //
 
-__declspec(noreturn) void kernel_panic(const char *message)
-{
+__declspec(noreturn) void kernel_panic(const char *message) {
     kernel_section("kernel panic");
     kernel_log(3, message);
     x86_kernel_stop(0x4b50414e49430001ULL);

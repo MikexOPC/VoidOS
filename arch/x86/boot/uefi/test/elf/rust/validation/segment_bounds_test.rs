@@ -1,11 +1,11 @@
 #[path = "../../../../elf/rust/validation/segment_bounds.rs"]
 mod segment_bounds;
 
-// ====== prove dei confini numerici e dei permessi ====== //
+// ====== prove dei confini numerici e dei permessi ======
 
 #[cfg(test)]
 mod tests {
-    use super::segment_bounds::elf_check_load_segment;
+    use super::segment_bounds::{elf_check_load_segment, elf_check_staging_range};
     const VALID: u32 = 0;
     const UNSUPPORTED_PROFILE: u32 = 3;
     const BAD_SEGMENT: u32 = 5;
@@ -68,5 +68,20 @@ mod tests {
             elf_check_load_segment(4, 0, VIRTUAL_LIMIT - 4096, 4096, 4097, 4096, 4096),
             BAD_SEGMENT
         );
+    }
+
+    #[test]
+    fn staging_accepts_exact_limit_and_rejects_invalid_ranges() {
+        assert_eq!(elf_check_staging_range(4096, 1), 1);
+        assert_eq!(elf_check_staging_range(VIRTUAL_LIMIT - 4096, 1), 1);
+        assert_eq!(elf_check_staging_range(VIRTUAL_LIMIT - 8192, 2), 1);
+        for (address, pages) in [
+            (0, 1), (1, 1), (4095, 1), (4097, 1), (4096, 0),
+            (VIRTUAL_LIMIT, 1), (VIRTUAL_LIMIT + 4096, 1),
+            (VIRTUAL_LIMIT - 4096, 2), (u64::MAX & !4095, 1),
+            (4096, u64::MAX), (4096, 1 << 52),
+        ] {
+            assert_eq!(elf_check_staging_range(address, pages), 0);
+        }
     }
 }
