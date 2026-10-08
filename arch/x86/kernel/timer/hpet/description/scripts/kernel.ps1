@@ -67,15 +67,20 @@ for ($index = 1; $index -le 11; ++$index) {
                 $stream = [IO.File]::Open($serial, 'Open', 'Read', 'ReadWrite')
                 $reader = [IO.StreamReader]::new($stream)
                 try { $log = $reader.ReadToEnd() } finally { $reader.Dispose() }
-                if ($log -match '\[ FAIL \]|KERNEL PANIC|KERNEL_EXCEPTION') { throw "Kernel failure: $index" }
-                if ($log.Contains('KERNEL_READY')) { $passed = $true; break }
+                if ($log -match 'KERNEL_EXCEPTION') { throw "Kernel exception: $index" }
+                if ($absent -and $log.Contains('kernel panic') -and $log.Contains('LAPIC_TIMER_INVALID')) {
+                    $passed = $true; break
+                }
+                if (!$absent -and $log -match '\[ FAIL \]|KERNEL PANIC') { throw "Kernel failure: $index" }
+                if (!$absent -and $log.Contains('KERNEL_READY')) { $passed = $true; break }
             }
             Start-Sleep -Milliseconds 50
         }
         if (!$passed) { throw "Kernel timeout: $index" }
         if ($absent) {
             if (!$log.Contains('KERNEL_HPET_ABSENT') || $log.Contains('KERNEL_HPET_DISCOVERY_OK') ||
-                $log.Contains('KERNEL_HPET_PROBE_OK')) {
+                $log.Contains('KERNEL_HPET_PROBE_OK') || $log.Contains('KERNEL_WATCHDOG_READY') ||
+                $log.Contains('KERNEL_READY')) {
                 throw 'Absent HPET profile reported a successful discovery'
             }
         } else {
@@ -88,6 +93,13 @@ for ($index = 1; $index -le 11; ++$index) {
                 throw 'Read-only HPET probe not verified'
             }
             $owner = Read-Number $log 'KERNEL_HPET_DESCRIPTION'
+            if (!$log.Contains('KERNEL_HPET_CANDIDATE_OBSERVED') ||
+                (Read-Number $log 'KERNEL_HPET_CANDIDATE') -ge
+                (Read-Number $log 'KERNEL_HPET_COMPARATORS') -or
+                ((Read-Number $log 'KERNEL_HPET_ROUTE_MASK') -eq 0 -and
+                (Read-Number $log 'KERNEL_HPET_FSB_CAPABLE') -eq 0)) {
+                throw 'No usable HPET comparator capability observed'
+            }
             if (($owner -band 7) -or $owner -lt 0x100000000 -or $owner -ge 0x100100000) {
                 throw 'Persistent HPET description outside kernel image'
             }
@@ -115,7 +127,7 @@ for ($index = 1; $index -le 11; ++$index) {
             ([Convert]::ToUInt64($row.Groups[2].Value,16) -band 4294967295L) -ne
             (Read-Number $log 'KERNEL_HPET_BLOCK_ID')) { throw 'Persisted description mismatch' }
     }
-    Write-BootStatus OK "Kernel boot $index/11: HPET absent=$absent, KERNEL_READY verificato."
+    Write-BootStatus OK "Kernel boot $index/11: HPET absent=$absent, esito del profilo verificato."
 }
 foreach ($source in $manifest) {
     if ((Get-FileHash -LiteralPath $source.Path -Algorithm SHA256).Hash -ne $source.Hash) {

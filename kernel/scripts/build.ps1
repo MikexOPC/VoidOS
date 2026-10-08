@@ -1,9 +1,17 @@
 param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
+    [switch]$TestWatchdogLostLapic,
+    [switch]$TestWatchdogAlternate,
+    [switch]$TestWatchdogCleanupRecovery,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
+if ($TestWatchdogCleanupRecovery -and ($EventLoop -or $TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Profilo cleanup recovery solo finito, incompatibile con altri fault.' }
+if ($Install -and $TestWatchdogCleanupRecovery) { throw 'Non installare la fault injection cleanup recovery.' }
+if ($TestWatchdogAlternate -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Profilo watchdog alternativo incompatibile con altri fault.' }
+if ($Install -and $TestWatchdogAlternate) { throw 'Non installare immagini con route watchdog riservate per test.' }
+if ($TestWatchdogLostLapic -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
 if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
 if ($TestRegionFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
 if ($TestMainFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
@@ -33,6 +41,10 @@ $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' 
     ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')))
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
 if ($EventLoop) { $flags += '/DKERNEL_EVENT_LOOP=1' }
+if ($TestWatchdogLostLapic) { $flags += '/DKERNEL_TEST_WATCHDOG_LOST_LAPIC=1' }
+if ($TestWatchdogAlternate) { $flags += '/DKERNEL_TEST_WATCHDOG_ALTERNATE=1' }
+if ($TestWatchdogCleanupRecovery) { $flags += '/DKERNEL_TEST_WATCHDOG_CLEANUP_RECOVERY=1' }
+if ($Install -and $TestWatchdogLostLapic) { throw 'Non installare la fault injection watchdog.' }
 if ($TestRegionFault -ne 'none') {
     $mode = switch ($TestRegionFault) { 'retired' {1} 'guard-low' {2} 'guard-high' {3} 'execute' {4} }
     $flags += ('/DKERNEL_TEST_REGION_FAULT=' + $mode)
@@ -66,10 +78,16 @@ foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch
     'arch/x86/kernel/interrupts/return/table.c','arch/x86/kernel/interrupts/registry/registry.c',
     'arch/x86/kernel/serial/interrupts/driver.c','arch/x86/kernel/serial/transmit/buffer.c','arch/x86/kernel/serial/queue/queue.c',
     'arch/x86/kernel/timer/lapic/calibration.c','arch/x86/kernel/timer/lapic/driver.c','arch/x86/kernel/timer/lapic/access.c',
-    'arch/x86/kernel/timer/lapic/runtime.c',
+    'arch/x86/kernel/timer/lapic/runtime/runtime.c',
     'arch/x86/kernel/timer/hpet/description/table.c','arch/x86/kernel/timer/hpet/description/scan.c',
     'arch/x86/kernel/timer/hpet/description/integration/kernel.c',
     'arch/x86/kernel/timer/hpet/description/probe/policy.c','arch/x86/kernel/timer/hpet/description/probe/hardware.c',
+    'arch/x86/kernel/timer/hpet/watchdog/core.c','arch/x86/kernel/timer/hpet/watchdog/device.c',
+    'arch/x86/kernel/timer/hpet/watchdog/route.c','arch/x86/kernel/timer/hpet/watchdog/wait.c',
+    'arch/x86/kernel/timer/hpet/watchdog/hardware/access.c',
+    'arch/x86/kernel/timer/hpet/watchdog/compatibility/select.c',
+    'arch/x86/kernel/timer/hpet/watchdog/recovery/control.c',
+    'arch/x86/kernel/timer/hpet/watchdog/integration/kernel.c',
     'arch/x86/mm/devices/access.c','arch/x86/mm/devices/lapic.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
     'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
@@ -154,6 +172,21 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/timer/hpet/description/rust/validation/fields.rs'),
     '-o',($output + '/hpet-description.obj'))
 $objects += ($output + '/hpet-description.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',
+    (Join-Path $project 'arch/x86/kernel/timer/hpet/watchdog/rust/deadline/policy.rs'),
+    '-o',($output + '/hpet-watchdog.obj'))
+$objects += ($output + '/hpet-watchdog.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',
+    (Join-Path $project 'arch/x86/kernel/timer/hpet/watchdog/rust/selection/routes.rs'),
+    '-o',($output + '/hpet-watchdog-routes.obj'))
+$objects += ($output + '/hpet-watchdog-routes.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',
+    (Join-Path $project 'arch/x86/kernel/timer/hpet/watchdog/rust/recovery/policy.rs'),
+    '-o',($output + '/hpet-watchdog-recovery.obj'))
+$objects += ($output + '/hpet-watchdog-recovery.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/interrupts/apic/control/rust/encoding/validation.rs'),
     '-o',($output + '/irq-control.obj'))

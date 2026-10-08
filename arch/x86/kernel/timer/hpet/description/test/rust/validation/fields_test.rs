@@ -4,6 +4,42 @@ use fields::x86_hpet_description_fields as validate;
 use fields::x86_hpet_table_span as span;
 use fields::x86_hpet_capabilities_valid as capabilities;
 
+// ====== timer_configuration_dependencies ======
+
+#[test]
+fn timer_configuration_dependencies() {
+    use fields::x86_hpet_timer_valid as timer;
+    for bit in [0, 7, 16, 20, 31] { assert_eq!(timer(0x2001, 1 << bit), 0); }
+    for config in [8, 64, 256, 16384] { assert_eq!(timer(0x2001, config), 0); }
+    assert_eq!(timer(1, 32), 0);
+    for config in [0, 2, 4, 16, 24, 32, 288, 88, 32768, 49152, 31 << 9] {
+        assert_eq!(timer(0x2001, config), 1);
+    }
+}
+
+// ====== timer_candidate_boundaries_and_exclusions ======
+
+#[test]
+fn timer_candidate_boundaries_and_exclusions() {
+    use fields::x86_hpet_timer_candidate as candidate;
+    let id = 0xa201;
+    for index in 0..3 {
+        assert_eq!(candidate(id, 0, 0, index, 32, 1 << 31), 1);
+        assert_eq!(candidate(id, 0, 0, index, 32768, 0), 1);
+        assert_eq!(candidate(id, 0, 0, index, 32, 0), 0);
+        assert_eq!(candidate(id, 0, 1 << index, index, 32, 1), 0);
+        for config in [4, 24, 88, 49152, 1] {
+            assert_eq!(candidate(id, 0, 0, index, config, 1), 0);
+        }
+        assert_eq!(candidate(id, 2, 0, index, 32, 1), u32::from(index == 2));
+    }
+    for index in [3, 31, 32, u32::MAX] {
+        assert_eq!(candidate(id, 0, 0, index, 32, 1), 0);
+    }
+    assert_eq!(candidate(0x3f01, 0, 0, 31, 32, 1), 1);
+    assert_eq!(candidate(0x3f01, 0, 1 << 31, 31, 32, 1), 0);
+}
+
 // ====== capability_identity_and_period ======
 
 #[test]

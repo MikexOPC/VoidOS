@@ -3,6 +3,7 @@
 #include "arch/x86/mm/devices/lapic.h"
 #include "kernel/firmware/acpi/root.h"
 #include "arch/x86/kernel/interrupts/registry/registry.h"
+#include "arch/x86/kernel/timer/hpet/watchdog/watchdog.h"
 #define X86_PM_CLOCK_HZ 3579545U
 #define X86_PM_SAMPLE_TICKS (X86_PM_CLOCK_HZ/100U)
 #define X86_TIMER_READY 1U
@@ -28,6 +29,9 @@ _Static_assert(offsetof(X86_LAPIC_TIMER, Error) == 4, "Prefisso attesa IRQ");
 BOOT_U32 x86_pm_clock_port(BOOT_U64 port, BOOT_U32 flags, BOOT_U32 length);
 BOOT_U32 x86_pm_elapsed(BOOT_U32 start, BOOT_U32 end, BOOT_U32 mask);
 BOOT_U32 x86_timer_reload(BOOT_U32 start, BOOT_U32 end, BOOT_U32 elapsed);
+BOOT_U32 x86_timer_sample_elapsed(BOOT_U32 start_before, BOOT_U32 start_after,
+    BOOT_U32 end_before, BOOT_U32 end_after, BOOT_U32 mask);
+BOOT_U32 x86_timer_sample_consensus(BOOT_U32 first, BOOT_U32 second);
 BOOT_U32 x86_timer_previous_valid(BOOT_U32 lvt, BOOT_U32 divide, BOOT_U32 current);
 BOOT_U32 x86_timer_wait_result(BOOT_U32 result, BOOT_U32 budget, BOOT_U32 count, BOOT_U32 error, BOOT_U32 goal);
 BOOT_U32 x86_timer_event_fields(BOOT_U32 count, BOOT_U32 consumed, BOOT_U32 phase, BOOT_U32 active);
@@ -45,5 +49,5 @@ int x86_timer_owner_valid(const X86_LAPIC_TIMER *timer);
 int x86_timer_service(X86_LAPIC_TIMER *timer);
 int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     const KERNEL_ACPI_DIRECTORY *directory, const X86_LAPIC_MAPPING *mapping,
-    const X86_PAGING_INVENTORY *inventory);
+    const X86_PAGING_INVENTORY *inventory, const X86_WATCHDOG_ENV *watchdog);
 #endif

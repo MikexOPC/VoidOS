@@ -1,10 +1,10 @@
 # R-001 — progetto dell'attesa terminabile
 
-Stato: opzione B scelta dall'utente, watchdog indipendente e HLT. Primo blocco implementato separatamente in `arch/x86/kernel/timer/hpet/description/`: decoder della tabella HPET con validazione numerica Rust. Il wait LAPIC non e ancora modificato. Ambito: watchdog del timer e sue interfacce/test; non scheduler o SMP.
+Stato al 7 ottobre 2026: opzione B implementata in `arch/x86/kernel/timer/hpet/watchdog/` e collegata alle attese finite e al ciclo continuo LAPIC. Questa pagina conserva il progetto iniziale; il [contratto implementato](../../../hpet/watchdog/documentation/design.md) descrive ownership, registri, failure model e costo della deadline 100 ms. Le prove finali sono nel [report di chiusura](../../../hpet/watchdog/documentation/validation.md). Ambito: watchdog del timer e sue interfacce/test; non scheduler o SMP.
 
 ## Problema verificato nel sorgente
 
-runtime.c, funzione step, e driver.c, funzione deadlines, attendono Count con x86_irq_sleep. Il budget otto conta risvegli, non tempo. Senza IRQ, il chiamante non riottiene controllo per controllare clock, stop o errore. La lettura PM in record_deadline avviene dopo l'attesa, quindi non la rende terminabile.
+Nel codice precedente runtime.c, funzione step, e driver.c, funzione deadlines, attendevano Count con x86_irq_sleep. Il budget otto contava risvegli, non tempo. Senza IRQ, il chiamante non riotteneva controllo per controllare clock, stop o errore. La lettura PM in record_deadline avveniva dopo l'attesa, quindi non la rendeva terminabile. Oggi entrambi i percorsi usano x86_watchdog_wait; il probe con Count gia raggiunto chiama ancora x86_irq_sleep ma deve tornare subito senza HLT.
 
 Il modulo dispone gia di reference ACPI validata, maschera 24/32 bit, lettura System IO, calibrazione e calcolo Rust del delta. Un register readback LAPIC non dimostra che un IRQ futuro verra consegnato.
 
@@ -63,7 +63,7 @@ Prima di implementare B, produrre tabella register/bit/sequenza dal datasheet e 
 - ASan host e accounting di risorse; nessuna dichiarazione di leak fisico misurato o coverage 100%.
 - Distinguere fault terminale controllato da hang silenzioso; prima e dopo la deadline nessun marker di successo anticipato.
 
-Il modulo attuale ha sei file diretti (access, calibration, driver, runtime, runtime header, timer header). Prima di proporre nuovi sorgenti, separare il gruppo runtime in una sottocartella funzionale e aggiornare soltanto i riferimenti necessari nelle interfacce/build/test. Nessun refactor globale.
+Il gruppo runtime C/header e ora separato in `runtime/`: root con quattro file e sottocartella con due. Include e build/test necessari sono aggiornati. Vedere [calibrazione delimitata](../calibration/sampling.md) per il blocco successivo e le prove di recupero sotto carico; nessun refactor globale.
 
 ## Fonti consultate
 
@@ -71,4 +71,4 @@ Il modulo attuale ha sei file diretti (access, calibration, driver, runtime, run
 - [Intel SDM Vol. 3A, §§10.10.6.1 e 10.10.6.6](https://cdrdv2-public.intel.com/843836/325384-sdm-vol-3abcd-dec-24.pdf): PAUSE nei loop e clock reference distinto da un contatore di iterazioni. Prima di codice Assembly servono anche i riferimenti delle istruzioni STI/CLI/HLT nel Vol. 2.
 - [Intel HPET 1.0a, §2.3.9.2.1](https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/software-developers-hpet-spec-1-0a.pdf): comparator non-periodic e rischio di deadline gia superata durante arm.
 
-Le fonti giustificano le alternative; non dimostrano supporto hardware fisico del progetto. R-001 resta aperto fino a implementazione e test del percorso scelto.
+Le fonti giustificano le alternative; non dimostrano supporto hardware fisico del progetto. La chiusura del percorso scelto e documentata nel report corrente, con prove distinte dalle ipotesi di progetto.

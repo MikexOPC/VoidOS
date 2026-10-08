@@ -1,5 +1,13 @@
 # HPET probe in sola lettura — 2026-10-07
 
+Il blocco operativo successivo e descritto nella
+[chiusura R-001](../../watchdog/documentation/validation.md); questa pagina
+conserva le prove preparatorie del solo probe.
+
+Aggiornamento successivo: [capacita dei comparatori](comparators.md),
+con selezione osservativa e prove sull'immagine aggiornata. Le evidenze
+riportate sotto descrivono il probe precedente, limitato a ID e periodo.
+
 Il percorso kernel esegue discovery, preflight e probe prima di pubblicare
 la descrizione persistente. Mapping temporaneo UC, supervisor, read-only e
 NX attraverso il servizio di borrow esistente; revoca prima del ritorno e

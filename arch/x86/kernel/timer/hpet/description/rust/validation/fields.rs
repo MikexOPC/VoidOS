@@ -1,5 +1,37 @@
 #![cfg_attr(not(test), no_std)]
 
+// ====== x86_hpet_timer_valid ======
+
+// Intel HPET 1.0a section 2.3.8: reserved 31:16, 7, 0; capability
+// dependencies for periodic (3/4), size (5/8), value-set (6/3), FSB (14/15).
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_hpet_timer_valid(id: u32, config: u32) -> u32 {
+    u32::from(config & 0xffff_0081 == 0
+        && (config & (1 << 3) == 0 || config & (1 << 4) != 0)
+        && (config & (1 << 5) == 0 || id & (1 << 13) != 0)
+        && (config & (1 << 8) == 0 || config & (1 << 5) != 0)
+        && (config & (1 << 6) == 0 || config & (1 << 3) != 0)
+        && (config & (1 << 14) == 0 || config & (1 << 15) != 0))
+}
+
+// ====== x86_hpet_timer_candidate ======
+
+// Observation only, not ownership. Sections 2.3.5/2.3.6/2.3.8:
+// skip legacy timers 0/1, enabled, periodic, FSB-enabled or pending timers.
+// A route mask describes IOAPIC inputs, not validated/available system GSIs.
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_hpet_timer_candidate(
+    id: u32, global: u32, pending: u32, index: u32, config: u32, routes: u32,
+) -> u32 {
+    if index > ((id >> 8) & 31) || x86_hpet_timer_valid(id, config) == 0 {
+        return 0;
+    }
+    u32::from(!(global & 2 != 0 && index < 2)
+        && config & ((1 << 2) | (1 << 3) | (1 << 6) | (1 << 14)) == 0
+        && pending & (1u32 << index) == 0
+        && (routes != 0 || config & (1 << 15) != 0))
+}
+
 // ====== x86_hpet_capabilities_valid ======
 
 // Intel HPET 1.0a section 2.3.4: identity must match ACPI; revision != 0,

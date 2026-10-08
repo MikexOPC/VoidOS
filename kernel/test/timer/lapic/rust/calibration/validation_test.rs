@@ -1,6 +1,45 @@
 #[path = "../../../../../../arch/x86/kernel/timer/lapic/rust/calibration/validation.rs"]
 mod validation;
 
+// ====== bracket_quality_and_order ======
+
+#[test]
+fn bracket_quality_and_order() {
+    use validation::x86_timer_sample_elapsed as elapsed;
+    for mask in [0xffffff, u32::MAX] {
+        assert_eq!(elapsed(100,100,36100,36100,mask),36000);
+        assert_eq!(elapsed(100,110,36090,36100,mask),35990);
+        let base = mask - 100;
+        assert_eq!(elapsed(base,base.wrapping_add(10) & mask,
+            base.wrapping_add(35990) & mask,base.wrapping_add(36000) & mask,mask),35990);
+        for (a,b,c,d) in [(100,99,36000,36100),(100,200,150,36100),
+            (100,200,36200,36100),(100,100,35894,35894),
+            (100,100,143281,143281),(100,5000,36100,36100),
+            (100,100,20000,36100),(100,100,100,100)] {
+            assert_eq!(elapsed(a,b,c,d,mask),0);
+        }
+        assert_eq!(elapsed(0,2250,36000,36000,mask),34875);
+        assert_eq!(elapsed(0,2251,36000,36000,mask),0);
+    }
+    assert_eq!(elapsed(0,0,36000,36000,0xffff),0);
+    assert_eq!(elapsed(0x1000000,0,36000,36000,0xffffff),0);
+}
+
+// ====== consensus_bounds ======
+
+#[test]
+fn consensus_bounds() {
+    use validation::x86_timer_sample_consensus as consensus;
+    for low in [1,4,1000,u32::MAX / 2,u32::MAX - u32::MAX / 4] {
+        let high = low + low / 4;
+        assert_eq!(consensus(low,high),low);
+        assert_eq!(consensus(high,low),low);
+        if high < u32::MAX { assert_eq!(consensus(low,high+1),0); }
+    }
+    assert_eq!(consensus(0,1),0);
+    assert_eq!(consensus(u32::MAX,u32::MAX),u32::MAX);
+}
+
 // ====== ciclo senza limite di tick con arresto esplicito oppure saturazione ===== //
 
 #[test]
