@@ -99,7 +99,8 @@ function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
     $original = Read-TimerWord $registers ($owner+96)
     $wakes = Read-TimerWord $registers ($owner+120)
     $probe = Read-TimerWord $registers ($owner+128)
-    if ($wakes -ne 4294967297L -or $probe -ne 12884901889L -or
+    if (($wakes -band 4294967295L) -notin @(1L,2L) -or ($wakes -shr 32) -notin @(1L,2L) -or
+        ($probe -band 4294967295L) -notin @(1L,2L) -or ($probe -shr 32) -ne 3 -or
         (Read-Hex $log 'KERNEL_TIMER_PENDING_PROBE: 0x([0-9a-f]{16})') -ne 3) {
         throw 'Timer: sonno o consegna gia presente non verificati.'
     }

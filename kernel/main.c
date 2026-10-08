@@ -19,8 +19,9 @@
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
-#include "arch/x86/kernel/timer/lapic/timer.h"
+#include "arch/x86/kernel/timer/hpet/watchdog/integration/kernel.h"
 #include "arch/x86/kernel/timer/hpet/description/integration/kernel.h"
+
 static X86_HPET_DESCRIPTION hpet_description;
 static KERNEL_BOOT_CONTEXT boot_context;
 static KERNEL_MEMORY_INVENTORY memory_inventory;
@@ -333,9 +334,8 @@ __declspec(noreturn) static void kernel_continue(void)
                 (const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&persistent_arena, &madt_object),
                 &apic_profile, &apic_capabilities)) kernel_panic("UART_IRQ_INVALID");
         if (context->Info.Acpi.Source &&
-            !x86_timer_run(context,&page_window,
-                (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&persistent_arena,&acpi_object),
-                x86_uart_lapic_mapping(),paging)) kernel_panic("LAPIC_TIMER_INVALID");
+            !x86_watchdog_kernel_start(context,&page_window,&persistent_arena,&acpi_object,&madt_object,
+                paging,&apic_profile,&apic_capabilities,&hpet_description)) kernel_panic("LAPIC_TIMER_INVALID");
     }
 #ifdef KERNEL_TEST_REGION_FAULT
     {

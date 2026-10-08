@@ -2,6 +2,9 @@
 
 Aggiornamento 2026-10-07: aggiunto [probe con mapping temporaneo](probe.md).
 Questa pagina conserva i risultati della sola discovery precedente.
+Aggiornamento watchdog: il profilo corrente senza HPET rifiuta l'attesa timer
+e termina con LAPIC_TIMER_INVALID; il precedente boot consentito era una prova
+della sola discovery. Vedere [contratto corrente R-001](../../watchdog/documentation/design.md).
 
 Il kernel chiama x86_hpet_kernel_capture dopo kernel_acpi_initialize e prima
 di MADT/APIC/device test. La directory viene rivalidata con il profilo fisico

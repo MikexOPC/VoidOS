@@ -1,5 +1,37 @@
 #![cfg_attr(not(test), no_std)]
 
+// ====== x86_timer_sample_elapsed ======
+
+// Bracket the two LAPIC observations with the independent PM clock.
+// Policy: total <= 40ms, bracket uncertainty <= 1/16 total; midpoint
+// approximation has <= half that uncertainty (plus integer rounding).
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_timer_sample_elapsed(
+    start_before: u32, start_after: u32, end_before: u32, end_after: u32, mask: u32,
+) -> u32 {
+    if !matches!(mask, 0xffffff | 0xffffffff)
+        || [start_before, start_after, end_before, end_after].iter().any(|x| x & !mask != 0)
+    { return 0; }
+    let first = start_after.wrapping_sub(start_before) & mask;
+    let last = end_before.wrapping_sub(start_before) & mask;
+    let total = end_after.wrapping_sub(start_before) & mask;
+    if !(35795..=143180).contains(&total) || first > last || last > total { return 0; }
+    let uncertainty = first + (total - last);
+    if uncertainty > total / 16 { return 0; }
+    total - uncertainty / 2
+}
+
+// ====== x86_timer_sample_consensus ======
+
+// Preserve the existing 25% agreement policy; no zero sample or overflow.
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_timer_sample_consensus(first: u32, second: u32) -> u32 {
+    let low = first.min(second);
+    let high = first.max(second);
+    if low == 0 || high - low > low / 4 { return 0; }
+    low
+}
+
 // ====== decisione solo a evento consumato senza incrementare contatori saturi ===== //
 
 #[unsafe(no_mangle)]

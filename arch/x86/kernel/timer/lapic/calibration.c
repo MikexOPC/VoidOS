@@ -1,8 +1,9 @@
 #include "timer.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "lib/memory/address_ranges.h"
+#include "kernel/diagnostics/log.h"
 
-// ====== lettura little endian della sola copia locale bounded ===== //
+// ====== number ======
 
 static BOOT_U64 number(const unsigned char *data, BOOT_U32 bytes)
 {
@@ -12,7 +13,7 @@ static BOOT_U64 number(const unsigned char *data, BOOT_U32 bytes)
     return result;
 }
 
-// ====== output interno disgiunto prima di qualsiasi pubblicazione ===== //
+// ====== output_valid ======
 
 static int output_valid(const KERNEL_ACPI_DIRECTORY *directory, const X86_PM_CLOCK *output)
 {
@@ -24,7 +25,7 @@ static int output_valid(const KERNEL_ACPI_DIRECTORY *directory, const X86_PM_CLO
         !os_address_ranges_overlap(address,sizeof(*output),128ULL<<39,1ULL<<39);
 }
 
-// ====== unica FADT senza adozione di un duplicato firmware ===== //
+// ====== select_fadt ======
 
 static int select_fadt(const KERNEL_ACPI_DIRECTORY *directory, KERNEL_ACPI_READ read,
     void *context, BOOT_U64 *physical, unsigned char *selected)
@@ -45,7 +46,7 @@ static int select_fadt(const KERNEL_ACPI_DIRECTORY *directory, KERNEL_ACPI_READ 
     return count == 1;
 }
 
-// ====== checksum dell'intera tabella con buffer costante di 128 byte ===== //
+// ====== table ======
 
 static int table(const unsigned char *selected, BOOT_U64 physical, BOOT_U32 bits,
     KERNEL_ACPI_READ read, void *context, unsigned char *prefix, BOOT_U32 *length)
@@ -73,7 +74,7 @@ static int table(const unsigned char *selected, BOOT_U64 physical, BOOT_U32 bits
     return !(sum & 255);
 }
 
-// ====== GAS System IO dword preferito senza fallback da un GAS non supportato ===== //
+// ====== fields ======
 
 static int fields(const unsigned char *prefix, BOOT_U32 length, X86_PM_CLOCK *draft)
 {
@@ -95,7 +96,7 @@ static int fields(const unsigned char *prefix, BOOT_U32 length, X86_PM_CLOCK *dr
     return 1;
 }
 
-// ====== pubblicazione solo dopo selezione bounds header e checksum completi ===== //
+// ====== x86_pm_clock_capture ======
 
 int x86_pm_clock_capture(const KERNEL_ACPI_DIRECTORY *directory, BOOT_U32 bits,
     KERNEL_ACPI_READ read, void *context, X86_PM_CLOCK *output)
@@ -116,7 +117,7 @@ int x86_pm_clock_capture(const KERNEL_ACPI_DIRECTORY *directory, BOOT_U32 bits,
     return 1;
 }
 
-// ====== reference clock pubblicato prima delle letture System IO ===== //
+// ====== clock_valid ======
 
 static int clock_valid(const X86_PM_CLOCK *clock)
 {
@@ -125,7 +126,7 @@ static int clock_valid(const X86_PM_CLOCK *clock)
         x86_pm_clock_port(clock->Port,0,4) && (clock->Mask == ~0U || clock->Mask == 0xffffff);
 }
 
-// ====== owner timer interno distinto da viste MMIO e mapping prestato ===== //
+// ====== x86_timer_owner_valid ======
 
 int x86_timer_owner_valid(const X86_LAPIC_TIMER *timer)
 {
@@ -142,26 +143,33 @@ int x86_timer_owner_valid(const X86_LAPIC_TIMER *timer)
         x86_lapic_validate(timer->Mapping);
 }
 
-// ====== un campione con timer mascherato e intervallo PM bounded ===== //
+// ====== sample ======
 
 static int sample(X86_LAPIC_TIMER *timer, X86_TIMER_SAMPLE *output)
 {
-    BOOT_U32 start, now, attempt;
+    BOOT_U32 start, start_after, now, end_after, attempt;
     X86_TIMER_SAMPLE draft = {0};
     int result = 0, stopped;
     if (!x86_timer_write(timer->Mapping,0x380,~0U)) {
         return 0;
     }
+    /* Intel SDM Vol.3A section 12.5.4, Dec.2024: initial count at 0x380,
+     * current count at 0x390, zero initial count stops the one-shot timer.
+     * ACPI 6.5 section 4.8.3.3: PM_TMR is read-only, dword, 3.579545MHz.
+     * Bracket MMIO reads so scheduling latency is measured and bounded. */
     start = x86_pm_read((unsigned short)timer->Clock.Port) & timer->Clock.Mask;
     if (!x86_timer_read(timer->Mapping,0x390,&draft.Start) || !draft.Start) goto cleanup;
+    start_after = x86_pm_read((unsigned short)timer->Clock.Port) & timer->Clock.Mask;
     for (attempt = 0; attempt < 10000000; ++attempt) {
         now = x86_pm_read((unsigned short)timer->Clock.Port) & timer->Clock.Mask;
-        draft.PmTicks = x86_pm_elapsed(start,now,timer->Clock.Mask);
+        draft.PmTicks = x86_pm_elapsed(start_after,now,timer->Clock.Mask);
         if (draft.PmTicks >= X86_PM_SAMPLE_TICKS) break;
     }
     if (attempt == 10000000 || !x86_timer_read(timer->Mapping,0x390,&draft.End)) goto cleanup;
+    end_after = x86_pm_read((unsigned short)timer->Clock.Port) & timer->Clock.Mask;
+    draft.PmTicks = x86_timer_sample_elapsed(start,start_after,now,end_after,timer->Clock.Mask);
     draft.Reload = x86_timer_reload(draft.Start,draft.End,draft.PmTicks);
-    result = draft.Reload != 0;
+    result = draft.Reload ? 1 : 2;
 cleanup:
     stopped = x86_timer_write(timer->Mapping,0x380,0) &&
         x86_timer_read(timer->Mapping,0x380,&now) && !now &&
@@ -169,16 +177,18 @@ cleanup:
     if (!result || !stopped) {
         return 0;
     }
+    if (result == 2) { return 2; }
     output->Start = draft.Start; output->End = draft.End;
     output->PmTicks = draft.PmTicks; output->Reload = draft.Reload;
     return 1;
 }
 
-// ====== due campioni concordanti prima di pubblicare un reload ===== //
+// ====== x86_timer_measure ======
 
 int x86_timer_measure(X86_LAPIC_TIMER *timer)
 {
-    BOOT_U32 value, low, high;
+    BOOT_U32 value, reload, attempt;
+    int first, second;
     X86_TIMER_SAMPLE samples[2];
     if (!x86_timer_owner_valid(timer) || !x86_exception_environment() || timer->Active || timer->Reload ||
         timer->Count || timer->Error || timer->Token.Id || timer->Token.Vector || timer->Token.Reserved ||
@@ -186,16 +196,26 @@ int x86_timer_measure(X86_LAPIC_TIMER *timer)
         !x86_timer_read(timer->Mapping,0x320,&value) || value != 0x10041 ||
         !x86_timer_read(timer->Mapping,0x3e0,&value) || value != 3 ||
         !x86_timer_read(timer->Mapping,0x380,&value) || value ||
-        !x86_timer_read(timer->Mapping,0x390,&value) || value ||
-        !sample(timer,&samples[0]) || !sample(timer,&samples[1])) {
+        !x86_timer_read(timer->Mapping,0x390,&value) || value) {
         return 0;
     }
-    low = samples[0].Reload < samples[1].Reload ? samples[0].Reload : samples[1].Reload;
-    high = samples[0].Reload > samples[1].Reload ? samples[0].Reload : samples[1].Reload;
-    if (!low || high-low > low/4) {
-        return 0;
+    /* Three bounded pairs, no retry on I/O failure or incomplete stop.
+     * Samples remain private until both quality and consensus succeed. */
+    for (attempt = 1; attempt <= 3; ++attempt) {
+        first = sample(timer,&samples[0]);
+        if (!first) { return 0; }
+        second = first == 1 ? sample(timer,&samples[1]) : 2;
+        if (!second) { return 0; }
+        reload = first == 1 && second == 1 ?
+            x86_timer_sample_consensus(samples[0].Reload,samples[1].Reload) : 0;
+        if (reload) {
+            if (!kernel_text("KERNEL_TIMER_CALIBRATION_ATTEMPT: ") ||
+                !kernel_number(attempt) || !kernel_text("\n")) { return 0; }
+            timer->Samples[0] = samples[0]; timer->Samples[1] = samples[1];
+            timer->Reload = reload;
+            return 1;
+        }
+        if (attempt < 3 && !kernel_log(2,"TIMER_CALIBRATION_RETRY")) { return 0; }
     }
-    timer->Samples[0] = samples[0]; timer->Samples[1] = samples[1];
-    timer->Reload = low;
-    return 1;
+    return 0;
 }

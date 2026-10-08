@@ -1,6 +1,16 @@
 #include "arch/x86/kernel/timer/lapic/timer.h"
 BOOT_U32 test_timer_token_live = 1;
 
+// ====== watchdog_dependency_not_exercised ======
+
+int x86_watchdog_open(const X86_WATCHDOG_ENV *env) { (void)env; return 0; }
+int x86_watchdog_close(void) { return 1; }
+BOOT_U32 x86_watchdog_result(void) { return X86_WATCHDOG_FAULT; }
+BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *source, BOOT_U32 goal, const volatile BOOT_U32 *stop)
+{
+    (void)source; (void)goal; (void)stop; return 0;
+}
+
 // ====== servizi non esercitati nei test di parsing calibrazione e handler ===== //
 
 int x86_irq_ready(void) { return 1; }

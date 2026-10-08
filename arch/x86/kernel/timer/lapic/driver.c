@@ -1,5 +1,5 @@
 #include "timer.h"
-#include "runtime.h"
+#include "runtime/runtime.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "kernel/diagnostics/log.h"
@@ -124,7 +124,10 @@ static int deadlines(void)
         if (!x86_timer_arm(&timer)) {
             return 0;
         }
-        waited = x86_irq_sleep(&timer.Count,goal,8);
+#ifdef KERNEL_TEST_WATCHDOG_LOST_LAPIC
+        if (!x86_timer_confirm_write(timer.Mapping,0x320,0x10041)) { return 0; }
+#endif
+        waited = x86_watchdog_wait(&timer.Count,goal,NULL);
         if (!x86_timer_wait_result(waited,8,timer.Count,timer.Error,goal) ||
             timer.Count != goal || timer.Error || !x86_lapic_idle(timer.Mapping)) {
             return 0;
@@ -179,11 +182,11 @@ static int sleep_rejections(void)
 
 int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     const KERNEL_ACPI_DIRECTORY *directory, const X86_LAPIC_MAPPING *mapping,
-    const X86_PAGING_INVENTORY *inventory)
+    const X86_PAGING_INVENTORY *inventory, const X86_WATCHDOG_ENV *watchdog)
 {
     READER reader = {context,window};
     BOOT_U64 delivered = 0;
-    int result = 0, stopped, detached = 1, restored = 0;
+    int result = 0, stopped, detached = 1, restored = 0, watchdog_closed;
     if (finished || !context || !window || !window->Pool || !mapping || !inventory || !x86_irq_ready() ||
         !x86_paging_inventory_verify_lapic(context,window->Pool,mapping,inventory) ||
         !x86_pm_clock_capture(directory,window->Pool->PhysicalBits,read_firmware,&reader,&timer.Clock)) {
@@ -202,8 +205,11 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
         goto cleanup;
     }
     kernel_log(1,"TIMER_CALIBRATED");
-    if (!x86_timer_events_initialize(&timer) ||
-        !(loop_mode ? x86_timer_loop_run(&timer,handle,quiet) : deadlines()) || !sleep_rejections()) {
+    if (!x86_timer_events_initialize(&timer)) { goto cleanup; }
+    if (!watchdog || watchdog->Mapping != mapping || watchdog->Window != window ||
+        watchdog->Context != context || watchdog->Inventory != inventory ||
+        !x86_watchdog_open(watchdog)) { goto cleanup; }
+    if (!(loop_mode ? x86_timer_loop_run(&timer,handle,quiet) : deadlines()) || !sleep_rejections()) {
         kernel_log(3,"TIMER_DEADLINES_FAILED");
         goto cleanup;
     }
@@ -211,6 +217,9 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
 cleanup:
     stopped = x86_timer_stop(mapping);
     timer.Active = 0;
+    if (!result && timer.Phase == X86_TIMER_ARMED && timer.Count == timer.Consumed) {
+        timer.Phase = X86_TIMER_READY;
+    }
     if (timer.Token.Id) {
         delivered = x86_irq_registry_deliveries(x86_irq_registry(),&timer.Token);
         detached = stopped && x86_irq_registry_unbind(x86_irq_registry(),&timer.Token);
@@ -220,9 +229,17 @@ cleanup:
         int lvt = x86_timer_confirm_write(mapping,0x320,timer.OriginalLvt);
         restored = divider && lvt;
     }
+    watchdog_closed = x86_watchdog_close();
     finished = 1;
+    if (!result && x86_watchdog_result() == X86_WATCHDOG_TIMEOUT &&
+        stopped && detached && restored && watchdog_closed && !timer.Error) {
+        kernel_text("KERNEL_TIMER_OWNER: "); kernel_number((BOOT_U64)&timer);
+        kernel_text("\nKERNEL_TIMER_SLEEP_RESUME: "); kernel_number(x86_irq_sleep_resume());
+        kernel_text("\n");
+        kernel_log(2,"TIMER_WATCHDOG_TIMEOUT_CLEAN");
+    }
     if (!result || !stopped || !detached || !restored || delivered != timer.Count ||
-        (!loop_mode && timer.Count != 3) || timer.Error ||
+        (!loop_mode && timer.Count != 3) || timer.Error || !watchdog_closed ||
         !x86_irq_ready() || !x86_lapic_idle(mapping) || !x86_page_window_idle_valid(window) ||
         !x86_paging_inventory_verify_lapic(context,window->Pool,mapping,inventory)) {
         return 0;

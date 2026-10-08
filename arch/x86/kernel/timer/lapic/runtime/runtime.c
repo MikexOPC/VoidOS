@@ -142,7 +142,15 @@ static int step(X86_LAPIC_TIMER *state)
         state->Phase != X86_TIMER_READY || state->Count == ~0U || control.Sleeps == ~0U) return 0;
     goal = state->Count+1;
     if (!x86_timer_arm(state)) return 0;
-    waited = x86_irq_sleep(&state->Count,goal,8);
+#ifdef KERNEL_TEST_WATCHDOG_LOST_LAPIC
+    if (!x86_timer_confirm_write(state->Mapping,0x320,0x10041)) { return 0; }
+#endif
+    waited = x86_watchdog_wait(&state->Count,goal,&control.StopRequest);
+    if (x86_watchdog_result() == X86_WATCHDOG_STOP && state->Count == state->Consumed) {
+        if (!x86_timer_stop(state->Mapping)) { return 0; }
+        state->Active = 0; state->Phase = X86_TIMER_READY;
+        return 2;
+    }
     if (!waited || waited > 9 || state->Count != goal || state->Error ||
         !x86_timer_take(state,&event) || event != goal) return 0;
     if (waited-1 > ~0U-control.Sleeps) return 0;
@@ -175,6 +183,7 @@ static int finish(const X86_LAPIC_TIMER *state, BOOT_U32 reason)
 int x86_timer_loop_run(X86_LAPIC_TIMER *state, X86_IRQ_CALLBACK handle, X86_IRQ_CALLBACK quiet)
 {
     BOOT_U32 action;
+    int advanced;
     if (!x86_timer_owner_valid(state) || !x86_irq_ready() || state->Phase != X86_TIMER_READY ||
         state->Count || state->Consumed || state->Error || state->Token.Id || state->Token.Vector ||
         state->Token.Reserved || control.Self || control.Owner || control.StopRequest || control.Phase ||
@@ -190,7 +199,9 @@ int x86_timer_loop_run(X86_LAPIC_TIMER *state, X86_IRQ_CALLBACK handle, X86_IRQ_
         action = x86_timer_loop_action(control.StopRequest,state->Count,state->Consumed);
         if (!action) return 0;
         if (action == 2) return finish(state,control.StopRequest ? 1 : 2);
-        if (!step(state) || !progress(state)) return 0;
+        advanced = step(state);
+        if (advanced == 2) { return finish(state,1); }
+        if (!advanced || !progress(state)) return 0;
     }
 }
 

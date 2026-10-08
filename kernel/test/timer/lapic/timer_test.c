@@ -1,10 +1,11 @@
 #include "arch/x86/kernel/timer/lapic/timer.h"
-#include "arch/x86/kernel/timer/lapic/runtime.h"
+#include "arch/x86/kernel/timer/lapic/runtime/runtime.h"
 static unsigned char fadt[300];
 static KERNEL_ACPI_DIRECTORY directory;
 static X86_LAPIC_MAPPING mapping;
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 pm, lvt, initial, current, divide, stalled, eoi = 1, fail_write;
+static BOOT_U32 measurement_mode, measurement_starts, measurement_reads;
 extern BOOT_U32 test_timer_token_live;
 
 // ====== ambiente senza istruzioni privilegiate e byte firmware in memoria host ===== //
@@ -34,7 +35,11 @@ int x86_timer_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *ou
     if (owner != &mapping || !output) return 0;
     if (offset == 0x320) *output = lvt;
     else if (offset == 0x380) *output = initial;
-    else if (offset == 0x390) { if (!stalled && current > 1000) current -= 1000; *output = current; }
+    else if (offset == 0x390) {
+        BOOT_U32 decrement = measurement_mode == 3 && measurement_starts == 1 ? 100000 : 1000;
+        if (!stalled && current > decrement) { current -= decrement; }
+        *output = current;
+    }
     else if (offset == 0x3e0) *output = divide;
     else if (offset == 0x30) *output = 0x50014;
     else return 0;
@@ -44,7 +49,11 @@ int x86_timer_write(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 va
 {
     if (owner != &mapping || fail_write) return 0;
     if (offset == 0x320) lvt = value;
-    else if (offset == 0x380) current = initial = value;
+    else if (offset == 0x380) {
+        if (value == ~0U) { ++measurement_starts; measurement_reads = 0; }
+        if (measurement_mode == 4 && !value && measurement_starts) { return 0; }
+        current = initial = value;
+    }
     else if (offset == 0x3e0) divide = value;
     else return 0;
     return 1;
@@ -52,7 +61,11 @@ int x86_timer_write(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 va
 BOOT_U32 x86_pm_read(unsigned short port)
 {
     if (port != 0x408) return 0;
-    if (!stalled) pm += 1000;
+    if (!stalled) {
+        ++measurement_reads;
+        pm += ((measurement_mode == 1 && measurement_starts == 1) || measurement_mode == 2) &&
+            measurement_reads == 2 ? 10000u : 1000u;
+    }
     return pm;
 }
 int x86_lapic_validate(const X86_LAPIC_MAPPING *owner) { return owner == &mapping; }
@@ -84,6 +97,7 @@ static void reset(void)
     timer.Clock.Port = 0x408; timer.Clock.Mask = 0xffffff; timer.Clock.Ready = 1;
     timer.Clock.Length = 244; timer.Clock.Physical = 0x2000;
     pm = 0xffff00; initial = current = divide = stalled = fail_write = 0; eoi = 1; lvt = 0x10040;
+    measurement_mode = measurement_starts = measurement_reads = 0;
     test_timer_token_live = 1;
     checksum();
 }
@@ -150,6 +164,18 @@ static int measurement(void)
     if (x86_timer_measure(&timer) || timer.Reload || initial || current) return 3;
     reset(); lvt = 0x10041; divide = 3; fail_write = 1;
     if (x86_timer_measure(&timer) || timer.Reload) return 4;
+    reset(); lvt = 0x10041; divide = 3; measurement_mode = 1;
+    if (!x86_timer_measure(&timer) || measurement_starts != 3 || !timer.Reload || initial || current) {
+        return 5;
+    }
+    reset(); lvt = 0x10041; divide = 3; measurement_mode = 2;
+    timer.Samples[0].Reload = 77; timer.Samples[1].Reload = 88;
+    if (x86_timer_measure(&timer) || measurement_starts != 3 || timer.Reload || initial || current ||
+        timer.Samples[0].Reload != 77 || timer.Samples[1].Reload != 88) { return 6; }
+    reset(); lvt = 0x10041; divide = 3; measurement_mode = 3;
+    if (!x86_timer_measure(&timer) || measurement_starts != 4 || initial || current) { return 7; }
+    reset(); lvt = 0x10041; divide = 3; measurement_mode = 4;
+    if (x86_timer_measure(&timer) || measurement_starts != 1 || timer.Reload || !initial) { return 8; }
     return 0;
 }
 

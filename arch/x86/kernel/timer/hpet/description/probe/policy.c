@@ -1,21 +1,22 @@
 #include "probe.h"
 #define FRAME_MASK 0x000ffffffffff000ULL
 
-// ====== x86_hpet_probe_preflight ======
+// ====== x86_hpet_owned_preflight ======
 
 /* A validated ACPI HPET address may be absent from the UEFI memory map.
  * Permit that gap only after rejecting every RAM region, free/live lease,
  * page-table page and existing leaf alias. No hardcoded HPET base exception.
  * Initial profile requires a 4KiB-aligned base and maps exactly one page. */
-int x86_hpet_probe_preflight(const KERNEL_BOOT_CONTEXT *context,
+int x86_hpet_owned_preflight(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_PAGING_INVENTORY *inventory,
-    BOOT_U64 physical)
+    BOOT_U64 physical, const struct X86_LAPIC_MAPPING *mapping)
 {
     KERNEL_MEMORY_INVENTORY map;
     BOOT_U32 index, slot, found = 0;
     if (!context || !pool || !inventory || (physical & 4095) || physical < 4096 ||
         physical > ~0ULL - 4096 ||
-        !x86_paging_inventory_verify(context, pool, inventory) ||
+        !(mapping ? x86_paging_inventory_verify_lapic(context,pool,mapping,inventory) :
+            x86_paging_inventory_verify(context, pool, inventory)) ||
         !x86_hpet_table_span(physical + 4096 - 4, 4, pool->PhysicalBits) ||
         !kernel_inventory_memory(context->MemoryMap, context->Info.MemoryMapBytes,
             context->Info.MemoryDescriptorBytes, &map)) { return 0; }
@@ -48,4 +49,13 @@ int x86_hpet_probe_preflight(const KERNEL_BOOT_CONTEXT *context,
         }
     }
     return 1;
+}
+
+// ====== x86_hpet_probe_preflight ======
+
+int x86_hpet_probe_preflight(const KERNEL_BOOT_CONTEXT *context,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_PAGING_INVENTORY *inventory,
+    BOOT_U64 physical)
+{
+    return x86_hpet_owned_preflight(context,pool,inventory,physical,NULL);
 }

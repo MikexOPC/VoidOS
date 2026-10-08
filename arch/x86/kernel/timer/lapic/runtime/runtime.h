@@ -1,6 +1,6 @@
 #ifndef OS_X86_LAPIC_RUNTIME_H
 #define OS_X86_LAPIC_RUNTIME_H
-#include "timer.h"
+#include "../timer.h"
 typedef struct {
     BOOT_U64 Self, Owner;
     volatile BOOT_U32 StopRequest;

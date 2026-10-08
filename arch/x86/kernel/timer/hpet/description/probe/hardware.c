@@ -5,6 +5,11 @@
 typedef struct {
     BOOT_U32  Id;
     BOOT_U32  Period;
+    BOOT_U32  Global;
+    BOOT_U32  Pending;
+    BOOT_U32  Config[32];
+    BOOT_U32  Routes[32];
+    BOOT_U32  Candidate;
 } HPET_RAW;
 
 // ====== read_capabilities ======
@@ -17,9 +22,51 @@ static int read_capabilities(void *state)
 {
     HPET_RAW *raw = state;
     const volatile BOOT_U32 *registers = (const volatile BOOT_U32 *)x86_window_bytes();
+    BOOT_U32 index, count;
     raw->Id = registers[0];
     raw->Period = registers[1];
-    return registers[0] == raw->Id && registers[1] == raw->Period;
+    if (!x86_hpet_capabilities_valid(raw->Id, raw->Id, raw->Period)) { return 0; }
+    count = ((raw->Id >> 8) & 31) + 1;
+    /* Intel HPET 1.0a sections 2.3.5/2.3.6: low dwords at 0x10/0x20.
+     * Legacy bit 1 changes timers 0/1 routing; status bits identify pending
+     * level events. Read only, including the W1C status register. */
+    raw->Global = registers[0x10 / 4];
+    raw->Pending = registers[0x20 / 4];
+    if ((raw->Global & 2) && !(raw->Id & (1u << 15))) { return 0; }
+    if (count < 32 && (raw->Pending >> count)) { return 0; }
+    raw->Candidate = 32;
+    /* Section 2.3.8: config low/high at 0x100 + 0x20*n and +4.
+     * Bound n by NUM_TIM_CAP: last dword <= 0x4e4, inside borrowed 4KiB.
+     * Bits 15/63:32 advertise FSB/IOAPIC route capabilities, not ownership. */
+    for (index = 0; index < count; ++index) {
+        BOOT_U32 offset = (0x100 + 0x20 * index) / 4;
+        raw->Config[index] = registers[offset];
+        raw->Routes[index] = registers[offset + 1];
+        if (!x86_hpet_timer_valid(raw->Id, raw->Config[index])) { return 0; }
+        if (raw->Candidate == 32 && x86_hpet_timer_candidate(raw->Id, raw->Global,
+            raw->Pending, index, raw->Config[index], raw->Routes[index])) {
+            raw->Candidate = index;
+        }
+    }
+    for (index = 0; index < count; ++index) {
+        BOOT_U32 offset = (0x100 + 0x20 * index) / 4;
+        if (registers[offset] != raw->Config[index] ||
+            registers[offset + 1] != raw->Routes[index]) { return 0; }
+    }
+    return registers[0] == raw->Id && registers[1] == raw->Period &&
+        registers[0x10 / 4] == raw->Global && registers[0x20 / 4] == raw->Pending;
+}
+
+// ====== report_candidate ======
+
+static int report_candidate(const HPET_RAW *raw)
+{
+    if (raw->Candidate == 32) { return kernel_log(2, "KERNEL_HPET_NO_CANDIDATE"); }
+    return kernel_text("KERNEL_HPET_CANDIDATE: ") && kernel_number(raw->Candidate) &&
+        kernel_text("\nKERNEL_HPET_ROUTE_MASK: ") && kernel_number(raw->Routes[raw->Candidate]) &&
+        kernel_text("\nKERNEL_HPET_FSB_CAPABLE: ") &&
+        kernel_number((raw->Config[raw->Candidate] >> 15) & 1) &&
+        kernel_text("\n") && kernel_log(0, "KERNEL_HPET_CANDIDATE_OBSERVED");
 }
 
 // ====== x86_hpet_probe ======
@@ -28,7 +75,9 @@ int x86_hpet_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     const X86_PAGING_INVENTORY *inventory, const X86_HPET_DESCRIPTION *description)
 {
     X86_APIC_RAW cpu = {0};
-    HPET_RAW raw = {0, 0};
+    /* read_capabilities initializes every published field and exactly Count
+     * array entries before use; avoid a compiler-generated CRT memset. */
+    HPET_RAW raw;
     BOOT_U32 slot;
     BOOT_U64 cache;
     if (!description || !window || !window->Pool || !x86_page_window_idle_valid(window) ||
@@ -50,5 +99,5 @@ int x86_hpet_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
         kernel_text("KERNEL_HPET_PERIOD_FS: ") && kernel_number(raw.Period) &&
         kernel_text("\nKERNEL_HPET_COMPARATORS: ") && kernel_number(((raw.Id >> 8) & 31) + 1) &&
         kernel_text("\nKERNEL_HPET_PROBE_CACHE: ") && kernel_number(cache) &&
-        kernel_text("\n") && kernel_log(0, "KERNEL_HPET_PROBE_OK");
+        kernel_text("\n") && report_candidate(&raw) && kernel_log(0, "KERNEL_HPET_PROBE_OK");
 }
