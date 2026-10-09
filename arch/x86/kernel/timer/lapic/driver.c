@@ -4,6 +4,13 @@
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
+#ifdef KERNEL_PS2_INPUT
+#include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
+#endif
+#ifdef KERNEL_SCHEDULER_IRQ
+#include "arch/x86/kernel/scheduler/irq/bridge.h"
+#include "arch/x86/kernel/scheduler/idle/idle.h"
+#endif
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 finished;
 #ifdef KERNEL_EVENT_LOOP
@@ -36,6 +43,9 @@ int x86_timer_service(X86_LAPIC_TIMER *state)
     }
     ++state->Count;
     state->Phase = X86_TIMER_PENDING;
+#ifdef KERNEL_SCHEDULER_IRQ
+    if (!x86_scheduler_timer_notify(state)) { state->Error = 4; return 0; }
+#endif
     return 1;
 }
 
@@ -100,6 +110,11 @@ static int record_deadline(BOOT_U32 goal, BOOT_U32 start)
     }
     elapsed = x86_pm_elapsed(start,
         x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask,timer.Clock.Mask);
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+    // Measurements inside scheduler sessions exclude stack preparation/collection.
+    // Idle measurements include the supervised HPET wait; compute IRQ does not.
+    if (goal <= 3) elapsed = timer.DeadlinePm[goal-1];
+#endif
     // Intervallo ampio per diagnostica: non definisce ancora garanzie scheduler.
     if (elapsed < X86_PM_SAMPLE_TICKS/2 || elapsed > X86_PM_SAMPLE_TICKS*20) {
         return 0;
@@ -121,13 +136,26 @@ static int deadlines(void)
             return 0;
         }
         start = x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask;
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+        if (goal == 1) {
+            if (!x86_scheduler_timer_tasks(&timer)) return 0;
+        } else if (goal == 2) {
+            if (!x86_scheduler_timer_idle_tasks(&timer)) return 0;
+        } else if (goal == 3) {
+            if (!x86_scheduler_timer_idle_repeat(&timer)) return 0;
+        } else
+#endif
         if (!x86_timer_arm(&timer)) {
             return 0;
         }
 #ifdef KERNEL_TEST_WATCHDOG_LOST_LAPIC
         if (!x86_timer_confirm_write(timer.Mapping,0x320,0x10041)) { return 0; }
 #endif
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+        waited = goal >= 2 ? x86_scheduler_idle_slept() : x86_watchdog_wait(&timer.Count,goal,NULL);
+#else
         waited = x86_watchdog_wait(&timer.Count,goal,NULL);
+#endif
         if (!x86_timer_wait_result(waited,8,timer.Count,timer.Error,goal) ||
             timer.Count != goal || timer.Error || !x86_lapic_idle(timer.Mapping)) {
             return 0;
@@ -170,7 +198,7 @@ static int sleep_rejections(void)
 {
     __declspec(align(8)) volatile BOOT_U32 source[2] = {3,1};
     if (x86_irq_sleep(source,3,8) || x86_irq_sleep(0,3,8) ||
-        x86_irq_sleep((volatile BOOT_U32 *)1,3,8) ||
+        x86_irq_sleep((volatile BOOT_U32 *)(BOOT_U64)1,3,8) ||
         x86_irq_sleep(source,0,8) || x86_irq_sleep(source,3,0) ||
         x86_irq_sleep(source,3,1025) || source[0] != 3 || source[1] != 1) {
         return 0;
@@ -229,6 +257,13 @@ cleanup:
         int lvt = x86_timer_confirm_write(mapping,0x320,timer.OriginalLvt);
         restored = divider && lvt;
     }
+#ifdef KERNEL_PS2_INPUT
+    if (result && stopped && detached && restored &&
+        !x86_ps2_session_run(watchdog,&timer.Clock,directory)) {
+        // A live or unconfirmed source retains its owners; never free its mapping.
+        kernel_panic("PS2_INPUT_FAILED");
+    }
+#endif
     watchdog_closed = x86_watchdog_close();
     finished = 1;
     if (!result && x86_watchdog_result() == X86_WATCHDOG_TIMEOUT &&

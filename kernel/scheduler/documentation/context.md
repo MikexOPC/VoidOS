@@ -1,6 +1,9 @@
 # Contratto del context switch x86-64
 
-Progetto dell'8 ottobre 2026; backend ancora non implementato.
+Progetto dell'8 ottobre 2026; backend implementato e verificato su host Windows.
+Vedere [implementazione, fonti correnti e prove](../../../arch/x86/kernel/scheduler/documentation/backend.md).
+Mapping nativi, dispatcher e gate QEMU sono ora completati nel profilo cooperativo
+BSP: [rapporto finale](../../../arch/x86/kernel/scheduler/documentation/integration.md).
 Leggere con [design](design.md) e [accettazione](validation.md).
 
 ## Fonti e ABI

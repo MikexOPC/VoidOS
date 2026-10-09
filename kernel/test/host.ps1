@@ -15,7 +15,7 @@ $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory
     Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt/stddef.h') } |
     Sort-Object Name -Descending | Select-Object -First 1
 if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
-foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c','kernel/boot/contract.c',
+foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c',
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/test/mm/physical/allocator_test.c',
     'kernel/test/mm/physical/alignment_test.c',
     'arch/x86/mm/regions/mapping.c','kernel/test/mm/regions/mapping_test.c',
@@ -37,6 +37,9 @@ foreach ($source in @('kernel/test/contract_test.c','kernel/test/platform_mock.c
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+& $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'kernel/drivers/video/framebuffer/rust/ffi/mode.rs') -o ($output + '/framebuffer-fields.obj')
+if ($LASTEXITCODE -ne 0) { throw 'Framebuffer Rust compilation failed.' }
+$objects += ($output + '/framebuffer-fields.obj')
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'lib/firmware/acpi/rust/rsdp/validation.rs') -o ($output + '/acpi-rsdp-fields.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione campi ACPI fallita.' }
 $objects += ($output + '/acpi-rsdp-fields.obj')
@@ -187,4 +190,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Test IST Rust falliti.' }
 & (Join-Path $PSScriptRoot 'serial/queue/scripts/host.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
 & (Join-Path $PSScriptRoot 'interrupts/registry/scripts/host.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
 & (Join-Path $PSScriptRoot 'timer/lapic/scripts/host.ps1') -OutputDirectory $output -ToolchainBin $ToolchainBin -SdkInclude (Join-Path $sdk.FullName 'ucrt')
-Write-BootStatus OK 'GDT TSS stack TX e timer: ownership, rollback, revoca e corruzioni verificati; 59 test Rust complessivi.'
+Write-BootStatus OK 'GDT TSS stack TX e timer: ownership, rollback, revoca e corruzioni verificati; suite Rust completate; conteggi nei risultati dei singoli test.'

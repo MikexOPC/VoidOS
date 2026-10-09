@@ -16,6 +16,7 @@ kernel/build/
 # ====== Other ====== #
 
 review_results/
+reuse/
 
 *.log
 *.tmp

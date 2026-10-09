@@ -27,8 +27,8 @@ static int source_valid(const volatile BOOT_U32 *source, const volatile BOOT_U32
  * cancellation cannot strand a watchdog IRQ in IRR or free a live handler.
  * Interrupt context saved by the existing Assembly backend; no C at IF=1.
  * Failure model: missing LAPIC delivery, functioning HPET/controller/BSP. */
-BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *source, BOOT_U32 goal,
-    const volatile BOOT_U32 *stop)
+static BOOT_U32 wait_private(const volatile BOOT_U32 *source, BOOT_U32 goal,
+    const volatile BOOT_U32 *stop, BOOT_U32 idle)
 {
     X86_HPET_WATCHDOG *owner = x86_watchdog_state();
     BOOT_U32 next, slept, request;
@@ -50,7 +50,26 @@ BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *source, BOOT_U32 goal,
     }
     request = stop ? *stop : 0;
     owner->Result = x86_watchdog_classify(source[0],source[1],goal,request);
+    if (idle && owner->Result == X86_WATCHDOG_TIMEOUT) {
+        owner->Result = X86_WATCHDOG_IDLE;
+        return slept;
+    }
     if (owner->Result == X86_WATCHDOG_TIMEOUT) { x86_watchdog_fail(X86_WATCHDOG_DEADLINE); }
     if (owner->Result == X86_WATCHDOG_FAULT) { x86_watchdog_fail(X86_WATCHDOG_CLASSIFY); }
     return owner->Result == X86_WATCHDOG_EVENT || owner->Result == X86_WATCHDOG_STOP ? slept : 0;
+}
+
+// ====== x86_watchdog_wait ======
+
+BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *source, BOOT_U32 goal,
+    const volatile BOOT_U32 *stop)
+{
+    return wait_private(source, goal, stop, 0);
+}
+
+// ====== x86_watchdog_idle ======
+
+BOOT_U32 x86_watchdog_idle(const volatile BOOT_U32 *source)
+{
+    return wait_private(source, 1, NULL, 1);
 }

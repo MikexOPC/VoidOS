@@ -3,6 +3,9 @@
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/descriptors/stacks.h"
 #include "arch/x86/kernel/interrupts/registry/registry.h"
+#ifdef KERNEL_SCHEDULER_IRQ
+#include "arch/x86/kernel/scheduler/irq/bridge.h"
+#endif
 extern const BOOT_U64 x86_irq_targets[224];
 extern const unsigned char x86_irq_begin[], x86_irq_end[];
 extern const BOOT_U64 x86_kernel_fault_targets[32];
@@ -169,15 +172,25 @@ int x86_irq_initialize(void)
     return 1;
 }
 
-// ====== frame preso in prestito dal solo stack principale persistente ===== //
+// ====== frame preso in prestito da stack principale o task attiva pinned ===== //
 
 static int frame_owner(const X86_IRQ_FRAME *frame)
 {
     BOOT_U64 address = (BOOT_U64)frame;
+    BOOT_U64 top = X86_KERNEL_MAIN_TOP;
+#ifdef KERNEL_SCHEDULER_IRQ
+    if (frame && !(address & 7) && (address < X86_KERNEL_MAIN_BASE ||
+        address > X86_KERNEL_MAIN_TOP - sizeof(*frame))) {
+        top = x86_scheduler_irq_stack_top(address);
+        if (!top) return 0; // Authority BEFORE reading the borrowed CPU frame.
+        return frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= top &&
+            frame->Rip >= 0x100000000ULL && frame->Rip < 0x100100000ULL;
+    }
+#endif
     // IST zero: il frame e preso in prestito dallo stack principale persistente.
     return frame && !(address & 7) && address >= X86_KERNEL_MAIN_BASE &&
         address <= X86_KERNEL_MAIN_TOP - sizeof(*frame) &&
-        frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= X86_KERNEL_MAIN_TOP &&
+        frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= top &&
         frame->Rip >= 0x100000000ULL && frame->Rip < 0x100100000ULL;
 }
 
@@ -206,6 +219,11 @@ void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
 {
     if (!installed || !frame_owner(frame) || !x86_irq_frame(frame->Vector,frame->Cs,frame->Flags,frame->Ss))
         x86_kernel_stop(0x4b495251554e0001ULL);
+#ifdef KERNEL_SCHEDULER_IRQ
+    if ((frame->Rsp < X86_KERNEL_MAIN_BASE || frame->Rsp > X86_KERNEL_MAIN_TOP) &&
+        !x86_scheduler_irq_record(frame->Vector,frame->Rip,frame->Rsp,frame->Flags))
+        x86_kernel_stop(0x4b495251554e0005ULL);
+#endif
     if (frame->Vector == 0x40 || frame->Vector == 0x41) {
         if (!x86_irq_registry_deliver(&irq_registry,(BOOT_U32)frame->Vector)) x86_kernel_stop(0x4b495251554e0004ULL);
     } else if (frame->Vector == 0xf0) {

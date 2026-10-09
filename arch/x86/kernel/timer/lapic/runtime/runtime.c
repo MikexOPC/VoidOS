@@ -2,6 +2,10 @@
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
+#ifdef KERNEL_SCHEDULER_IRQ
+#include "arch/x86/kernel/scheduler/irq/bridge.h"
+#include "arch/x86/kernel/scheduler/idle/idle.h"
+#endif
 static X86_TIMER_LOOP_CONTROL control;
 
 // ====== scrittura readback prima di considerare un registro configurato ===== //
@@ -141,11 +145,24 @@ static int step(X86_LAPIC_TIMER *state)
     if (!x86_irq_ready() || !x86_timer_owner_valid(state) || !control_valid(state) ||
         state->Phase != X86_TIMER_READY || state->Count == ~0U || control.Sleeps == ~0U) return 0;
     goal = state->Count+1;
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+    if (goal == 1) {
+        if (!x86_scheduler_timer_tasks(state)) return 0;
+    } else if (goal == 2) {
+        if (!x86_scheduler_timer_idle_tasks(state)) return 0;
+    } else if (goal == 3) {
+        if (!x86_scheduler_timer_idle_repeat(state)) return 0;
+    } else
+#endif
     if (!x86_timer_arm(state)) return 0;
 #ifdef KERNEL_TEST_WATCHDOG_LOST_LAPIC
     if (!x86_timer_confirm_write(state->Mapping,0x320,0x10041)) { return 0; }
 #endif
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+    waited = (goal == 2 || goal == 3) ? x86_scheduler_idle_slept() : x86_watchdog_wait(&state->Count,goal,&control.StopRequest);
+#else
     waited = x86_watchdog_wait(&state->Count,goal,&control.StopRequest);
+#endif
     if (x86_watchdog_result() == X86_WATCHDOG_STOP && state->Count == state->Consumed) {
         if (!x86_timer_stop(state->Mapping)) { return 0; }
         state->Active = 0; state->Phase = X86_TIMER_READY;

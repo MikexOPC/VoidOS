@@ -10,10 +10,16 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 # ====== compilazione del solo kernel diagnostico ====== #
 
 Write-BootSection 'kernel C diagnostico'
+$probeCompilerInclude = (Resolve-Path (Join-Path $ToolchainBin '../../../include')).Path
+$probeSdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory |
+    Where-Object { Test-Path ($_.FullName + '/ucrt/stddef.h') } |
+    Sort-Object Name -Descending | Select-Object -First 1
+if (!$probeSdk) { throw 'UCRT standard headers unavailable.' }
+$probeUcrt = Join-Path $probeSdk.FullName 'ucrt'
 [string[]]$probeFlags = @()
 if ($Fault -ne 'none') { $probeFlags = @('/DBOOT_PROBE_FAULT=' + (@('none','contract-write','stack-guard','execute-data').IndexOf($Fault))) }
 & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O1 /c `
-    @probeFlags ('/I' + $bootRoot) ('/I' + $projectRoot) (Join-Path $bootRoot 'test\kernel\entry.c') ("/Fo$output\kernel_probe.obj")
+    ('/I' + $probeCompilerInclude) ('/I' + $probeUcrt) @probeFlags ('/I' + $bootRoot) ('/I' + $projectRoot) (Join-Path $bootRoot 'test\kernel\entry.c') ("/Fo$output\kernel_probe.obj")
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione kernel diagnostico fallita.' }
 & (Join-Path $ToolchainBin 'link.exe') /nologo /machine:x64 /subsystem:native `
     /entry:kernel_probe_entry /nodefaultlib /incremental:no /dynamicbase:no /fixed /base:0x100000000 `

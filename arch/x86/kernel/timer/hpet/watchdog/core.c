@@ -97,7 +97,7 @@ int x86_watchdog_valid(void)
     return watchdog.Self == (BOOT_U64)&watchdog && !watchdog.Closed &&
         watchdog.Env.Window && watchdog.Env.Window->Pool && watchdog.Env.Mapping &&
         watchdog.Env.Profile && watchdog.Env.Window->Root == watchdog.Env.Mapping->Root &&
-        watchdog.Env.Window->Pool->FreePages == watchdog.Budget &&
+        x86_watchdog_budget_valid() &&
         x86_irq_ready() && x86_lapic_validate(watchdog.Env.Mapping) &&
         x86_apic_cache_state() && x86_apic_read_profile(&cpu) && !cpu.Reserved &&
         (cpu.Rflags & 0x202) == 2 && cpu.Pat == watchdog.Env.Profile->Raw.Pat &&
@@ -234,6 +234,7 @@ int x86_watchdog_finish_cleanup(void)
 {
     if (!watchdog.Self) { return 1; }
     if (watchdog.Closed) { return 1; }
+    if (x86_watchdog_budget_active()) { return cleanup_failure(X86_WATCHDOG_CLOSE_STATE); }
     if (!x86_watchdog_valid() || watchdog.Armed || watchdog.Error) {
         return cleanup_failure(X86_WATCHDOG_CLOSE_STATE);
     }

@@ -1,4 +1,5 @@
-param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
+param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
+    [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic,
     [switch]$TestWatchdogAlternate,
     [switch]$TestWatchdogCleanupRecovery,
@@ -7,6 +8,16 @@ param([string]$ToolchainBin, [switch]$TestPanic, [string]$OutputDirectory, [swit
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
+if ($Ps2Input -and ($Install -or $EventLoop -or $TestPs2Decoder -or $TestPs2Controller -or $TestPanic -or $TestBootstrapMemory -or
+    $TestSchedulerFault -ne 'none' -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or
+    $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none' -or $TestWatchdogLostLapic -or
+    $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery)) { throw 'PS/2 input profile must stay isolated.' }
+if ($TestPs2Controller) { $TestPs2Decoder = $true }
+if ($TestPs2Decoder -and ($Install -or $EventLoop -or $TestPanic -or $TestBootstrapMemory -or
+    $TestSchedulerFault -ne 'none' -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or
+    $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none' -or $TestWatchdogLostLapic -or
+    $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery)) { throw 'PS/2 decoder diagnostic image must stay isolated.' }
+if ($TestSchedulerFault -ne 'none' -and ($Install -or $EventLoop -or $TestPanic -or $TestWatchdogLostLapic -or $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Scheduler fault image must stay isolated; choose one fault.' }
 if ($TestWatchdogCleanupRecovery -and ($EventLoop -or $TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Profilo cleanup recovery solo finito, incompatibile con altri fault.' }
 if ($Install -and $TestWatchdogCleanupRecovery) { throw 'Non installare la fault injection cleanup recovery.' }
 if ($TestWatchdogAlternate -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Profilo watchdog alternativo incompatibile con altri fault.' }
@@ -16,6 +27,8 @@ if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault 
 if ($TestRegionFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
 if ($TestMainFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
 if ($TestCpuFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
+if ($Install -and $TestBootstrapMemory) { throw 'Bootstrap diagnostic image must stay isolated.' }
+$bootstrapDiagnostics = $TestBootstrapMemory -or $TestWindowFault -ne 'none' -or $TestRegionFault -ne 'none'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
 if (!$ToolchainBin) {
@@ -38,7 +51,15 @@ $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory
     Sort-Object Name -Descending | Select-Object -First 1
 if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project),
-    ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')))
+    ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')), '/DKERNEL_SCHEDULER_IRQ=1')
+if ($TestPs2Decoder) { $flags += '/DKERNEL_TEST_PS2_DECODER=1' }
+if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
+if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
+if ($bootstrapDiagnostics) { $flags += '/DKERNEL_TEST_BOOTSTRAP_MEMORY=1' }
+if ($TestSchedulerFault -ne 'none') {
+    $mode = switch ($TestSchedulerFault) { 'guard-low' {1} 'guard-high' {2} 'nx' {3} 'retired' {4} 'rollback' {5} 'blocked' {6} 'irq-timeout' {7} 'idle-timeout' {8} 'idle-repeat-timeout' {9} }
+    $flags += ('/DKERNEL_TEST_SCHEDULER_FAULT=' + $mode)
+}
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
 if ($EventLoop) { $flags += '/DKERNEL_EVENT_LOOP=1' }
 if ($TestWatchdogLostLapic) { $flags += '/DKERNEL_TEST_WATCHDOG_LOST_LAPIC=1' }
@@ -64,8 +85,16 @@ if ($TestCpuFault -ne 'none') {
     if ($TestCpuFault -eq 'nested') { $flags += '/DKERNEL_TEST_NESTED_FAULT=1' }
     if ($TestCpuFault -eq 'double') { $flags += '/DKERNEL_TEST_DOUBLE_FAULT=1' }
 }
-foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
-    'kernel/boot/contract.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
+foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/scheduler/capabilities.c',
+    'arch/x86/kernel/scheduler/stacks.c','arch/x86/kernel/scheduler/mapping/native.c',
+    'arch/x86/kernel/scheduler/mapping/access.c',
+    'arch/x86/kernel/scheduler/integration/kernel.c','arch/x86/kernel/scheduler/integration/workload.c',
+    'arch/x86/kernel/scheduler/integration/report.c','arch/x86/kernel/scheduler/integration/validation.c','arch/x86/kernel/scheduler/idle/idle.c',
+    'arch/x86/kernel/scheduler/test/fault/fault.c','arch/x86/kernel/scheduler/persistent/workload.c',
+    'arch/x86/kernel/scheduler/dispatcher/engine.c','arch/x86/kernel/scheduler/diagnostic/profiles.c',
+    'arch/x86/kernel/scheduler/irq/bridge.c','arch/x86/kernel/scheduler/runtime/memory.c','arch/x86/kernel/scheduler/runtime/payload.c','arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
+    'kernel/bootstrap/memory.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c','kernel/drivers/video/framebuffer/mapping.c',
+    'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
     'arch/x86/mm/regions/mapping.c','arch/x86/mm/regions/access.c',
     'arch/x86/mm/arena/objects.c',
     'arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/access.c',
@@ -84,6 +113,7 @@ foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch
     'arch/x86/kernel/timer/hpet/description/probe/policy.c','arch/x86/kernel/timer/hpet/description/probe/hardware.c',
     'arch/x86/kernel/timer/hpet/watchdog/core.c','arch/x86/kernel/timer/hpet/watchdog/device.c',
     'arch/x86/kernel/timer/hpet/watchdog/route.c','arch/x86/kernel/timer/hpet/watchdog/wait.c',
+    'arch/x86/kernel/timer/hpet/watchdog/accounting/budget.c',
     'arch/x86/kernel/timer/hpet/watchdog/hardware/access.c',
     'arch/x86/kernel/timer/hpet/watchdog/compatibility/select.c',
     'arch/x86/kernel/timer/hpet/watchdog/recovery/control.c',
@@ -93,6 +123,11 @@ foreach ($source in @('arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch
     'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
     $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
+    $objects += $object
+}
+if ($bootstrapDiagnostics) {
+    $object = Join-Path $output 'bootstrap-probes.obj'
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'kernel/test/bootstrap/probes.c'),('/Fo' + $object)))
     $objects += $object
 }
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/io.obj'),
@@ -131,7 +166,22 @@ if ($TestWindowFault -ne 'none') {
         (Join-Path $project 'kernel/test/mm/window/assembly/fault/probe.asm'))
     $objects += ($output + '/fault.obj')
 }
+foreach ($source in @('assembly/irq/compute.asm','assembly/switch/context.asm','assembly/profile/capture.asm',
+    'assembly/profile/permissions.asm','test/assembly/preservation/probe.asm')) {
+    $object = $output + '/scheduler-' + $source.Replace('/','-').Replace('.asm','.obj')
+    Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo'+$object),
+        (Join-Path $project ('arch/x86/kernel/scheduler/'+$source)))
+    $objects += $object
+}
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/drivers/video/framebuffer/rust/ffi/mode.rs'),
+    '-o',($output + '/framebuffer-fields.obj'))
+$objects += ($output + '/framebuffer-fields.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=staticlib','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-C','lto=fat','-C','codegen-units=1','-C','overflow-checks=yes','-D','warnings',
+    (Join-Path $project 'kernel/scheduler/rust/ffi/gateway.rs'),'-o',($output+'/scheduler.lib'))
+$objects += ($output+'/scheduler.lib')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/mm/devices/rust/encoding/validation.rs'),
     '-o',($output + '/lapic-encoding.obj'))
@@ -232,6 +282,36 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/mm/objects/rust/validation/bounds.rs'),
     '-o',($output + '/object-bounds.obj'))
+if ($TestPs2Controller -or $Ps2Input) {
+    foreach ($source in @('kernel/drivers/input/ps2/controller/controller.c','kernel/drivers/input/ps2/controller/transport.c',
+        'kernel/drivers/input/ps2/controller/discovery.c')) {
+        $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
+        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
+        $objects += $object
+    }
+}
+if ($TestPs2Controller -or $Ps2Input) {
+    $sources = if ($Ps2Input) { @('route','interrupt','session','task') | ForEach-Object { 'arch/x86/kernel/drivers/input/ps2/runtime/' + $_ + '.c' } }
+        else { @('arch/x86/kernel/drivers/input/ps2/integration/native.c') }
+    if ($Ps2Input) { $sources += @('kernel/console/line/line.c','kernel/shell/shell.c',
+        'kernel/shell/queue.c','arch/x86/kernel/drivers/input/ps2/shell/task.c') }
+    foreach ($source in $sources) {
+        $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
+        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
+        $objects += $object
+    }
+}
+if ($TestPs2Decoder) {
+    $object = Join-Path $output 'ps2-decoder-abi.obj'
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'kernel/drivers/input/ps2/test/decoder/abi_test.c'),('/Fo' + $object)))
+    $objects += $object
+}
+if ($TestPs2Decoder -or $Ps2Input) {
+    $object = Join-Path $output 'ps2-decoder.obj'
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+        '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/input/integration/rust/ffi/ps2.rs'),'-o',$object)
+    $objects += $object
+}
 Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') (@('/nologo','/machine:x64','/subsystem:native',
     '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed','/base:0x100000000',
     ('/out:' + $output + '/kernel.exe'),($output + '/io.obj'),($output + '/validation.obj'),($output + '/window-layout.obj'),

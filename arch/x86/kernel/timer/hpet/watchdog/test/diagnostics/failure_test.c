@@ -79,5 +79,8 @@ int run_watchdog_diagnostics_tests(void)
     watchdog_test_reset(23);
     if (!x86_watchdog_open(&test_env) || !x86_watchdog_wait(test_source,1,&test_stop) ||
         !x86_watchdog_close() || x86_watchdog_failure() || x86_watchdog_cleanup_failure()) { return 24; }
+    for (BOOT_U32 mode = 31; mode <= 33; ++mode) {
+        if (!expected_wait_failure(mode,X86_WATCHDOG_ARM,0)) { return (int)mode; }
+    }
     return 0;
 }

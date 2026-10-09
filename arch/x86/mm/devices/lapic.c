@@ -120,7 +120,8 @@ int x86_lapic_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     BOOT_U64 budget, expected;
     if (!x86_exception_environment() || !output_valid(context,window,inventory,topology,profile,owner) ||
         !x86_apic_mapping_ready(context,window,inventory,topology,profile) ||
-        !branch(window->Root,window->Pool->PhysicalBits)) return 0;
+        !branch(window->Root,window->Pool->PhysicalBits)
+    ) return 0;
     entries = x86_window_entries(3);
     if (entries[X86_LAPIC_LEAF]) return 0;
     budget = window->Pool->FreePages;
@@ -146,8 +147,7 @@ int x86_lapic_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
 
 // ====== revoca soltanto a sorgente chiusa e senza liberare RAM del dispositivo ===== //
 
-int x86_lapic_unbind(X86_LAPIC_MAPPING *owner)
-{
+int x86_lapic_unbind(X86_LAPIC_MAPPING *owner) {
     if (!x86_lapic_idle(owner)) return 0;
     x86_window_entries(3)[X86_LAPIC_LEAF] = 0;
     x86_invalidate_page(X86_LAPIC_VIRTUAL);
@@ -158,8 +158,7 @@ int x86_lapic_unbind(X86_LAPIC_MAPPING *owner)
 
 // ====== output dword non puo aliasare owner o pagine dispositivi ===== //
 
-static int output_range(const X86_LAPIC_MAPPING *owner, BOOT_U32 *value)
-{
+static int output_range(const X86_LAPIC_MAPPING *owner, BOOT_U32 *value) {
     BOOT_U64 target = (BOOT_U64)value;
     if (!value || (target & 3) || target > ~0ULL-sizeof(*value) ||
         os_address_ranges_overlap(target,sizeof(*value),(BOOT_U64)owner,sizeof(*owner)) ||
@@ -181,8 +180,7 @@ int x86_lapic_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *va
 
 // ====== EOI ammesso solo attraverso un owner ancora collegato ===== //
 
-static int isr(const X86_LAPIC_MAPPING *owner, BOOT_U32 expected)
-{
+static int isr(const X86_LAPIC_MAPPING *owner, BOOT_U32 expected) {
     BOOT_U32 index, value;
     for (index = 0; index < 8; ++index)
         if (!x86_lapic_read(owner,0x100+index*16,&value) ||
@@ -192,23 +190,20 @@ static int isr(const X86_LAPIC_MAPPING *owner, BOOT_U32 expected)
 
 // ====== unico ISR quaranta poi EOI zero e readback vuoto ===== //
 
-int x86_lapic_eoi(const X86_LAPIC_MAPPING *owner)
-{
+int x86_lapic_eoi(const X86_LAPIC_MAPPING *owner) {
     return x86_lapic_eoi_vector(owner,0x40);
 }
 
 // ====== EOI solo per unico ISR UART oppure timer realmente in servizio ===== //
 
-int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector)
-{
+int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector) {
     if (vector != 0x40 && vector != 0x41) return 0;
     return isr(owner,1U<<(vector-0x40)) && x86_lapic_native_eoi() && isr(owner,0);
 }
 
 // ====== nessuna consegna pendente prima di arm o revoca ===== //
 
-int x86_lapic_idle(const X86_LAPIC_MAPPING *owner)
-{
+int x86_lapic_idle(const X86_LAPIC_MAPPING *owner) {
     BOOT_U32 index, value;
     if (!isr(owner,0)) return 0;
     for (index = 0; index < 8; ++index)
@@ -218,8 +213,7 @@ int x86_lapic_idle(const X86_LAPIC_MAPPING *owner)
 
 // ====== fotografia del mapping ancora vivo dopo le consegne IRQ ===== //
 
-int x86_lapic_report(const X86_LAPIC_MAPPING *owner)
-{
+int x86_lapic_report(const X86_LAPIC_MAPPING *owner) {
     if (!x86_lapic_validate(owner)) return 0;
     return kernel_section("mapping LAPIC dedicato al driver") &&
         kernel_text("KERNEL_LAPIC_MAPPING: ") && kernel_number((BOOT_U64)owner) &&

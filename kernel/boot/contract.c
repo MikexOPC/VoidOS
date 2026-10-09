@@ -1,5 +1,6 @@
 #include "contract.h"
 #include "arch/x86/configs/boot_profile.h"
+#include "kernel/drivers/video/framebuffer/handoff.h"
 
 // ====== formato numerico controllato prima di leggere la mappa ====== //
 
@@ -7,7 +8,9 @@ int kernel_validate_contract(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U6
 {
     if (!info || info->Signature != BOOT_START_SIGNATURE || info->Version != BOOT_START_VERSION ||
         info->Size != sizeof(*info) || info->Reserved || info->MemoryReserved ||
-        !os_acpi_root_valid(&info->Acpi, 52)) return 0;
+        !os_acpi_root_valid(&info->Acpi, 52) || !fb_handoff_valid(&info->Framebuffer,52)
+    ) return 0;
+
     if (info->RequiredFeatures != BOOT_START_FEATURES || info->EnabledFeatures != BOOT_START_FEATURES ||
         root < 4096 || (root & 4095) || root >= (1ULL << 52) || info->PageTableRoot != root) return 0;
     if (entry < 4096 || entry >= X86_BOOT_LOW_ADDRESS_LIMIT || info->KernelEntry != entry ||

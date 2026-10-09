@@ -128,9 +128,24 @@ try {
         $registers -notmatch ('(?im)^'+($resume-2).ToString('x16')+':\s+0xfb\s+0xf4\s+0xfa')) {throw 'IF terminale o sequenza sonno non conformi.'}
     $events=[regex]::Matches($trace,'(?s)Servicing hardware INT=0x41\s+.*?RIP=([0-9a-f]{16}) RFL=([0-9a-f]+)')
     if($events.Count -ne $count) {throw 'Trace timer incompleta.'}
-    foreach($event in $events) {
-        if([Convert]::ToUInt64($event.Groups[1].Value,16) -ne $resume -or
-            !([Convert]::ToUInt64($event.Groups[2].Value,16) -band 512)) {throw 'Evento timer fuori dal sonno con IF=1.'}
+    $taskIrq = $log.Contains('KERNEL_SCHEDULER_TASK_IRQ_OK')
+    if ($taskIrq) {
+        $taskRip=Read-Hex $log 'SCHEDULER_IRQ_RIP: 0x([0-9a-f]{16})'
+        $taskBegin=Read-Hex $log 'SCHEDULER_IRQ_BEGIN: 0x([0-9a-f]{16})'
+        $taskEnd=Read-Hex $log 'SCHEDULER_IRQ_END: 0x([0-9a-f]{16})'
+        $taskRsp=Read-Hex $log 'SCHEDULER_IRQ_RSP: 0x([0-9a-f]{16})'
+        if ($taskRip -lt $taskBegin -or $taskRip -ge $taskEnd -or
+            $taskRsp -lt 0x700000154000 -or $taskRsp -ge 0x700000163000 -or
+            (Read-Hex $log 'SCHEDULER_IRQ_TASK: 0x([0-9a-f]{16})') -ne 1 -or
+            (Read-Hex $log 'SCHEDULER_IRQ_GENERATION: 0x([0-9a-f]{16})') -lt 2) {
+            throw 'Owner o compute della prima consegna task non validi.'
+        }
+    }
+    for ($eventIndex=0; $eventIndex -lt $events.Count; ++$eventIndex) {
+        $event=$events[$eventIndex]
+        $expectedRip=if ($taskIrq -and $eventIndex -eq 0) {$taskRip} else {$resume}
+        if([Convert]::ToUInt64($event.Groups[1].Value,16) -ne $expectedRip -or
+            !([Convert]::ToUInt64($event.Groups[2].Value,16) -band 512)) {throw 'Evento timer fuori dal contesto IF=1 previsto.'}
     }
     $consumption=Read-TimerWord $registers ($control+24)
     if(($consumption -band 4294967295L) -ne $count -or ($consumption -shr 32) -lt $count -or

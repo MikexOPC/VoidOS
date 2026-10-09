@@ -188,6 +188,9 @@ static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL
         owner->Pages = 2;
         if (boot_refresh_final_map(&services.Prefix, owner) != EFI_SUCCESS) return 1500;
         *(BOOT_START_INFO *)contract = saved;
+        if (test <= 2 || test == 14)
+            ((BOOT_START_INFO *)contract)->Framebuffer =
+                (OS_FRAMEBUFFER){0x80000000,3145728,3145728,1024,768,1024,1};
         if (acpi_mode) {
             attach_test_acpi((BOOT_START_INFO *)contract);
             ((BOOT_START_INFO *)contract)->MemoryMapBytes = owner->Snapshot.Size;
@@ -207,6 +210,9 @@ static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL
             return 1510 + (int)test;
         if (expected == EFI_SUCCESS) {
             UINT32 previous_queries = queries;
+            const OS_FRAMEBUFFER *fb = &((BOOT_START_INFO *)contract)->Framebuffer;
+            if (fb->Base != 0x80000000 || fb->Capacity != 3145728 || fb->Used != 3145728 ||
+                fb->Width != 1024 || fb->Height != 768 || fb->Stride != 1024 || fb->Format != 1) return 1539;
             if (!closed || page->Ready != 1 || owner->Snapshot.Valid != 1 ||
                 ((BOOT_START_INFO *)contract)->MemoryMapBytes != owner->Snapshot.Size ||
                 boot_exit_memory_handoff(&image_token, &services, &handoff, &state) != EFI_INVALID_PARAMETER ||

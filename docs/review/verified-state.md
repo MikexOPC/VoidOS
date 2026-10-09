@@ -1,5 +1,9 @@
 # Stato verificato il 2 ottobre 2026
 
+Snapshot storico del solo bootloader, prima del salto al kernel.
+Lo stato corrente e in [docs/status.md](../status.md). Le frasi al
+presente qui sotto descrivono quel checkpoint, non il kernel attuale.
+
 Questa verifica riguarda lo stato completo preparato per il secondo commit,
 incluse modifiche precedentemente staged, modifiche locali e spostamenti.
 I vecchi log di build non costituiscono evidenza per questo stato.
@@ -58,10 +62,10 @@ Questi indirizzi sono risultati della singola esecuzione, non valori fissi.
   Prima di aggiungere il salto al kernel, va rivalutata la separazione
   delle fasi e del cleanup; una tabella generica non esprime da sola
   proprieta delle risorse e transizioni irreversibili.
-- Il kernel non viene eseguito. ExitBootServices resta provato con mock
-  host, mentre QEMU verifica il preflight. CR3 non cambia e NXE/WP non
-  vengono attivati dal bootloader. Mancano trampoline e prove fisiche.
-  Il futuro passaggio hardware richiedera nuove prove QEMU del percorso
-  reale: i test host attuali non ne dimostrano la correttezza.
+- In questo checkpoint il kernel non veniva eseguito. ExitBootServices
+  resta provato con mock host, mentre QEMU verifica il preflight. CR3
+  non cambia e NXE/WP non vengono attivati dal bootloader. Mancano
+  trampoline e prove fisiche. Quel passaggio e stato affrontato in
+  blocchi successivi; i test host di questa data non lo dimostrano.
 
 Riferimento: [UEFI 2.11, AllocatePages e FreePages](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html).

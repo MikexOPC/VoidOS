@@ -7,6 +7,7 @@
 #define X86_WATCHDOG_TIMEOUT 2U
 #define X86_WATCHDOG_FAULT 3U
 #define X86_WATCHDOG_STOP 4U
+#define X86_WATCHDOG_IDLE 5U
 /* Stable diagnostic phases, not a claim about the underlying hardware cause. */
 #define X86_WATCHDOG_ENVIRONMENT 1U
 #define X86_WATCHDOG_PROFILE 2U
@@ -72,6 +73,9 @@ _Static_assert(sizeof(X86_HPET_WATCHDOG) == 224, "Monitor owner ABI");
 int x86_watchdog_open(const X86_WATCHDOG_ENV *env);
 BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *source, BOOT_U32 goal,
     const volatile BOOT_U32 *stop);
+/* Input dispatcher: acknowledged watchdog deadline without input is normal.
+   source is an owned aligned Count/Error prefix with Count in 0..1. */
+BOOT_U32 x86_watchdog_idle(const volatile BOOT_U32 *source);
 BOOT_U32 x86_watchdog_result(void);
 int x86_watchdog_close(void);
 /* BSP/IF=0 session history: first operational and first cleanup failure.
@@ -91,6 +95,17 @@ BOOT_U32 x86_watchdog_recovery_policy(BOOT_U32 flags, BOOT_U32 failure,
 int x86_watchdog_fail(BOOT_U32 phase);
 X86_HPET_WATCHDOG *x86_watchdog_state(void);
 int x86_watchdog_valid(void);
+/* Scheduler integration only: BSP/IF=0, exactly two stable pinned 16-page leases.
+ * End before either lease is released; failure retains the scope and its owners.
+ * No device access or budget rebasing. Typed kernel-owned inputs, not user pointers. */
+int x86_watchdog_budget_begin(const KERNEL_PHYSICAL_LEASE *first, const KERNEL_PHYSICAL_LEASE *second);
+/* Same invariants; optional third distinct pinned16-page lease for task2.
+   NULL third preserves the existing exact32-page gate; non-NULL requires48. */
+int x86_watchdog_budget_begin_three(const KERNEL_PHYSICAL_LEASE *first, const KERNEL_PHYSICAL_LEASE *second,
+    const KERNEL_PHYSICAL_LEASE *third);
+int x86_watchdog_budget_end(void);
+int x86_watchdog_budget_valid(void);
+int x86_watchdog_budget_active(void);
 int x86_watchdog_device(BOOT_U32 operation);
 int x86_watchdog_route(BOOT_U32 operation);
 /* Select next comparator before any hardware mutation; routes are scalar Rust policy. */

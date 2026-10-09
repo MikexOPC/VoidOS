@@ -71,6 +71,10 @@ void watchdog_test_reset(BOOT_U32 mode)
 // ====== checked_environment_mocks ======
 
 int x86_irq_ready(void) { return 1; }
+// Legacy hardware fixtures do not allocate task leases; accounting has a separate test.
+int kernel_physical_validate(const KERNEL_PHYSICAL_ALLOCATOR *owner) { return owner == &pool; }
+int kernel_physical_is_pinned(const KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lease)
+{ (void)owner; (void)lease; return 0; }
 int x86_apic_cache_state(void) { return 1; }
 int x86_lapic_validate(const X86_LAPIC_MAPPING *owner) { return owner == &mapping; }
 int x86_lapic_idle(const X86_LAPIC_MAPPING *owner) { return owner == &mapping && !test_in_irq; }
@@ -123,7 +127,8 @@ int x86_watchdog_mmio_read(BOOT_U32 offset, BOOT_U32 *value)
     if (test_mode == 25 && offset == 0x120 && ++selection_reads == 2) {
         test_mode = 0; return 0;
     }
-    if (offset == 0xf0 && (test_hpet[0x10/4] & 1)) {
+    if (offset == 0xf0 && ((test_hpet[0x10/4] & 1) ||
+        (test_mode == 14 && x86_watchdog_state()->Armed))) {
         X86_HPET_WATCHDOG *owner = x86_watchdog_state();
         if (test_mode != 20) {
             test_hpet[offset/4] += test_mode == 14 && owner->Armed ? owner->Ticks * 3 / 4 : 1000u;
@@ -136,8 +141,21 @@ int x86_watchdog_mmio_write(BOOT_U32 offset, BOOT_U32 value)
     if (borrowed != description.Physical || (offset & 3) || offset >= 4096) { return 0; }
     if ((test_mode == 15 || test_mode == 26) && offset == 0x10 && !(value & 1)) { return 0; }
     if (test_mode == 21 && offset == 0x20) { return 0; }
+    if ((test_mode == 31 && offset == 0x10 && !(value & 1)) ||
+        (test_mode == 32 && offset == 0x10 && (value & 1) && x86_watchdog_state()->Armed) ||
+        (test_mode == 33 && offset == 0x108)) {
+        test_mode = 0;
+        return 0;
+    }
+    if (test_mode == 29 && offset == 0x108 && (test_hpet[0x10/4] & 1)) {
+        test_hpet[0xf0/4] += x86_watchdog_state()->Ticks * 3 / 4;
+    }
     if (offset == 0x20) { test_hpet[offset/4] &= ~value; }
     else { test_hpet[offset/4] = value; }
+    if (test_mode == 30 && offset == 0x10 && (value & 1) && x86_watchdog_state()->Armed) {
+        test_hpet[0xf0/4] = x86_watchdog_state()->Target;
+        test_hpet[0x20/4] = 1u << x86_watchdog_state()->Timer;
+    }
     return 1;
 }
 

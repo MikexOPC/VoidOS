@@ -42,6 +42,19 @@ static int check_contract(void)
     info.Version = 2;
     if (kernel_validate_contract(&info, 0x1000, info.KernelEntry)) return 8;
     info.Version = BOOT_START_VERSION;
+    for (byte = 0; byte < sizeof(info.Framebuffer); ++byte) {
+        ((unsigned char *)&info.Framebuffer)[byte] = 1;
+        if (kernel_capture_contract(&info,0x1000,info.KernelEntry,&output) ||
+            output.Info.Framebuffer.Base || output.Info.MemoryMapBytes != 144) return 9;
+        ((unsigned char *)&info.Framebuffer)[byte] = 0;
+    }
+    info.Framebuffer = (OS_FRAMEBUFFER){0x80000000,3145728,3145728,1024,768,1024,1};
+    if (!kernel_capture_contract(&info,0x1000,info.KernelEntry,&output) ||
+        output.Info.Framebuffer.Base != 0x80000000 || output.Info.Framebuffer.Stride != 1024) return 10;
+    info.Framebuffer = (OS_FRAMEBUFFER){0};
+    info.Version = 3;
+    if (kernel_validate_contract(&info,0x1000,info.KernelEntry)) return 11;
+    info.Version = BOOT_START_VERSION;
     info.MemoryMapBytes = 145;
     if (kernel_capture_contract(&info, 0x1000, info.KernelEntry, &output) || output.Info.MemoryMapBytes != 144) return 2;
     info.MemoryMapBytes = 144;

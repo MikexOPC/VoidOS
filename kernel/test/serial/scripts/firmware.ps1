@@ -29,6 +29,16 @@ function Test-UartFirmware($log, $registers, $cpuLog) {
     Test-UartQueue $log $registers
     Test-IrqRegistryFirmware $log $registers
     Test-LapicTimerFirmware $log $registers $cpuLog
+    # HPET reuses registry vector 0x40 after UART is detached (watchdog/core.c).
+    # Keep UART deliveries separate from the three watchdog interrupts.
+    $expectedVector40 = 140
+    if ($log.Contains('KERNEL_WATCHDOG_READY')) {
+        if (!$log.Contains('KERNEL_WATCHDOG_CLEANUP_OK') -or
+            (Read-Hex $log 'KERNEL_WATCHDOG_FIRED: 0x([0-9a-f]{16})') -ne 3) {
+            throw 'Watchdog: consegne o chiusura non conformi al profilo finito.'
+        }
+        $expectedVector40 += 3
+    }
     if (!$log.Contains('KERNEL_UART_IRQ_OK') -or ($owner -band 7) -or
         $owner -lt 0x100000000 -or $owner+48 -gt 0x100100000 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 140 -or
@@ -36,7 +46,7 @@ function Test-UartFirmware($log, $registers, $cpuLog) {
         (Read-Hex $log 'KERNEL_UART_IRQ_VECTOR: 0x([0-9a-f]{16})') -ne 64 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_GSI: 0x([0-9a-f]{16})') -ne 4 -or
         !$row.Success -or $registers -notmatch ('(?im)^'+$owner.ToString('x16')+':\s+0x000000000000008c\s+0x[0-9a-f]{16}') -or
-        [regex]::Matches($trace,'Servicing hardware INT=0x40').Count -ne 140) {
+        [regex]::Matches($trace,'Servicing hardware INT=0x40').Count -ne $expectedVector40) {
         throw 'COM1: consegne hardware, contatore, EOI o owner finale non conformi.'
     }
 }

@@ -1,6 +1,9 @@
 # Scheduler — piano di accettazione e review del progetto
 
-Data: 8 ottobre 2026. Tutti i casi runtime sotto sono pianificati, non PASS.
+Data: 8 ottobre 2026. La matrice sotto conserva il piano iniziale e non costituisce
+da sola un elenco di PASS. Gli esiti realmente eseguiti sono nel
+[rapporto core Rust/FFI](core.md) e nel
+[rapporto finale nativo/QEMU](../../../arch/x86/kernel/scheduler/documentation/integration.md).
 Perimetro: [scheduler cooperativo v0](design.md) e suo [backend x86](context.md).
 Baseline del kernel invariata: `14649ba`.
 
