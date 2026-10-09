@@ -64,3 +64,71 @@ fn recursive_views() {
     assert_eq!(child(ROOT, 3, 1), 0);
     assert_eq!(child(0, 0, 1), 0);
 }
+
+// ====== video_uc_policy ======
+
+#[test]
+fn video_uc_policy() {
+    let base = (225 << 39) + 4096;
+    let pat = 0x0007_0406_0007_0406;
+    for bits in 32..=52 {
+        assert_eq!(entries::x86_paging_video_policy(base, 0xc000_0000, 4321, 8193, 0x18, pat, bits), 1);
+        assert_eq!(entries::x86_paging_video_policy(base, (1u64 << bits) - 4096, 1, 1, 0x18, pat, bits), 1);
+        assert_eq!(entries::x86_paging_video_policy(base, (1u64 << bits) - 4096, 1, 2, 0x18, pat, bits), 0);
+    }
+    for cache in 0..256 {
+        assert_eq!(entries::x86_paging_video_policy(base, 0xc000_0000, 3, 8, cache, pat, 32),
+            u32::from(cache == 0x18 || cache == 0x98));
+    }
+    for slot in 0..8 {
+        for encoding in [2, 3, 8, 255] {
+            let bad = (pat & !(255u64 << (slot * 8))) | (encoding << (slot * 8));
+            assert_eq!(entries::x86_paging_video_policy(base, 0xc000_0000, 3, 8, 0x18, bad, 32), 0);
+        }
+    }
+    for pages in [0, 4322, u64::MAX] {
+        assert_eq!(entries::x86_paging_video_policy(base, 0xc000_0000, pages, 8193, 0x18, pat, 32), 0);
+    }
+    for address in [0, base - 4096, base + 1, base + 4096, (128 << 39) + 4096] {
+        assert_eq!(entries::x86_paging_video_policy(address, 0xc000_0000, 3, 8, 0x18, pat, 32), 0);
+    }
+}
+
+// ====== video_leaf_permissions_and_guards ======
+
+#[test]
+fn video_leaf_permissions_and_guards() {
+    let base = (225 << 39) + 4096;
+    let physical = 0xc000_0000;
+    for page in 0..4321 {
+        let address = base + page * 4096;
+        let entry = (physical + page * 4096) | (1 << 63) | 0x1b;
+        assert_eq!(entries::x86_paging_video_leaf(entry, address, physical, base, 4321, 8193, 0x18, 32), 3);
+    }
+    let entry = physical | (1 << 63) | 0x1b;
+    for bit in 0..64 {
+        assert_eq!(entries::x86_paging_video_leaf(entry ^ (1 << bit), base, physical, base, 3, 8, 0x18, 32),
+            if bit == 5 || bit == 6 { 3 } else { 0 });
+    }
+    for address in [base - 4096, base + 3 * 4096, base + 1, base + (1 << 21)] {
+        assert_eq!(entries::x86_paging_video_leaf(entry, address, physical, base, 3, 8, 0x18, 32), 0);
+    }
+}
+
+// ====== video_capacity_aliases ======
+
+#[test]
+fn video_capacity_aliases() {
+    let base = (225 << 39) + 4096;
+    for page in 0..8193 {
+        let entry = (0xc000_0000 + page * 4096) | (1 << 63) | 3;
+        assert_eq!(entries::x86_paging_video_leaf(entry, 0x7000_0000_0000, 0xc000_0000,
+            base, 4321, 8193, 0x18, 32), 0);
+    }
+    assert_eq!(entries::x86_paging_video_leaf(0xbfff_f003, 0x7000_0000_0000, 0xc000_0000,
+        base, 3, 8, 0x18, 32), 1);
+    for bits in [0, 31, 53, u32::MAX] {
+        assert_eq!(entries::x86_paging_video_leaf(u64::MAX, u64::MAX, u64::MAX,
+            base, u64::MAX, u64::MAX, u64::MAX, bits), 0);
+    }
+}

@@ -7,8 +7,10 @@ un owner live esplicito. Non sono un ioremap generale.
 
 ## Contratto
 
-La struttura occupa 3144 byte: mantiene il prefisso precedente di 3096
-byte e aggiunge due contatori u64 e un record dispositivo di 32 byte.
+La struttura corrente occupa3296 byte. Il blocco LAPIC originario
+occupava3144 byte: prefisso3096, due contatori e record dispositivo32.
+L'estensione video del10 ottobre aggiunge metadati e ID dei lease;
+le API LAPIC continuano a lasciarli zero e non autorizzano il video.
 `LeafPages = RamPages + MmioPages`; il percorso misto richiede esattamente
 una foglia MMIO. RamPages conta le foglie ordinarie accettate dal contratto
 di paging, non la RAM libera o i frame posseduti dall'allocatore.
@@ -57,5 +59,9 @@ QEMU confronta owner, PTE, guardie e footer con il monitor indipendente.
 
 Il contratto e UP e riguarda una sola pagina LAPIC. Nessun supporto SMP,
 shootdown TLB, dispositivi generici o hardware fisico e attestato.
+
+Il percorso separato per framebuffer e tabelle kernel e descritto in
+[inventario video](../../../arch/x86/mm/paging/documentation/video-resources.md).
+La sua validazione host non equivale ancora a mapping video live.
 
 [Intel SDM Vol. 3A: paging, PAT e alias di memoria](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf).

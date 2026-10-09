@@ -1,4 +1,4 @@
-# Stato corrente — 9 ottobre 2026
+# Stato corrente — 10 ottobre 2026
 
 Questo e il riferimento breve dello stato reale. I checkpoint in
 `docs/review/` e i report di modulo restano evidenza del blocco in cui
@@ -143,3 +143,12 @@ La ESP ordinaria contiene ora il kernel corretto gia testato e il preflight;
 backup del kernel precedente conservato. Il backend video live resta da fare.
 [Correzione e prove](../arch/x86/kernel/timer/hpet/watchdog/documentation/arm-race.md).
 [Risultati e fallimento osservato](../kernel/drivers/video/framebuffer/documentation/mapping/validation.md).
+
+Inventario esteso in sola lettura per un framebuffer e LAPIC, con tabelle
+kernel da lease pinned, guardie, esclusione degli alias su Capacity e ID
+dei lease conservati nello snapshot. Test host del contratto e regressione
+ordinaria restano distinti dal futuro riscontro hardware video live.
+Sei casi Rust debug/release, otto gruppi C ripetuti100 volte con ASan,
+suite host kernel e20 boot finali ordinari (10 video,10 assente) passano.
+[Contratto e verifiche](../arch/x86/mm/paging/documentation/video-resources.md).
+Il mapper live e il writer dei pixel non sono ancora implementati.
