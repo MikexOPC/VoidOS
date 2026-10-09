@@ -67,16 +67,16 @@ int main(void) {
         result = run_watchdog_recovery_tests();
         if (result) { printf("RECOVERY check %d failed\n",result); return 1; }
     }
-    puts("WATCHDOG_ASAN_PASS: 100 repetitions, 10000 successful waits plus fault and rollback paths");
+    puts("WATCHDOG_ASAN_PASS: 100 repetitions, 10000 successful waits plus 200 delayed-arm waits and fault paths");
     puts("COMPATIBILITY_ASAN_PASS: 10 scenarios x 100 repetitions; bounds, selection and rollback");
-    puts("DIAGNOSTICS_ASAN_PASS: 24 checks x 100 repetitions; first failure, cleanup and recovery");
+    puts("DIAGNOSTICS_ASAN_PASS: 27 checks x 100 repetitions; first failure, cleanup and arm rollback");
     puts("RECOVERY_ASAN_PASS: 23 checks x 100 repetitions; policy, quiescence, retry limit and retention");
     return 0;
 }
 '@
     [IO.File]::WriteAllText("$out/runner.c",$runner,[Text.UTF8Encoding]::new($false))
     $objects = @()
-    foreach ($source in @('core.c','device.c','route.c','wait.c','compatibility/select.c','test/platform.c','test/state_test.c',
+    foreach ($source in @('core.c','device.c','route.c','wait.c','accounting/budget.c','compatibility/select.c','test/platform.c','test/state_test.c',
         'test/compatibility/selection_test.c',
         'test/diagnostics/failure_test.c',
         'recovery/control.c','test/recovery/control_test.c',

@@ -70,5 +70,7 @@ altri moduli. Non si assume che le loro prove sostituiscano i nuovi gate task.
 
 Scelta cooperativa gia autorizzata dall'utente; dettagli v0 nel [design](design.md).
 Contratto x86 nel [context switch](context.md), casi e gate nella
-[validazione](validation.md). Stato: progetto documentato; implementazione e
-prove runtime scheduler ancora da eseguire. Nessuna modifica all'immagine kernel.
+[validazione](validation.md). Esito del blocco originale: progetto documentato.
+Questo e l'esito storico del progetto documentale. Il successivo [core Rust/FFI](core.md),
+il [backend e le prove native](../../../arch/x86/kernel/scheduler/documentation/integration.md)
+e l'[estensione eventi/attese](../wait/documentation/validation.md) hanno report distinti.

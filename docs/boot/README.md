@@ -1,11 +1,16 @@
 # Primo avvio UEFI
 
+Snapshot della prima base loader. Stato corrente: [docs/status.md](../status.md).
+Il percorso attuale carica il kernel, prepara paging e termina i Boot
+Services; questo file descrive il primo passo, che tornava al firmware.
+
 Questa e la prima base del bootloader: un'applicazione UEFI x64 in C.
 Mostra `[  OK  ] avvio UEFI riuscito.`, verifica il file di prova e
 `kernel.elf` sul volume di avvio e ritorna al firmware. Il messaggio
 puo scomparire quando il firmware riprende il controllo.
 Legge il kernel in un buffer temporaneo, prepara i segmenti in pagine
-allocate dal firmware e li rilascia. Non termina i Boot Services.
+allocate dal firmware e li rilascia. In quella base non termina i Boot
+Services.
 
 ## Struttura
 
@@ -19,8 +24,7 @@ ELF. Contratto e memoria sono descritti in [lettura kernel](kernel-file.md).
 Gli script si trovano in `arch/x86/boot/uefi/scripts/`; gli artefatti
 generati restano in `arch/x86/boot/uefi/build/`.
 La documentazione segue `documentation/<funzione>/`.
-Le cartelle `kernel/`, `mm/`, `lib/` e le altre architetture verranno
-aggiunte quando avranno codice da contenere.
+`kernel/`, `mm/` e `lib/` esistono; non attendono una fase successiva.
 
 ## Compilazione e test
 

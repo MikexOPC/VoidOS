@@ -1,10 +1,14 @@
-# Prima base del kernel
+# Base del kernel
 
-Il kernel di produzione iniziale vive in `kernel/` e `arch/x86/kernel/`,
-separato dal probe in boot/uefi/test/kernel. Non usa servizi UEFI e non
-ritorna al bootloader. Gestisce ora [ownership fisica](memory/physical-allocator.md)
-con una finestra RW/NX e stack propri protetti da guardie. Non e ancora un kernel
-ibrido completo: questa base precede scheduler, servizi isolati e driver.
+Stato corrente: [docs/status.md](../status.md). Questo file descrive
+ingresso, inventario e log; non elenca piu l'intero perimetro aperto.
+
+Il kernel vive in `kernel/` e `arch/x86/kernel/`, separato dal probe in
+boot/uefi/test/kernel. Non usa servizi UEFI e non ritorna al bootloader.
+Gestisce [ownership fisica](memory/physical-allocator.md), una finestra
+RW/NX e stack propri protetti da guardie. Scheduler cooperativo BSP,
+interrupt esterni e timer sono nel percorso di avvio. Non e un kernel
+ibrido: ring 3, syscall e spazi utente restano fuori.
 
 ## Costruzione e prove
 
@@ -89,9 +93,10 @@ e una scelta iniziale limitata, da misurare prima di estenderne l'uso.
 ## Diagnostica e panic
 
 COM1 a 0x3f8 e un profilo diagnostico QEMU esplicito, non discovery di
-hardware generico. Il backend configura UART 16550, 115200 baud/8N1,
-interrupt UART disabilitati e trasmissione polling con 100000 tentativi
-massimi per carattere. UART assente o bloccata fa fallire la scrittura;
+hardware generico. Il log di bootstrap usa UART 16550, 115200 baud/8N1
+e trasmissione polling con 100000 tentativi massimi per carattere.
+Coda TX e rotta IRQ UART sono moduli successivi; non sostituiscono
+questo percorso di panic. UART assente o bloccata fa fallire la scrittura;
 non provoca attesa infinita. I testi sono statici, limitati e senza printf.
 
 I separatori sono su righe distinte con una riga vuota; solo le etichette
@@ -100,13 +105,16 @@ Panic stampa la ragione se possibile e arresta autonomamente con CLI/HLT,
 conservando in RAX il marker 0x4b50414e49430001. L'avvio completato usa
 0x4b52454144590001. Nessun percorso ritorna al firmware.
 
-GDT/IDT/TSS ed eccezioni sono ora gestiti
-dal kernel, con tre IST distinti e stack principale autonomo: vedere
-[descrittori](descriptors/ownership.md) e [stack](stack/main-stack.md).
-Il mapping del vecchio stack e revocato, le sue pagine fisiche restano
-riservate. Restano ereditate le tabelle paging e lo stato SIMD/FPU;
-mancano diagnostica grafica, recupero dalle eccezioni, interrupt esterni,
-SMP e prove su hardware fisico.
+GDT/IDT/TSS ed eccezioni sono gestiti dal kernel, con tre IST distinti
+e stack principale autonomo: [descrittori](descriptors/ownership.md) e
+[stack](stack/main-stack.md). Il mapping del vecchio stack e revocato,
+le sue pagine fisiche restano riservate. Restano ereditate le tabelle
+paging e lo stato SIMD/FPU. Interrupt APIC, UART IRQ, LAPIC e HPET sono
+nel percorso ordinario. Mancano diagnostica grafica, recupero dalle
+eccezioni, SMP, user mode e prove su hardware fisico.
+`kernel/main.c` (400 righe) esegue ancora prove di mapping e oggetti
+prima dei servizi: i controlli di ownership restano; la diagnostica di
+riuso va separata dal bootstrap.
 
 Riferimenti: [UEFI 2.11, memoria](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html),
 [UART TI TL16C550C](https://www.ti.com/lit/ds/symlink/tl16c550c.pdf),

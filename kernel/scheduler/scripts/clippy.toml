@@ -1,0 +1,3 @@
+# ============ scheduler Rust baseline ============
+
+msrv = "1.98.1"

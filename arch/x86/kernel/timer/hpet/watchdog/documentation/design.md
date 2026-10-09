@@ -56,8 +56,12 @@ registry. LAPIC usa 0x41. Gli owner e i callback sono statici; nessun handler
 conserva stack, buffer temporanei o pointer a un oggetto liberato.
 
 La deadline HPET e 100 ms per questo profilo. Rust converte fs -> ticks con
-ceil e limite inferiore a mezzo range 32 bit; delta wrapping e controllo del
-margine rifiutano un arm che abbia gia consumato meta intervallo. Counter
+ceil e limite inferiore a mezzo range 32 bit. Dal fix del9 ottobre il counter
+posseduto viene fermato durante l'armamento; il comparatore e verificato e
+abilitato prima di riavviarlo. Il controllo del margine avviene mentre fermo,
+non dopo il riavvio: un IRQ level gia pendente resta da consumare, senza
+riclassificarlo come errore di programmazione. Il counter fermo deve restare
+identico a Start; un avanzamento non conforme blocca l'armamento. Counter
 progresso e verificato entro 2000 letture, senza interpretarle come millisecondi.
 Il handler accetta soltanto il pending del comparator posseduto e un delta
 >=Ticks, <2^31. La politica Rust distingue errore, stop, evento e timeout;

@@ -89,5 +89,24 @@ int run_watchdog_tests(void)
     x86_watchdog_state()->Count = ~0u;
     if (x86_watchdog_wait(test_source,1,NULL) || x86_watchdog_state()->Armed ||
         !x86_watchdog_close() || !restored()) { return 20; }
+    watchdog_test_reset(2);
+    if (!x86_watchdog_open(&test_env)) return 21;
+    for (mode = 0; mode < 100; ++mode) {
+        if (!x86_watchdog_idle(test_source) || x86_watchdog_result() != X86_WATCHDOG_IDLE ||
+            x86_watchdog_failure() || test_source[0] || !x86_watchdog_valid()) return 22;
+    }
+    test_mode = 0;
+    if (!x86_watchdog_idle(test_source) || x86_watchdog_result() != X86_WATCHDOG_EVENT ||
+        !x86_watchdog_close() || !restored()) return 23;
+    watchdog_test_reset(0);
+    if (!x86_watchdog_open(&test_env)) return 24;
+    test_source[1] = 1;
+    if (x86_watchdog_idle(test_source) || !x86_watchdog_close() || !restored()) return 25;
+    for (mode = 29; mode <= 30; ++mode) {
+        watchdog_test_reset(mode);
+        if (!x86_watchdog_open(&test_env) || !x86_watchdog_wait(test_source,1,NULL) ||
+            x86_watchdog_failure() || test_source[0] != 1 ||
+            !x86_watchdog_close() || !restored()) return (int)mode;
+    }
     return 0;
 }

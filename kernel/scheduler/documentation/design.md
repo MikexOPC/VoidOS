@@ -5,6 +5,11 @@ Scelta autorizzata: scheduler cooperativo BSP, task kernel, Rust per stati/coda,
 C per risorse e integrazione, Assembly per lo switch. Questo blocco definisce
 il progetto: non aggiunge codice eseguibile e non dichiara uno scheduler pronto.
 
+Questa introduzione descrive il blocco documentale originale. Il successivo
+[core Rust/FFI](core.md), il backend nativo e il dispatcher sono ora implementati.
+Le prove e i limiti del profilo v0 sono nel
+[rapporto finale](../../../arch/x86/kernel/scheduler/documentation/integration.md).
+
 ## Traguardo
 
 Due task su stack distinti alternano lavoro e yield, conservano contesto e
@@ -91,7 +96,9 @@ Invarianti:
    esaurimento della generazione, che restituisce un esito distinto.
 8. Contatori diagnostici controllati prima di incremento; nessun wrap silenzioso.
 
-La coda circolare usa head e count limitati a otto. Enqueue/dequeue O(1).
+La coda circolare usa head e count limitati a otto. Gli aggiornamenti degli
+indici sono O(1); l'implementazione verifica gli invarianti prima/dopo le
+transizioni, quindi l'operazione completa include controlli O(N^2).
 La ricerca di uno slot FREE e limitata a otto: O(N), N<=8. La verifica completa
 degli invarianti puo usare O(N^2) per duplicati, al massimo 64 confronti; questo
 e un limite progettuale, non un benchmark o una scelta per migliaia di task.
@@ -200,6 +207,10 @@ Il loop implementazione -> debug -> miglioramento -> test -> review si applica
 prima di allargare il profilo a IRQ, wait, preemption o SMP.
 
 ## Upgrade path
+
+L'estensione eventi con epoca e wake-all e stata autorizzata e implementata:
+[contratto attesa/risveglio](../wait/documentation/design.md) e
+[prove dell'estensione](../wait/documentation/validation.md).
 
 Dopo il gate v0: wait su eventi con protocollo contro wake perso; poi profilo
 IF abilitato e lifetime handler/stack; poi preemption con frame IRQ completo.

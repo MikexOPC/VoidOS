@@ -1,5 +1,8 @@
 # Revisione della prima base kernel
 
+Snapshot storico del 2 ottobre 2026. Stato corrente:
+[docs/status.md](../status.md).
+
 Data: 2 ottobre 2026. Base Git: 3c1495220748a02f487554d0e4b457728cb1e7d3.
 
 ## Implementazione verificata
@@ -67,10 +70,8 @@ Non ci sono allocator, scheduler, interrupt esterni, SMP, isolamento dei
 servizi o recupero da panic. Questo checkpoint non dimostra le future
 proprieta di sicurezza o prestazioni del kernel ibrido.
 
-Il prossimo passo e un allocatore fisico conservativo, preceduto da
-test di ownership e intervalli. Deve preservare tutte le allocazioni
-del loader e gestire il limite fisico CPU e la politica di cache prima
-di esporre pagine effettivamente utilizzabili.
+Il prossimo passo previsto allora era l'allocatore fisico. Quel lavoro
+e nei documenti successivi di memoria; non e piu il lavoro aperto.
 
 [Architettura e comandi](../kernel/bootstrap.md),
 [specifica UEFI memoria](https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html)

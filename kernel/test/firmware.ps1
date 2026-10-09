@@ -1,4 +1,4 @@
-param([string]$QemuDirectory = 'C:/Program Files/qemu', [switch]$UseInstalled)
+param([string]$QemuDirectory = 'C:/Program Files/qemu', [switch]$UseInstalled, [string]$ImageDirectory)
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
@@ -10,25 +10,35 @@ $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $output = Join-Path $project ('kernel/build/firmware-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $image = Join-Path $project 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
+if ($ImageDirectory) {
+    if ($UseInstalled) { throw 'Choose installed or isolated images.' }
+    foreach ($variant in @('ready','panic','execute','unmapped','guard-low','guard-high','opcode','selector',
+        'divide','stack','nested','double','main-retired','main-guard-high','main-execute','main-return',
+        'region-retired','region-guard-low','region-guard-high','region-execute')) {
+        New-Item -ItemType Directory -Path (Join-Path $output $variant) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $ImageDirectory "$variant/kernel.elf") -Destination (Join-Path $output "$variant/kernel.elf")
+    }
+} else {
 if ($UseInstalled) {
     New-Item -ItemType Directory -Path (Join-Path $output 'ready') | Out-Null
     Copy-Item -LiteralPath (Join-Path $project 'arch/x86/boot/uefi/build/esp/EFI/BOOT/kernel.elf') `
         -Destination (Join-Path $output 'ready/kernel.elf')
 } else {
-    & (Join-Path $project 'kernel/scripts/build.ps1') -OutputDirectory (Join-Path $output 'ready')
+    & (Join-Path $project 'kernel/scripts/build.ps1') -TestBootstrapMemory -OutputDirectory (Join-Path $output 'ready')
 }
-& (Join-Path $project 'kernel/scripts/build.ps1') -TestPanic -OutputDirectory (Join-Path $output 'panic')
+& (Join-Path $project 'kernel/scripts/build.ps1') -TestBootstrapMemory -TestPanic -OutputDirectory (Join-Path $output 'panic')
 foreach ($fault in @('execute','unmapped','guard-low','guard-high')) {
-    & (Join-Path $project 'kernel/scripts/build.ps1') -TestWindowFault $fault -OutputDirectory (Join-Path $output $fault)
+    & (Join-Path $project 'kernel/scripts/build.ps1') -TestBootstrapMemory -TestWindowFault $fault -OutputDirectory (Join-Path $output $fault)
 }
 foreach ($fault in @('opcode','selector','divide','stack','nested','double')) {
-    & (Join-Path $project 'kernel/scripts/build.ps1') -TestCpuFault $fault -OutputDirectory (Join-Path $output $fault)
+    & (Join-Path $project 'kernel/scripts/build.ps1') -TestBootstrapMemory -TestCpuFault $fault -OutputDirectory (Join-Path $output $fault)
 }
 foreach ($fault in @('retired','guard-high','execute','return')) {
-    & (Join-Path $project 'kernel/scripts/build.ps1') -TestMainFault $fault -OutputDirectory (Join-Path $output ('main-' + $fault))
+    & (Join-Path $project 'kernel/scripts/build.ps1') -TestBootstrapMemory -TestMainFault $fault -OutputDirectory (Join-Path $output ('main-' + $fault))
 }
 foreach ($fault in @('retired','guard-low','guard-high','execute')) {
-    & (Join-Path $project 'kernel/scripts/build.ps1') -TestRegionFault $fault -OutputDirectory (Join-Path $output ('region-' + $fault))
+    & (Join-Path $project 'kernel/scripts/build.ps1') -TestBootstrapMemory -TestRegionFault $fault -OutputDirectory (Join-Path $output ('region-' + $fault))
+}
 }
 Write-BootSection 'kernel autonomo dopo uscita UEFI'
 $candidatePages = @{}

@@ -16,6 +16,7 @@
 #include "handoff/descriptors/exceptions.h"
 #include "handoff/transition/activation.h"
 #include "acpi/discovery.h"
+#include "graphics/handoff.h"
 
 // ====== verifica del piano senza aumentare lo stack di ingresso ====== //
 
@@ -67,6 +68,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     BOOT_GDT_DRAFT descriptor_draft;
     BOOT_IDT_DRAFT exception_draft;
     BOOT_DESCRIPTOR_STORAGE descriptor_storage = {0};
+    static BOOT_GOP_OWNER graphics;
     int had_kernel_pages;
 
     if (!system_table)
@@ -236,7 +238,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
         goto cleanup_kernel;
     }
     status = boot_log(system_table->ConOut, BOOT_OK,
-                      L"Mappa persistente R/NX e contratto v3 verificati; tutte le risorse coperte.");
+                      L"Mappa persistente R/NX e contratto v4 verificati; tutte le risorse coperte.");
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log_hex(system_table->ConOut, L"Capacita buffer mappa persistente: ", final_map.Snapshot.Capacity);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
@@ -265,6 +267,17 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_prepare_acpi_handoff(system_table, &final_map.Snapshot, capabilities.PhysicalBits, &start_page);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_gop_choose(system_table,capabilities.PhysicalBits,&graphics);
+    if (status == EFI_NOT_FOUND || status == EFI_UNSUPPORTED) status = EFI_SUCCESS;
+    if (status == EFI_SUCCESS)
+        status = boot_attach_framebuffer_snapshot((BOOT_START_INFO *)(UINTN)start_page.PhysicalBase,
+            &final_map.Snapshot,&graphics.Framebuffer,capabilities.PhysicalBits);
+    if (status == EFI_SUCCESS) status = boot_read_paging_state(&capabilities,&paging_after);
+    if (status == EFI_SUCCESS) status = boot_compare_paging_state(&paging_before,&paging_after);
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_log(system_table->ConOut,graphics.Valid ? BOOT_OK : BOOT_WARN,
+        graphics.Valid ? L"FRAMEBUFFER_HANDOFF_PRESENT" : L"FRAMEBUFFER_HANDOFF_ABSENT");
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
 #ifdef BOOT_RUN_KERNEL
     {
         BOOT_EXIT_HANDOFF handoff = {&loaded, &stack, &capabilities, &tables, &start_page, &final_map, &descriptor_storage};
@@ -290,6 +303,18 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
 #endif
 
 cleanup_kernel:
+    if (graphics.Pending) {
+        cleanup_status = boot_gop_release_pending(&graphics);
+        if (cleanup_status != EFI_SUCCESS) {
+            (void)boot_log(system_table->ConOut,BOOT_FAIL,L"GOP_BUFFER_RELEASE_FAILED");
+            x86_stop_transition();
+        }
+    }
+    cleanup_status = boot_gop_abandon(&graphics);
+    if (cleanup_status != EFI_SUCCESS) {
+        (void)boot_log(system_table->ConOut,BOOT_FAIL,L"GOP_MODE_RESTORE_FAILED");
+        x86_stop_transition();
+    }
     had_kernel_pages = loaded.Pages.Count != 0;
     if (start_page.Ready == 1) {
         boot_invalidate_start_info((BOOT_START_INFO *)(UINTN)start_page.PhysicalBase);

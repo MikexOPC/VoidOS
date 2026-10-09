@@ -45,7 +45,26 @@ function Test-LapicTimerMonitorRejections($log, $registers, $cpuLog) {
     $rejected = $false
     try { Test-LapicTimerFirmware ($log.Replace($resume.ToString('x16'),($resume+1).ToString('x16'))) $registers $cpuLog } catch { $rejected=$true }
     if (!$rejected) { throw 'Ritorno dal sonno falso accettato.' }
-    Write-Output 'Timer LAPIC: fotografia reale valida e 14 alterazioni rifiutate.'
+    if ($log.Contains('KERNEL_SCHEDULER_TASK_IRQ_OK')) {
+        $trace = [IO.File]::ReadAllText($cpuLog)
+        $worker = [regex]::Match($trace,'(?s)Servicing hardware INT=0x41\s+.*?RIP=([0-9a-f]{16}) RFL=([0-9a-f]+)')
+        if (!$worker.Success) { throw 'Fixture worker IRQ assente.' }
+        $rip = [Convert]::ToUInt64($worker.Groups[1].Value,16)
+        $flags = [Convert]::ToUInt64($worker.Groups[2].Value,16)
+        $mutations = @($worker.Value.Replace('RIP='+$worker.Groups[1].Value,'RIP='+($rip+1).ToString('x16')),
+            $worker.Value.Replace('RFL='+$worker.Groups[2].Value,'RFL='+($flags -bxor 512).ToString('x')))
+        $temporary = [IO.Path]::GetTempFileName()
+        try {
+            foreach ($mutation in $mutations) {
+                [IO.File]::WriteAllText($temporary,$trace.Replace($worker.Value,$mutation))
+                $rejected = $false
+                try { Test-LapicTimerFirmware $log $registers $temporary } catch { $rejected=$true }
+                if (!$rejected) { throw 'Frame worker IRQ falso accettato.' }
+            }
+        } finally { Remove-Item -LiteralPath $temporary }
+        Write-Output 'Timer LAPIC: due alterazioni worker RIP/IF rifiutate.'
+    }
+    Write-Output 'Timer LAPIC: fotografia reale valida e 14 alterazioni base rifiutate.'
 }
 
 # ============ due conversioni ricalcolate dai campioni raw ============ #
@@ -111,9 +130,17 @@ function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
     }
     $trace = Get-Content -LiteralPath $cpuLog -Raw
     $events = [regex]::Matches($trace,'(?s)Servicing hardware INT=0x41\s+.*?RIP=([0-9a-f]{16}) RFL=([0-9a-f]+)')
-    foreach ($event in $events) {
-        if ([Convert]::ToUInt64($event.Groups[1].Value,16) -ne $resume -or
-            !([Convert]::ToUInt64($event.Groups[2].Value,16) -band 512)) { throw 'IRQ timer fuori dal sonno con IF=1.' }
+    $workerRip = $resume
+    if ($log.Contains('KERNEL_SCHEDULER_TASK_IRQ_OK')) {
+        $workerRip = Read-Hex $log 'SCHEDULER_IRQ_RIP: 0x([0-9a-f]{16})'
+        if ($workerRip -lt (Read-Hex $log 'SCHEDULER_IRQ_BEGIN: 0x([0-9a-f]{16})') -or
+            $workerRip -ge (Read-Hex $log 'SCHEDULER_IRQ_END: 0x([0-9a-f]{16})')) { throw 'Worker IRQ fuori dal codice verificato.' }
+    }
+    for ($index=0; $index -lt $events.Count; ++$index) {
+        $expectedRip = if ($index -eq 0) { $workerRip } else { $resume }
+        $flags = [Convert]::ToUInt64($events[$index].Groups[2].Value,16)
+        if ([Convert]::ToUInt64($events[$index].Groups[1].Value,16) -ne $expectedRip -or
+            !($flags -band 512) -or ($flags -band 1024)) { throw 'IRQ timer fuori dal contesto task/sonno verificato.' }
     }
     if ($registers -notmatch ('(?im)^LVTT\s+0x'+([uint32]($original -band 4294967295L)).ToString('x8')) -or
         $registers -notmatch ('(?im)^Timer\s+DCR=0x'+($original -shr 32).ToString('x')+'\s+.*initial_count = 0 current_count = 0')) {

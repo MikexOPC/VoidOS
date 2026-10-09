@@ -94,13 +94,18 @@ static int device_operation(void *argument)
     if (op == 2) {
         BOOT_U32 expected = owner->ConfigBase | (owner->Pin << 9);
         if (owner->Armed || pending || config != expected ||
+            !x86_watchdog_mmio_read(0x10,&now) || now != (owner->GlobalSaved | 1) ||
+            !confirmed(0x10,owner->GlobalSaved) ||
             !x86_watchdog_mmio_read(0xf0,&owner->Start)) { return 0; }
         owner->Target = owner->Start + owner->Ticks;
         if (!confirmed(offset+8,owner->Target)) { return 0; }
         owner->Armed = 1;
         if (!confirmed(offset,expected | 4) || !x86_watchdog_mmio_read(0xf0,&now) ||
-            !x86_watchdog_ahead(owner->Start,now,owner->Ticks)) {
-            if (confirmed(offset,expected) && x86_watchdog_mmio_read(0x20,&pending) && !pending) {
+            now != owner->Start || !x86_watchdog_ahead(owner->Start,now,owner->Ticks) ||
+            !x86_watchdog_mmio_read(0x20,&pending) || pending ||
+            !confirmed(0x10,owner->GlobalSaved | 1)) {
+            if (confirmed(offset,expected) && confirmed(0x10,owner->GlobalSaved) &&
+                x86_watchdog_mmio_read(0x20,&pending) && !pending) {
                 owner->Armed = 0;
             }
             return 0;
