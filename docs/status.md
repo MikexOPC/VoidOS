@@ -127,8 +127,8 @@ nei retry ExitBootServices e ripristino video nell'abbandono del boot.
 Dieci boot finali con video e dieci senza raggiungono KERNEL_READY.
 Dieci boot della shell PS/2 verificano la regressione sullo stesso loader.
 [Prove del blocco handoff](../kernel/drivers/video/framebuffer/documentation/handoff-validation.md).
-Il servizio GUI futuro richiedera video valido; mapping e rendering
-dal kernel restano il prossimo blocco, non sono gia implementati.
+Il servizio GUI futuro richiedera video valido. Il rendering dal kernel
+resta il prossimo blocco; il mapping live e descritto nell'aggiornamento sotto.
 
 Preflight del mapping collegato: Rust calcola pagine, offset e budget;
 C pubblica solo un risultato valido. Il kernel usa i limiti fisici reali.
@@ -140,15 +140,33 @@ posseduto durante la programmazione e lo riavvia dopo le verifiche.
 Riproduzione host prima/dopo,30 boot finali positivi (20 con due VM
 contemporanee) e10 con IRQ LAPIC perso/cleanup atteso verificati.
 La ESP ordinaria contiene ora il kernel corretto gia testato e il preflight;
-backup del kernel precedente conservato. Il backend video live resta da fare.
+backup del kernel precedente conservato. Il backend video live era ancora
+da fare in quel blocco; ora e verificato come descritto sotto.
 [Correzione e prove](../arch/x86/kernel/timer/hpet/watchdog/documentation/arm-race.md).
 [Risultati e fallimento osservato](../kernel/drivers/video/framebuffer/documentation/mapping/validation.md).
 
 Inventario esteso in sola lettura per un framebuffer e LAPIC, con tabelle
 kernel da lease pinned, guardie, esclusione degli alias su Capacity e ID
 dei lease conservati nello snapshot. Test host del contratto e regressione
-ordinaria restano distinti dal futuro riscontro hardware video live.
+ordinaria di quel blocco restano distinti dal riscontro video live successivo.
 Sei casi Rust debug/release, otto gruppi C ripetuti100 volte con ASan,
 suite host kernel e20 boot finali ordinari (10 video,10 assente) passano.
 [Contratto e verifiche](../arch/x86/mm/paging/documentation/video-resources.md).
-Il mapper live e il writer dei pixel non sono ancora implementati.
+Il gate del mapper live e ora chiuso nel profilo QEMU BSP; il writer dei
+pixel dal kernel resta da implementare.
+
+Mapping framebuffer reale collegato al kernel: ramo dedicato PML4[225],
+guardie, UC forte, supervisor RW/NX, tabelle da lease pinned. Rust costruisce
+le entry; C possiede pubblicazione e rollback. CR3 resta lo stesso, con
+invalidation delle traduzioni e delle viste ricorsive prima del rilascio.
+Revoca incompleta: pagine trattenute, errore e cleanup ritentabile.
+Sette gruppi C x100 con ASan/accounting, tre casi Rust debug/release,
+Clippy, cppcheck senza diagnostiche bloccanti e suite host kernel passano.
+Trenta boot finali:10 diagnostici con unbind/budget/rebind,10 ordinari con
+video live,10 senza display. Il monitor legge fisicamente tutte le768
+foglie video e le guardie; CR3 e policy UC sono verificati indipendentemente.
+Nessuno store pixel del kernel o hardware fisico provato in questo blocco.
+La ESP contiene l'immagine ordinaria live gia verificata; hash della copia
+confrontato, backup del kernel precedente conservato in kernel/build/.
+[Contratto](../arch/x86/kernel/drivers/video/framebuffer/documentation/mapping.md)
+e [prove finali](../arch/x86/kernel/drivers/video/framebuffer/documentation/validation.md).

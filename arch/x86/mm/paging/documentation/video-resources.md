@@ -94,7 +94,9 @@ Questa e regressione del percorso RAM/LAPIC sulla nuova struttura:
 non e una prova del mapping video live o del suo callback hardware.
 Risultati della campagna nel log `kernel/build/paging-owned-firmware.log`.
 
-Resta aperta l'integrazione con il mapper video reale: preparazione delle
-tabelle, pin, pubblicazione, invalidazione, revoca/rollback e riscontro
-hardware delle nuove API. Fino a quella prova non si dichiara completato
-il gate del mapping framebuffer. Hardware fisico non testato.
+Il successivo blocco del10 ottobre ha chiuso l'integrazione con il mapper
+video reale nel profilo QEMU BSP: preparazione delle tabelle, pin,
+pubblicazione, invalidazione e unbind/rebind con budget ripristinato.
+Le prove precedenti sopra restano regressioni dell'inventario, non vengono
+riclassificate. Vedere il [report del mapper](../../../kernel/drivers/video/framebuffer/documentation/validation.md)
+per immagini e ispezione fisica indipendente. Hardware fisico non testato.
