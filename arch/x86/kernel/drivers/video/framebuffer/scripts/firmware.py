@@ -1,0 +1,130 @@
+import argparse
+import importlib.util
+import json
+from pathlib import Path
+import re
+import sys
+import time
+import uuid
+sys.dont_write_bytecode = True
+ROOT = Path(__file__).resolve().parents[7]
+spec = importlib.util.spec_from_file_location('gop_probe',
+    ROOT / 'kernel/drivers/video/framebuffer/scripts/firmware.py')
+provider = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(provider)
+ADDRESS = 0x000ffffffffff000
+NX = 1 << 63
+
+# ============ bounded independent physical reads ============
+
+def physical(vm, monitor, base, count):
+    vm.stdin.write(f'xp /{count}gx 0x{base:x}\n')
+    vm.stdin.flush()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        text = monitor.read_text(errors='replace')
+        values = {}
+        for match in re.finditer(r'(?m)^([0-9a-fA-F]{8,16}):\s*((?:0x[0-9a-fA-F]{16}\s*)+)', text):
+            start = int(match[1], 16)
+            for index, value in enumerate(re.findall(r'0x([0-9a-fA-F]{16})', match[2])):
+                values[start + index * 8] = int(value, 16)
+        if all(base + index * 8 in values for index in range(count)):
+            return [values[base + index * 8] for index in range(count)]
+        if vm.poll() is not None:
+            raise RuntimeError('Owned VM exited during page-table inspection')
+        time.sleep(0.05)
+    raise TimeoutError(f'Incomplete physical read at {base:x}')
+
+# ============ validate published branch guards and every leaf ============
+
+def inspect(vm, monitor, log, args):
+    if args.absent:
+        if 'KERNEL_FB_MAPPING_ABSENT' not in log or 'KERNEL_FB_MAPPING_LIVE' in log:
+            raise RuntimeError('Absent display allocated a live mapping')
+        return {'LiveMapping': False}
+    if 'KERNEL_FB_MAPPING_LIVE' not in log:
+        raise RuntimeError('Missing live mapping marker')
+    if args.rollback and 'KERNEL_FB_ROLLBACK_OK' not in log:
+        raise RuntimeError('Missing real unbind budget restoration')
+    n = lambda name: provider.number(log, 'KERNEL_FB_' + name)
+    root = n('ROOT')
+    pages = ((n('BASE') & 4095) + n('USED') + 4095) // 4096
+    pt_count = (pages + 2 + 511) // 512
+    cache, pat = n('CACHE'), n('PAT')
+    index = ((cache >> 7) & 1) * 4 + ((cache >> 4) & 1) * 2 + ((cache >> 3) & 1)
+    if cache & ~0x98 or (pat >> (index * 8)) & 255 or pat & 255 != 6:
+        raise RuntimeError('Video cache is not strong UC with RAM PA0 WB')
+    if n('VIRTUAL') != (225 << 39) + 4096 or n('TABLE_COUNT') != pt_count + 2:
+        raise RuntimeError('Unexpected geometry/branch')
+    if n('BUDGET_BEFORE') - n('BUDGET_LIVE') != pt_count + 2:
+        raise RuntimeError('Physical budget does not match retained owned tables')
+    root_entry = physical(vm, monitor, root + 225 * 8, 1)[0]
+    if root_entry & ~0x60 != n('TABLE0') | 3:
+        raise RuntimeError('Live root does not point to owned PDPT')
+    pdpt = physical(vm, monitor, n('TABLE0'), 512)
+    if pdpt[0] & ~ADDRESS & ~0x60 != 3 or any(pdpt[1:]):
+        raise RuntimeError('Invalid PDPT flags or extra mappings')
+    directory = physical(vm, monitor, pdpt[0] & ADDRESS, 512)
+    seen = {root, n('TABLE0'), pdpt[0] & ADDRESS}
+    if len(seen) != 3 or any(directory[pt_count:]):
+        raise RuntimeError('Aliased owned tables or unexpected PDE')
+    present = 0
+    for table in range(pt_count):
+        entry = directory[table]
+        base = entry & ADDRESS
+        if entry & ~ADDRESS & ~0x60 != 3 or base in seen:
+            raise RuntimeError('Unsafe PDE or duplicate table')
+        seen.add(base)
+        leaves = physical(vm, monitor, base, 512)
+        for slot, leaf in enumerate(leaves):
+            logical = table * 512 + slot
+            expected = 0 if logical == 0 or logical > pages else (
+                (n('BASE') & ~4095) + (logical - 1) * 4096) | NX | cache | 3
+            if leaf & ~0x60 != expected:
+                raise RuntimeError(f'Unsafe video leaf/guard {logical}: {leaf:x} != {expected:x}')
+            present += bool(expected)
+    text = monitor.read_text(errors='replace')
+    registers = re.findall(r'CR3=([0-9a-fA-F]{16})', text)
+    if not registers or int(registers[-1], 16) != root:
+        raise RuntimeError('Actual CR3 changed')
+    return {'LiveMapping': True, 'VerifiedLeaves': present, 'OwnedTables': len(seen) - 1,
+            'Rollback': args.rollback, 'CacheIndex': index, 'Root': root}
+
+# ============ image-specific consecutive boots ============
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--kernel', type=Path, required=True)
+    parser.add_argument('--boots', type=int, default=10)
+    parser.add_argument('--absent', action='store_true')
+    parser.add_argument('--rollback', action='store_true')
+    args = parser.parse_args()
+    if not 1 <= args.boots <= 20 or (args.absent and args.rollback):
+        parser.error('boots 1..20; rollback requires video')
+    args.image = ROOT / 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
+    args.qemu = Path('C:/Program Files/qemu')
+    args.mapping_plan = True
+    args.inspect_mapping = inspect
+    out = ROOT / ('kernel/build/framebuffer-live-' + uuid.uuid4().hex)
+    out.mkdir()
+    evidence = {'Kernel': provider.digest(args.kernel), 'Loader': provider.digest(args.image),
+        'OVMF': provider.digest(args.qemu / 'share/edk2-x86_64-code.fd'),
+        'Qemu': provider.digest(args.qemu / 'qemu-system-x86_64.exe'),
+        'Absent': args.absent, 'Rollback': args.rollback, 'Results': []}
+    try:
+        for index in range(1, args.boots + 1):
+            evidence['Results'].append(provider.boot(args, out, index))
+            print(f'PASS: framebuffer live {index}/{args.boots}', flush=True)
+    except BaseException as error:
+        evidence['Failure'] = str(error)
+        raise
+    finally:
+        evidence['LoaderUnchanged'] = evidence['Loader'] == provider.digest(args.image)
+        (out / 'results.json').write_text(json.dumps(evidence, indent=2), encoding='utf-8')
+    if not evidence['LoaderUnchanged']:
+        raise RuntimeError('Loader changed')
+    print('PASS: evidence ' + str(out), flush=True)
+
+
+if __name__ == '__main__':
+    main()

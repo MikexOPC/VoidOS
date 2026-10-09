@@ -1,6 +1,6 @@
 param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
-    [switch]$TestWatchdogLostLapic,
+    [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping,
     [switch]$TestWatchdogAlternate,
     [switch]$TestWatchdogCleanupRecovery,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
@@ -8,6 +8,11 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
+if ($TestFramebufferMapping -and ($Install -or $Ps2Input -or $EventLoop -or $TestBootstrapMemory -or
+    $TestPanic -or $TestPs2Decoder -or $TestPs2Controller -or $TestWatchdogLostLapic -or
+    $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery -or $TestSchedulerFault -ne 'none' -or
+    $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or
+    $TestRegionFault -ne 'none')) { throw 'Framebuffer mapping diagnostic must stay isolated.' }
 if ($Ps2Input -and ($Install -or $EventLoop -or $TestPs2Decoder -or $TestPs2Controller -or $TestPanic -or $TestBootstrapMemory -or
     $TestSchedulerFault -ne 'none' -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or
     $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none' -or $TestWatchdogLostLapic -or
@@ -53,6 +58,7 @@ if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project),
     ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')), '/DKERNEL_SCHEDULER_IRQ=1')
 if ($TestPs2Decoder) { $flags += '/DKERNEL_TEST_PS2_DECODER=1' }
+if ($TestFramebufferMapping) { $flags += '/DKERNEL_TEST_FRAMEBUFFER_MAPPING=1' }
 if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
 if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
 if ($bootstrapDiagnostics) { $flags += '/DKERNEL_TEST_BOOTSTRAP_MEMORY=1' }
@@ -99,6 +105,12 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/mm/arena/objects.c',
     'arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/access.c',
     'arch/x86/mm/paging/authorization/validation.c',
+    'arch/x86/kernel/drivers/video/framebuffer/authority.c',
+    'arch/x86/kernel/drivers/video/framebuffer/preflight.c',
+    'arch/x86/kernel/drivers/video/framebuffer/construction.c',
+    'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
+    'arch/x86/kernel/drivers/video/framebuffer/native/access.c',
+    'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c',
     'lib/firmware/acpi/rsdp.c',
     'kernel/firmware/acpi/root.c',
     'kernel/firmware/acpi/madt/parser.c','kernel/firmware/acpi/madt/records.c',
@@ -258,6 +270,11 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/mm/paging/rust/validation/entries.rs'),
     '-o',($output + '/paging-entries.obj'))
 $objects += ($output + '/paging-entries.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',
+    (Join-Path $project 'arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs'),
+    '-o',($output + '/framebuffer-tables.obj'))
+$objects += ($output + '/framebuffer-tables.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/mm/regions/rust/layout/validation.rs'),
     '-o',($output + '/region-layout.obj'))

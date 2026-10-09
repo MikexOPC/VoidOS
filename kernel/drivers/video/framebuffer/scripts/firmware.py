@@ -111,6 +111,9 @@ def boot(args, out, index):
                 raise RuntimeError('Absent framebuffer metadata is not zero')
         vm.stdin.write('stop\ninfo registers\n')
         vm.stdin.flush()
+        inspector = getattr(args, 'inspect_mapping', None)
+        if inspector:
+            record.update(inspector(vm, monitor_path, log, args))
         if not args.absent:
             if not args.kernel and 'GOP_PIXEL_VALIDATED' not in log:
                 raise RuntimeError('Missing pixel validation evidence')

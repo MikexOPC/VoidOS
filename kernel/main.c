@@ -1,6 +1,7 @@
 #include "bootstrap/memory.h"
 #include "drivers/video/framebuffer/handoff.h"
 #include "drivers/video/framebuffer/mapping.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
 #include "scheduler/kernel.h"
 #include "diagnostics/log.h"
 #include "arch/x86/kernel/platform.h"
@@ -177,6 +178,8 @@ __declspec(noreturn) static void kernel_continue(void)
         if (context->Info.Acpi.Source &&
             !x86_watchdog_kernel_start(context,&memory.Window,&memory.Arena,&acpi_object,&madt_object,
                 paging,&apic_profile,&apic_capabilities,&hpet_description)) kernel_panic("LAPIC_TIMER_INVALID");
+        if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &memory.Window,
+            x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
     }
 #ifdef KERNEL_TEST_REGION_FAULT
     {
