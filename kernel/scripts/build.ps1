@@ -98,6 +98,7 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/mm/regions/mapping.c','arch/x86/mm/regions/access.c',
     'arch/x86/mm/arena/objects.c',
     'arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/access.c',
+    'arch/x86/mm/paging/authorization/validation.c',
     'lib/firmware/acpi/rsdp.c',
     'kernel/firmware/acpi/root.c',
     'kernel/firmware/acpi/madt/parser.c','kernel/firmware/acpi/madt/records.c',
