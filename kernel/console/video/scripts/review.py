@@ -14,6 +14,10 @@ def main():
         ROOT / 'kernel/drivers/video/framebuffer/scripts/firmware.py',
         ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts/firmware.py',
         ROOT / 'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c', ROOT / 'docs/status.md']
+    candidates += list((ROOT / 'arch/x86/kernel/drivers/video/framebuffer/gateway').rglob('*'))
+    candidates += list((ROOT / 'arch/x86/kernel/drivers/video/framebuffer/test/gateway').rglob('*'))
+    candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h')
+    candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts/drawing.py')
     for path in candidates:
         if not path.is_file():
             continue
@@ -25,7 +29,7 @@ def main():
             errors.append(name + ': over400 lines')
         if re.search(r'[ \t]+$', text, re.M) or '\t' in text or re.search(r'\r(?!\n)', text):
             errors.append(name + ': whitespace')
-        if path.suffix in SOURCE and path.is_relative_to(MODULE):
+        if path.suffix in SOURCE:
             directories.setdefault(path.parent.relative_to(ROOT).as_posix(), []).append(path.name)
             if re.search(r'\b(TODO|FIXME|HACK|XXX)\b', text):
                 errors.append(name + ': unfinished marker')
@@ -42,7 +46,7 @@ def main():
     for directory, names in directories.items():
         if len(names) > 5:
             errors.append(directory + ': over5 source files')
-    output = ROOT / 'kernel/build/console-grid-review.json'
+    output = ROOT / 'kernel/build/console-render-review.json'
     output.write_text(json.dumps({'Files': files, 'Directories': directories, 'Errors': errors,
         'MaxSourceLines': max(item['Lines'] for item in files if Path(item['Path']).suffix in SOURCE)},
         indent=2), encoding='utf-8')

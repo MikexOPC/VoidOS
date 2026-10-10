@@ -2,10 +2,19 @@
 #include "kernel/diagnostics/log.h"
 #include "../pixels/write.h"
 #include "../test/drawing/probe.h"
+#include "../gateway/cell.h"
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
 #include "kernel/console/video/test/kernel/probe.h"
 #endif
 static X86_FB_MAPPING mapping;
+
+// ====== x86_fb_kernel_cell ======
+
+int x86_fb_kernel_cell(BOOT_U32 column, BOOT_U32 row, BOOT_U32 scalar,
+    BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+{
+    return x86_fb_cell(&mapping, column, row, scalar, foreground, background, ticks);
+}
 
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
 // ====== pixel_probe ======
@@ -50,7 +59,7 @@ int x86_fb_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *win
     if (!x86_paging_inventory_verify_video(context, window->Pool, lapic, &mapping.Authority,
         x86_fb_authority, inventory)) return 0;
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
-    if (!pixel_probe(context) || !x86_fb_drawing_probe(&mapping)) return 0;
+    if (!pixel_probe(context) || !x86_fb_drawing_probe(&mapping) || !kernel_console_render_probe()) return 0;
 #endif
     return kernel_text("KERNEL_FB_ROOT: ") && kernel_number(mapping.Authority.Root) &&
         kernel_text("\nKERNEL_FB_OWNER: ") && kernel_number((BOOT_U64)&mapping) &&

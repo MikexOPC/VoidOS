@@ -1,5 +1,8 @@
 # Console video: griglia posseduta, 10 ottobre 2026
 
+Snapshot del primo nucleo. Il gateway video e ora implementato nel
+[blocco successivo](rendering.md), con limiti di latenza espliciti.
+
 Scelta utente: griglia in RAM e aggiornamenti per cella. Modulo
 kernel/console/video/, interfacce pubbliche del framebuffer come dipendenza.
 Non e una task renderer nuova. Questo blocco realizza lo stato della console;

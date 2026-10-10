@@ -30,12 +30,14 @@ class CampaignTests(unittest.TestCase):
             'LoaderUnchanged': True, 'Results': [{}]}
         (self.directory / 'boot-1').mkdir()
 
-    def execute(self, diagnostic=False, marker=False, returncode=0):
+    def execute(self, diagnostic=False, marker=False, returncode=0, rendered=False, extra=''):
         (self.directory / 'results.json').write_text(json.dumps(self.evidence), encoding='utf-8')
-        (self.directory / 'boot-1/serial.log').write_text('KERNEL_CONSOLE_GRID_OK' if marker else '', encoding='utf-8')
+        (self.directory / 'boot-1/serial.log').write_text(('KERNEL_CONSOLE_GRID_OK' if marker else '') + extra, encoding='utf-8')
         arguments = ['firmware.py', '--kernel', str(self.image), '--boots', '1']
         if diagnostic:
             arguments.append('--diagnostic')
+        if rendered:
+            arguments.append('--render')
         result = subprocess.CompletedProcess([], returncode, stdout='PASS: evidence ' + str(self.directory), stderr='')
         with patch.object(sys, 'argv', arguments), patch.object(firmware.subprocess, 'run', return_value=result) as run, \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -71,6 +73,17 @@ class CampaignTests(unittest.TestCase):
                     '--shutdown-timeout', value]), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit):
                     firmware.main()
+
+    def test_render_evidence_required(self):
+        extra = '\nKERNEL_CONSOLE_RENDER_OK\n' + '\n'.join(name + ': 0x' + value for name, value in [
+            ('KERNEL_CONSOLE_RENDER_CELLS','0000000000000048'),
+            ('KERNEL_CONSOLE_RENDER_IF1_CELLS','0000000000000038'),
+            ('KERNEL_CONSOLE_RENDER_TSC_MAX','0000000000000001')])
+        self.execute(diagnostic=True, marker=True, rendered=True, extra=extra)
+        for mutated in ['', extra.replace('0000000000000038','0000000000000000'),
+                extra.replace('0000000000000001','0000000000000000')]:
+            with self.assertRaises(RuntimeError):
+                self.execute(diagnostic=True, marker=True, rendered=True, extra=mutated)
 
 
 if __name__ == '__main__':

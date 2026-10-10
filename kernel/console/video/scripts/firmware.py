@@ -14,11 +14,14 @@ def main():
     parser.add_argument('--kernel', type=Path, required=True)
     parser.add_argument('--boots', type=int, default=10)
     parser.add_argument('--diagnostic', action='store_true')
+    parser.add_argument('--render', action='store_true')
     parser.add_argument('--absent', action='store_true')
     parser.add_argument('--shutdown-timeout', type=float, default=15)
     args = parser.parse_args()
     if not 1 <= args.boots <= 20 or not 1 <= args.shutdown_timeout <= 30 or (args.diagnostic and args.absent):
         parser.error('boots1..20; diagnostic requires video')
+    if args.render and not args.diagnostic:
+        parser.error('render requires diagnostic')
     image = args.kernel.resolve(strict=True)
     digest = hashlib.sha256(image.read_bytes()).hexdigest().upper()
     provider = ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts/firmware.py'
@@ -26,6 +29,8 @@ def main():
         '--shutdown-timeout', str(args.shutdown_timeout)]
     if args.diagnostic:
         command += ['--rollback', '--pixels', '--drawing']
+    if args.render:
+        command += ['--console-render']
     if args.absent:
         command += ['--absent']
     result = subprocess.run(command, capture_output=True, text=True, check=False)
@@ -41,15 +46,26 @@ def main():
     if evidence.get('Failure') or evidence['Kernel'] != digest or not evidence['LoaderUnchanged'] or \
             len(evidence['Results']) != args.boots:
         raise RuntimeError('Invalid final-image campaign')
+    timing = []
     for boot in range(1, args.boots + 1):
         log = (directory / f'boot-{boot}/serial.log').read_text(errors='replace')
         present = 'KERNEL_CONSOLE_GRID_OK' in log
         if present != args.diagnostic:
             raise RuntimeError(f'Unexpected console probe state in boot{boot}')
+        if args.render:
+            numbers = [re.search(name + r': 0x([0-9a-fA-F]{16})', log) for name in
+                ['KERNEL_CONSOLE_RENDER_CELLS','KERNEL_CONSOLE_RENDER_IF1_CELLS','KERNEL_CONSOLE_RENDER_TSC_MAX']]
+            if 'KERNEL_CONSOLE_RENDER_OK' not in log or not all(numbers):
+                raise RuntimeError('Missing console rendering evidence')
+            values = [int(value[1], 16) for value in numbers]
+            if values[0:2] != [72,56] or not values[2]:
+                raise RuntimeError('Invalid console cell/IF/timing evidence')
+            timing.append(values[2])
     output = directory / 'console-grid-results.json'
     output.write_text(json.dumps({'Kernel': digest, 'Diagnostic': args.diagnostic,
         'Absent': args.absent, 'Boots': args.boots, 'GridProbePerBoot': args.diagnostic,
         'ShutdownTimeoutSeconds': args.shutdown_timeout,
+        'Render': args.render, 'MaxTscPerBoot': timing,
         'Provider': str(directory / 'results.json')}, indent=2), encoding='utf-8')
     print('PASS: console-specific evidence ' + str(output), flush=True)
 

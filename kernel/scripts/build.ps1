@@ -113,6 +113,8 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
     'arch/x86/kernel/drivers/video/framebuffer/pixels/native.c',
     'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
+    'arch/x86/kernel/drivers/video/framebuffer/gateway/cell.c',
+    'arch/x86/kernel/drivers/video/framebuffer/gateway/native.c',
     'arch/x86/kernel/drivers/video/framebuffer/font/font.c',
     'arch/x86/kernel/drivers/video/framebuffer/test/drawing/probe.c',
     'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c',
@@ -193,7 +195,8 @@ foreach ($source in @('assembly/irq/compute.asm','assembly/switch/context.asm','
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
 if ($TestFramebufferMapping) {
-    foreach ($source in @('kernel/console/video/console.c','kernel/console/video/test/kernel/probe.c')) {
+    foreach ($source in @('kernel/console/video/console.c','kernel/console/video/render.c',
+        'kernel/console/video/test/kernel/probe.c','kernel/console/video/test/kernel/render_probe.c')) {
         $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
         Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
         $objects += $object
