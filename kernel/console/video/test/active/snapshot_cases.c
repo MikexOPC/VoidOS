@@ -29,6 +29,15 @@ int x86_fb_cell(X86_FB_MAPPING *view, BOOT_U32 column, BOOT_U32 row, BOOT_U32 sc
 
 // ====== run ======
 
+int x86_fb_group(X86_FB_MAPPING *view, BOOT_U32 column, BOOT_U32 row,
+    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+{
+    assert(count == 8 && scalars[0] == 0xe8);
+    return x86_fb_cell(view, column, row, scalars[0], foreground, background, ticks);
+}
+
+// ====== run ======
+
 static int run(BOOT_U64 pages)
 {
     BOOT_U64 ticks;
@@ -57,6 +66,19 @@ int main(void)
     inventory.LeafPages = UINT64_MAX; assert(!run(48)); inventory.LeafPages = 1000;
     owner.Self = 0; assert(!run(48));
     assert(calls == 2);
+    owner.Self = (BOOT_U64)&owner;
+    {
+        BOOT_U32 scalars[8] = {0xe8};
+        BOOT_U64 ticks;
+        assert(kernel_console_active_group(&owner, 48, 2, 10, scalars, 8, 0xffffff, 0x081018, &ticks));
+        assert(owner.Inventory == &inventory && inventory.LeafPages == 1000);
+        failure = 1;
+        assert(!kernel_console_active_group(&owner, 48, 2, 10, scalars, 8, 0xffffff, 0x081018, &ticks));
+        assert(owner.Inventory == &inventory && inventory.RamPages == 232);
+        assert(!kernel_console_active_group(&owner, 48, 2, 10, scalars, 9, 0xffffff, 0x081018, &ticks));
+        assert(!kernel_console_active_group(&owner, 32, 2, 10, scalars, 8, 0xffffff, 0x081018, &ticks));
+        assert(calls == 4);
+    }
     puts("PASS: scoped task snapshot, exact delta, failure restoration and unchanged baseline (MOCK)");
     return 0;
 }

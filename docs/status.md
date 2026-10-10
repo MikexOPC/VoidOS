@@ -271,5 +271,17 @@ Profilazione completata: 3543 celle in dieci boot finali; inventario 94,34%
 del tempo profilato, massimo flush 7,31ms in questa campagna. Altri dieci
 boot ordinari e dieci senza video passano. Nessuna ottimizzazione applicata
 né risoluzione dimostrata dei picchi precedenti. Scelta utente per il prossimo
-blocco: gruppi fino a8 celle adiacenti, controlli completi per gruppo.
+blocco: gruppi fino a8 celle adiacenti, controlli completi per gruppo; ora
+implementati nel checkpoint successivo.
 [Prove e limiti](../kernel/console/video/documentation/profile-validation.md).
+
+Batch fino a8 celle implementato, con una scansione completa per gruppo,
+verifica finale e ack solo dopo successo. Quaranta boot finali:10 batch,
+10 singoli,10 ordinari e10 senza video. Batch:28480 celle,3560 gruppi,
+zero perdite input osservate,1024 pixel fisici/visibili finali verificati per
+boot e budget20436 ripristinato. Costo medio profilato per cella:0,302ms
+contro2,018ms nel singolo; confronto QEMU non controllato, non garanzia hardware.
+Quattro gruppi oltre10ms, massimo15,10ms; gate diagnostico100ms passa.
+Shell ancora seriale e nessuna estensione IRQ a C arbitrario.
+[Contratto](../kernel/console/video/documentation/batch-design.md) e
+[prove finali](../kernel/console/video/documentation/batch-validation.md).

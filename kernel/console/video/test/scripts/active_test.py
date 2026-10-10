@@ -36,7 +36,7 @@ class ActiveTests(unittest.TestCase):
 
     def drawing(self):
         self.evidence['ConsoleDraw'] = True
-        self.evidence['Results'][0]['ConsoleDraw'] = {'CELLS': 32, 'MAX_PM': 35796,
+        self.evidence['Results'][0]['ConsoleDraw'] = {'CELLS': 32, 'BATCH_SIZE': 1, 'GROUPS': 32, 'MAX_PM': 35796,
             'PM_LIMIT': 357955, 'PM_GOAL': 35796, 'SLOW_CELLS': 0, 'PM_MASK': 0xffffff, 'LAST_SCALAR': 0xe8,
             'LOSSES': 0, 'IRQS': 1, 'HPET_START': 10, 'HPET_END': 11,
             'PhysicalPixels': 128, 'VisiblePixels': 128}
@@ -88,6 +88,20 @@ class ActiveTests(unittest.TestCase):
         self.evidence = original
         del self.evidence['Results'][0]['ConsoleDraw']['GATE_SUM']
         with self.assertRaises(RuntimeError): self.verify(True)
+
+    def test_batch_positive_and_rejections(self):
+        self.drawing()
+        record = self.evidence['Results'][0]['ConsoleDraw']
+        record.update({'CELLS': 256, 'BATCH_SIZE': 8, 'GROUPS': 32, 'LAST_SCALAR': 0x41,
+            'PhysicalPixels': 1024, 'VisiblePixels': 1024})
+        self.assertEqual(self.verify(True), self.evidence)
+        original = copy.deepcopy(self.evidence)
+        for key, value in [('BATCH_SIZE', 0), ('BATCH_SIZE', 9), ('BATCH_SIZE', True),
+                ('GROUPS', 31), ('GROUPS', True), ('CELLS', 255), ('PhysicalPixels', 128),
+                ('VisiblePixels', 128), ('SLOW_CELLS', 1)]:
+            self.evidence = copy.deepcopy(original)
+            self.evidence['Results'][0]['ConsoleDraw'][key] = value
+            with self.assertRaises(RuntimeError): self.verify(True)
 
     def test_manifest_rejects(self):
         original = copy.deepcopy(self.evidence)

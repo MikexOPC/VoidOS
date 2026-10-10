@@ -13,6 +13,20 @@ static X86_FB_MAPPING mapping;
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #endif
 
+// ====== x86_fb_kernel_group ======
+
+int x86_fb_kernel_group(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
+    BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+{
+#if defined(KERNEL_TEST_CONSOLE_DRAW)
+    if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    return kernel_console_active_group(&mapping, x86_scheduler_live_stack_pages(),
+        column, row, scalars, count, foreground, background, ticks);
+#else
+    return x86_fb_group(&mapping, column, row, scalars, count, foreground, background, ticks);
+#endif
+}
+
 // ====== x86_fb_kernel_inventory_verify ======
 
 int x86_fb_kernel_inventory_verify(const KERNEL_BOOT_CONTEXT *context,

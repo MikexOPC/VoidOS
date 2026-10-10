@@ -1,13 +1,17 @@
 param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
-    [switch]$TestWatchdogAlternate,
+    [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch,
     [switch]$TestWatchdogCleanupRecovery,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
+if ($TestConsoleBatch) {
+    if ($TestConsoleDraw) { throw 'Choose one draw diagnostic profile.' }
+    $TestConsoleDraw = $true
+}
 if ($TestConsoleDraw) {
     if ($TestConsoleActive) { throw 'Choose one console diagnostic profile.' }
     $TestConsoleActive = $true
@@ -73,6 +77,7 @@ if ($TestPs2Decoder) { $flags += '/DKERNEL_TEST_PS2_DECODER=1' }
 if ($TestFramebufferMapping) { $flags += '/DKERNEL_TEST_FRAMEBUFFER_MAPPING=1' }
 if ($TestConsoleActive) { $flags += '/DKERNEL_TEST_CONSOLE_ACTIVE=1' }
 if ($TestConsoleDraw) { $flags += '/DKERNEL_TEST_CONSOLE_DRAW=1' }
+if ($TestConsoleBatch) { $flags += '/DKERNEL_TEST_CONSOLE_BATCH=1' }
 if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
 if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
 if ($bootstrapDiagnostics) { $flags += '/DKERNEL_TEST_BOOTSTRAP_MEMORY=1' }
@@ -212,7 +217,7 @@ $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
 if ($TestFramebufferMapping -or $TestConsoleDraw) {
     $consoleSources = @('kernel/console/video/console.c','kernel/console/video/render.c')
     if ($TestFramebufferMapping) { $consoleSources += @('kernel/console/video/test/kernel/probe.c','kernel/console/video/test/kernel/render_probe.c') }
-    if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/test/active/worker.c','kernel/console/video/test/active/snapshot.c','kernel/console/video/test/profiling/profile.c') }
+    if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/batch/render.c','kernel/console/video/test/active/worker.c','kernel/console/video/test/active/snapshot.c','kernel/console/video/test/profiling/profile.c') }
     foreach ($source in $consoleSources) {
         $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
         Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
