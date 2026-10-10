@@ -1,5 +1,9 @@
 # Mapping live — verifica del10 ottobre2026
 
+Snapshot del blocco mapping precedente alla scrittura pixel. Stato corrente
+e nuove prove nel [report pixel](pixels.md); le immagini sotto restano
+quelle della campagna del mapper.
+
 Modulo circoscritto al backend framebuffer x86; wiring del kernel e hook
 opzionale nel provider QEMU esistente. `reuse/` intatto. Nessun nuovo driver
 GPU, rendering o SMP. [Contratto e fonti](mapping.md).

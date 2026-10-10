@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #define CHECK(expression) do { if (!(expression)) return __LINE__; } while (0)
+int run_pixel_tests(void);
 
 // ====== bind ======
 
@@ -139,5 +140,10 @@ int main(void)
         if (result) { printf("FAIL: group %u iteration %u line %d\n", group, iteration, result); return 1; }
     }
     puts("PASS: 7 lifecycle groups x100; failure retention and complete budget restoration");
+    {
+        int result = run_pixel_tests();
+        if (result) { printf("FAIL: pixel line %d\n", result); return 1; }
+    }
+    puts("PASS: 3 pixel groups; RGB/BGR, all pixels, offset/padding, no-write rejections");
     return 0;
 }
