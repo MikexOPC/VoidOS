@@ -200,3 +200,13 @@ diagnostiche bloccanti. Trenta boot finali:10 diagnostici con2245 pixel
 verificati fisicamente e nel PPM,10 ordinari,10 senza display. Font completo,
 console operativa, hardware fisico e latenza IRQ restano da verificare.
 [Contratto e prove del renderer](../arch/x86/kernel/drivers/video/framebuffer/documentation/drawing.md).
+
+Font MikeSW Console derivato offline da Cascadia Mono v2407.24, con
+copyright/licenza OFL e sorgente TTF preservati.109 glifi8x16: ASCII,
+accenti italiani maiuscoli/minuscoli, euro e fallback. Il renderer accetta
+Height8/16 esplicita e mantiene il budget4096 pixel (32 celle8x16).
+Nessun parser TTF nel kernel; il collegamento alla console shell resta
+successivo.16 test Rust per profilo, quattro gruppi drawing x100 con ASan
+e regressioni pixel/lifecycle, cppcheck14 TU.30 boot finali:10 diagnostici
+con16837 pixel fisici/visibili verificati,10 ordinari,10 senza display.
+[Contratto font](../arch/x86/kernel/drivers/video/framebuffer/documentation/font.md).

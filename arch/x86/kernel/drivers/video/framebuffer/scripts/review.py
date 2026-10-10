@@ -16,6 +16,10 @@ def main():
         if not path.is_file():
             continue
         data = path.read_bytes()
+        if path.suffix == '.ttf':
+            files.append({'Path': path.relative_to(ROOT).as_posix(), 'Lines': 0,
+                'Sha256': hashlib.sha256(data).hexdigest().upper()})
+            continue
         text = data.decode('utf-8-sig')
         lines = text.splitlines()
         name = path.relative_to(ROOT).as_posix()

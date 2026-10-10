@@ -29,10 +29,10 @@ int x86_fb_rectangle(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
 static int font_valid(const X86_FB_FONT *font)
 {
     BOOT_U32 index, visible = 0;
-    if (!font->Glyphs || ((BOOT_U64)font->Glyphs & 3) || !font->Count ||
+    if (!x86_fb_font_height(font->Height) || !font->Glyphs || ((BOOT_U64)font->Glyphs & 3) || !font->Count ||
         font->Count > X86_FB_FONT_GLYPHS || font->Bytes < font->Count * sizeof(X86_FB_GLYPH) ||
         (BOOT_U64)font->Glyphs > ~0ULL - font->Bytes) return 0;
-    for (index = 0; index < 8; ++index) visible |= font->Missing[index];
+    for (index = 0; index < font->Height; ++index) visible |= font->Missing[index];
     if (!visible) return 0;
     for (index = 0; index < font->Count; ++index)
         if (!x86_fb_font_scalar(font->Glyphs[index].Scalar) ||
@@ -43,7 +43,7 @@ static int font_valid(const X86_FB_FONT *font)
 // ====== text_plan ======
 
 static BOOT_U32 text_plan(const X86_FB_TEXT *text, const X86_FB_FONT *font,
-    unsigned char rows[X86_FB_TEXT_CELLS][8])
+    unsigned char rows[X86_FB_TEXT_CELLS][16])
 {
     BOOT_U32 offset = 0, count = 0, byte, glyph, row;
     if (!text->Text || !text->Bytes || text->Bytes > X86_FB_TEXT_BYTES ||
@@ -63,7 +63,7 @@ static BOOT_U32 text_plan(const X86_FB_TEXT *text, const X86_FB_FONT *font,
             if (font->Glyphs[glyph].Scalar == (BOOT_U32)decoded) {
                 bitmap = font->Glyphs[glyph].Rows; break;
             }
-        for (row = 0; row < 8; ++row) rows[count][row] = bitmap[row];
+        for (row = 0; row < font->Height; ++row) rows[count][row] = bitmap[row];
         offset += (BOOT_U32)(decoded >> 32); ++count;
     }
     return count;
@@ -76,17 +76,17 @@ int x86_fb_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *input, const X86_FB_FO
     X86_FB_TEXT text;
     X86_FB_FONT font;
     X86_FB_PIXEL_SESSION session;
-    unsigned char rows[X86_FB_TEXT_CELLS][8];
+    unsigned char rows[X86_FB_TEXT_CELLS][16];
     BOOT_U32 count, cell, row, column, foreground, background;
     if (!input || !input_font || ((BOOT_U64)input & 7) || ((BOOT_U64)input_font & 7) ||
         !x86_exception_environment()) return 0;
     text = *input; font = *input_font;
     if ((text.Foreground | text.Background) & 0xff000000U) return 0;
     count = text_plan(&text, &font, rows);
-    if (!count || !x86_fb_pixels_begin(owner, text.X, text.Y, count * 8, 8, &session)) return 0;
+    if (!count || !x86_fb_pixels_begin(owner, text.X, text.Y, count * 8, font.Height, &session)) return 0;
     foreground = color_word(session.Surface.Format, text.Foreground);
     background = color_word(session.Surface.Format, text.Background);
-    for (cell = 0; cell < count; ++cell) for (row = 0; row < 8; ++row)
+    for (cell = 0; cell < count; ++cell) for (row = 0; row < font.Height; ++row)
         for (column = 0; column < 8; ++column)
             if (!x86_fb_pixels_store(&session, text.X + cell * 8 + column, text.Y + row,
                 (rows[cell][row] & (0x80U >> column)) ? foreground : background)) return 0;

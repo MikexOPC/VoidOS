@@ -50,6 +50,13 @@ pub extern "C" fn x86_fb_utf8_scalar(packed: u32, remaining: u32) -> u64 {
     u64::from(scalar) | (u64::from(length) << 32)
 }
 
+// ====== x86_fb_font_height ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_fb_font_height(height: u32) -> u32 {
+    u32::from(matches!(height, 8 | 16))
+}
+
 #[cfg(test)]
 #[path = "../../test/rust/drawing/validation_test.rs"]
 mod tests;

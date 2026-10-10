@@ -7,12 +7,13 @@
 #define X86_FB_FONT_GLYPHS 128U
 typedef struct {
     BOOT_U32  Scalar;
-    unsigned char  Rows[8];
+    unsigned char  Rows[16];
 } X86_FB_GLYPH;
 typedef struct {
     const X86_FB_GLYPH  *Glyphs;
     BOOT_U32  Count, Bytes;
-    unsigned char  Missing[8];
+    unsigned char  Missing[16];
+    BOOT_U32  Height;
 } X86_FB_FONT;
 typedef struct {
     const unsigned char  *Text;
@@ -24,4 +25,5 @@ int x86_fb_rectangle(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
 int x86_fb_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text, const X86_FB_FONT *font);
 BOOT_U64 x86_fb_utf8_scalar(BOOT_U32 bytes, BOOT_U32 remaining);
 BOOT_U32 x86_fb_font_scalar(BOOT_U32 scalar);
+BOOT_U32 x86_fb_font_height(BOOT_U32 height);
 #endif

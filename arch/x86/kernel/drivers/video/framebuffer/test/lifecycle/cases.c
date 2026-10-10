@@ -150,6 +150,6 @@ int main(void)
         int result = run_drawing_tests();
         if (result) { printf("FAIL: drawing line %d\n", result); return 1; }
     }
-    puts("PASS: 3 drawing groups x100; bounded rectangles, UTF-8/font, one mapping scan, partial failures");
+    puts("PASS: 4 drawing groups x100; rectangles, UTF-8/font 8x8/8x16, one scan, partial failures");
     return 0;
 }
