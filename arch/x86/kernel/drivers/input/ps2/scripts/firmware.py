@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import time
 import uuid
+import sys
+sys.dont_write_bytecode = True
 
 
 # ====== read_serial ======
@@ -23,7 +25,7 @@ def wait_marker(vm, serial, marker, timeout=40, min_keys=0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         log = read_serial(serial)
-        if re.search(r"KERNEL_EXCEPTION_HALTED|\bPANIC\b|DISPATCH_FAILED|PS2_INPUT_FAILED", log):
+        if re.search(r"KERNEL_EXCEPTION_HALTED|\bPANIC\b|DISPATCH_FAILED|PS2_INPUT_FAILED|KERNEL_CONSOLE_DRAW_REJECTED_PM", log):
             raise RuntimeError("Kernel failure: " + str(serial))
         if marker in log and log.count("PS2_KEY: ") >= min_keys:
             return log
@@ -57,7 +59,7 @@ def number(log, field):
 
 # ====== run_boot ======
 
-def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress, shell):
+def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress, shell, console_draw=False):
     scenario = out / f"boot-{index}"
     esp = scenario / "esp" / "EFI" / "BOOT"
     esp.mkdir(parents=True)
@@ -218,6 +220,13 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                     raise RuntimeError("Truncated command was not rejected")
             command(vm, "stop")
             command(vm, "info registers")
+            if console_draw:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location('console_cell',
+                    project / 'kernel/console/video/scripts/cell.py')
+                cell = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(cell)
+                counters['ConsoleDraw'] = cell.verify(vm, scenario, log)
             command(vm, "quit")
             vm.wait(timeout=5)
             cpu = trace.read_text(errors="replace")
@@ -246,9 +255,12 @@ def main():
     parser.add_argument("--text", action="store_true")
     parser.add_argument("--line-stress", action="store_true")
     parser.add_argument("--shell", action="store_true")
+    parser.add_argument("--console-draw", action="store_true")
     args = parser.parse_args()
     if (args.line_stress or args.shell) and not args.text:
         parser.error("--line-stress/--shell require --text")
+    if args.console_draw and not (args.text and args.shell):
+        parser.error("--console-draw requires --text and --shell")
     project = Path(__file__).resolve().parents[7]
     out = project / "kernel/build" / ("ps2-input-firmware-" + uuid.uuid4().hex)
     out.mkdir()
@@ -256,13 +268,14 @@ def main():
                 "ItalianText": args.text,
                 "LineStress": args.line_stress,
                 "Shell": args.shell,
+                "ConsoleDraw": args.console_draw,
                 "Loader": image_hash(project / "arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI"),
                 "Qemu": image_hash(args.qemu / "qemu-system-x86_64.exe"),
                 "OVMF": image_hash(args.qemu / "share/edk2-x86_64-code.fd")}
     (out / "images.json").write_text(json.dumps(manifest, indent=2))
     results = []
     for index in range(1, args.boots + 1):
-        results.append(run_boot(project, args.image, args.qemu, out, index, args.stress, args.text, args.line_stress, args.shell))
+        results.append(run_boot(project, args.image, args.qemu, out, index, args.stress, args.text, args.line_stress, args.shell, args.console_draw))
         print(f"PASS: PS/2 QEMU {index}/{args.boots}, keys/IRQ/idle/cleanup", flush=True)
     (out / "results.json").write_text(json.dumps({**manifest, "Results": results}, indent=2))
     print("PASS: PS/2 input firmware evidence " + str(out), flush=True)

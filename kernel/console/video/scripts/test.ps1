@@ -32,20 +32,44 @@ try {
             '-C','overflow-checks=yes',"$project/kernel/console/video/test/rust/cursor/plan_test.rs",
             '-o',"$out/$profile.exe")
         Invoke-Checked "$out/$profile.exe" @()
+        Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
+            '-C','overflow-checks=yes',"$project/kernel/console/video/test/rust/timing/budget_test.rs",
+            '-o',"$out/timing-$profile.exe")
+        Invoke-Checked "$out/timing-$profile.exe" @()
     }
     Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024','--crate-type=lib',
         '--emit=metadata','-D','warnings',"$project/kernel/console/video/rust/cursor/plan.rs",'-o',"$out/clippy.rmeta")
+    Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024','--crate-type=lib',
+        '--emit=metadata','-D','warnings',"$project/kernel/console/video/rust/ffi/timing.rs",'-o',"$out/timing-clippy.rmeta")
+    Invoke-Checked $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
+        '-C','panic=abort','-C','opt-level=2','-C','overflow-checks=yes',
+        "$project/kernel/console/video/rust/ffi/timing.rs",'-o',"$out/timing.obj")
     Invoke-Checked $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
         '-C','panic=abort','-C','opt-level=2','-C','overflow-checks=yes',
         "$project/kernel/console/video/rust/cursor/plan.rs",'-o',"$out/plan.obj")
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
         "$project/kernel/console/video/console.c","$project/kernel/console/video/render.c",
+        "$project/kernel/console/video/measurement/budget.c",
+        "$project/kernel/console/video/test/measurement/measurement_cases.c",
         "$project/kernel/console/video/test/host/cases.c","$project/kernel/console/video/test/host/render_cases.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"))
     Invoke-Checked "$bin/cl.exe" @('/nologo','/fsanitize=address','/MD',
-        "$out/console.obj","$out/render.obj","$out/cases.obj","$out/render_cases.obj","$out/plan.obj",("/Fe$out/host.exe"),
+        "$out/console.obj","$out/render.obj","$out/cases.obj","$out/render_cases.obj","$out/plan.obj",
+        "$out/budget.obj","$out/measurement_cases.obj","$out/timing.obj",("/Fe$out/host.exe"),
         '/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/host.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
+        ("/I$project"),"$project/kernel/console/video/test/active/snapshot.c",
+        "$project/kernel/console/video/test/active/snapshot_cases.c",
+        ("/Fo$out/"),("/Fd$out/snapshot.pdb"),("/Fe$out/snapshot.exe"),'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/snapshot.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
+        ("/I$project"),"$project/arch/x86/kernel/scheduler/stacks.c",
+        "$project/arch/x86/kernel/scheduler/capabilities.c",
+        "$project/arch/x86/kernel/scheduler/mapping/native.c",
+        "$project/arch/x86/kernel/scheduler/test/mapping/native_test.c",
+        ("/Fo$out/"),("/Fd$out/native.pdb"),("/Fe$out/native.exe"),'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/native.exe" @()
     Invoke-Checked $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
         '-C','panic=abort','-C','opt-level=2',
         "$project/arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs",'-o',"$out/drawing.obj")
@@ -74,6 +98,8 @@ try {
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/kernel/console/video/console.c" `
         "$project/kernel/console/video/render.c" "$project/kernel/console/video/test/host/render_cases.c" `
+        "$project/kernel/console/video/measurement/budget.c" `
+        "$project/kernel/console/video/test/measurement/measurement_cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/cell.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/native.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c" `
@@ -88,7 +114,15 @@ try {
         throw 'Blocking static diagnostics'
     }
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
-        -DKERNEL_TEST_CONSOLE_ACTIVE=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
+        -DKERNEL_TEST_CONSOLE_ACTIVE=1 -DKERNEL_TEST_CONSOLE_DRAW=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
+        "$project/kernel/console/video/test/active/worker.c" `
+        "$project/kernel/console/video/test/active/snapshot.c" `
+        "$project/kernel/console/video/test/active/snapshot_cases.c" `
+        "$project/arch/x86/kernel/scheduler/mapping/native.c" `
+        "$project/arch/x86/kernel/scheduler/test/mapping/native_test.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `
+        "$project/arch/x86/kernel/drivers/input/ps2/runtime/task.c" `
+        "$project/arch/x86/kernel/drivers/input/ps2/runtime/session.c" `
         "$project/kernel/console/video/test/host/hpet_policy.c" `
         "$project/arch/x86/kernel/timer/hpet/description/probe/policy.c" `
         "$project/arch/x86/kernel/timer/hpet/watchdog/core.c" `

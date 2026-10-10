@@ -6,6 +6,9 @@
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
 #include "kernel/diagnostics/log.h"
 #include "../shell/task.h"
+#ifdef KERNEL_TEST_CONSOLE_DRAW
+#include "kernel/console/video/test/active/worker.h"
+#endif
 
 // ====== pop_private ======
 
@@ -145,6 +148,9 @@ static void worker_private(void)
     while (!owner->Quiet) {
         KERNEL_EVENT_REPLY observed = x86_scheduler_event_request(X86_TASK_OBSERVE,4,0);
         if (owner->Quiet) break;
+#ifdef KERNEL_TEST_CONSOLE_DRAW
+        if (!kernel_console_active_worker(owner)) kernel_scheduler_fail_stop();
+#endif
         // Reuse the audited Assembly IF=1 window and SIMD/GPR preservation
         // checks. Bounded100ms bring-up window; empty input then parks.
         if (!x86_scheduler_irq_poll(&owner->Ready,owner->Clock.Port,owner->Clock.Mask,X86_PM_CLOCK_HZ / 10) ||

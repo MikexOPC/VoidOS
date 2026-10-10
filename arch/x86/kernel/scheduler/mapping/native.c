@@ -201,6 +201,39 @@ int x86_scheduler_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base
     return 0;
 }
 
+// ====== x86_scheduler_live_stack_pages ======
+
+uint64_t x86_scheduler_live_stack_pages(void)
+{
+    uint64_t pages = 0;
+    volatile BOOT_U64 *entries;
+    if (!bound_owners || !x86_scheduler_native_gate() ||
+        !kernel_physical_validate(bound_pool) || !(entries = x86_stack_entries(3))) return UINT64_MAX;
+    for (uint32_t index = 0; index < 8; ++index) {
+        const X86_TASK_STACK *owner = &bound_owners[index];
+        if (!owner->self) {
+            for (uint32_t byte = 0; byte < sizeof(*owner); ++byte)
+                if (((const unsigned char *)owner)[byte]) return UINT64_MAX;
+            for (uint32_t offset = 0; offset < 18; ++offset)
+                if (entries[320 + index * 18 + offset]) return UINT64_MAX;
+            continue;
+        }
+        if (owner->self != (uint64_t)(uintptr_t)owner || owner->index != index ||
+            owner->pool != bound_pool || owner->root != bound_root || !owner->generation ||
+            owner->stage != X86_TASK_STACK_READY || owner->lease.Pages != 16 ||
+            !slot_private(owner, 1) || kernel_physical_is_pinned(bound_pool, &owner->lease) != 1)
+            return UINT64_MAX;
+        for (uint32_t other = 0; other < index; ++other) {
+            const X86_TASK_STACK *previous = &bound_owners[other];
+            if (previous->self && (previous->lease.Id == owner->lease.Id ||
+                !(owner->lease.Base + 65536 <= previous->lease.Base ||
+                    previous->lease.Base + 65536 <= owner->lease.Base))) return UINT64_MAX;
+        }
+        pages += 16;
+    }
+    return pages;
+}
+
 // ====== x86_scheduler_code_valid ======
 
 // Intel SDM093 §5.5.4: recursive access after parent checks, 4KiB supervisor RX only.

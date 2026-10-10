@@ -8,6 +8,10 @@
 #include "kernel/console/video/test/kernel/probe.h"
 #endif
 static X86_FB_MAPPING mapping;
+#ifdef KERNEL_TEST_CONSOLE_DRAW
+#include "kernel/console/video/test/active/snapshot.h"
+#include "arch/x86/kernel/scheduler/integration/control.h"
+#endif
 
 // ====== x86_fb_kernel_inventory_verify ======
 
@@ -23,7 +27,13 @@ int x86_fb_kernel_inventory_verify(const KERNEL_BOOT_CONTEXT *context,
 int x86_fb_kernel_cell(BOOT_U32 column, BOOT_U32 row, BOOT_U32 scalar,
     BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
 {
+#ifdef KERNEL_TEST_CONSOLE_DRAW
+    if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    return kernel_console_active_cell(&mapping, x86_scheduler_live_stack_pages(),
+        column, row, scalar, foreground, background, ticks);
+#else
     return x86_fb_cell(&mapping, column, row, scalar, foreground, background, ticks);
+#endif
 }
 
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING

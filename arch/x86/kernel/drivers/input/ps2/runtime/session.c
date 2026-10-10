@@ -1,4 +1,7 @@
 #include "session.h"
+#ifdef KERNEL_TEST_CONSOLE_DRAW
+#include "kernel/console/video/test/active/worker.h"
+#endif
 #include "kernel/scheduler/payload.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
@@ -127,6 +130,9 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!x86_scheduler_run_input() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
         !kernel_scheduler_irq_unbind(4,(BOOT_U64)&session,session.Binding) || !x86_watchdog_valid()) return 0;
     session.Active = 0;
+#ifdef KERNEL_TEST_CONSOLE_DRAW
+    if (!kernel_console_active_finish(&session)) return 0;
+#endif
     if (!kernel_text("PS2_BYTES: ") || !kernel_number(session.Bytes) || !kernel_text("\nPS2_KEYS: ") ||
         !kernel_number(session.Keys) || !kernel_text("\nPS2_RELEASES: ") || !kernel_number(session.Releases) ||
         !kernel_text("\nPS2_TASK_IRQS: ") || !kernel_number(session.TaskIrqs) ||

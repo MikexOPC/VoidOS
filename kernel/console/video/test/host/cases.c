@@ -10,6 +10,7 @@ static struct {
 static KERNEL_VIDEO_CONSOLE snapshot;
 static unsigned int checks;
 void kernel_console_render_test(void);
+void kernel_console_measure_test(void);
 #define CHECK(value) do { ++checks; if (!(value)) { \
     fprintf(stderr, "FAIL %u at line %d\n", checks, __LINE__); exit(1); } } while (0)
 
@@ -147,6 +148,7 @@ int main(void)
     editing_and_scroll();
     maximum_and_stress();
     kernel_console_render_test();
+    kernel_console_measure_test();
     printf("PASS console grid: %u checks; size %zu; no allocations\n", checks, sizeof(fixture.Console));
     return 0;
 }
