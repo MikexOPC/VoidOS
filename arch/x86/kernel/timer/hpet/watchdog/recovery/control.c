@@ -1,4 +1,5 @@
 #include "../watchdog.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/integration/resources.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 
 // ====== x86_watchdog_recovery_status ======
@@ -42,7 +43,7 @@ BOOT_U32 x86_watchdog_recover(void)
     if (status != X86_WATCHDOG_RETRY_CANDIDATE) { return status; }
     if (!x86_watchdog_recovery_claim()) { return X86_WATCHDOG_EXHAUSTED; }
     if (!x86_lapic_idle(owner->Env.Mapping) ||
-        !x86_paging_inventory_verify_lapic(owner->Env.Context,owner->Env.Window->Pool,
+        !x86_device_inventory_verify(owner->Env.Context,owner->Env.Window->Pool,
             owner->Env.Mapping,owner->Env.Inventory) ||
         ((owner->Acquired || owner->RouteOwned || owner->Token.Id) && !x86_watchdog_device(7)) ||
         (owner->RouteOwned && !x86_watchdog_route(4)) ||

@@ -1,6 +1,6 @@
 param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
-    [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping,
+    [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive,
     [switch]$TestWatchdogAlternate,
     [switch]$TestWatchdogCleanupRecovery,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
@@ -8,6 +8,14 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
+if ($TestConsoleActive) {
+    if ($Install -or $Ps2Input -or $EventLoop -or $TestFramebufferMapping -or $TestBootstrapMemory -or
+        $TestPanic -or $TestPs2Decoder -or $TestPs2Controller -or $TestWatchdogLostLapic -or
+        $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery -or $TestSchedulerFault -ne 'none' -or
+        $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or
+        $TestRegionFault -ne 'none') { throw 'Active console resource diagnostic must stay isolated.' }
+    $Ps2Input = $true
+}
 if ($TestFramebufferMapping -and ($Install -or $Ps2Input -or $EventLoop -or $TestBootstrapMemory -or
     $TestPanic -or $TestPs2Decoder -or $TestPs2Controller -or $TestWatchdogLostLapic -or
     $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery -or $TestSchedulerFault -ne 'none' -or
@@ -59,6 +67,7 @@ $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' 
     ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')), '/DKERNEL_SCHEDULER_IRQ=1')
 if ($TestPs2Decoder) { $flags += '/DKERNEL_TEST_PS2_DECODER=1' }
 if ($TestFramebufferMapping) { $flags += '/DKERNEL_TEST_FRAMEBUFFER_MAPPING=1' }
+if ($TestConsoleActive) { $flags += '/DKERNEL_TEST_CONSOLE_ACTIVE=1' }
 if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
 if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
 if ($bootstrapDiagnostics) { $flags += '/DKERNEL_TEST_BOOTSTRAP_MEMORY=1' }
@@ -114,6 +123,7 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/drivers/video/framebuffer/pixels/native.c',
     'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
     'arch/x86/kernel/drivers/video/framebuffer/gateway/cell.c',
+    'arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c',
     'arch/x86/kernel/drivers/video/framebuffer/gateway/native.c',
     'arch/x86/kernel/drivers/video/framebuffer/font/font.c',
     'arch/x86/kernel/drivers/video/framebuffer/test/drawing/probe.c',

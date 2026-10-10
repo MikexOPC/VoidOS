@@ -1,4 +1,5 @@
 #include "probe.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/integration/resources.h"
 #define FRAME_MASK 0x000ffffffffff000ULL
 
 // ====== x86_hpet_owned_preflight ======
@@ -15,11 +16,15 @@ int x86_hpet_owned_preflight(const KERNEL_BOOT_CONTEXT *context,
     BOOT_U32 index, slot, found = 0;
     if (!context || !pool || !inventory || (physical & 4095) || physical < 4096 ||
         physical > ~0ULL - 4096 ||
-        !(mapping ? x86_paging_inventory_verify_lapic(context,pool,mapping,inventory) :
+        !(mapping ? x86_device_inventory_verify(context,pool,mapping,inventory) :
             x86_paging_inventory_verify(context, pool, inventory)) ||
         !x86_hpet_table_span(physical + 4096 - 4, 4, pool->PhysicalBits) ||
         !kernel_inventory_memory(context->MemoryMap, context->Info.MemoryMapBytes,
             context->Info.MemoryDescriptorBytes, &map)) { return 0; }
+#ifdef KERNEL_TEST_CONSOLE_ACTIVE
+    if (inventory->Video.AperturePages && kernel_regions_overlap(physical, 1,
+        inventory->Video.Physical, inventory->Video.AperturePages)) return 0;
+#endif
     for (index = 0; index < map.Regions; ++index) {
         KERNEL_MEMORY_REGION region;
         if (!kernel_read_region(context->MemoryMap, context->Info.MemoryMapBytes,

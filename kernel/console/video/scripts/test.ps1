@@ -59,12 +59,25 @@ try {
     Invoke-Checked "$bin/cl.exe" (@('/nologo','/fsanitize=address','/MD',("/Fe$out/gateway.exe")) +
         $gatewayObjects + @('/link','/incremental:no','/DEBUG','/WX'))
     Invoke-Checked "$out/gateway.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
+        ("/I$project"),"$project/arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c",
+        "$project/arch/x86/kernel/drivers/video/framebuffer/test/gateway/inventory_cases.c",
+        ("/Fo$out/"),("/Fd$out/host.pdb"),("/Fe$out/inventory.exe"),'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/inventory.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
+        '/DKERNEL_TEST_CONSOLE_ACTIVE=1',("/I$project"),
+        "$project/kernel/console/video/test/host/hpet_policy.c",
+        "$project/arch/x86/kernel/timer/hpet/description/probe/policy.c",
+        ("/Fo$out/"),("/Fd$out/host.pdb"),("/Fe$out/hpet-policy.exe"),'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/hpet-policy.exe" @()
     $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/kernel/console/video/console.c" `
         "$project/kernel/console/video/render.c" "$project/kernel/console/video/test/host/render_cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/cell.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/native.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/test/gateway/inventory_cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/test/gateway/cases.c" `
         "$project/kernel/console/video/test/kernel/render_probe.c" `
         "$project/kernel/console/video/test/host/cases.c" "$project/kernel/console/video/test/kernel/probe.c" `
@@ -73,6 +86,18 @@ try {
     [xml]$xml = Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
         throw 'Blocking static diagnostics'
+    }
+    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+        -DKERNEL_TEST_CONSOLE_ACTIVE=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
+        "$project/kernel/console/video/test/host/hpet_policy.c" `
+        "$project/arch/x86/kernel/timer/hpet/description/probe/policy.c" `
+        "$project/arch/x86/kernel/timer/hpet/watchdog/core.c" `
+        "$project/arch/x86/kernel/timer/hpet/watchdog/recovery/control.c" `
+        "$project/arch/x86/kernel/timer/lapic/driver.c" 2> "$out/cppcheck-active.xml"
+    if ($LASTEXITCODE) { throw 'Active cppcheck failed' }
+    [xml]$activeXml = Get-Content "$out/cppcheck-active.xml"
+    if (@($activeXml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
+        throw 'Blocking active static diagnostics'
     }
 } finally {
     $env:INCLUDE=$savedInclude; $env:LIB=$savedLib; $env:PATH=$savedPath

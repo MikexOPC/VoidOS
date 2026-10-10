@@ -236,3 +236,16 @@ I tick TSC grezzi non sono una deadline o una misura esatta del tempo IF0.
 La console rimane diagnostica, la shell seriale; ESP invariata in questo blocco.
 [Contratto](../kernel/console/video/documentation/rendering.md) e
 [verifica finale](../kernel/console/video/documentation/rendering-validation.md).
+
+Convivenza risorse console verificata nel profilo isolato TestConsoleActive:
+video inizializzato prima del watchdog, validatore dell'owner privato usato
+dalle sole interfacce necessarie, senza modificare le API paging precedenti.
+HPET esclude tutta l'apertura video; lease pinned verificati anche durante
+input/idle/cleanup.576 controlli gateway e1100 policy HPET C/ASan passano,
+con regressioni console/framebuffer/watchdog e wrapper Python.
+40 boot finali:10 combinati con tastiera italiana e shell seriale,10 grafici,
+10 ordinari,10 senza display. Il profilo combinato non disegna: latenza e
+perdite durante il rendering restano il prossimo gate. La finestra IRQ delle
+task rimane quella Assembly gia verificata, senza ampliamento a C arbitrario.
+[Piano](../kernel/console/video/documentation/active-design.md) e
+[prove finali](../kernel/console/video/documentation/active-validation.md).
