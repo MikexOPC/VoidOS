@@ -3,7 +3,7 @@ from pathlib import Path
 
 # ============ independent expected raster ============
 
-def cases():
+def cases(console=False):
     pixels = {}
     for x, width, color in [(16, 64, (32, 64, 96)), (80, 32, (208, 144, 48))]:
         for y in range(16, 32):
@@ -37,12 +37,19 @@ def cases():
                 for col in range(8):
                     pixels[16 + cell * 8 + col, y + row] = (
                         (255, 255, 255) if mask & (0x80 >> col) else (8, 16, 24))
+    if console:
+        for line, text in enumerate(['ciao è €', 'prova AC', 'Tutto OK🙂']):
+            for cell, char in enumerate(text.ljust(24)):
+                for row, mask in enumerate(bitmap.get(ord(char), bitmap[65533])):
+                    for col in range(8):
+                        pixels[16 + cell * 8 + col, 160 + line * 16 + row] = (
+                            (255, 255, 255) if mask & (0x80 >> col) else (8, 16, 24))
     return pixels
 
 # ============ physical color and reserved byte ============
 
-def verify_physical(read, vm, monitor, base, stride, pixel_format):
-    expected = cases()
+def verify_physical(read, vm, monitor, base, stride, pixel_format, console=False):
+    expected = cases(console)
     for y in sorted({y for x, y in expected}):
         xs = sorted(x for x, row in expected if row == y)
         start = base + (y * stride + xs[0]) * 4
@@ -60,8 +67,8 @@ def verify_physical(read, vm, monitor, base, stride, pixel_format):
 
 # ============ every visible rectangle and glyph pixel ============
 
-def verify_visible(image, width):
-    expected = cases()
+def verify_visible(image, width, console=False):
+    expected = cases(console)
     for (x, y), color in expected.items():
         offset = (y * width + x) * 3
         if image[offset:offset + 3] != bytes(color):

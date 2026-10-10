@@ -25,7 +25,7 @@ def pixel_cases(width, height):
 
 # ============ PPM visible-color verification ============
 
-def screenshot_pixels(path, record, draw):
+def screenshot_pixels(path, record, draw, console=False):
     data = path.read_bytes()
     header = re.match(rb'P6\s+(\d+)\s+(\d+)\s+255\s', data)
     if not header or (int(header[1]), int(header[2])) != (record['WIDTH'], record['HEIGHT']):
@@ -35,7 +35,7 @@ def screenshot_pixels(path, record, draw):
         offset = (y * record['WIDTH'] + x) * 3
         if image[offset:offset + 3] != bytes(color):
             raise RuntimeError(f'Visible pixel mismatch at {x},{y}')
-    return 5 + (drawing.verify_visible(image, record['WIDTH']) if draw else 0)
+    return 5 + (drawing.verify_visible(image, record['WIDTH'], console) if draw else 0)
 
 # ============ bounded independent physical reads ============
 
@@ -128,7 +128,7 @@ def inspect(vm, monitor, log, args):
     if args.drawing:
         if 'KERNEL_FB_DRAWING_OK' not in log:
             raise RuntimeError('Missing bounded drawing marker')
-        raster = drawing.verify_physical(physical, vm, monitor, n('BASE'), n('STRIDE'), n('FORMAT'))
+        raster = drawing.verify_physical(physical, vm, monitor, n('BASE'), n('STRIDE'), n('FORMAT'), args.console_render)
     elif not args.rollback and 'KERNEL_FB_DRAWING_OK' in log:
         raise RuntimeError('Drawing probe in ordinary image')
     return {'LiveMapping': True, 'VerifiedLeaves': present, 'OwnedTables': len(seen) - 1,
@@ -145,6 +145,7 @@ def main():
     parser.add_argument('--rollback', action='store_true')
     parser.add_argument('--pixels', action='store_true')
     parser.add_argument('--drawing', action='store_true')
+    parser.add_argument('--console-render', action='store_true')
     parser.add_argument('--shutdown-timeout', type=float, default=5)
     args = parser.parse_args()
     if not 1 <= args.boots <= 20 or not 1 <= args.shutdown_timeout <= 30 or (args.absent and args.rollback):
@@ -153,6 +154,8 @@ def main():
         parser.error('pixels requires rollback diagnostic with video')
     if args.drawing and not args.pixels:
         parser.error('drawing requires pixels diagnostic')
+    if args.console_render and not args.drawing:
+        parser.error('console rendering requires drawing diagnostic')
     args.image = ROOT / 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
     args.qemu = Path('C:/Program Files/qemu')
     args.mapping_plan = True
@@ -164,12 +167,13 @@ def main():
         'Qemu': provider.digest(args.qemu / 'qemu-system-x86_64.exe'),
         'Absent': args.absent, 'Rollback': args.rollback, 'Pixels': args.pixels,
         'Drawing': args.drawing, 'Results': []}
+    evidence['ConsoleRender'] = args.console_render
     evidence['ShutdownTimeoutSeconds'] = args.shutdown_timeout
     try:
         for index in range(1, args.boots + 1):
             record = provider.boot(args, out, index)
             if args.pixels:
-                record['VisiblePixels'] = screenshot_pixels(out / f'boot-{index}/screen.ppm', record, args.drawing)
+                record['VisiblePixels'] = screenshot_pixels(out / f'boot-{index}/screen.ppm', record, args.drawing, args.console_render)
                 record['PixelValidated'] = True
             evidence['Results'].append(record)
             print(f'PASS: framebuffer live {index}/{args.boots}', flush=True)

@@ -224,3 +224,15 @@ Questo nucleo e compilato soltanto nel diagnostico: output grafico della
 shell, gateway restore IF e misura latenza IRQ restano il prossimo blocco.
 [Contratto](../kernel/console/video/documentation/design.md) e
 [prove e limiti](../kernel/console/video/documentation/validation.md).
+
+Gateway console per cella ora collegato nel diagnostico: owner framebuffer
+privato, restore IF originale, flusher con budget massimo16 e dirty confermato
+soltanto dopo successo.72 celle disegnate,56 con IF iniziale1; nuovi test host
+su retry/rientro/overflow e2228226 casi scalar con IRQ/clock mock passano.
+30 boot finali:10 diagnostici con26053 pixel fisici/visibili verificati,
+10 ordinari e10 senza display. Il limite precedente sul gateway e superato;
+restano output shell e prova di latenza con sorgenti PS/2/watchdog attive.
+I tick TSC grezzi non sono una deadline o una misura esatta del tempo IF0.
+La console rimane diagnostica, la shell seriale; ESP invariata in questo blocco.
+[Contratto](../kernel/console/video/documentation/rendering.md) e
+[verifica finale](../kernel/console/video/documentation/rendering-validation.md).

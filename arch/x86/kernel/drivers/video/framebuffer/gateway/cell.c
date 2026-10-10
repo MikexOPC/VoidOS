@@ -1,0 +1,55 @@
+#include "cell.h"
+#include "../font/font.h"
+
+// ====== encode ======
+
+static BOOT_U32 encode(BOOT_U32 scalar, unsigned char bytes[4])
+{
+    if (scalar < 128) { bytes[0] = (unsigned char)scalar; return 1; }
+    if (scalar < 2048) {
+        bytes[0] = (unsigned char)(0xc0 | (scalar >> 6));
+        bytes[1] = (unsigned char)(0x80 | (scalar & 63));
+        return 2;
+    }
+    if (scalar < 65536) {
+        bytes[0] = (unsigned char)(0xe0 | (scalar >> 12));
+        bytes[1] = (unsigned char)(0x80 | ((scalar >> 6) & 63));
+        bytes[2] = (unsigned char)(0x80 | (scalar & 63));
+        return 3;
+    }
+    bytes[0] = (unsigned char)(0xf0 | (scalar >> 18));
+    bytes[1] = (unsigned char)(0x80 | ((scalar >> 12) & 63));
+    bytes[2] = (unsigned char)(0x80 | ((scalar >> 6) & 63));
+    bytes[3] = (unsigned char)(0x80 | (scalar & 63));
+    return 4;
+}
+
+// ====== x86_fb_cell ======
+
+int x86_fb_cell(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row, BOOT_U32 scalar,
+    BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+{
+    unsigned char bytes[4];
+    X86_FB_TEXT text;
+    BOOT_U64 start, end, flags;
+    int drawn, restored;
+    if (!ticks || !owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 ||
+        !owner->Context || !owner->Context->Info.Framebuffer.Base ||
+        column >= 240 || row >= 67 || column >= owner->Context->Info.Framebuffer.Width / 8 ||
+        row >= owner->Context->Info.Framebuffer.Height / 16 ||
+        (foreground | background) & 0xff000000U || !x86_fb_font_scalar(scalar) ||
+        !x86_fb_cell_clock_available()) return 0;
+    text.Text = bytes;
+    text.Bytes = encode(scalar, bytes);
+    text.Capacity = sizeof(bytes);
+    text.X = column * 8; text.Y = row * 16;
+    text.Foreground = foreground; text.Background = background;
+    start = x86_fb_cell_stamp();
+    flags = x86_fb_cell_suspend();
+    drawn = x86_fb_text(owner, &text, x86_fb_console_font());
+    restored = x86_fb_cell_resume(flags);
+    end = x86_fb_cell_stamp();
+    if (!restored || end <= start) return 0;
+    *ticks = end - start;
+    return drawn;
+}

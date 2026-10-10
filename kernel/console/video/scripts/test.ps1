@@ -39,15 +39,34 @@ try {
         '-C','panic=abort','-C','opt-level=2','-C','overflow-checks=yes',
         "$project/kernel/console/video/rust/cursor/plan.rs",'-o',"$out/plan.obj")
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
-        "$project/kernel/console/video/console.c","$project/kernel/console/video/test/host/cases.c",
+        "$project/kernel/console/video/console.c","$project/kernel/console/video/render.c",
+        "$project/kernel/console/video/test/host/cases.c","$project/kernel/console/video/test/host/render_cases.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"))
     Invoke-Checked "$bin/cl.exe" @('/nologo','/fsanitize=address','/MD',
-        "$out/console.obj","$out/cases.obj","$out/plan.obj",("/Fe$out/host.exe"),
+        "$out/console.obj","$out/render.obj","$out/cases.obj","$out/render_cases.obj","$out/plan.obj",("/Fe$out/host.exe"),
         '/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/host.exe" @()
+    Invoke-Checked $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
+        '-C','panic=abort','-C','opt-level=2',
+        "$project/arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs",'-o',"$out/drawing.obj")
+    $gatewayObjects = @("$out/drawing.obj")
+    foreach ($source in @('gateway/cell.c','test/gateway/cases.c','font/font.c')) {
+        $object = "$out/gateway-" + $source.Replace('/','-').Replace('.c','.obj')
+        Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
+            ("/I$project"),"$project/arch/x86/kernel/drivers/video/framebuffer/$source",("/Fo$object"),("/Fd$out/host.pdb"))
+        $gatewayObjects += $object
+    }
+    Invoke-Checked "$bin/cl.exe" (@('/nologo','/fsanitize=address','/MD',("/Fe$out/gateway.exe")) +
+        $gatewayObjects + @('/link','/incremental:no','/DEBUG','/WX'))
+    Invoke-Checked "$out/gateway.exe" @()
     $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/kernel/console/video/console.c" `
+        "$project/kernel/console/video/render.c" "$project/kernel/console/video/test/host/render_cases.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/cell.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/native.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/test/gateway/cases.c" `
+        "$project/kernel/console/video/test/kernel/render_probe.c" `
         "$project/kernel/console/video/test/host/cases.c" "$project/kernel/console/video/test/kernel/probe.c" `
         2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
