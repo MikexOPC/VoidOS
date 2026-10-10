@@ -210,3 +210,17 @@ successivo.16 test Rust per profilo, quattro gruppi drawing x100 con ASan
 e regressioni pixel/lifecycle, cppcheck14 TU.30 boot finali:10 diagnostici
 con16837 pixel fisici/visibili verificati,10 ordinari,10 senza display.
 [Contratto font](../arch/x86/kernel/drivers/video/framebuffer/documentation/font.md).
+
+Nucleo console video in kernel/console/video/: griglia RAM posseduta da un
+solo chiamante, cursore Rust, wrap differito, LF/CR, Backspace, scroll e
+dirty peek/ack. Massimo240x67, riserva66360 byte, nessuna allocazione.
+Quattro casi Rust debug/release e Clippy,374635 CHECK C/ASan con10000 riusi,
+quattro test del wrapper Python e regressione host framebuffer passano.
+30 boot completati:10 diagnostici con probe griglia/raster font precedente,
+10 ordinari e10 senza display. Un primo tentativo senza display ha fallito
+per timeout di chiusura QEMU dopo KERNEL_READY; archiviato separatamente,
+timeout host reso esplicito e misurato, nuova campagna10/10 passata.
+Questo nucleo e compilato soltanto nel diagnostico: output grafico della
+shell, gateway restore IF e misura latenza IRQ restano il prossimo blocco.
+[Contratto](../kernel/console/video/documentation/design.md) e
+[prove e limiti](../kernel/console/video/documentation/validation.md).

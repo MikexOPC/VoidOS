@@ -151,7 +151,9 @@ def boot(args, out, index):
                 raise TimeoutError('Incomplete screenshot')
         vm.stdin.write('quit\n')
         vm.stdin.flush()
+        shutdown_start = time.monotonic()
         vm.communicate(timeout=shutdown_timeout)
+        record['ShutdownSeconds'] = time.monotonic() - shutdown_start
         stdout = monitor_path.read_text(encoding='utf-8', errors='replace')
         if vm.returncode != 0 or not re.search(r'RIP=[0-9a-fA-F]{16}', stdout):
             raise RuntimeError('Invalid exit/CPU capture')
