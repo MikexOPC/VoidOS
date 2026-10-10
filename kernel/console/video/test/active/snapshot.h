@@ -4,4 +4,7 @@
 int kernel_console_active_cell(X86_FB_MAPPING *owner, BOOT_U64 pages,
     BOOT_U32 column, BOOT_U32 row, BOOT_U32 scalar, BOOT_U32 foreground,
     BOOT_U32 background, BOOT_U64 *ticks);
+int kernel_console_active_group(X86_FB_MAPPING *owner, BOOT_U64 pages,
+    BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars, BOOT_U32 count,
+    BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks);
 #endif

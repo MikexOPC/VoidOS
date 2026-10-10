@@ -37,7 +37,8 @@ def verify(directory, digest, boots, draw=False):
         if draw:
             record = result.get('ConsoleDraw', {})
             cell.validate(record)
-            if record.get('PhysicalPixels') != 128 or record.get('VisiblePixels') != 128 or \
+            if record.get('PhysicalPixels') != 128 * record['BATCH_SIZE'] or \
+                    record.get('VisiblePixels') != 128 * record['BATCH_SIZE'] or \
                     'KERNEL_CONSOLE_DRAW_ACTIVE_OK' not in log:
                 raise RuntimeError('Missing measured pixels or completion')
     return evidence

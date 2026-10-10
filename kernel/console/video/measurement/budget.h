@@ -1,6 +1,7 @@
 #ifndef KERNEL_CONSOLE_MEASUREMENT_H
 #define KERNEL_CONSOLE_MEASUREMENT_H
 #include "../render.h"
+#include "../batch/render.h"
 typedef uint32_t (*KERNEL_CONSOLE_CLOCK)(void *context);
 typedef struct {
     uintptr_t  Self;
@@ -16,4 +17,5 @@ uint32_t kernel_console_pm_goal(void);
 int kernel_console_measure_init(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_RENDER *render,
     KERNEL_CONSOLE_CLOCK read, void *context, uint32_t mask);
 uint32_t kernel_console_measure_step(KERNEL_CONSOLE_MEASUREMENT *owner);
+uint32_t kernel_console_measure_batch_step(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH *batch);
 #endif

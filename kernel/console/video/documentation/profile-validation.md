@@ -1,5 +1,8 @@
 # Profilazione verificata — 10 ottobre 2026
 
+Checkpoint per-cella precedente al batch; per lo stato corrente vale
+[docs/status.md](../../../../docs/status.md).
+
 [Design e limiti](profile-design.md). Le sei fasi sono misurate sulla stessa
 cella; la somma dei loro delta viene verificata prima di aggiornare gli aggregati.
 Non è stata ancora applicata un'ottimizzazione al disegno.

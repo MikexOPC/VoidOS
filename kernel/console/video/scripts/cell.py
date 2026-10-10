@@ -11,6 +11,10 @@ PHASES = ('GATE', 'PLAN', 'INVENTORY', 'PIXELS', 'AUTHORITY', 'RETURN')
 
 def validate(record):
     cells = record.get('CELLS', 0)
+    size, groups = record.get('BATCH_SIZE', 0), record.get('GROUPS', 0)
+    if type(size) is not int or size not in (1, 8) or type(groups) is not int or \
+            groups < 1 or groups * size != cells or record.get('SLOW_CELLS', -1) % size:
+        raise RuntimeError('Invalid group size or cell accounting')
     if not 32 <= cells <= 65536 or record.get('PM_LIMIT') != 357955 or \
             record.get('PM_GOAL') != 35796 or not 0 <= record.get('SLOW_CELLS', -1) <= cells or \
             (record.get('MAX_PM', 0) > 35796) != (record.get('SLOW_CELLS', 0) > 0) or \
@@ -21,13 +25,13 @@ def validate(record):
             record.get('LAST_SCALAR') != (0x41, 0xe8, 0x20ac)[(cells - 1) % 3]:
         raise RuntimeError('Insufficient or inconsistent measured draw evidence')
     total = record.get('PROFILE_TOTAL', 0)
-    if type(total) is not int or not 0 < total <= cells * record['MAX_PM']:
+    if type(total) is not int or not 0 < total <= groups * record['MAX_PM']:
         raise RuntimeError('Invalid profile total')
     accumulated = 0
     for phase in PHASES:
         ticks, maximum = record.get(phase + '_SUM', -1), record.get(phase + '_MAX', -1)
         if type(ticks) is not int or type(maximum) is not int or \
-                not 0 <= maximum <= record['MAX_PM'] or not maximum <= ticks <= cells * maximum:
+                not 0 <= maximum <= record['MAX_PM'] or not maximum <= ticks <= groups * maximum:
             raise RuntimeError('Invalid phase accounting: ' + phase)
         accumulated += ticks
     if accumulated != total:
@@ -40,7 +44,7 @@ def verify(vm, scenario, log):
         raise RuntimeError('Missing measured draw completion')
     number = lambda field: int(re.search(re.escape(field) + r': 0x([0-9a-fA-F]{16})', log)[1], 16)
     record = {name: number('KERNEL_CONSOLE_DRAW_' + name) for name in
-        ['CELLS', 'MAX_PM', 'PM_LIMIT', 'PM_GOAL', 'SLOW_CELLS', 'PM_MASK', 'LAST_SCALAR', 'LOSSES', 'IRQS', 'HPET_START', 'HPET_END']}
+        ['CELLS', 'BATCH_SIZE', 'GROUPS', 'MAX_PM', 'PM_LIMIT', 'PM_GOAL', 'SLOW_CELLS', 'PM_MASK', 'LAST_SCALAR', 'LOSSES', 'IRQS', 'HPET_START', 'HPET_END']}
     record['PROFILE_TOTAL'] = number('KERNEL_CONSOLE_PROFILE_TOTAL')
     for phase in PHASES:
         for suffix in ('SUM', 'MAX'):
@@ -54,15 +58,18 @@ def verify(vm, scenario, log):
     spec = importlib.util.spec_from_file_location('font_raster', scripts / 'font/convert.py')
     font = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(font)
-    glyph = font.raster()[record['LAST_SCALAR']]
+    size = record['BATCH_SIZE']
+    raster = font.raster()
+    glyphs = [raster[(0x41, 0xe8, 0x20ac)[(record['CELLS'] - size + index) % 3]] for index in range(size)]
     base, stride, pixel_format, width, height = [number('KERNEL_FB_' + name)
         for name in ['BASE', 'STRIDE', 'FORMAT', 'WIDTH', 'HEIGHT']]
-    if pixel_format not in (0, 1) or width < 24 or height < 176 or stride < width:
+    if pixel_format not in (0, 1) or width < 16 + size * 8 or height < 176 or stride < width:
         raise RuntimeError('Unsupported measured cell geometry')
-    for row, bitmap in enumerate(glyph):
-        words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((160 + row) * stride + 16) * 4, 4)
-        for column in range(8):
-            r, g, b = (255, 255, 255) if bitmap & (0x80 >> column) else (8, 16, 24)
+    for row in range(16):
+        words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((160 + row) * stride + 16) * 4, 4 * size)
+        for column in range(8 * size):
+            bitmap = glyphs[column // 8][row]
+            r, g, b = (255, 255, 255) if bitmap & (0x80 >> (column % 8)) else (8, 16, 24)
             expected = r | (g << 8) | (b << 16) if pixel_format == 0 else b | (g << 8) | (r << 16)
             if (words[column // 2] >> ((column % 2) * 32)) & 0xffffffff != expected:
                 raise RuntimeError('Measured physical cell pixel mismatch')
@@ -83,11 +90,12 @@ def verify(vm, scenario, log):
     if (int(header[1]), int(header[2])) != (width, height):
         raise RuntimeError('Measured screenshot geometry mismatch')
     pixels = data[header.end():]
-    for row, bitmap in enumerate(glyph):
-        for column in range(8):
-            expected = bytes((255, 255, 255) if bitmap & (0x80 >> column) else (8, 16, 24))
+    for row in range(16):
+        for column in range(8 * size):
+            bitmap = glyphs[column // 8][row]
+            expected = bytes((255, 255, 255) if bitmap & (0x80 >> (column % 8)) else (8, 16, 24))
             offset = ((160 + row) * width + 16 + column) * 3
             if pixels[offset:offset + 3] != expected:
                 raise RuntimeError('Measured visible cell pixel mismatch')
-    record.update({'PhysicalPixels': 128, 'VisiblePixels': 128})
+    record.update({'PhysicalPixels': 128 * size, 'VisiblePixels': 128 * size})
     return record

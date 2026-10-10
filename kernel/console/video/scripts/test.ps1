@@ -53,11 +53,19 @@ try {
         "$project/kernel/console/video/test/measurement/measurement_cases.c",
         "$project/kernel/console/video/test/host/cases.c","$project/kernel/console/video/test/host/render_cases.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"))
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
+        "$project/kernel/console/video/batch/render.c",("/Fo$out/batch-render.obj"),("/Fd$out/host.pdb"))
     Invoke-Checked "$bin/cl.exe" @('/nologo','/fsanitize=address','/MD',
         "$out/console.obj","$out/render.obj","$out/cases.obj","$out/render_cases.obj","$out/plan.obj",
-        "$out/budget.obj","$out/measurement_cases.obj","$out/timing.obj",("/Fe$out/host.exe"),
+        "$out/budget.obj","$out/batch-render.obj","$out/measurement_cases.obj","$out/timing.obj",("/Fe$out/host.exe"),
         '/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/host.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
+        "$project/kernel/console/video/test/batch/cases.c",("/Fo$out/batch-cases.obj"),("/Fd$out/host.pdb"))
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/fsanitize=address','/MD',
+        "$out/console.obj","$out/render.obj","$out/plan.obj","$out/budget.obj","$out/timing.obj",
+        "$out/batch-render.obj","$out/batch-cases.obj",("/Fe$out/batch.exe"),'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/batch.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
         "$project/kernel/console/video/test/profiling/profile.c",
         "$project/kernel/console/video/test/profiling/cases.c",
@@ -119,10 +127,12 @@ try {
         throw 'Blocking static diagnostics'
     }
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
-        -DKERNEL_TEST_CONSOLE_ACTIVE=1 -DKERNEL_TEST_CONSOLE_DRAW=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
+        -DKERNEL_TEST_CONSOLE_ACTIVE=1 -DKERNEL_TEST_CONSOLE_DRAW=1 -DKERNEL_TEST_CONSOLE_BATCH=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
         "$project/kernel/console/video/test/active/worker.c" `
         "$project/kernel/console/video/test/profiling/profile.c" `
         "$project/kernel/console/video/test/profiling/cases.c" `
+        "$project/kernel/console/video/batch/render.c" `
+        "$project/kernel/console/video/test/batch/cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c" `
         "$project/kernel/console/video/test/active/snapshot.c" `
         "$project/kernel/console/video/test/active/snapshot_cases.c" `
