@@ -15,6 +15,27 @@ spec.loader.exec_module(provider)
 ADDRESS = 0x000ffffffffff000
 NX = 1 << 63
 
+# ============ independent pixel coordinates ============
+
+def pixel_cases(width, height):
+    return [(0, 0, (255, 0, 0)), (width - 1, 0, (0, 255, 0)),
+        (0, height - 1, (0, 0, 255)), (width - 1, height - 1, (255, 255, 255)),
+        (width // 2, height // 2, (17, 34, 51))]
+
+# ============ PPM visible-color verification ============
+
+def screenshot_pixels(path, record):
+    data = path.read_bytes()
+    header = re.match(rb'P6\s+(\d+)\s+(\d+)\s+255\s', data)
+    if not header or (int(header[1]), int(header[2])) != (record['WIDTH'], record['HEIGHT']):
+        raise RuntimeError('Invalid screenshot geometry')
+    image = data[header.end():]
+    for x, y, color in pixel_cases(record['WIDTH'], record['HEIGHT']):
+        offset = (y * record['WIDTH'] + x) * 3
+        if image[offset:offset + 3] != bytes(color):
+            raise RuntimeError(f'Visible pixel mismatch at {x},{y}')
+    return 5
+
 # ============ bounded independent physical reads ============
 
 def physical(vm, monitor, base, count):
@@ -41,6 +62,8 @@ def inspect(vm, monitor, log, args):
     if args.absent:
         if 'KERNEL_FB_MAPPING_ABSENT' not in log or 'KERNEL_FB_MAPPING_LIVE' in log:
             raise RuntimeError('Absent display allocated a live mapping')
+        if 'KERNEL_FB_PIXELS_OK' in log:
+            raise RuntimeError('Pixels attempted without display')
         return {'LiveMapping': False}
     if 'KERNEL_FB_MAPPING_LIVE' not in log:
         raise RuntimeError('Missing live mapping marker')
@@ -87,8 +110,20 @@ def inspect(vm, monitor, log, args):
     registers = re.findall(r'CR3=([0-9a-fA-F]{16})', text)
     if not registers or int(registers[-1], 16) != root:
         raise RuntimeError('Actual CR3 changed')
+    if args.pixels:
+        if 'KERNEL_FB_PIXELS_OK' not in log:
+            raise RuntimeError('Missing kernel pixel readback/bounds evidence')
+        for x, y, color in pixel_cases(n('WIDTH'), n('HEIGHT')):
+            address = n('BASE') + (y * n('STRIDE') + x) * 4
+            value = (physical(vm, monitor, address & ~7, 1)[0] >> ((address & 7) * 8)) & 0xffffffff
+            red, green, blue = color
+            expected = (red | (green << 8) | (blue << 16)) if n('FORMAT') == 0 else (
+                blue | (green << 8) | (red << 16))
+            if value != expected:
+                raise RuntimeError(f'Physical pixel mismatch at {x},{y}')
     return {'LiveMapping': True, 'VerifiedLeaves': present, 'OwnedTables': len(seen) - 1,
-            'Rollback': args.rollback, 'CacheIndex': index, 'Root': root}
+            'Rollback': args.rollback, 'CacheIndex': index, 'Root': root,
+            'PhysicalPixels': 5 if args.pixels else 0}
 
 # ============ image-specific consecutive boots ============
 
@@ -98,9 +133,12 @@ def main():
     parser.add_argument('--boots', type=int, default=10)
     parser.add_argument('--absent', action='store_true')
     parser.add_argument('--rollback', action='store_true')
+    parser.add_argument('--pixels', action='store_true')
     args = parser.parse_args()
     if not 1 <= args.boots <= 20 or (args.absent and args.rollback):
         parser.error('boots 1..20; rollback requires video')
+    if args.pixels and (args.absent or not args.rollback):
+        parser.error('pixels requires rollback diagnostic with video')
     args.image = ROOT / 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
     args.qemu = Path('C:/Program Files/qemu')
     args.mapping_plan = True
@@ -110,10 +148,14 @@ def main():
     evidence = {'Kernel': provider.digest(args.kernel), 'Loader': provider.digest(args.image),
         'OVMF': provider.digest(args.qemu / 'share/edk2-x86_64-code.fd'),
         'Qemu': provider.digest(args.qemu / 'qemu-system-x86_64.exe'),
-        'Absent': args.absent, 'Rollback': args.rollback, 'Results': []}
+        'Absent': args.absent, 'Rollback': args.rollback, 'Pixels': args.pixels, 'Results': []}
     try:
         for index in range(1, args.boots + 1):
-            evidence['Results'].append(provider.boot(args, out, index))
+            record = provider.boot(args, out, index)
+            if args.pixels:
+                record['VisiblePixels'] = screenshot_pixels(out / f'boot-{index}/screen.ppm', record)
+                record['PixelValidated'] = True
+            evidence['Results'].append(record)
             print(f'PASS: framebuffer live {index}/{args.boots}', flush=True)
     except BaseException as error:
         evidence['Failure'] = str(error)

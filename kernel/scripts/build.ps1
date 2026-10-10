@@ -110,6 +110,8 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/drivers/video/framebuffer/construction.c',
     'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
     'arch/x86/kernel/drivers/video/framebuffer/native/access.c',
+    'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
+    'arch/x86/kernel/drivers/video/framebuffer/pixels/native.c',
     'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c',
     'lib/firmware/acpi/rsdp.c',
     'kernel/firmware/acpi/root.c',

@@ -127,8 +127,8 @@ nei retry ExitBootServices e ripristino video nell'abbandono del boot.
 Dieci boot finali con video e dieci senza raggiungono KERNEL_READY.
 Dieci boot della shell PS/2 verificano la regressione sullo stesso loader.
 [Prove del blocco handoff](../kernel/drivers/video/framebuffer/documentation/handoff-validation.md).
-Il servizio GUI futuro richiedera video valido. Il rendering dal kernel
-resta il prossimo blocco; il mapping live e descritto nell'aggiornamento sotto.
+Il servizio GUI futuro richiedera video valido. Rettangoli e testo dal kernel
+restano il prossimo blocco; mapping live e singoli pixel sono descritti sotto.
 
 Preflight del mapping collegato: Rust calcola pagine, offset e budget;
 C pubblica solo un risultato valido. Il kernel usa i limiti fisici reali.
@@ -152,8 +152,8 @@ ordinaria di quel blocco restano distinti dal riscontro video live successivo.
 Sei casi Rust debug/release, otto gruppi C ripetuti100 volte con ASan,
 suite host kernel e20 boot finali ordinari (10 video,10 assente) passano.
 [Contratto e verifiche](../arch/x86/mm/paging/documentation/video-resources.md).
-Il gate del mapper live e ora chiuso nel profilo QEMU BSP; il writer dei
-pixel dal kernel resta da implementare.
+Il gate del mapper live e chiuso nel profilo QEMU BSP; anche la scrittura
+dei singoli pixel e ora verificata nel successivo blocco sotto.
 
 Mapping framebuffer reale collegato al kernel: ramo dedicato PML4[225],
 guardie, UC forte, supervisor RW/NX, tabelle da lease pinned. Rust costruisce
@@ -165,8 +165,21 @@ Clippy, cppcheck senza diagnostiche bloccanti e suite host kernel passano.
 Trenta boot finali:10 diagnostici con unbind/budget/rebind,10 ordinari con
 video live,10 senza display. Il monitor legge fisicamente tutte le768
 foglie video e le guardie; CR3 e policy UC sono verificati indipendentemente.
-Nessuno store pixel del kernel o hardware fisico provato in questo blocco.
+Nessuno store pixel del kernel era provato nel blocco mapping; la prova
+pixel successiva e descritta sotto. Hardware fisico non testato.
 La ESP contiene l'immagine ordinaria live gia verificata; hash della copia
 confrontato, backup del kernel precedente conservato in kernel/build/.
 [Contratto](../arch/x86/kernel/drivers/video/framebuffer/documentation/mapping.md)
 e [prove finali](../arch/x86/kernel/drivers/video/framebuffer/documentation/validation.md).
+
+Scrittura pixel collegata al mapping kernel: controlli Rust su coordinate,
+stride, Used e colori; C richiede owner originale, lease pinned, CPU e
+inventario validi prima dello store UC volatile32 bit e del readback.
+Offset fisico non allineato alla pagina e padding verificati host; nessuna
+allocazione aggiunta. Il probe dei cinque colori gira soltanto nel profilo
+diagnostico, non nel boot ordinario. Nessuna GUI o renderer batch ancora.
+Undici casi Rust per profilo debug/release e Clippy; tre gruppi pixel C
+ASan oltre ai sette gruppi lifecycle x100, cppcheck senza errori bloccanti.
+Trenta boot finali:10 con cinque pixel verificati fisicamente e nel PPM,
+10 ordinari e10 senza display. RGB e BGR coperti host; QEMU usa BGR.
+[Contratto, prove e riproduzione](../arch/x86/kernel/drivers/video/framebuffer/documentation/pixels.md).

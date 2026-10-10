@@ -16,19 +16,22 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 
 # ============ Rust debug release and Clippy ============
 
-$test = "$project/arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs"
-foreach ($mode in @('debug', 'release')) {
-    $flags = @('--edition=2024','--test','-D','warnings','-C','overflow-checks=yes',
-        $test,'-o',"$out/entries-$mode.exe")
-    if ($mode -eq 'release') { $flags += @('-C','opt-level=2') }
-    Invoke-Checked 'rustc' $flags
-    Invoke-Checked "$out/entries-$mode.exe" @()
-}
 $savedClippy = $env:CLIPPY_CONF_DIR
 try {
     $env:CLIPPY_CONF_DIR = $PSScriptRoot
+foreach ($component in @('tables','pixels')) {
+$test = "$project/arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs"
+if ($component -eq 'pixels') { $test = "$project/kernel/drivers/video/framebuffer/rust/pixel/validation.rs" }
+foreach ($mode in @('debug', 'release')) {
+    $flags = @('--edition=2024','--test','-D','warnings','-C','overflow-checks=yes',
+        $test,'-o',"$out/$component-$mode.exe")
+    if ($mode -eq 'release') { $flags += @('-C','opt-level=2') }
+    Invoke-Checked 'rustc' $flags
+    Invoke-Checked "$out/$component-$mode.exe" @()
+}
     Invoke-Checked 'clippy-driver' @('--edition=2024','--test','-D','warnings',
-        '--emit=metadata',$test,'-o',"$out/entries.rmeta")
+        '--emit=metadata',$test,'-o',"$out/$component.rmeta")
+}
 } finally {
     $env:CLIPPY_CONF_DIR = $savedClippy
 }
@@ -65,6 +68,8 @@ try {
         'arch/x86/kernel/drivers/video/framebuffer/preflight.c',
         'arch/x86/kernel/drivers/video/framebuffer/construction.c',
         'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
+        'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
+        'arch/x86/kernel/drivers/video/framebuffer/test/pixels/write_test.c',
         'arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/platform.c',
         'arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c')) {
         $object = "$out/" + ($source -replace '/', '-') + '.obj'
@@ -84,7 +89,10 @@ try {
         "$project/arch/x86/kernel/drivers/video/framebuffer/native/access.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/platform.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c" 2> "$out/cppcheck.xml"
+        "$project/arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/write.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/native.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/test/pixels/write_test.c" 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml = Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
