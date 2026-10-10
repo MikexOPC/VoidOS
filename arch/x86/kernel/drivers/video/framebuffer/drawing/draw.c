@@ -1,6 +1,12 @@
 #include "draw.h"
 #include "../pixels/session.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
+#if defined(KERNEL_TEST_CONSOLE_DRAW)
+#include "kernel/console/video/test/profiling/profile.h"
+#define DRAW_MARK(phase) do { if (!kernel_console_draw_mark(phase)) return 0; } while (0)
+#else
+#define DRAW_MARK(phase) ((void)0)
+#endif
 
 // ====== color_word ======
 
@@ -82,13 +88,23 @@ int x86_fb_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *input, const X86_FB_FO
         !x86_exception_environment()) return 0;
     text = *input; font = *input_font;
     if ((text.Foreground | text.Background) & 0xff000000U) return 0;
+    DRAW_MARK(1);
     count = text_plan(&text, &font, rows);
+    DRAW_MARK(2);
     if (!count || !x86_fb_pixels_begin(owner, text.X, text.Y, count * 8, font.Height, &session)) return 0;
+    DRAW_MARK(3);
     foreground = color_word(session.Surface.Format, text.Foreground);
     background = color_word(session.Surface.Format, text.Background);
     for (cell = 0; cell < count; ++cell) for (row = 0; row < font.Height; ++row)
         for (column = 0; column < 8; ++column)
             if (!x86_fb_pixels_store(&session, text.X + cell * 8 + column, text.Y + row,
                 (rows[cell][row] & (0x80U >> column)) ? foreground : background)) return 0;
+#if defined(KERNEL_TEST_CONSOLE_DRAW)
+    DRAW_MARK(4);
+    if (!x86_fb_pixels_end(&session)) return 0;
+    DRAW_MARK(5);
+    return 1;
+#else
     return x86_fb_pixels_end(&session);
+#endif
 }

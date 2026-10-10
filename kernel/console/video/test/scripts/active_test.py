@@ -41,6 +41,11 @@ class ActiveTests(unittest.TestCase):
             'LOSSES': 0, 'IRQS': 1, 'HPET_START': 10, 'HPET_END': 11,
             'PhysicalPixels': 128, 'VisiblePixels': 128}
         self.log = 'KERNEL_CONSOLE_DRAW_ACTIVE_OK\n' + self.log
+        record = self.evidence['Results'][0]['ConsoleDraw']
+        record['PROFILE_TOTAL'] = 192
+        for phase in active.cell.PHASES:
+            record[phase + '_SUM'] = 32
+            record[phase + '_MAX'] = 1
 
     def test_measured_positive_and_profile(self):
         self.drawing()
@@ -71,6 +76,18 @@ class ActiveTests(unittest.TestCase):
 
     def test_positive(self):
         self.assertEqual(self.verify(), self.evidence)
+
+    def test_profile_rejections(self):
+        self.drawing()
+        original = copy.deepcopy(self.evidence)
+        for key, value in [('PROFILE_TOTAL', 0), ('PROFILE_TOTAL', 193),
+                ('PLAN_SUM', 33), ('PLAN_MAX', 0), ('PLAN_MAX', 35797), ('PLAN_SUM', True)]:
+            self.evidence = copy.deepcopy(original)
+            self.evidence['Results'][0]['ConsoleDraw'][key] = value
+            with self.assertRaises(RuntimeError): self.verify(True)
+        self.evidence = original
+        del self.evidence['Results'][0]['ConsoleDraw']['GATE_SUM']
+        with self.assertRaises(RuntimeError): self.verify(True)
 
     def test_manifest_rejects(self):
         original = copy.deepcopy(self.evidence)

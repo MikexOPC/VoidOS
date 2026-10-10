@@ -15,6 +15,7 @@ def main():
         ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts/firmware.py',
         ROOT / 'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c', ROOT / 'docs/status.md']
     candidates += list((ROOT / 'arch/x86/kernel/drivers/video/framebuffer/gateway').rglob('*'))
+    candidates += list((ROOT / 'arch/x86/kernel/drivers/video/framebuffer/drawing').rglob('*'))
     candidates += list((ROOT / 'arch/x86/kernel/drivers/video/framebuffer/test/gateway').rglob('*'))
     candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h')
     candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts/drawing.py')
