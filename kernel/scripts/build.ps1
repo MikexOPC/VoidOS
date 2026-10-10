@@ -192,6 +192,18 @@ foreach ($source in @('assembly/irq/compute.asm','assembly/switch/context.asm','
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
+if ($TestFramebufferMapping) {
+    foreach ($source in @('kernel/console/video/console.c','kernel/console/video/test/kernel/probe.c')) {
+        $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
+        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
+        $objects += $object
+    }
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj',
+        '--target','x86_64-pc-windows-msvc','-C','panic=abort','-C','opt-level=2',
+        '-C','overflow-checks=yes','-D','warnings',
+        (Join-Path $project 'kernel/console/video/rust/cursor/plan.rs'),'-o',($output + '/console-grid.obj'))
+    $objects += ($output + '/console-grid.obj')
+}
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/drivers/video/framebuffer/rust/ffi/mode.rs'),
     '-o',($output + '/framebuffer-fields.obj'))

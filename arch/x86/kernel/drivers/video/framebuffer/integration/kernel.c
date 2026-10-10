@@ -2,6 +2,9 @@
 #include "kernel/diagnostics/log.h"
 #include "../pixels/write.h"
 #include "../test/drawing/probe.h"
+#ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
+#include "kernel/console/video/test/kernel/probe.h"
+#endif
 static X86_FB_MAPPING mapping;
 
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
@@ -31,6 +34,9 @@ int x86_fb_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *win
 {
     if (!kernel_section("mapping framebuffer kernel") ||
         !x86_fb_bind(context, window, lapic, inventory, &mapping)) return 0;
+#ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
+    if (!kernel_console_grid_probe()) return 0;
+#endif
     if (!context->Info.Framebuffer.Base) return kernel_log(1, "KERNEL_FB_MAPPING_ABSENT");
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
     {

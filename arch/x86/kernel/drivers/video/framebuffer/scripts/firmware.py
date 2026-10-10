@@ -145,8 +145,9 @@ def main():
     parser.add_argument('--rollback', action='store_true')
     parser.add_argument('--pixels', action='store_true')
     parser.add_argument('--drawing', action='store_true')
+    parser.add_argument('--shutdown-timeout', type=float, default=5)
     args = parser.parse_args()
-    if not 1 <= args.boots <= 20 or (args.absent and args.rollback):
+    if not 1 <= args.boots <= 20 or not 1 <= args.shutdown_timeout <= 30 or (args.absent and args.rollback):
         parser.error('boots 1..20; rollback requires video')
     if args.pixels and (args.absent or not args.rollback):
         parser.error('pixels requires rollback diagnostic with video')
@@ -163,6 +164,7 @@ def main():
         'Qemu': provider.digest(args.qemu / 'qemu-system-x86_64.exe'),
         'Absent': args.absent, 'Rollback': args.rollback, 'Pixels': args.pixels,
         'Drawing': args.drawing, 'Results': []}
+    evidence['ShutdownTimeoutSeconds'] = args.shutdown_timeout
     try:
         for index in range(1, args.boots + 1):
             record = provider.boot(args, out, index)
