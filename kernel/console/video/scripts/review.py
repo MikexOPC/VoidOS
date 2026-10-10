@@ -20,6 +20,12 @@ def main():
     candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts/drawing.py')
     candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/integration/resources.h')
     candidates += [ROOT / name for name in ['kernel/main.c',
+        'arch/x86/kernel/scheduler/mapping/native.c',
+        'arch/x86/kernel/scheduler/mapping/native.h',
+        'arch/x86/kernel/scheduler/test/mapping/native_test.c',
+        'arch/x86/kernel/drivers/input/ps2/runtime/task.c',
+        'arch/x86/kernel/drivers/input/ps2/runtime/session.c',
+        'arch/x86/kernel/drivers/input/ps2/scripts/firmware.py',
         'arch/x86/kernel/timer/lapic/driver.c', 'arch/x86/kernel/timer/hpet/watchdog/core.c',
         'arch/x86/kernel/timer/hpet/watchdog/recovery/control.c',
         'arch/x86/kernel/timer/hpet/description/probe/policy.c']]

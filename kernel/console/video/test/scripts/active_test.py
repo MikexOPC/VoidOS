@@ -29,10 +29,45 @@ class ActiveTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def verify(self):
+    def verify(self, draw=False):
         (self.directory / 'results.json').write_text(json.dumps(self.evidence), encoding='utf-8')
         (self.boot / 'serial.log').write_text(self.log, encoding='utf-8')
-        return active.verify(self.directory, 'ABC', 1)
+        return active.verify(self.directory, 'ABC', 1, draw)
+
+    def drawing(self):
+        self.evidence['ConsoleDraw'] = True
+        self.evidence['Results'][0]['ConsoleDraw'] = {'CELLS': 32, 'MAX_PM': 35796,
+            'PM_LIMIT': 357955, 'PM_GOAL': 35796, 'SLOW_CELLS': 0, 'PM_MASK': 0xffffff, 'LAST_SCALAR': 0xe8,
+            'LOSSES': 0, 'IRQS': 1, 'HPET_START': 10, 'HPET_END': 11,
+            'PhysicalPixels': 128, 'VisiblePixels': 128}
+        self.log = 'KERNEL_CONSOLE_DRAW_ACTIVE_OK\n' + self.log
+
+    def test_measured_positive_and_profile(self):
+        self.drawing()
+        self.assertEqual(self.verify(True), self.evidence)
+        record = self.evidence['Results'][0]['ConsoleDraw']
+        record['MAX_PM'] = 118663; record['SLOW_CELLS'] = 8
+        self.assertEqual(self.verify(True), self.evidence)
+        with self.assertRaises(RuntimeError): self.verify()
+        self.evidence['ConsoleDraw'] = False
+        with self.assertRaises(RuntimeError): self.verify(True)
+        self.evidence['ConsoleDraw'] = 1
+        with self.assertRaises(RuntimeError): self.verify(True)
+
+    def test_measured_rejections(self):
+        self.drawing()
+        original = copy.deepcopy(self.evidence)
+        for key, value in [('CELLS', 31), ('CELLS', 65537), ('MAX_PM', 0),
+                ('MAX_PM', 357956), ('MAX_PM', 35797), ('PM_LIMIT', 35795),
+                ('PM_GOAL', 0), ('SLOW_CELLS', 1), ('SLOW_CELLS', 33), ('PM_MASK', 0xffff),
+                ('LAST_SCALAR', 0x41), ('LOSSES', 1), ('IRQS', 0),
+                ('HPET_END', 10), ('PhysicalPixels', 127), ('VisiblePixels', 127)]:
+            self.evidence = copy.deepcopy(original)
+            self.evidence['Results'][0]['ConsoleDraw'][key] = value
+            with self.assertRaises(RuntimeError): self.verify(True)
+        self.evidence = original
+        self.log = self.log.replace('KERNEL_CONSOLE_DRAW_ACTIVE_OK', '')
+        with self.assertRaises(RuntimeError): self.verify(True)
 
     def test_positive(self):
         self.assertEqual(self.verify(), self.evidence)
@@ -49,7 +84,7 @@ class ActiveTests(unittest.TestCase):
         original = self.log
         for log in [original.replace('KERNEL_CONSOLE_ACTIVE_RESOURCES_OK', ''),
                 original.replace('KERNEL_FB_MAPPING_LIVE', 'KERNEL_READY'),
-                'PANIC\n' + original]:
+                'PANIC\n' + original, 'KERNEL_CONSOLE_DRAW_REJECTED_PM\n' + original]:
             self.log = log
             with self.assertRaises(RuntimeError): self.verify()
 

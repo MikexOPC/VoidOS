@@ -1,6 +1,6 @@
 param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
-    [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive,
+    [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
     [switch]$TestWatchdogAlternate,
     [switch]$TestWatchdogCleanupRecovery,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
@@ -8,6 +8,10 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
+if ($TestConsoleDraw) {
+    if ($TestConsoleActive) { throw 'Choose one console diagnostic profile.' }
+    $TestConsoleActive = $true
+}
 if ($TestConsoleActive) {
     if ($Install -or $Ps2Input -or $EventLoop -or $TestFramebufferMapping -or $TestBootstrapMemory -or
         $TestPanic -or $TestPs2Decoder -or $TestPs2Controller -or $TestWatchdogLostLapic -or
@@ -68,6 +72,7 @@ $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' 
 if ($TestPs2Decoder) { $flags += '/DKERNEL_TEST_PS2_DECODER=1' }
 if ($TestFramebufferMapping) { $flags += '/DKERNEL_TEST_FRAMEBUFFER_MAPPING=1' }
 if ($TestConsoleActive) { $flags += '/DKERNEL_TEST_CONSOLE_ACTIVE=1' }
+if ($TestConsoleDraw) { $flags += '/DKERNEL_TEST_CONSOLE_DRAW=1' }
 if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
 if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
 if ($bootstrapDiagnostics) { $flags += '/DKERNEL_TEST_BOOTSTRAP_MEMORY=1' }
@@ -204,9 +209,11 @@ foreach ($source in @('assembly/irq/compute.asm','assembly/switch/context.asm','
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
-if ($TestFramebufferMapping) {
-    foreach ($source in @('kernel/console/video/console.c','kernel/console/video/render.c',
-        'kernel/console/video/test/kernel/probe.c','kernel/console/video/test/kernel/render_probe.c')) {
+if ($TestFramebufferMapping -or $TestConsoleDraw) {
+    $consoleSources = @('kernel/console/video/console.c','kernel/console/video/render.c')
+    if ($TestFramebufferMapping) { $consoleSources += @('kernel/console/video/test/kernel/probe.c','kernel/console/video/test/kernel/render_probe.c') }
+    if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/test/active/worker.c','kernel/console/video/test/active/snapshot.c') }
+    foreach ($source in $consoleSources) {
         $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
         Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
         $objects += $object
@@ -216,6 +223,13 @@ if ($TestFramebufferMapping) {
         '-C','overflow-checks=yes','-D','warnings',
         (Join-Path $project 'kernel/console/video/rust/cursor/plan.rs'),'-o',($output + '/console-grid.obj'))
     $objects += ($output + '/console-grid.obj')
+    if ($TestConsoleDraw) {
+        Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj',
+            '--target','x86_64-pc-windows-msvc','-C','panic=abort','-C','opt-level=2',
+            '-C','overflow-checks=yes','-D','warnings',
+            (Join-Path $project 'kernel/console/video/rust/ffi/timing.rs'),'-o',($output + '/console-timing.obj'))
+        $objects += ($output + '/console-timing.obj')
+    }
 }
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/drivers/video/framebuffer/rust/ffi/mode.rs'),

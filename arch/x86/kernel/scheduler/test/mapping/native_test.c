@@ -9,6 +9,7 @@ static X86_TASK_CONTEXT contexts[8];
 static uint64_t entries[512], code[4][512];
 static unsigned char data[65536];
 static uint32_t checks, invalidations, denied, read_levels;
+static uint32_t live_test;
 static uint64_t rsp = X86_KERNEL_MAIN_BASE + 4096;
 
 // ====== x86_scheduler_dispatcher_context_is ======
@@ -56,7 +57,7 @@ int kernel_physical_validate(const KERNEL_PHYSICAL_ALLOCATOR *owner) { return ow
 // ====== kernel_physical_is_pinned ======
 
 int kernel_physical_is_pinned(const KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lease)
-{ return owner == &pool && lease->Id == 1; }
+{ return owner == &pool && (lease->Id == 1 || (live_test && lease->Id > 1 && lease->Id <= 3)); }
 // ====== kernel_physical_allocate ======
 
 int kernel_physical_allocate(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 pages, KERNEL_PHYSICAL_LEASE *lease)
@@ -190,6 +191,39 @@ static void dispatcher_authority_private(void)
     memset(&pool.Live[1], 0, sizeof(pool.Live[1])); pool.Pins[1] = 0;
 }
 
+// ====== live_pages_private ======
+
+static void live_pages_private(void)
+{
+    memset(owners, 0, sizeof(owners));
+    memset(entries + 320, 0, 144 * sizeof(*entries));
+    live_test = 1;
+    check_private(x86_scheduler_live_stack_pages() == 0);
+    for (uint32_t index = 0; index < 3; ++index) {
+        X86_TASK_STACK *owner = &owners[index];
+        owner->self = (uint64_t)(uintptr_t)owner; owner->root = 0x200000; owner->pool = &pool;
+        owner->generation = 1; owner->index = index; owner->stage = X86_TASK_STACK_READY;
+        owner->lease = (KERNEL_PHYSICAL_LEASE){0x100000 + index * 65536ULL, 16, index + 1, pool.Self};
+        for (uint32_t offset = 1; offset < 17; ++offset)
+            entries[320 + index * 18 + offset] = (owner->lease.Base + (offset - 1) * 4096ULL) | 3 | (1ULL << 63);
+        check_private(x86_scheduler_live_stack_pages() == (index + 1) * 16);
+    }
+    entries[320] = 1; check_private(x86_scheduler_live_stack_pages() == UINT64_MAX); entries[320] = 0;
+    entries[320 + 3 * 18 + 1] = 1;
+    check_private(x86_scheduler_live_stack_pages() == UINT64_MAX); entries[320 + 3 * 18 + 1] = 0;
+    owners[3].generation = 1;
+    check_private(x86_scheduler_live_stack_pages() == UINT64_MAX); owners[3].generation = 0;
+    owners[1].lease.Id = 1;
+    check_private(x86_scheduler_live_stack_pages() == UINT64_MAX); owners[1].lease.Id = 2;
+    owners[1].stage = X86_TASK_STACK_MAPPING;
+    check_private(x86_scheduler_live_stack_pages() == UINT64_MAX); owners[1].stage = X86_TASK_STACK_READY;
+    owners[1].lease.Pages = 15;
+    check_private(x86_scheduler_live_stack_pages() == UINT64_MAX); owners[1].lease.Pages = 16;
+    owners[1].lease.Id = 4;
+    check_private(x86_scheduler_live_stack_pages() == UINT64_MAX); owners[1].lease.Id = 2;
+    live_test = 0;
+}
+
 // ====== main ======
 
 int main(void)
@@ -203,6 +237,7 @@ int main(void)
     for (uint32_t index = 0; index < 8; ++index) map_corruption_private(index);
     dispatcher_authority_private();
     code_permissions_private();
+    live_pages_private();
     denied = 1;
     check_private(!x86_task_stack_map(&owners[0]));
     denied = 0; rsp = x86_task_stack_base(0) + 4096;
@@ -210,6 +245,7 @@ int main(void)
     rsp = X86_KERNEL_MAIN_BASE + 4096;
     x86_scheduler_unbind();
     check_private(!x86_scheduler_native_gate());
+    check_private(x86_scheduler_live_stack_pages() == UINT64_MAX);
     printf("PASS: %u native mapper/permission checks, whole-slot preflight and invalidation (CPU/PTE MOCK)\n",checks);
     return 0;
 }

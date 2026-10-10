@@ -10,6 +10,7 @@
 int x86_scheduler_bind(X86_TASK_STACK *owners, X86_TASK_CONTEXT *contexts,
                       KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root);
 int x86_scheduler_native_gate(void);
+uint64_t x86_scheduler_live_stack_pages(void);
 int x86_scheduler_code_valid(uint64_t target);
 int x86_scheduler_dispatcher_context_is(const X86_TASK_CONTEXT *context);
 uint64_t x86_scheduler_cpu_permissions(void);

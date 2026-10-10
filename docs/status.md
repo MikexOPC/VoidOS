@@ -231,7 +231,7 @@ soltanto dopo successo.72 celle disegnate,56 con IF iniziale1; nuovi test host
 su retry/rientro/overflow e2228226 casi scalar con IRQ/clock mock passano.
 30 boot finali:10 diagnostici con26053 pixel fisici/visibili verificati,
 10 ordinari e10 senza display. Il limite precedente sul gateway e superato;
-restano output shell e prova di latenza con sorgenti PS/2/watchdog attive.
+A quel checkpoint restavano output shell e prova di latenza con sorgenti PS/2/watchdog attive.
 I tick TSC grezzi non sono una deadline o una misura esatta del tempo IF0.
 La console rimane diagnostica, la shell seriale; ESP invariata in questo blocco.
 [Contratto](../kernel/console/video/documentation/rendering.md) e
@@ -244,8 +244,24 @@ HPET esclude tutta l'apertura video; lease pinned verificati anche durante
 input/idle/cleanup.576 controlli gateway e1100 policy HPET C/ASan passano,
 con regressioni console/framebuffer/watchdog e wrapper Python.
 40 boot finali:10 combinati con tastiera italiana e shell seriale,10 grafici,
-10 ordinari,10 senza display. Il profilo combinato non disegna: latenza e
-perdite durante il rendering restano il prossimo gate. La finestra IRQ delle
+10 ordinari,10 senza display. Il profilo TestConsoleActive non disegna;
+quel checkpoint precede la verifica del rendering descritta sotto. La finestra IRQ delle
 task rimane quella Assembly gia verificata, senza ampliamento a C arbitrario.
 [Piano](../kernel/console/video/documentation/active-design.md) e
 [prove finali](../kernel/console/video/documentation/active-validation.md).
+
+Rendering con input ora verificato nel profilo isolato TestConsoleDraw:
+una cella per passo, clock PM e policy Rust; snapshot diagnostico derivato
+dai soli48 frame dei tre stack originali/pinned, scansione completa del
+renderer e ripristino dell'inventario baseline. Dieci boot finali con
+3548 celle totali,128 pixel fisici/visibili finali verificati per boot,
+zero perdite osservate, ack HPET tra aggiornamenti e budget20438 ripristinato.
+Altri10 boot ordinari e10 senza video passano sull'immagine di regressione.
+
+L'obiettivo10ms è fallito e rimane aperto:17 celle oltre10ms, massimo53,37ms
+per flush nella campagna finale. Gate diagnostico100ms, coerente col poll
+input v0; non certifica latenza end-to-end né protegge da uno stallo C IF0.
+Il rendering resta diagnostico; shell seriale. Prima di aumentare il lavoro
+video servono misure per fase e riduzione del costo senza perdere ownership.
+[Design](../kernel/console/video/documentation/measured-design.md) e
+[prove, tentativi falliti e limiti](../kernel/console/video/documentation/measured-validation.md).
