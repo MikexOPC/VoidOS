@@ -212,7 +212,7 @@ $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
 if ($TestFramebufferMapping -or $TestConsoleDraw) {
     $consoleSources = @('kernel/console/video/console.c','kernel/console/video/render.c')
     if ($TestFramebufferMapping) { $consoleSources += @('kernel/console/video/test/kernel/probe.c','kernel/console/video/test/kernel/render_probe.c') }
-    if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/test/active/worker.c','kernel/console/video/test/active/snapshot.c') }
+    if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/test/active/worker.c','kernel/console/video/test/active/snapshot.c','kernel/console/video/test/profiling/profile.c') }
     foreach ($source in $consoleSources) {
         $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
         Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))

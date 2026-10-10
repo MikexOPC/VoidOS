@@ -4,11 +4,13 @@
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
+#include "../profiling/profile.h"
 static KERNEL_VIDEO_CONSOLE console;
 static KERNEL_CONSOLE_RENDER render;
 static KERNEL_CONSOLE_MEASUREMENT measured;
 static X86_PS2_SESSION *source;
 static uint32_t last_scalar, first_watchdog;
+static KERNEL_CONSOLE_PROFILE profile;
 
 // ====== clock_read ======
 
@@ -19,13 +21,23 @@ static uint32_t clock_read(void *context)
     return x86_pm_read((unsigned short)clock->Port) & clock->Mask;
 }
 
+// ====== kernel_console_draw_mark ======
+
+int kernel_console_draw_mark(uint32_t phase)
+{
+    if (!source || !measured.Busy || !render.Busy) return 0;
+    return kernel_console_profile_mark(&profile, phase, clock_read(&source->Clock));
+}
+
 // ====== draw ======
 
 static int draw(void *context, uint32_t column, uint32_t row, uint32_t scalar, uint64_t *ticks)
 {
     int result;
     if (context != source || column || row) return 0;
+    if (!kernel_console_draw_mark(0)) return 0;
     result = x86_fb_kernel_cell(2, 10, scalar, 0xffffff, 0x081018, ticks);
+    if (result && !kernel_console_draw_mark(6)) result = 0;
     if (!result) {
         kernel_text("KERNEL_CONSOLE_DRAW_ENV: "); kernel_number(x86_exception_environment());
         kernel_text("\nKERNEL_CONSOLE_DRAW_WINDOW: "); kernel_number(x86_page_window_idle_valid(source->Env.Window));
@@ -50,7 +62,8 @@ int kernel_console_active_worker(X86_PS2_SESSION *session)
     if (!source) {
         source = session;
         first_watchdog = x86_watchdog_state()->Count;
-        if (!kernel_console_init(&console, 1, 1) ||
+        if (!kernel_console_profile_init(&profile, source->Clock.Mask) ||
+            !kernel_console_init(&console, 1, 1) ||
             !kernel_console_render_init(&render, &console, draw, source) ||
             !kernel_console_measure_init(&measured, &render, clock_read, &source->Clock,
                 source->Clock.Mask)) return 0;
@@ -66,6 +79,23 @@ int kernel_console_active_worker(X86_PS2_SESSION *session)
     return !measured.Failed && !measured.Busy && render.CellsDone == measured.Cells;
 }
 
+// ====== profile_report ======
+
+static int profile_report(void)
+{
+    static const char *names[6] = {"GATE", "PLAN", "INVENTORY", "PIXELS", "AUTHORITY", "RETURN"};
+    uint32_t index;
+    if (profile.Failed || profile.Next || profile.Cells != measured.Cells) return 0;
+    if (!kernel_text("KERNEL_CONSOLE_PROFILE_TOTAL: ") || !kernel_number(profile.Total)) return 0;
+    for (index = 0; index < 6; ++index) {
+        if (!kernel_text("\nKERNEL_CONSOLE_PROFILE_") || !kernel_text(names[index]) ||
+            !kernel_text("_SUM: ") || !kernel_number(profile.Sum[index]) ||
+            !kernel_text("\nKERNEL_CONSOLE_PROFILE_") || !kernel_text(names[index]) ||
+            !kernel_text("_MAX: ") || !kernel_number(profile.Max[index])) return 0;
+    }
+    return kernel_text("\n");
+}
+
 // ====== kernel_console_active_finish ======
 
 int kernel_console_active_finish(const X86_PS2_SESSION *session)
@@ -76,7 +106,7 @@ int kernel_console_active_finish(const X86_PS2_SESSION *session)
         render.CellsDone != measured.Cells || !measured.MaxTicks ||
         measured.MaxTicks > kernel_console_pm_limit() || !session->Irqs ||
         x86_watchdog_state()->Count <= first_watchdog) return 0;
-    return kernel_text("KERNEL_CONSOLE_DRAW_CELLS: ") && kernel_number(measured.Cells) &&
+    return profile_report() && kernel_text("KERNEL_CONSOLE_DRAW_CELLS: ") && kernel_number(measured.Cells) &&
         kernel_text("\nKERNEL_CONSOLE_DRAW_MAX_PM: ") && kernel_number(measured.MaxTicks) &&
         kernel_text("\nKERNEL_CONSOLE_DRAW_PM_LIMIT: ") && kernel_number(kernel_console_pm_limit()) &&
         kernel_text("\nKERNEL_CONSOLE_DRAW_PM_GOAL: ") && kernel_number(kernel_console_pm_goal()) &&

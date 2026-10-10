@@ -5,6 +5,7 @@ import sys
 import time
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[4]
+PHASES = ('GATE', 'PLAN', 'INVENTORY', 'PIXELS', 'AUTHORITY', 'RETURN')
 
 # ============ measured campaign invariants ============
 
@@ -19,6 +20,18 @@ def validate(record):
             record.get('HPET_END', 0) <= record.get('HPET_START', 0) or \
             record.get('LAST_SCALAR') != (0x41, 0xe8, 0x20ac)[(cells - 1) % 3]:
         raise RuntimeError('Insufficient or inconsistent measured draw evidence')
+    total = record.get('PROFILE_TOTAL', 0)
+    if type(total) is not int or not 0 < total <= cells * record['MAX_PM']:
+        raise RuntimeError('Invalid profile total')
+    accumulated = 0
+    for phase in PHASES:
+        ticks, maximum = record.get(phase + '_SUM', -1), record.get(phase + '_MAX', -1)
+        if type(ticks) is not int or type(maximum) is not int or \
+                not 0 <= maximum <= record['MAX_PM'] or not maximum <= ticks <= cells * maximum:
+            raise RuntimeError('Invalid phase accounting: ' + phase)
+        accumulated += ticks
+    if accumulated != total:
+        raise RuntimeError('Phase sums differ from profile total')
 
 # ============ official-font raster and owned VM physical reader ============
 
@@ -28,6 +41,10 @@ def verify(vm, scenario, log):
     number = lambda field: int(re.search(re.escape(field) + r': 0x([0-9a-fA-F]{16})', log)[1], 16)
     record = {name: number('KERNEL_CONSOLE_DRAW_' + name) for name in
         ['CELLS', 'MAX_PM', 'PM_LIMIT', 'PM_GOAL', 'SLOW_CELLS', 'PM_MASK', 'LAST_SCALAR', 'LOSSES', 'IRQS', 'HPET_START', 'HPET_END']}
+    record['PROFILE_TOTAL'] = number('KERNEL_CONSOLE_PROFILE_TOTAL')
+    for phase in PHASES:
+        for suffix in ('SUM', 'MAX'):
+            record[phase + '_' + suffix] = number('KERNEL_CONSOLE_PROFILE_' + phase + '_' + suffix)
     validate(record)
     scripts = ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts'
     sys.path.insert(0, str(scripts))

@@ -59,6 +59,11 @@ try {
         '/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/host.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
+        "$project/kernel/console/video/test/profiling/profile.c",
+        "$project/kernel/console/video/test/profiling/cases.c",
+        ("/Fo$out/"),("/Fd$out/profile.pdb"),("/Fe$out/profile.exe"),'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/profile.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
         ("/I$project"),"$project/kernel/console/video/test/active/snapshot.c",
         "$project/kernel/console/video/test/active/snapshot_cases.c",
         ("/Fo$out/"),("/Fd$out/snapshot.pdb"),("/Fe$out/snapshot.exe"),'/link','/incremental:no','/DEBUG','/WX')
@@ -116,6 +121,9 @@ try {
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         -DKERNEL_TEST_CONSOLE_ACTIVE=1 -DKERNEL_TEST_CONSOLE_DRAW=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
         "$project/kernel/console/video/test/active/worker.c" `
+        "$project/kernel/console/video/test/profiling/profile.c" `
+        "$project/kernel/console/video/test/profiling/cases.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c" `
         "$project/kernel/console/video/test/active/snapshot.c" `
         "$project/kernel/console/video/test/active/snapshot_cases.c" `
         "$project/arch/x86/kernel/scheduler/mapping/native.c" `

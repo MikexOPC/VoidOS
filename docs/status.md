@@ -262,6 +262,14 @@ L'obiettivo10ms è fallito e rimane aperto:17 celle oltre10ms, massimo53,37ms
 per flush nella campagna finale. Gate diagnostico100ms, coerente col poll
 input v0; non certifica latenza end-to-end né protegge da uno stallo C IF0.
 Il rendering resta diagnostico; shell seriale. Prima di aumentare il lavoro
-video servono misure per fase e riduzione del costo senza perdere ownership.
+video serve ridurre il costo senza perdere ownership; le misure per fase
+sono ora disponibili nel checkpoint sotto.
 [Design](../kernel/console/video/documentation/measured-design.md) e
 [prove, tentativi falliti e limiti](../kernel/console/video/documentation/measured-validation.md).
+
+Profilazione completata: 3543 celle in dieci boot finali; inventario 94,34%
+del tempo profilato, massimo flush 7,31ms in questa campagna. Altri dieci
+boot ordinari e dieci senza video passano. Nessuna ottimizzazione applicata
+né risoluzione dimostrata dei picchi precedenti. Scelta utente per il prossimo
+blocco: gruppi fino a8 celle adiacenti, controlli completi per gruppo.
+[Prove e limiti](../kernel/console/video/documentation/profile-validation.md).
