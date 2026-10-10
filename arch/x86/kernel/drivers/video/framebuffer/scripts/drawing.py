@@ -1,3 +1,6 @@
+import importlib.util
+from pathlib import Path
+
 # ============ independent expected raster ============
 
 def cases():
@@ -23,6 +26,17 @@ def cases():
             for column in range(8):
                 pixels[16 + cell * 8 + column, 40 + row] = (
                     (255, 255, 255) if bitmap & (0x80 >> column) else (8, 16, 24))
+    spec = importlib.util.spec_from_file_location('font_converter', Path(__file__).parent / 'font/convert.py')
+    converter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(converter)
+    bitmap = converter.raster()
+    for y, text in [(64, 'MikeSW OS: àèéìòù €'), (80, ''.join(map(chr, range(32, 64)))),
+        (96, ''.join(map(chr, range(64, 96)))), (112, ''.join(map(chr, range(96, 127))))]:
+        for cell, char in enumerate(text):
+            for row, mask in enumerate(bitmap[ord(char)]):
+                for col in range(8):
+                    pixels[16 + cell * 8 + col, y + row] = (
+                        (255, 255, 255) if mask & (0x80 >> col) else (8, 16, 24))
     return pixels
 
 # ============ physical color and reserved byte ============

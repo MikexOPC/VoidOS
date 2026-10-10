@@ -1,5 +1,9 @@
 # Rettangoli e testo — contratto v0, 10 ottobre 2026
 
+Snapshot del blocco8x8. L'estensione corrente mantiene8x8 e aggiunge
+font8x16 espliciti: [contratto font e prove](font.md). Conteggi/hash sotto
+restano quelli dell'immagine storica.
+
 Estensione del writer [pixel](pixels.md), nello stesso modulo framebuffer
 x86. Scelta utente: UTF-8 con lettere italiane, glifo visibile per scalar
 assenti, font bitmap fornito dal chiamante, massimo4096 pixel per operazione,

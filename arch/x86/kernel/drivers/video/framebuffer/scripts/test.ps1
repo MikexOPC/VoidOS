@@ -72,6 +72,7 @@ try {
         'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
         'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
         'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
+        'arch/x86/kernel/drivers/video/framebuffer/font/font.c',
         'arch/x86/kernel/drivers/video/framebuffer/test/pixels/write_test.c',
         'arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/platform.c',
         'arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c')) {
@@ -95,6 +96,7 @@ try {
         "$project/arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/write.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/font/font.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/test/drawing/probe.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/native.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/test/pixels/write_test.c" 2> "$out/cppcheck.xml"

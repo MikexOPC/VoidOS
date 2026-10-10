@@ -2,6 +2,7 @@
 #include "../../pixels/write.h"
 #include "../../drawing/draw.h"
 #include "../../pixels/session.h"
+#include "../../font/font.h"
 #include <string.h>
 static BOOT_U32 words[4100], visits, fail_view;
 static BOOT_U32 fail_after, corrupt_after;
@@ -174,7 +175,7 @@ static int text_utf8(void)
         {0xec, {0x20,0x10,0x00,0x30,0x10,0x10,0x10,0x38}},
         {0xf2, {0x10,0x08,0x00,0x3c,0x42,0x42,0x42,0x3c}},
         {0xf9, {0x10,0x08,0x00,0x42,0x42,0x42,0x46,0x3a}}};
-    X86_FB_FONT font = {glyphs, 7, sizeof(glyphs), {0xff,0x81,0x81,0x81,0x81,0x81,0x81,0xff}};
+    X86_FB_FONT font = {glyphs, 7, sizeof(glyphs), {0xff,0x81,0x81,0x81,0x81,0x81,0x81,0xff}, 8};
     const unsigned char sample[] = "A\xc3\xa0\xc3\xa8\xc3\xa9\xc3\xac\xc3\xb2\xc3\xb9\xf0\x9f\x98\x80";
     X86_FB_TEXT text = {sample, sizeof(sample) - 1, sizeof(sample), 3, 2, 0x112233, 0x445566};
     BOOT_U32 format, cell, row, col, scan;
@@ -202,7 +203,7 @@ static int text_utf8(void)
 static int drawing_rejections(void)
 {
     X86_FB_GLYPH glyph = {65, {0xff,0,0,0,0,0,0,0}};
-    X86_FB_FONT font = {&glyph, 1, sizeof(glyph), {0xff,0,0,0,0,0,0,0}};
+    X86_FB_FONT font = {&glyph, 1, sizeof(glyph), {0xff,0,0,0,0,0,0,0}, 8};
     unsigned char sample[257];
     X86_FB_TEXT text = {sample, 64, sizeof(sample), 0, 0, 0xffffff, 0};
     BOOT_U32 index;
@@ -273,6 +274,31 @@ static int drawing_rejections(void)
 
 // ====== run_drawing_tests ======
 
+static int console_font(void)
+{
+    const X86_FB_FONT *font = x86_fb_console_font();
+    unsigned char sample[132];
+    X86_FB_TEXT text = {sample, 32, sizeof(sample), 0, 0, 0xffffff, 0};
+    BOOT_U32 index, row, col;
+    CHECK(font->Height == 16 && font->Count == 109);
+    CHECK(draw_setup(256, 16, 256, 1)); memset(sample, 'A', sizeof(sample));
+    CHECK(x86_fb_text(&owner, &text, font) && visits == 4096);
+    for (row = 0; row < 16; ++row) for (col = 0; col < 256; ++col)
+        CHECK(words[row * 256 + col] == ((font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0xffffffU : 0));
+    text.Bytes = 33; visits = 0; CHECK(!x86_fb_text(&owner, &text, font) && !visits);
+    {
+        X86_FB_FONT bad = *font;
+        for (index = 0; index < 3; ++index) {
+            bad.Height = index == 0 ? 0 : index == 1 ? 17 : ~0U;
+            text.Bytes = 1; CHECK(!x86_fb_text(&owner, &text, &bad) && !visits);
+        }
+    }
+    CHECK(x86_fb_unbind(&owner) && pool.FreePages == 128);
+    return 0;
+}
+
+// ====== run_drawing_tests ======
+
 int run_drawing_tests(void)
 {
     BOOT_U32 iteration;
@@ -280,6 +306,7 @@ int run_drawing_tests(void)
         int result = rectangles();
         if (!result) result = text_utf8();
         if (!result) result = drawing_rejections();
+        if (!result) result = console_font();
         if (result) return result;
     }
     return 0;
