@@ -19,9 +19,10 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 $savedClippy = $env:CLIPPY_CONF_DIR
 try {
     $env:CLIPPY_CONF_DIR = $PSScriptRoot
-foreach ($component in @('tables','pixels')) {
+foreach ($component in @('tables','pixels','drawing')) {
 $test = "$project/arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs"
 if ($component -eq 'pixels') { $test = "$project/kernel/drivers/video/framebuffer/rust/pixel/validation.rs" }
+if ($component -eq 'drawing') { $test = "$project/arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs" }
 foreach ($mode in @('debug', 'release')) {
     $flags = @('--edition=2024','--test','-D','warnings','-C','overflow-checks=yes',
         $test,'-o',"$out/$component-$mode.exe")
@@ -37,6 +38,7 @@ foreach ($mode in @('debug', 'release')) {
 }
 $objects = @()
 foreach ($source in @('arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs',
+    'arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs',
     'arch/x86/kernel/interrupts/apic/rust/profile/validation.rs',
     'arch/x86/mm/paging/rust/validation/entries.rs',
     'kernel/mm/rust/regions/validation.rs','kernel/mm/physical/rust/alignment/placement.rs',
@@ -69,6 +71,7 @@ try {
         'arch/x86/kernel/drivers/video/framebuffer/construction.c',
         'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
         'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
+        'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
         'arch/x86/kernel/drivers/video/framebuffer/test/pixels/write_test.c',
         'arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/platform.c',
         'arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c')) {
@@ -91,6 +94,8 @@ try {
         "$project/arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/platform.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/write.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/test/drawing/probe.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/native.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/test/pixels/write_test.c" 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }

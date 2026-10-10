@@ -112,6 +112,8 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/drivers/video/framebuffer/native/access.c',
     'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
     'arch/x86/kernel/drivers/video/framebuffer/pixels/native.c',
+    'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
+    'arch/x86/kernel/drivers/video/framebuffer/test/drawing/probe.c',
     'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c',
     'lib/firmware/acpi/rsdp.c',
     'kernel/firmware/acpi/root.c',
@@ -277,6 +279,11 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
     (Join-Path $project 'arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs'),
     '-o',($output + '/framebuffer-tables.obj'))
 $objects += ($output + '/framebuffer-tables.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',
+    (Join-Path $project 'arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs'),
+    '-o',($output + '/framebuffer-drawing.obj'))
+$objects += ($output + '/framebuffer-drawing.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/mm/regions/rust/layout/validation.rs'),
     '-o',($output + '/region-layout.obj'))

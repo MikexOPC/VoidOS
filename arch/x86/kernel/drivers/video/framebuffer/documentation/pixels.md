@@ -1,5 +1,9 @@
 # Scrittura pixel x86 — 10 ottobre2026
 
+Snapshot delle prove del blocco singoli pixel. Il writer e stato esteso
+successivamente per operazioni batch: [contratto corrente](drawing.md).
+Conteggi/hash sotto identificano l'immagine di questo blocco storico.
+
 Modulo framebuffer x86; estensione circoscritta del [mapping](mapping.md),
 senza nuovo device, ownership o cambio PAT. Riutilizza il contratto numerico
 Rust RGB/BGR e il mapping UC gia autorizzato. `reuse/` resta intatto.

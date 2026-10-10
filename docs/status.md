@@ -127,8 +127,9 @@ nei retry ExitBootServices e ripristino video nell'abbandono del boot.
 Dieci boot finali con video e dieci senza raggiungono KERNEL_READY.
 Dieci boot della shell PS/2 verificano la regressione sullo stesso loader.
 [Prove del blocco handoff](../kernel/drivers/video/framebuffer/documentation/handoff-validation.md).
-Il servizio GUI futuro richiedera video valido. Rettangoli e testo dal kernel
-restano il prossimo blocco; mapping live e singoli pixel sono descritti sotto.
+Il servizio GUI futuro richiedera video valido. Mapping live, singoli pixel,
+rettangoli e testo dal kernel sono descritti nei blocchi sotto; una console
+video operativa completa resta il passo successivo.
 
 Preflight del mapping collegato: Rust calcola pagine, offset e budget;
 C pubblica solo un risultato valido. Il kernel usa i limiti fisici reali.
@@ -177,9 +178,25 @@ stride, Used e colori; C richiede owner originale, lease pinned, CPU e
 inventario validi prima dello store UC volatile32 bit e del readback.
 Offset fisico non allineato alla pagina e padding verificati host; nessuna
 allocazione aggiunta. Il probe dei cinque colori gira soltanto nel profilo
-diagnostico, non nel boot ordinario. Nessuna GUI o renderer batch ancora.
+diagnostico, non nel boot ordinario. Il renderer batch del blocco successivo
+e descritto sotto; nessuna GUI ancora.
 Undici casi Rust per profilo debug/release e Clippy; tre gruppi pixel C
 ASan oltre ai sette gruppi lifecycle x100, cppcheck senza errori bloccanti.
 Trenta boot finali:10 con cinque pixel verificati fisicamente e nel PPM,
 10 ordinari e10 senza display. RGB e BGR coperti host; QEMU usa BGR.
 [Contratto, prove e riproduzione](../arch/x86/kernel/drivers/video/framebuffer/documentation/pixels.md).
+
+Rettangoli e testo UTF-8 ora usano una sola verifica completa del mapping
+per operazione, con readback scalare UC e autorita finale. Rust valida
+geometria, limite4096 pixel e scalar Unicode; C prepara fino a64 celle8x8
+da un font del chiamante e le scrive. Accenti italiani precomposti coperti,
+glifi assenti sostituiti da un bitmap visibile. Input malformato, font errato
+e coordinate fuori schermo vengono respinti prima degli store. Non e ancora
+la console della shell: il font di dieci glifi e i disegni restano diagnostici.
+Nessuna nuova allocazione o modifica del vecchio OS.
+Quindici casi Rust per profilo debug/release e Clippy, tre gruppi drawing
+x100 con ASan oltre alla regressione pixel/lifecycle, cppcheck13 TU senza
+diagnostiche bloccanti. Trenta boot finali:10 diagnostici con2245 pixel
+verificati fisicamente e nel PPM,10 ordinari,10 senza display. Font completo,
+console operativa, hardware fisico e latenza IRQ restano da verificare.
+[Contratto e prove del renderer](../arch/x86/kernel/drivers/video/framebuffer/documentation/drawing.md).

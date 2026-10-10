@@ -8,6 +8,7 @@ X86_PAGING_INVENTORY inventory;
 X86_FB_MAPPING owner;
 X86_FB_CPU cpu;
 BOOT_U32 borrows, fail_borrow, lose_view, flushes, fail_flush, bad_cpu;
+BOOT_U32 table_views;
 static BOOT_U64 frames[20][512];
 static unsigned char map[96];
 static BOOT_U64 *borrowed;
@@ -30,6 +31,7 @@ const volatile BOOT_U64 *x86_paging_view(BOOT_U64 address)
     BOOT_U32 b = (BOOT_U32)((address >> 21) & 511);
     BOOT_U32 c = (BOOT_U32)((address >> 12) & 511);
     BOOT_U64 *page = frames[0];
+    ++table_views;
     if (a == 128 && b == 128 && c == 128) return page;
     if (a == 128 && b == 128) return frame(page[c]);
     if (a == 128) {
@@ -138,6 +140,7 @@ int fixture(void)
     memset(&window, 0, sizeof(window)); memset(&lapic, 0, sizeof(lapic));
     memset(&inventory, 0, sizeof(inventory)); memset(&owner, 0, sizeof(owner));
     borrows = fail_borrow = lose_view = flushes = fail_flush = bad_cpu = 0;
+    table_views = 0;
     repair_view();
     map[0] = 2; number(map + 8, 4096); number(map + 24, 4); map[32] = 8;
     map[48] = 7; number(map + 56, 0x100000); number(map + 72, 128); map[80] = 8;

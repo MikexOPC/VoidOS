@@ -3,6 +3,7 @@
 #include <string.h>
 #define CHECK(expression) do { if (!(expression)) return __LINE__; } while (0)
 int run_pixel_tests(void);
+int run_drawing_tests(void);
 
 // ====== bind ======
 
@@ -145,5 +146,10 @@ int main(void)
         if (result) { printf("FAIL: pixel line %d\n", result); return 1; }
     }
     puts("PASS: 3 pixel groups; RGB/BGR, all pixels, offset/padding, no-write rejections");
+    {
+        int result = run_drawing_tests();
+        if (result) { printf("FAIL: drawing line %d\n", result); return 1; }
+    }
+    puts("PASS: 3 drawing groups x100; bounded rectangles, UTF-8/font, one mapping scan, partial failures");
     return 0;
 }

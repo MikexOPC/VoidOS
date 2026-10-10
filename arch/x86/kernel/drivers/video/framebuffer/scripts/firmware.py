@@ -7,6 +7,7 @@ import sys
 import time
 import uuid
 sys.dont_write_bytecode = True
+import drawing
 ROOT = Path(__file__).resolve().parents[7]
 spec = importlib.util.spec_from_file_location('gop_probe',
     ROOT / 'kernel/drivers/video/framebuffer/scripts/firmware.py')
@@ -24,7 +25,7 @@ def pixel_cases(width, height):
 
 # ============ PPM visible-color verification ============
 
-def screenshot_pixels(path, record):
+def screenshot_pixels(path, record, draw):
     data = path.read_bytes()
     header = re.match(rb'P6\s+(\d+)\s+(\d+)\s+255\s', data)
     if not header or (int(header[1]), int(header[2])) != (record['WIDTH'], record['HEIGHT']):
@@ -34,7 +35,7 @@ def screenshot_pixels(path, record):
         offset = (y * record['WIDTH'] + x) * 3
         if image[offset:offset + 3] != bytes(color):
             raise RuntimeError(f'Visible pixel mismatch at {x},{y}')
-    return 5
+    return 5 + (drawing.verify_visible(image, record['WIDTH']) if draw else 0)
 
 # ============ bounded independent physical reads ============
 
@@ -64,6 +65,8 @@ def inspect(vm, monitor, log, args):
             raise RuntimeError('Absent display allocated a live mapping')
         if 'KERNEL_FB_PIXELS_OK' in log:
             raise RuntimeError('Pixels attempted without display')
+        if 'KERNEL_FB_DRAWING_OK' in log:
+            raise RuntimeError('Drawing attempted without display')
         return {'LiveMapping': False}
     if 'KERNEL_FB_MAPPING_LIVE' not in log:
         raise RuntimeError('Missing live mapping marker')
@@ -121,9 +124,16 @@ def inspect(vm, monitor, log, args):
                 blue | (green << 8) | (red << 16))
             if value != expected:
                 raise RuntimeError(f'Physical pixel mismatch at {x},{y}')
+    raster = 0
+    if args.drawing:
+        if 'KERNEL_FB_DRAWING_OK' not in log:
+            raise RuntimeError('Missing bounded drawing marker')
+        raster = drawing.verify_physical(physical, vm, monitor, n('BASE'), n('STRIDE'), n('FORMAT'))
+    elif not args.rollback and 'KERNEL_FB_DRAWING_OK' in log:
+        raise RuntimeError('Drawing probe in ordinary image')
     return {'LiveMapping': True, 'VerifiedLeaves': present, 'OwnedTables': len(seen) - 1,
             'Rollback': args.rollback, 'CacheIndex': index, 'Root': root,
-            'PhysicalPixels': 5 if args.pixels else 0}
+            'PhysicalPixels': (5 if args.pixels else 0) + raster, 'DrawingPixels': raster}
 
 # ============ image-specific consecutive boots ============
 
@@ -134,11 +144,14 @@ def main():
     parser.add_argument('--absent', action='store_true')
     parser.add_argument('--rollback', action='store_true')
     parser.add_argument('--pixels', action='store_true')
+    parser.add_argument('--drawing', action='store_true')
     args = parser.parse_args()
     if not 1 <= args.boots <= 20 or (args.absent and args.rollback):
         parser.error('boots 1..20; rollback requires video')
     if args.pixels and (args.absent or not args.rollback):
         parser.error('pixels requires rollback diagnostic with video')
+    if args.drawing and not args.pixels:
+        parser.error('drawing requires pixels diagnostic')
     args.image = ROOT / 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
     args.qemu = Path('C:/Program Files/qemu')
     args.mapping_plan = True
@@ -148,12 +161,13 @@ def main():
     evidence = {'Kernel': provider.digest(args.kernel), 'Loader': provider.digest(args.image),
         'OVMF': provider.digest(args.qemu / 'share/edk2-x86_64-code.fd'),
         'Qemu': provider.digest(args.qemu / 'qemu-system-x86_64.exe'),
-        'Absent': args.absent, 'Rollback': args.rollback, 'Pixels': args.pixels, 'Results': []}
+        'Absent': args.absent, 'Rollback': args.rollback, 'Pixels': args.pixels,
+        'Drawing': args.drawing, 'Results': []}
     try:
         for index in range(1, args.boots + 1):
             record = provider.boot(args, out, index)
             if args.pixels:
-                record['VisiblePixels'] = screenshot_pixels(out / f'boot-{index}/screen.ppm', record)
+                record['VisiblePixels'] = screenshot_pixels(out / f'boot-{index}/screen.ppm', record, args.drawing)
                 record['PixelValidated'] = True
             evidence['Results'].append(record)
             print(f'PASS: framebuffer live {index}/{args.boots}', flush=True)

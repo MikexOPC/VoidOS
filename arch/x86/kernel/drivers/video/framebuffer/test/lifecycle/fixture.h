@@ -9,6 +9,7 @@ extern X86_PAGING_INVENTORY inventory;
 extern X86_FB_MAPPING owner;
 extern X86_FB_CPU cpu;
 extern BOOT_U32 borrows, fail_borrow, lose_view, flushes, fail_flush, bad_cpu;
+extern BOOT_U32 table_views;
 BOOT_U64 *frame(BOOT_U64 physical);
 int fixture(void);
 void repair_view(void);

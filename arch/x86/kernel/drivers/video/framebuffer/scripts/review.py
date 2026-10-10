@@ -11,7 +11,7 @@ SOURCE = {'.c', '.h', '.rs', '.asm', '.cpp'}
 def main():
     errors, files, directories = [], [], {}
     candidates = list(MODULE.rglob('*')) + [ROOT / 'kernel/main.c', ROOT / 'kernel/scripts/build.ps1',
-        ROOT / 'kernel/drivers/video/framebuffer/scripts/firmware.py']
+        ROOT / 'kernel/drivers/video/framebuffer/scripts/firmware.py', ROOT / 'docs/status.md']
     for path in candidates:
         if not path.is_file():
             continue
