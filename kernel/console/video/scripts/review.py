@@ -18,8 +18,13 @@ def main():
     candidates += list((ROOT / 'arch/x86/kernel/drivers/video/framebuffer/test/gateway').rglob('*'))
     candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h')
     candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts/drawing.py')
+    candidates.append(ROOT / 'arch/x86/kernel/drivers/video/framebuffer/integration/resources.h')
+    candidates += [ROOT / name for name in ['kernel/main.c',
+        'arch/x86/kernel/timer/lapic/driver.c', 'arch/x86/kernel/timer/hpet/watchdog/core.c',
+        'arch/x86/kernel/timer/hpet/watchdog/recovery/control.c',
+        'arch/x86/kernel/timer/hpet/description/probe/policy.c']]
     for path in candidates:
-        if not path.is_file():
+        if not path.is_file() or '__pycache__' in path.parts:
             continue
         data = path.read_bytes()
         text = data.decode('utf-8-sig')

@@ -3,10 +3,20 @@
 #include "../pixels/write.h"
 #include "../test/drawing/probe.h"
 #include "../gateway/cell.h"
+#include "../gateway/inventory.h"
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
 #include "kernel/console/video/test/kernel/probe.h"
 #endif
 static X86_FB_MAPPING mapping;
+
+// ====== x86_fb_kernel_inventory_verify ======
+
+int x86_fb_kernel_inventory_verify(const KERNEL_BOOT_CONTEXT *context,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
+    const X86_PAGING_INVENTORY *inventory)
+{
+    return x86_fb_live_inventory(&mapping, context, pool, lapic, inventory);
+}
 
 // ====== x86_fb_kernel_cell ======
 

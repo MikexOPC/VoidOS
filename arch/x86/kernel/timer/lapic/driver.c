@@ -1,4 +1,5 @@
 #include "timer.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/integration/resources.h"
 #include "runtime/runtime.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
@@ -216,7 +217,7 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     BOOT_U64 delivered = 0;
     int result = 0, stopped, detached = 1, restored = 0, watchdog_closed;
     if (finished || !context || !window || !window->Pool || !mapping || !inventory || !x86_irq_ready() ||
-        !x86_paging_inventory_verify_lapic(context,window->Pool,mapping,inventory) ||
+        !x86_device_inventory_verify(context,window->Pool,mapping,inventory) ||
         !x86_pm_clock_capture(directory,window->Pool->PhysicalBits,read_firmware,&reader,&timer.Clock)) {
         return 0;
     }
@@ -276,7 +277,7 @@ cleanup:
     if (!result || !stopped || !detached || !restored || delivered != timer.Count ||
         (!loop_mode && timer.Count != 3) || timer.Error || !watchdog_closed ||
         !x86_irq_ready() || !x86_lapic_idle(mapping) || !x86_page_window_idle_valid(window) ||
-        !x86_paging_inventory_verify_lapic(context,window->Pool,mapping,inventory)) {
+        !x86_device_inventory_verify(context,window->Pool,mapping,inventory)) {
         return 0;
     }
     return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);

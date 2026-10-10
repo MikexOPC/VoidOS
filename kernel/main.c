@@ -175,11 +175,21 @@ __declspec(noreturn) static void kernel_continue(void)
             !x86_uart_irq_run(context, &memory.Window, paging,
                 (const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&memory.Arena, &madt_object),
                 &apic_profile, &apic_capabilities)) kernel_panic("UART_IRQ_INVALID");
+#ifdef KERNEL_TEST_CONSOLE_ACTIVE
+        if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &memory.Window,
+            x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
+#endif
         if (context->Info.Acpi.Source &&
             !x86_watchdog_kernel_start(context,&memory.Window,&memory.Arena,&acpi_object,&madt_object,
                 paging,&apic_profile,&apic_capabilities,&hpet_description)) kernel_panic("LAPIC_TIMER_INVALID");
+#ifndef KERNEL_TEST_CONSOLE_ACTIVE
         if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &memory.Window,
             x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
+#else
+        if (!x86_fb_kernel_inventory_verify(context, &memory.Physical,
+            x86_uart_lapic_mapping(), paging)) kernel_panic("CONSOLE_ACTIVE_RESOURCES_FAILED");
+        if (!kernel_log(0, "KERNEL_CONSOLE_ACTIVE_RESOURCES_OK")) kernel_panic("CONSOLE_ACTIVE_LOG_FAILED");
+#endif
     }
 #ifdef KERNEL_TEST_REGION_FAULT
     {

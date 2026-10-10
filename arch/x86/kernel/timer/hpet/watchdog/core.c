@@ -1,4 +1,5 @@
 #include "watchdog.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/integration/resources.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
@@ -260,7 +261,7 @@ int x86_watchdog_finish_cleanup(void)
         return cleanup_failure(X86_WATCHDOG_RESTORE_ROUTE);
     }
     if (!x86_page_window_idle_valid(watchdog.Env.Window) ||
-        !x86_paging_inventory_verify_lapic(watchdog.Env.Context,watchdog.Env.Window->Pool,
+        !x86_device_inventory_verify(watchdog.Env.Context,watchdog.Env.Window->Pool,
             watchdog.Env.Mapping,watchdog.Env.Inventory) || !x86_lapic_idle(watchdog.Env.Mapping)) {
         return cleanup_failure(X86_WATCHDOG_VERIFY);
     }
