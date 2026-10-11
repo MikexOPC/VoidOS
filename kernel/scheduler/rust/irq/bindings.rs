@@ -46,5 +46,5 @@ impl Bindings {
 }
 
 #[cfg(test)]
-#[path = "../../test/irq/bindings_test.rs"]
+#[path = "../../../../test/kernel/scheduler/irq/bindings_test.rs"]
 mod tests;

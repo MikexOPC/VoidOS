@@ -24,5 +24,5 @@ pub fn apply(state: u32, operation: u32) -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../test/command/queue_test.rs"]
+#[path = "../../../../test/kernel/shell/command/queue_test.rs"]
 mod tests;

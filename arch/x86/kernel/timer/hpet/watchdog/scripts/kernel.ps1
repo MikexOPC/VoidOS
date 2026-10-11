@@ -6,7 +6,7 @@ $out=Join-Path $project ('kernel/build/watchdog-matrix-'+[guid]::NewGuid().ToStr
 New-Item -ItemType Directory -Path $out | Out-Null
 $sources=@(Get-ChildItem $module -Recurse -File | Where-Object Extension -In '.c','.h','.rs','.ps1') +
     @(Get-ChildItem (Join-Path $module '../description'),
-        (Join-Path $module '../../lapic'),(Join-Path $project 'kernel/test/timer/lapic') -Recurse -File |
+        (Join-Path $module '../../lapic'),(Join-Path $project 'test/kernel/timer/lapic') -Recurse -File |
         Where-Object Extension -In '.c','.h','.rs','.ps1') +
     @(Get-Item (Join-Path $project 'kernel/main.c'),(Join-Path $project 'kernel/scripts/build.ps1'))
 $manifest=$sources | ForEach-Object {Get-FileHash $_.FullName}
@@ -43,7 +43,7 @@ Get-FileHash "$normal/kernel.elf","$lost/kernel.elf","$loop/kernel.elf","$loopLo
 & (Join-Path $PSScriptRoot 'firmware.ps1') -Mode lost -ImageDirectory $lost -QemuDirectory $QemuDirectory |
     Tee-Object -FilePath "$out/lost.log"
 for ($index=1; $index -le 10; ++$index) {
-    & (Join-Path $project 'kernel/test/timer/lapic/scripts/loop-firmware.ps1') -UseBuilt -ImageDirectory $loop `
+    & (Join-Path $project 'test/kernel/timer/lapic/scripts/loop-firmware.ps1') -UseBuilt -ImageDirectory $loop `
         -QemuDirectory $QemuDirectory -StopAfterEvents 16 6>&1 | Tee-Object -FilePath "$out/loop-$index.log"
     Write-Output "Continuous watchdog boot $index/10 verified"
 }

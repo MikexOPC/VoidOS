@@ -56,5 +56,5 @@ pub fn step(length: u32, tail: u32, input: u32) -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../test/editor/plan_test.rs"]
+#[path = "../../../../../test/kernel/console/line/editor/plan_test.rs"]
 mod tests;

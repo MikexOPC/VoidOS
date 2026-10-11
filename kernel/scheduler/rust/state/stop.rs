@@ -45,5 +45,5 @@ impl Owner {
 }
 
 #[cfg(test)]
-#[path = "../../test/stop/stop_test.rs"]
+#[path = "../../../../test/kernel/scheduler/stop/stop_test.rs"]
 mod stop_test;

@@ -2,7 +2,7 @@
 #include "kernel/diagnostics/log.h"
 #include "arch/x86/kernel/platform.h"
 #ifdef KERNEL_TEST_BOOTSTRAP_MEMORY
-#include "kernel/test/bootstrap/probes.h"
+#include "test/kernel/bootstrap/probes.h"
 #endif
 
 #ifndef KERNEL_TEST_BOOTSTRAP_MEMORY

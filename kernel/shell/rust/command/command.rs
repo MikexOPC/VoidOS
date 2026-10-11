@@ -17,5 +17,5 @@ pub fn classify(word: u64, length: u32, arguments: u32) -> u32 {
 }
 
 #[cfg(test)]
-#[path = "../../test/command/command_test.rs"]
+#[path = "../../../../test/kernel/shell/command/command_test.rs"]
 mod tests;

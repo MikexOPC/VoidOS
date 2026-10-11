@@ -85,9 +85,9 @@ Solo allora viene stampato KERNEL_OBJECTS_OK.
 
 ```powershell
 .\kernel\scripts\build.ps1 -Install
-.\kernel\test\host.ps1
-.\kernel\test\image.ps1
-.\kernel\test\firmware.ps1 -UseInstalled
+.\test\kernel\host.ps1
+.\test\kernel\image.ps1
+.\test\kernel\firmware.ps1 -UseInstalled
 ```
 
 Serve il bootloader costruito con `-BootKernel` e il profilo della

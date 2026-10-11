@@ -83,10 +83,10 @@ handler con ritorno e una prova del driver seriale tramite interrupt.
 
 ## Test
 
-`kernel/test/host.ps1` include il parser C e quattro test Rust:
+`test/kernel/host.ps1` include il parser C e quattro test Rust:
 mutazioni del checksum, letture fallite, troncamenti, duplicati,
 limiti delle collezioni, record ignorati e output invariato su errore.
-`kernel/test/firmware.ps1 -UseInstalled` confronta la copia persistente
+`test/kernel/firmware.ps1 -UseInstalled` confronta la copia persistente
 con la RAM MADT originale nel monitor QEMU e verifica la finestra
 revocata. Il caso a quattro CPU prova la discovery, non l'avvio SMP.
 

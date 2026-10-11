@@ -2,7 +2,7 @@
 #include "../pixels/session.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #if defined(KERNEL_TEST_CONSOLE_DRAW)
-#include "kernel/console/video/test/profiling/profile.h"
+#include "test/kernel/console/video/profiling/profile.h"
 #define DRAW_MARK(phase) do { if (!kernel_console_draw_mark(phase)) return 0; } while (0)
 #else
 #define DRAW_MARK(phase) ((void)0)

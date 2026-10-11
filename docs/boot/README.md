@@ -16,7 +16,7 @@ Services.
 
 Il codice specifico x86 segue la struttura `arch/x86/`.
 Il bootloader UEFI si trova in `arch/x86/boot/uefi/`; i suoi test sono
-separati in `arch/x86/boot/uefi/test/entry_test.c`.
+separati in `test/arch/x86/boot/uefi/entry_test.c`.
 `file_probe.c` gestisce la lettura, `file_protocol.h` contiene solo i
 prefissi delle interfacce UEFI necessari; `test/file_test.c` li simula.
 `storage/kernel_file.c` legge il kernel completo e applica il validatore
@@ -108,7 +108,7 @@ Nei casi di errore puo avviare la shell UEFI invece del menu.
 Per ripetere automaticamente gli otto scenari di filesystem e kernel:
 
 ```powershell
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```
 
 Il test usa copie separate dell'eseguibile, del volume e delle variabili

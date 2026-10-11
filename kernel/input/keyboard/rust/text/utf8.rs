@@ -16,5 +16,5 @@ pub fn encode(scalar: u32) -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../test/text/utf8_test.rs"]
+#[path = "../../../../../test/kernel/input/keyboard/text/utf8_test.rs"]
 mod tests;

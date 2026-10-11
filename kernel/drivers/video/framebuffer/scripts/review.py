@@ -5,7 +5,8 @@ import json
 import re
 
 ROOT = Path(__file__).resolve().parents[5]
-MODULES = ('kernel/drivers/video/framebuffer', 'arch/x86/boot/uefi/graphics')
+MODULES = ('kernel/drivers/video/framebuffer', 'arch/x86/boot/uefi/graphics',
+           'test/kernel/drivers/video/framebuffer', 'test/arch/x86/boot/uefi/graphics')
 SOURCE = {'.c', '.h', '.rs', '.ps1', '.py'}
 
 # ============ module review ============

@@ -49,7 +49,7 @@ rilascio, mantenendo invariato CR3 in entrambi gli scenari positivi.
 
 ```powershell
 ./arch/x86/boot/uefi/scripts/build.ps1
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```
 
 [Convenzione Microsoft x64](https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention):

@@ -29,11 +29,23 @@ try {
     foreach ($profile in @('debug','release')) {
         $optimization = if ($profile -eq 'release') { '2' } else { '0' }
         Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
-            '-C','overflow-checks=yes',"$project/kernel/console/video/test/rust/cursor/plan_test.rs",
+            '-C','overflow-checks=yes',"$project/test/kernel/console/video/rust/text/utf8_test.rs",
+            '-o',"$out/text-$profile.exe")
+        Invoke-Checked "$out/text-$profile.exe" @()
+    }
+    Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024','--crate-type=lib',
+        '--emit=metadata','-D','warnings',"$project/kernel/console/video/rust/text/utf8.rs",'-o',"$out/text-clippy.rmeta")
+    Invoke-Checked $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
+        '-C','panic=abort','-C','opt-level=2','-C','overflow-checks=yes',
+        "$project/kernel/console/video/rust/text/utf8.rs",'-o',"$out/text.obj")
+    foreach ($profile in @('debug','release')) {
+        $optimization = if ($profile -eq 'release') { '2' } else { '0' }
+        Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
+            '-C','overflow-checks=yes',"$project/test/kernel/console/video/rust/cursor/plan_test.rs",
             '-o',"$out/$profile.exe")
         Invoke-Checked "$out/$profile.exe" @()
         Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
-            '-C','overflow-checks=yes',"$project/kernel/console/video/test/rust/timing/budget_test.rs",
+            '-C','overflow-checks=yes',"$project/test/kernel/console/video/rust/timing/budget_test.rs",
             '-o',"$out/timing-$profile.exe")
         Invoke-Checked "$out/timing-$profile.exe" @()
     }
@@ -50,8 +62,8 @@ try {
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
         "$project/kernel/console/video/console.c","$project/kernel/console/video/render.c",
         "$project/kernel/console/video/measurement/budget.c",
-        "$project/kernel/console/video/test/measurement/measurement_cases.c",
-        "$project/kernel/console/video/test/host/cases.c","$project/kernel/console/video/test/host/render_cases.c",
+        "$project/test/kernel/console/video/measurement/measurement_cases.c",
+        "$project/test/kernel/console/video/host/cases.c","$project/test/kernel/console/video/host/render_cases.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"))
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
         "$project/kernel/console/video/batch/render.c",("/Fo$out/batch-render.obj"),("/Fd$out/host.pdb"))
@@ -61,33 +73,52 @@ try {
         '/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/host.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
-        "$project/kernel/console/video/test/batch/cases.c",("/Fo$out/batch-cases.obj"),("/Fd$out/host.pdb"))
+        "$project/kernel/console/video/service/console.c",("/Fo$out/service.obj"),("/Fd$out/service.pdb"))
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
+        "$project/test/kernel/console/video/service/cases.c",("/Fo$out/service-cases.obj"),("/Fd$out/service.pdb"))
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/fsanitize=address','/MD',
+        "$out/console.obj","$out/plan.obj","$out/text.obj","$out/service.obj","$out/service-cases.obj",
+        ("/Fe$out/service.exe"),'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/service.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
+        "$project/test/kernel/console/video/batch/cases.c",("/Fo$out/batch-cases.obj"),("/Fd$out/host.pdb"))
     Invoke-Checked "$bin/cl.exe" @('/nologo','/fsanitize=address','/MD',
         "$out/console.obj","$out/render.obj","$out/plan.obj","$out/budget.obj","$out/timing.obj",
         "$out/batch-render.obj","$out/batch-cases.obj",("/Fe$out/batch.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/batch.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
-        "$project/kernel/console/video/test/profiling/profile.c",
-        "$project/kernel/console/video/test/profiling/cases.c",
+        "$project/test/kernel/console/video/profiling/profile.c",
+        "$project/test/kernel/console/video/profiling/cases.c",
         ("/Fo$out/"),("/Fd$out/profile.pdb"),("/Fe$out/profile.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/profile.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
-        ("/I$project"),"$project/kernel/console/video/test/active/snapshot.c",
-        "$project/kernel/console/video/test/active/snapshot_cases.c",
+        ("/I$project"),"$project/test/kernel/console/video/active/snapshot.c",
+        "$project/test/kernel/console/video/active/snapshot_cases.c",
         ("/Fo$out/"),("/Fd$out/snapshot.pdb"),("/Fe$out/snapshot.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/snapshot.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
         ("/I$project"),"$project/arch/x86/kernel/scheduler/stacks.c",
         "$project/arch/x86/kernel/scheduler/capabilities.c",
         "$project/arch/x86/kernel/scheduler/mapping/native.c",
-        "$project/arch/x86/kernel/scheduler/test/mapping/native_test.c",
+        "$project/test/arch/x86/kernel/scheduler/mapping/native_test.c",
         ("/Fo$out/"),("/Fd$out/native.pdb"),("/Fe$out/native.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/native.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
+        ("/I$project"),"$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c",
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/live/cases.c",
+        ("/Fo$out/"),("/Fd$out/live.pdb"),("/Fe$out/live.exe"),'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/live.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/Gy',
+        '/DKERNEL_CONSOLE_SHELL=1',("/I$project"),
+        "$project/test/kernel/console/video/runtime/worker_test.c",
+        ("/Fo$out/worker.obj"),("/Fd$out/worker.pdb"),("/Fe$out/worker.exe"),
+        '/link','/incremental:no','/DEBUG','/OPT:REF','/WX')
+    Invoke-Checked "$out/worker.exe" @()
     Invoke-Checked $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
         '-C','panic=abort','-C','opt-level=2',
         "$project/arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs",'-o',"$out/drawing.obj")
     $gatewayObjects = @("$out/drawing.obj")
-    foreach ($source in @('gateway/cell.c','test/gateway/cases.c','font/font.c')) {
+    foreach ($source in @('gateway/cell.c','../../../../../../test/arch/x86/kernel/drivers/video/framebuffer/gateway/cases.c','font/font.c')) {
         $object = "$out/gateway-" + $source.Replace('/','-').Replace('.c','.obj')
         Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
             ("/I$project"),"$project/arch/x86/kernel/drivers/video/framebuffer/$source",("/Fo$object"),("/Fd$out/host.pdb"))
@@ -98,28 +129,31 @@ try {
     Invoke-Checked "$out/gateway.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
         ("/I$project"),"$project/arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c",
-        "$project/arch/x86/kernel/drivers/video/framebuffer/test/gateway/inventory_cases.c",
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/gateway/inventory_cases.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"),("/Fe$out/inventory.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/inventory.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
         '/DKERNEL_TEST_CONSOLE_ACTIVE=1',("/I$project"),
-        "$project/kernel/console/video/test/host/hpet_policy.c",
+        "$project/test/kernel/console/video/host/hpet_policy.c",
         "$project/arch/x86/kernel/timer/hpet/description/probe/policy.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"),("/Fe$out/hpet-policy.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/hpet-policy.exe" @()
     $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/kernel/console/video/console.c" `
-        "$project/kernel/console/video/render.c" "$project/kernel/console/video/test/host/render_cases.c" `
+        "$project/kernel/console/video/service/console.c" "$project/test/kernel/console/video/service/cases.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c" `
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/live/cases.c" `
+        "$project/kernel/console/video/render.c" "$project/test/kernel/console/video/host/render_cases.c" `
         "$project/kernel/console/video/measurement/budget.c" `
-        "$project/kernel/console/video/test/measurement/measurement_cases.c" `
+        "$project/test/kernel/console/video/measurement/measurement_cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/cell.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/native.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/test/gateway/inventory_cases.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/test/gateway/cases.c" `
-        "$project/kernel/console/video/test/kernel/render_probe.c" `
-        "$project/kernel/console/video/test/host/cases.c" "$project/kernel/console/video/test/kernel/probe.c" `
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/gateway/inventory_cases.c" `
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/gateway/cases.c" `
+        "$project/test/kernel/console/video/kernel/render_probe.c" `
+        "$project/test/kernel/console/video/host/cases.c" "$project/test/kernel/console/video/kernel/probe.c" `
         2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml = Get-Content "$out/cppcheck.xml"
@@ -128,20 +162,20 @@ try {
     }
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         -DKERNEL_TEST_CONSOLE_ACTIVE=1 -DKERNEL_TEST_CONSOLE_DRAW=1 -DKERNEL_TEST_CONSOLE_BATCH=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
-        "$project/kernel/console/video/test/active/worker.c" `
-        "$project/kernel/console/video/test/profiling/profile.c" `
-        "$project/kernel/console/video/test/profiling/cases.c" `
+        "$project/test/kernel/console/video/active/worker.c" `
+        "$project/test/kernel/console/video/profiling/profile.c" `
+        "$project/test/kernel/console/video/profiling/cases.c" `
         "$project/kernel/console/video/batch/render.c" `
-        "$project/kernel/console/video/test/batch/cases.c" `
+        "$project/test/kernel/console/video/batch/cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c" `
-        "$project/kernel/console/video/test/active/snapshot.c" `
-        "$project/kernel/console/video/test/active/snapshot_cases.c" `
+        "$project/test/kernel/console/video/active/snapshot.c" `
+        "$project/test/kernel/console/video/active/snapshot_cases.c" `
         "$project/arch/x86/kernel/scheduler/mapping/native.c" `
-        "$project/arch/x86/kernel/scheduler/test/mapping/native_test.c" `
+        "$project/test/arch/x86/kernel/scheduler/mapping/native_test.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `
         "$project/arch/x86/kernel/drivers/input/ps2/runtime/task.c" `
         "$project/arch/x86/kernel/drivers/input/ps2/runtime/session.c" `
-        "$project/kernel/console/video/test/host/hpet_policy.c" `
+        "$project/test/kernel/console/video/host/hpet_policy.c" `
         "$project/arch/x86/kernel/timer/hpet/description/probe/policy.c" `
         "$project/arch/x86/kernel/timer/hpet/watchdog/core.c" `
         "$project/arch/x86/kernel/timer/hpet/watchdog/recovery/control.c" `
@@ -150,6 +184,22 @@ try {
     [xml]$activeXml = Get-Content "$out/cppcheck-active.xml"
     if (@($activeXml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
         throw 'Blocking active static diagnostics'
+    }
+    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+        -DKERNEL_CONSOLE_SHELL=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
+        "$project/kernel/console/video/service/console.c" "$project/kernel/shell/shell.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/console/runtime.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `
+        "$project/arch/x86/kernel/drivers/input/ps2/runtime/task.c" `
+        "$project/arch/x86/kernel/drivers/input/ps2/runtime/session.c" `
+        "$project/arch/x86/kernel/drivers/input/ps2/shell/task.c" `
+        "$project/arch/x86/kernel/scheduler/integration/kernel.c" `
+        "$project/arch/x86/kernel/scheduler/mapping/native.c" 2> "$out/cppcheck-shell.xml"
+    if ($LASTEXITCODE) { throw 'Operational console cppcheck failed' }
+    [xml]$shellXml = Get-Content "$out/cppcheck-shell.xml"
+    if (@($shellXml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
+        throw 'Blocking operational console static diagnostics'
     }
 } finally {
     $env:INCLUDE=$savedInclude; $env:LIB=$savedLib; $env:PATH=$savedPath

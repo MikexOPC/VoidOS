@@ -83,30 +83,36 @@ try {
         $sdk+'/Include/'+$version.Name+'/um;'+$sdk+'/Include/'+$version.Name+'/shared'
     $env:LIB=$vc.FullName+'/lib/x64;'+$sdk+'/Lib/'+$version.Name+'/ucrt/x64;'+$sdk+'/Lib/'+$version.Name+'/um/x64'
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/DKERNEL_PS2_HOST_TEST','/MD','/O2',("/I$project"),"$project/kernel/drivers/input/ps2/test/decoder/abi_test.c",
+        '/DKERNEL_PS2_HOST_TEST','/MD','/O2',("/I$project"),"$project/test/kernel/drivers/input/ps2/decoder/abi_test.c",
         ("/Fo$out/abi.obj"),("/Fd$out/abi.pdb"),("/Fe$out/abi.exe"),'/link','/incremental:no',"$out/decoder.obj")
     Invoke-Checked "$out/abi.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',("/I$project"),"$project/kernel/input/keyboard/test/text/abi_test.c",
+        '/MD','/O2',("/I$project"),"$project/test/kernel/input/keyboard/text/abi_test.c",
         ("/Fo$out/text.obj"),("/Fd$out/text.pdb"),("/Fe$out/text.exe"),'/link','/incremental:no',"$out/decoder.obj")
     Invoke-Checked "$out/text.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',("/I$project"),"$project/kernel/console/line/test/editor/abi_test.c","$project/kernel/console/line/line.c",
+        '/MD','/O2',("/I$project"),"$project/test/kernel/console/line/editor/abi_test.c","$project/kernel/console/line/line.c",
         ("/Fo$out/"),("/Fd$out/line.pdb"),("/Fe$out/line.exe"),'/link','/incremental:no',"$out/decoder.obj")
     Invoke-Checked "$out/line.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',("/I$project"),"$project/kernel/shell/test/command/abi_test.c","$project/kernel/shell/shell.c",
+        '/MD','/O2',("/I$project"),"$project/test/kernel/shell/command/abi_test.c","$project/kernel/shell/shell.c",
         "$project/kernel/shell/queue.c","$project/kernel/console/line/line.c",("/Fo$out/"),("/Fd$out/shell.pdb"),
         ("/Fe$out/shell.exe"),'/link','/incremental:no',"$out/decoder.obj")
     Invoke-Checked "$out/shell.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',("/I$project"),"$project/arch/x86/kernel/drivers/input/ps2/test/shell/bridge_test.c",
+        '/MD','/O2',("/I$project"),"$project/test/arch/x86/kernel/drivers/input/ps2/shell/bridge_test.c",
         "$project/arch/x86/kernel/drivers/input/ps2/shell/task.c","$project/kernel/shell/queue.c","$project/kernel/console/line/line.c",
         ("/Fo$out/"),("/Fd$out/bridge.pdb"),("/Fe$out/bridge.exe"),'/link','/incremental:no',"$out/decoder.obj")
     Invoke-Checked "$out/bridge.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/DKERNEL_CONSOLE_SHELL=1',("/I$project"),
+        "$project/test/arch/x86/kernel/drivers/input/ps2/shell/bridge_test.c",
+        "$project/arch/x86/kernel/drivers/input/ps2/shell/task.c","$project/kernel/shell/queue.c","$project/kernel/console/line/line.c",
+        ("/Fo$out/"),("/Fd$out/console-bridge.pdb"),("/Fe$out/console-bridge.exe"),'/link','/incremental:no',"$out/decoder.obj")
+    Invoke-Checked "$out/console-bridge.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
         '/MD','/O2',("/I$project"),"$project/kernel/drivers/input/ps2/controller/controller.c","$project/kernel/drivers/input/ps2/controller/transport.c",
-        "$project/kernel/drivers/input/ps2/test/controller/transport_test.c",("/Fo$out/"),("/Fd$out/controller.pdb"),
+        "$project/test/kernel/drivers/input/ps2/controller/transport_test.c",("/Fo$out/"),("/Fd$out/controller.pdb"),
         ("/Fe$out/controller.exe"),'/link','/incremental:no')
     Invoke-Checked "$out/controller.exe" @()
     foreach ($dependency in @('kernel/firmware/acpi/rust/root/layout.rs','lib/firmware/acpi/rust/rsdp/validation.rs')) {
@@ -115,8 +121,8 @@ try {
             '-C','panic=abort','-C','opt-level=2',"$project/$dependency",'-o',"$out/$name")
     }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2','/Gy',("/I$project"),"$project/kernel/drivers/input/ps2/controller/discovery.c","$project/kernel/drivers/input/ps2/test/controller/discovery_test.c",
-        "$project/kernel/drivers/input/ps2/test/controller/platform.c",
+        '/MD','/O2','/Gy',("/I$project"),"$project/kernel/drivers/input/ps2/controller/discovery.c","$project/test/kernel/drivers/input/ps2/controller/discovery_test.c",
+        "$project/test/kernel/drivers/input/ps2/controller/platform.c",
         "$project/kernel/firmware/acpi/root.c","$project/lib/firmware/acpi/rsdp.c", "$project/lib/memory/address_ranges.c",
         ("/Fo$out/"),("/Fd$out/discovery.pdb"),("/Fe$out/discovery.exe"),'/link','/incremental:no','/opt:ref',
         "$out/kernel-firmware-acpi-rust-root-layout.obj","$out/lib-firmware-acpi-rust-rsdp-validation.obj")
@@ -129,8 +135,8 @@ try {
     }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
         '/MD','/O2','/Gy',("/I$project"),"$project/arch/x86/kernel/drivers/input/ps2/runtime/route.c",
-        "$project/arch/x86/kernel/drivers/input/ps2/runtime/interrupt.c", "$project/arch/x86/kernel/drivers/input/ps2/test/runtime/runtime_test.c",
-        "$project/kernel/drivers/input/ps2/test/controller/platform.c", "$project/kernel/firmware/acpi/madt/records.c",
+        "$project/arch/x86/kernel/drivers/input/ps2/runtime/interrupt.c", "$project/test/arch/x86/kernel/drivers/input/ps2/runtime/runtime_test.c",
+        "$project/test/kernel/drivers/input/ps2/controller/platform.c", "$project/kernel/firmware/acpi/madt/records.c",
         "$project/kernel/firmware/acpi/root.c","$project/lib/firmware/acpi/rsdp.c", "$project/lib/memory/address_ranges.c",
         ("/Fo$out/"),("/Fd$out/runtime.pdb"),("/Fe$out/runtime.exe"),'/link','/incremental:no','/opt:ref',
         "$out/kernel-firmware-acpi-rust-root-layout.obj","$out/lib-firmware-acpi-rust-rsdp-validation.obj",
@@ -138,15 +144,15 @@ try {
     Invoke-Checked "$out/runtime.exe" @()
     $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
-        ("-I$project") -DKERNEL_PS2_HOST_TEST "$project/kernel/drivers/input/ps2/test/decoder/abi_test.c" "$project/kernel/drivers/input/ps2/controller/controller.c" `
-        "$project/kernel/drivers/input/ps2/controller/transport.c" "$project/kernel/drivers/input/ps2/controller/discovery.c" "$project/kernel/drivers/input/ps2/test/controller/transport_test.c" `
-        "$project/kernel/drivers/input/ps2/test/controller/discovery_test.c" "$project/arch/x86/kernel/drivers/input/ps2/integration/native.c" `
-        "$project/arch/x86/kernel/drivers/input/ps2/runtime" "$project/arch/x86/kernel/drivers/input/ps2/test/runtime/runtime_test.c" `
-        "$project/kernel/input/keyboard/test/text/abi_test.c" `
-        "$project/kernel/console/line/test/editor/abi_test.c" "$project/kernel/console/line/line.c" `
-        "$project/kernel/shell/test/command/abi_test.c" "$project/kernel/shell/shell.c" "$project/kernel/shell/queue.c" `
+        ("-I$project") -DKERNEL_PS2_HOST_TEST "$project/test/kernel/drivers/input/ps2/decoder/abi_test.c" "$project/kernel/drivers/input/ps2/controller/controller.c" `
+        "$project/kernel/drivers/input/ps2/controller/transport.c" "$project/kernel/drivers/input/ps2/controller/discovery.c" "$project/test/kernel/drivers/input/ps2/controller/transport_test.c" `
+        "$project/test/kernel/drivers/input/ps2/controller/discovery_test.c" "$project/arch/x86/kernel/drivers/input/ps2/integration/native.c" `
+        "$project/arch/x86/kernel/drivers/input/ps2/runtime" "$project/test/arch/x86/kernel/drivers/input/ps2/runtime/runtime_test.c" `
+        "$project/test/kernel/input/keyboard/text/abi_test.c" `
+        "$project/test/kernel/console/line/editor/abi_test.c" "$project/kernel/console/line/line.c" `
+        "$project/test/kernel/shell/command/abi_test.c" "$project/kernel/shell/shell.c" "$project/kernel/shell/queue.c" `
         "$project/arch/x86/kernel/drivers/input/ps2/shell/task.c" `
-        "$project/arch/x86/kernel/drivers/input/ps2/test/shell/bridge_test.c" `
+        "$project/test/arch/x86/kernel/drivers/input/ps2/shell/bridge_test.c" `
         2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml=Get-Content "$out/cppcheck.xml"
@@ -156,6 +162,6 @@ try {
 } finally {
     $env:INCLUDE=$savedInclude; $env:LIB=$savedLib; $env:PATH=$savedPath
 }
-Get-FileHash $source, (Join-Path $project 'kernel/drivers/input/ps2/test/decoder/set2_test.rs') |
+Get-FileHash $source, (Join-Path $project 'test/kernel/drivers/input/ps2/decoder/set2_test.rs') |
     Select-Object Path,Hash | ConvertTo-Json | Set-Content "$out/sources.json"
 "PASS: PS/2 decoder host evidence $out"

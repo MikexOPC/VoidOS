@@ -52,6 +52,8 @@ def main():
         present = 'KERNEL_CONSOLE_GRID_OK' in log
         if present != args.diagnostic:
             raise RuntimeError(f'Unexpected console probe state in boot{boot}')
+        if ('KERNEL_CONSOLE_SERVICE_RAM_OK' in log) != args.diagnostic:
+            raise RuntimeError(f'Unexpected service RAM probe state in boot{boot}')
         if args.render:
             numbers = [re.search(name + r': 0x([0-9a-fA-F]{16})', log) for name in
                 ['KERNEL_CONSOLE_RENDER_CELLS','KERNEL_CONSOLE_RENDER_IF1_CELLS','KERNEL_CONSOLE_RENDER_TSC_MAX']]
@@ -64,6 +66,7 @@ def main():
     output = directory / 'console-grid-results.json'
     output.write_text(json.dumps({'Kernel': digest, 'Diagnostic': args.diagnostic,
         'Absent': args.absent, 'Boots': args.boots, 'GridProbePerBoot': args.diagnostic,
+        'ServiceRamProbePerBoot': args.diagnostic,
         'ShutdownTimeoutSeconds': args.shutdown_timeout,
         'Render': args.render, 'MaxTscPerBoot': timing,
         'Provider': str(directory / 'results.json')}, indent=2), encoding='utf-8')

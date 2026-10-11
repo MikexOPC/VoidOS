@@ -21,7 +21,7 @@ Nel loader la funzione sostituisce confronti locali in tre componenti:
 - mappa di memoria: descrittori fisici sovrapposti;
 - piano di paging: alias fisici e sovrapposizioni virtuali.
 
-`lib/memory/test/address_ranges_test.c` verifica intervalli vuoti,
+`test/lib/memory/address_ranges_test.c` verifica intervalli vuoti,
 adiacenza, contenimento, simmetria e indirizzi al limite dei 64 bit.
 Verifica inoltre 73984 combinazioni di piccoli intervalli contro un
 oracolo che enumera i singoli indirizzi, separato dall'algoritmo usato

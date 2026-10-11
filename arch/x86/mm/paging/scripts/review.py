@@ -4,7 +4,7 @@ import json
 import re
 
 ROOT = Path(__file__).absolute().parents[5]
-MODULES = ('arch/x86/mm/paging', 'kernel/test/mm/paging')
+MODULES = ('arch/x86/mm/paging', 'test/kernel/mm/paging')
 SOURCE = {'.c', '.h', '.rs', '.ps1', '.py'}
 
 # ============ main ============

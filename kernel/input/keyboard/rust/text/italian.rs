@@ -98,5 +98,5 @@ pub fn step(mut state: u32, event: u32) -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../test/text/italian_test.rs"]
+#[path = "../../../../../test/kernel/input/keyboard/text/italian_test.rs"]
 mod tests;

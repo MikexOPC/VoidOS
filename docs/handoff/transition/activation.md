@@ -9,7 +9,7 @@ ritorno al firmware per le regressioni dei percorsi di errore.
 
 ```powershell
 & .\arch\x86\boot\uefi\scripts\build.ps1 -BootKernel
-& .\arch\x86\boot\uefi\test\kernel\firmware_test.ps1
+& .\test\arch\x86\boot\uefi\kernel\firmware_test.ps1
 ```
 
 Il test avvia QEMU senza finestra e verifica il risultato tramite monitor.

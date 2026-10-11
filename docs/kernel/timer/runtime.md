@@ -14,8 +14,8 @@ il contatore; il log non misura secondi o garantisce frequenza scheduler.
 
 ```powershell
 ./kernel/scripts/build.ps1 -EventLoop -OutputDirectory kernel/build/event-loop
-./kernel/test/timer/lapic/scripts/loop-firmware.ps1 -UseBuilt
-./kernel/test/timer/lapic/scripts/loop-firmware.ps1 -UseBuilt -Ram 256 -Processors 4
+./test/kernel/timer/lapic/scripts/loop-firmware.ps1 -UseBuilt
+./test/kernel/timer/lapic/scripts/loop-firmware.ps1 -UseBuilt -Ram 256 -Processors 4
 ```
 
 La prova usa una ESP e una VM temporanee; non cambia la ESP ordinaria.

@@ -30,10 +30,14 @@ static X86_APIC_PROFILE apic_profile;
 static X86_APIC_CAPABILITIES apic_capabilities;
 
 #ifdef KERNEL_TEST_PS2_DECODER
+
 int kernel_ps2_decoder_check(void);
+
 #endif
 #ifdef KERNEL_TEST_PS2_CONTROLLER
+
 #include "arch/x86/kernel/drivers/input/ps2/integration/native.h"
+
 #endif
 
 __declspec(noreturn) static void kernel_continue(void);
@@ -175,14 +179,14 @@ __declspec(noreturn) static void kernel_continue(void)
             !x86_uart_irq_run(context, &memory.Window, paging,
                 (const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&memory.Arena, &madt_object),
                 &apic_profile, &apic_capabilities)) kernel_panic("UART_IRQ_INVALID");
-#ifdef KERNEL_TEST_CONSOLE_ACTIVE
+#if defined(KERNEL_TEST_CONSOLE_ACTIVE) || defined(KERNEL_CONSOLE_SHELL)
         if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &memory.Window,
             x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
 #endif
         if (context->Info.Acpi.Source &&
             !x86_watchdog_kernel_start(context,&memory.Window,&memory.Arena,&acpi_object,&madt_object,
                 paging,&apic_profile,&apic_capabilities,&hpet_description)) kernel_panic("LAPIC_TIMER_INVALID");
-#ifndef KERNEL_TEST_CONSOLE_ACTIVE
+#if !defined(KERNEL_TEST_CONSOLE_ACTIVE) && !defined(KERNEL_CONSOLE_SHELL)
         if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &memory.Window,
             x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
 #else

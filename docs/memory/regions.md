@@ -67,7 +67,7 @@ stampa OK solo dopo classificazione e rilascio riusciti.
 
 ```powershell
 ./arch/x86/boot/uefi/scripts/build.ps1
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```
 
 [Specifica UEFI: tipi e attributi di memoria](https://uefi.org/specs/UEFI/2.10/07_Services_Boot_Services.html)

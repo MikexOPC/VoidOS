@@ -59,7 +59,8 @@ def number(log, field):
 
 # ====== run_boot ======
 
-def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress, shell, console_draw=False):
+def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress, shell, console_draw=False,
+             console_shell=False, video_absent=False, idle_race=False, idle_rollover=False):
     scenario = out / f"boot-{index}"
     esp = scenario / "esp" / "EFI" / "BOOT"
     esp.mkdir(parents=True)
@@ -80,12 +81,19 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
             "-drive", "if=pflash,format=raw,readonly=on,file=" + (qemu / "share/edk2-x86_64-code.fd").as_posix(),
             "-drive", "if=pflash,format=raw,file=" + variables.as_posix(),
             "-drive", "format=raw,file=fat:rw:" + (scenario / "esp").as_posix()]
+    if video_absent:
+        args += ['-vga', 'none']
     vm = None
     with (scenario / "monitor.log").open("w") as monitor, (scenario / "stderr.log").open("w") as error:
         try:
             vm = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=monitor, stderr=error,
                                   text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             wait_marker(vm, serial, "KERNEL_PS2_TASK_POLL_READY")
+            if idle_rollover:
+                idle_deadline = time.monotonic() + 80
+                while time.monotonic() < idle_deadline:
+                    wait_marker(vm, serial, "KERNEL_PS2_TASK_POLL_READY", 1)
+                    time.sleep(0.05)
             command(vm, "sendkey a 30")
             wait_marker(vm, serial, "PS2_KEY: 0x000000000000001c")
             time.sleep(0.5)  # Normal empty input must survive multiple HPET acknowledgements.
@@ -96,7 +104,7 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
             for key_index in range(stress):
                 command(vm, "sendkey a 1")
                 wait_marker(vm, serial, "PS2_KEY: ", 5, 6 + key_index)
-                time.sleep(0.02)
+                time.sleep((0.083, 0.097, 0.101, 0.109, 0.123)[key_index % 5] if idle_race else 0.02)
             extra_keys = 0
             expected_text = [0x61, 0x62] + [0x61] * stress
             if text_profile:
@@ -176,6 +184,13 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                     raise RuntimeError("Missing " + marker)
             counters = {name: number(log, name) for name in
                         ["PS2_BYTES", "PS2_KEYS", "PS2_RELEASES", "PS2_TASK_IRQS", "PS2_IDLE"]}
+            if idle_rollover:
+                fired = number(log, "KERNEL_WATCHDOG_FIRED")
+                ticks = number(log, "KERNEL_WATCHDOG_TICKS")
+                if not 0 < ticks < 0x80000000 or fired * ticks <= 0x100000000:
+                    raise RuntimeError("No proven full 32-bit counter traversal")
+                counters["WatchdogDeadlines"] = fired
+                counters["MinimumCounterAdvance"] = fired * ticks
             collected = log.index("KERNEL_INPUT_TASKS_COLLECTED")
             session_log = log[:collected].rsplit("# ============ scheduler cooperativo BSP", 1)[-1]
             counters["BudgetBefore"] = number(session_log, "SCHEDULER_BUDGET_BEFORE")
@@ -220,6 +235,18 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                     raise RuntimeError("Truncated command was not rejected")
             command(vm, "stop")
             command(vm, "info registers")
+            if console_shell:
+                if video_absent:
+                    if 'KERNEL_CONSOLE_SHELL_SERIAL_CLEAN' not in log or 'KERNEL_CONSOLE_SHELL_OPEN' in log:
+                        raise RuntimeError('Invalid serial fallback lifetime')
+                    counters['ConsoleShell'] = {'Absent': True}
+                else:
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location('shell_pixels',
+                        project / 'kernel/console/video/scripts/shell/pixels.py')
+                    pixels = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(pixels)
+                    counters['ConsoleShell'] = pixels.verify(vm, scenario, log)
             if console_draw:
                 import importlib.util
                 spec = importlib.util.spec_from_file_location('console_cell',
@@ -236,6 +263,20 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                 raise RuntimeError("Hardware input IRQ trace missing")
             (scenario / "results.json").write_text(json.dumps(counters, indent=2))
             return counters
+        except Exception:
+            if vm is not None and vm.poll() is None:
+                try:
+                    command(vm, "stop")
+                    command(vm, "info registers")
+                    command(vm, "info lapic")
+                    command(vm, "info irq")
+                    owner = re.search(r'KERNEL_WATCHDOG_OWNER: 0x([0-9a-fA-F]{16})', read_serial(serial))
+                    if owner and 0x100000000 <= int(owner[1], 16) < (1 << 47):
+                        command(vm, "x /28gx 0x" + owner[1])
+                    time.sleep(0.2)
+                except (OSError, ValueError):
+                    pass
+            raise
         finally:
             if vm is not None:
                 if vm.poll() is None:
@@ -252,30 +293,45 @@ def main():
     parser.add_argument("--boots", type=int, default=10, choices=range(1, 21))
     parser.add_argument("--qemu", type=Path, default=Path("C:/Program Files/qemu"))
     parser.add_argument("--stress", type=int, default=0, choices=range(201))
+    parser.add_argument("--idle-race", action="store_true")
+    parser.add_argument("--idle-rollover", action="store_true")
     parser.add_argument("--text", action="store_true")
     parser.add_argument("--line-stress", action="store_true")
     parser.add_argument("--shell", action="store_true")
     parser.add_argument("--console-draw", action="store_true")
+    parser.add_argument("--console-shell", action="store_true")
+    parser.add_argument("--video-absent", action="store_true")
     args = parser.parse_args()
+    if args.idle_race and not args.stress:
+        parser.error('--idle-race requires --stress')
     if (args.line_stress or args.shell) and not args.text:
         parser.error("--line-stress/--shell require --text")
     if args.console_draw and not (args.text and args.shell):
         parser.error("--console-draw requires --text and --shell")
+    if args.console_shell and (not (args.text and args.shell) or args.console_draw):
+        parser.error('--console-shell requires --text --shell, excludes --console-draw')
+    if args.video_absent and not args.console_shell:
+        parser.error('--video-absent requires --console-shell')
     project = Path(__file__).resolve().parents[7]
     out = project / "kernel/build" / ("ps2-input-firmware-" + uuid.uuid4().hex)
     out.mkdir()
     manifest = {"Image": image_hash(args.image), "Boots": args.boots, "StressKeys": args.stress,
+                "IdleRace": args.idle_race,
+                "IdleRollover": args.idle_rollover,
                 "ItalianText": args.text,
                 "LineStress": args.line_stress,
                 "Shell": args.shell,
                 "ConsoleDraw": args.console_draw,
+                "ConsoleShell": args.console_shell, "VideoAbsent": args.video_absent,
                 "Loader": image_hash(project / "arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI"),
                 "Qemu": image_hash(args.qemu / "qemu-system-x86_64.exe"),
                 "OVMF": image_hash(args.qemu / "share/edk2-x86_64-code.fd")}
     (out / "images.json").write_text(json.dumps(manifest, indent=2))
     results = []
     for index in range(1, args.boots + 1):
-        results.append(run_boot(project, args.image, args.qemu, out, index, args.stress, args.text, args.line_stress, args.shell, args.console_draw))
+        results.append(run_boot(project, args.image, args.qemu, out, index, args.stress, args.text,
+            args.line_stress, args.shell, args.console_draw, args.console_shell, args.video_absent,
+            args.idle_race, args.idle_rollover))
         print(f"PASS: PS/2 QEMU {index}/{args.boots}, keys/IRQ/idle/cleanup", flush=True)
     (out / "results.json").write_text(json.dumps({**manifest, "Results": results}, indent=2))
     print("PASS: PS/2 input firmware evidence " + str(out), flush=True)

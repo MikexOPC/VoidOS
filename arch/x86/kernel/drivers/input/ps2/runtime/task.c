@@ -6,8 +6,11 @@
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
 #include "kernel/diagnostics/log.h"
 #include "../shell/task.h"
+#ifdef KERNEL_CONSOLE_SHELL
+#include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
+#endif
 #ifdef KERNEL_TEST_CONSOLE_DRAW
-#include "kernel/console/video/test/active/worker.h"
+#include "test/kernel/console/video/active/worker.h"
 #endif
 
 // ====== pop_private ======
@@ -50,6 +53,9 @@ static int line_private(uint32_t scalar)
         owner->LineTruncated = 1;
         return kernel_log(2,"PS2_LINE_FULL");
     }
+#ifdef KERNEL_CONSOLE_SHELL
+    if (!x86_console_edit(owner)) return 0;
+#endif
     if (status != KERNEL_PS2_LINE_SUBMIT) return 1;
     if (owner->Lines == ~0U || !kernel_text("PS2_LINE_READY: ") || !line_emit_private(&owner->Line) ||
         !kernel_text("\nPS2_LINE_LENGTH: ") || !kernel_number(owner->Line.Length) || !kernel_text("\n")) return 0;
@@ -145,16 +151,34 @@ static void worker_private(void)
     X86_PS2_SESSION *owner = x86_ps2_session();
     owner->WorkerGeneration = x86_scheduler_generation();
     if (!kernel_log(1,"KERNEL_PS2_TASK_POLL_READY")) kernel_scheduler_fail_stop();
-    while (!owner->Quiet) {
-        KERNEL_EVENT_REPLY observed = x86_scheduler_event_request(X86_TASK_OBSERVE,4,0);
+    for (;;) {
+        uint32_t poll_ticks = X86_PM_CLOCK_HZ / 10;
+#ifdef KERNEL_CONSOLE_SHELL
+        int pending = x86_console_pending(owner);
+        if (pending < 0) kernel_scheduler_fail_stop();
+        if (owner->Quiet && !pending) break;
+        if (!x86_console_flush(owner)) kernel_scheduler_fail_stop();
+        if (owner->Quiet) { x86_scheduler_yield(); continue; }
+        if (x86_console_pending(owner)) poll_ticks = X86_PM_CLOCK_HZ / 1000;
+#else
         if (owner->Quiet) break;
+#endif
+        KERNEL_EVENT_REPLY observed = x86_scheduler_event_request(X86_TASK_OBSERVE,4,0);
+#ifdef KERNEL_CONSOLE_SHELL
+        if (owner->Quiet) continue;
+#else
+        if (owner->Quiet) break;
+#endif
 #ifdef KERNEL_TEST_CONSOLE_DRAW
         if (!kernel_console_active_worker(owner)) kernel_scheduler_fail_stop();
 #endif
         // Reuse the audited Assembly IF=1 window and SIMD/GPR preservation
         // checks. Bounded100ms bring-up window; empty input then parks.
-        if (!x86_scheduler_irq_poll(&owner->Ready,owner->Clock.Port,owner->Clock.Mask,X86_PM_CLOCK_HZ / 10) ||
+        if (!x86_scheduler_irq_poll(&owner->Ready,owner->Clock.Port,owner->Clock.Mask,poll_ticks) ||
             owner->Error || !x86_scheduler_task_valid()) kernel_scheduler_fail_stop();
+#ifdef KERNEL_CONSOLE_SHELL
+        if (x86_console_pending(owner)) { x86_scheduler_yield(); continue; }
+#endif
         if (!owner->Ready && !owner->Quiet) (void)x86_scheduler_event_request(X86_TASK_WAIT,4,observed.epoch);
         else x86_scheduler_yield();
     }
@@ -171,13 +195,33 @@ void x86_ps2_task(uint32_t index)
     else x86_ps2_shell_task();
 }
 
+// ====== idle_failure ======
+
+static int idle_failure(uint32_t stage)
+{
+    const X86_DISPATCH_STATS *stats = x86_scheduler_session_stats();
+    kernel_text("PS2_IDLE_FAILURE_STAGE: "); kernel_number(stage);
+    kernel_text("\nPS2_DISPATCH_STEPS: "); kernel_number(stats ? stats->steps : UINT32_MAX);
+    kernel_text("\nPS2_DISPATCH_IDLE: "); kernel_number(stats ? stats->idle_calls : UINT32_MAX);
+    kernel_text("\nPS2_WATCHDOG_FAILURE: "); kernel_number(x86_watchdog_failure());
+    kernel_text("\nPS2_WATCHDOG_WAKE_DETAIL: "); kernel_number(x86_watchdog_wake_detail());
+    kernel_text("\nPS2_WATCHDOG_ARM_DETAIL: "); kernel_number(x86_watchdog_arm_detail());
+    kernel_text("\nPS2_WATCHDOG_ARM_REGISTERS: "); kernel_number(x86_watchdog_arm_registers());
+    kernel_text("\nPS2_WATCHDOG_START: "); kernel_number(x86_watchdog_state()->Start);
+    kernel_text("\nPS2_WATCHDOG_TARGET: "); kernel_number(x86_watchdog_state()->Target);
+    kernel_text("\nPS2_WATCHDOG_TICKS: "); kernel_number(x86_watchdog_state()->Ticks);
+    kernel_text("\nPS2_WATCHDOG_COUNT: "); kernel_number(x86_watchdog_state()->Count);
+    kernel_text("\nPS2_WATCHDOG_RESULT: "); kernel_number(x86_watchdog_result()); kernel_text("\n");
+    return 0;
+}
+
 // ====== x86_ps2_idle ======
 
 int x86_ps2_idle(void)
 {
     X86_PS2_SESSION *owner = x86_ps2_session();
-    if (!owner->Active || owner->Quiet || owner->Idle == ~0U || !x86_scheduler_retained_valid() ||
-        !x86_watchdog_idle(&owner->Ready)) return 0;
+    if (!owner->Active || owner->Quiet || owner->Idle == ~0U || !x86_scheduler_retained_valid()) return idle_failure(1);
+    if (!x86_watchdog_idle(&owner->Ready)) return idle_failure(2);
     ++owner->Idle;
-    return kernel_scheduler_irq_drain().reply.status == KERNEL_SCHEDULER_OK;
+    return kernel_scheduler_irq_drain().reply.status == KERNEL_SCHEDULER_OK ? 1 : idle_failure(3);
 }

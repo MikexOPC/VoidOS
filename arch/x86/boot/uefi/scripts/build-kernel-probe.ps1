@@ -2,7 +2,7 @@ param([Parameter(Mandatory)][string]$ToolchainBin, [string]$OutputDirectory,
       [ValidateSet('none', 'contract-write', 'stack-guard', 'execute-data')][string]$Fault = 'none')
 $ErrorActionPreference = 'Stop'
 $bootRoot = Split-Path -Parent $PSScriptRoot
-$projectRoot = (Resolve-Path (Join-Path $bootRoot '..\..\..\..')).Path
+$projectRoot = (Resolve-Path (Join-Path $bootRoot '../../../..')).Path
 $output = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $bootRoot 'build' }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 . (Join-Path $PSScriptRoot 'status.ps1')
@@ -19,16 +19,16 @@ $probeUcrt = Join-Path $probeSdk.FullName 'ucrt'
 [string[]]$probeFlags = @()
 if ($Fault -ne 'none') { $probeFlags = @('/DBOOT_PROBE_FAULT=' + (@('none','contract-write','stack-guard','execute-data').IndexOf($Fault))) }
 & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O1 /c `
-    ('/I' + $probeCompilerInclude) ('/I' + $probeUcrt) @probeFlags ('/I' + $bootRoot) ('/I' + $projectRoot) (Join-Path $bootRoot 'test\kernel\entry.c') ("/Fo$output\kernel_probe.obj")
+    ('/I' + $probeCompilerInclude) ('/I' + $probeUcrt) @probeFlags ('/I' + $bootRoot) ('/I' + $projectRoot) (Join-Path $bootRoot '../../../../test/arch/x86/boot/uefi/kernel/entry.c') ("/Fo$output/kernel_probe.obj")
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione kernel diagnostico fallita.' }
 & (Join-Path $ToolchainBin 'link.exe') /nologo /machine:x64 /subsystem:native `
     /entry:kernel_probe_entry /nodefaultlib /incremental:no /dynamicbase:no /fixed /base:0x100000000 `
-    ("/out:$output\kernel_probe.exe") ("$output\kernel_probe.obj")
+    ("/out:$output/kernel_probe.exe") ("$output/kernel_probe.obj")
 if ($LASTEXITCODE -ne 0) { throw 'Collegamento kernel diagnostico fallito.' }
 
 # ====== lettura limitata del PE prodotto localmente ====== #
 
-$bytes = [IO.File]::ReadAllBytes("$output\kernel_probe.exe")
+$bytes = [IO.File]::ReadAllBytes("$output/kernel_probe.exe")
 function Read-Number([int]$Offset, [int]$Width) {
     if ($Offset -lt 0 -or $Offset -gt $bytes.Length - $Width) { throw 'PE troncato.' }
     switch ($Width) {
@@ -141,5 +141,5 @@ for ($i = 0; $i -lt $count; $i++) {
     Put-Number ($header + 48) 4096 8
     [Array]::Copy($bytes, $segment.RawOffset, $elf, $segment.Offset, $segment.FileBytes)
 }
-[IO.File]::WriteAllBytes("$output\kernel_probe.elf", $elf)
+[IO.File]::WriteAllBytes("$output/kernel_probe.elf", $elf)
 Write-BootStatus OK "Probe ELF generato: $($elf.Length) byte, codice RX e marker BSS RW."

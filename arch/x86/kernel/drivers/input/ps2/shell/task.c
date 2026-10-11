@@ -2,6 +2,9 @@
 #include "../runtime/session.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
+#ifdef KERNEL_CONSOLE_SHELL
+#include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
+#endif
 
 // ====== event_private ======
 
@@ -24,6 +27,9 @@ int x86_ps2_shell_submit(void)
         KERNEL_EVENT_REPLY observed = event_private(X86_TASK_OBSERVE,6,0);
         uint32_t result = kernel_ps2_command_push(&owner->Commands,&command);
         if (result == KERNEL_PS2_QUEUE_OK) {
+#ifdef KERNEL_CONSOLE_SHELL
+            if (!x86_console_submit(owner)) { kernel_ps2_command_clear(&command); return 0; }
+#endif
             (void)event_private(X86_TASK_SIGNAL,5,0);
             kernel_ps2_command_clear(&command); return 1;
         }

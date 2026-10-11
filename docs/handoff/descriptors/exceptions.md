@@ -54,7 +54,7 @@ firmware richiedono la nuova fase nei due percorsi validi.
 Per la prova CPU separata, dopo la build:
 
 ```powershell
-& .\arch\x86\boot\uefi\test\handoff\descriptors\exception_firmware_test.ps1
+& .\test\arch\x86\boot\uefi\handoff\descriptors\scripts\firmware.ps1
 ```
 
 Lo script crea quattro immagini EFI di test in build/, senza sostituire quella

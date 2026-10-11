@@ -1,7 +1,7 @@
 # Bootstrap memoria: profili separati — 9 ottobre 2026
 
 `kernel/main.c` passa da 400 a 193 righe. `kernel/bootstrap/memory.c`
-inizializza le risorse; `kernel/test/bootstrap/probes.c` conserva le prove
+inizializza le risorse; `test/kernel/bootstrap/probes.c` conserva le prove
 originali. Un solo modulo funzionale, con aggiornamenti a build e verificatori.
 
 ## Comportamento

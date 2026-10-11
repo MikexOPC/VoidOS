@@ -29,5 +29,5 @@ pub fn color_word(format: u32, red: u8, green: u8, blue: u8) -> u32 {
 }
 
 #[cfg(test)]
-#[path = "../../test/pixel/validation_test.rs"]
+#[path = "../../../../../../test/kernel/drivers/video/framebuffer/pixel/validation_test.rs"]
 mod tests;

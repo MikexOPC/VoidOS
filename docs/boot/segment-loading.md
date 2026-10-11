@@ -70,7 +70,7 @@ Per ripetere:
 
 ```powershell
 ./arch/x86/boot/uefi/scripts/build.ps1
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```
 
 Il primo [contratto dei segmenti](../handoff/segments.md) viene costruito

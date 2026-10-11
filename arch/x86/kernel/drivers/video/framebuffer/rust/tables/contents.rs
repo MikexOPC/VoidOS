@@ -41,5 +41,5 @@ pub extern "C" fn x86_fb_table_entry(table: u32, slot: u32, physical: u64,
 }
 
 #[cfg(test)]
-#[path = "../../test/rust/tables/contents_test.rs"]
+#[path = "../../../../../../../../test/arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents_test.rs"]
 mod tests;

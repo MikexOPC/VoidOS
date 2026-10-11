@@ -28,7 +28,7 @@ ASan non e un leak detector della RAM fisica UEFI. I test verificano accounting 
 
 ## Riproduzione ed evidenze
 
-Dalla root: eseguire `arch/x86/boot/uefi/scripts/build.ps1 -BootKernel`, quindi `arch/x86/boot/uefi/test/elf/scripts/validate.ps1`. Lo script richiede MSVC/Windows SDK, QEMU/OVMF e un kernel ordinario gia compilato in kernel/build/kernel.elf, usato come fixture immutabile. Gli artefatti sono isolati in arch/x86/boot/uefi/build/elf-validation-<id>/.
+Dalla root: eseguire `arch/x86/boot/uefi/scripts/build.ps1 -BootKernel`, quindi `test/arch/x86/boot/uefi/elf/scripts/validate.ps1`. Lo script richiede MSVC/Windows SDK, QEMU/OVMF e un kernel ordinario gia compilato in kernel/build/kernel.elf, usato come fixture immutabile. Gli artefatti sono isolati in arch/x86/boot/uefi/build/elf-validation-<id>/.
 
 Log riepilogativi: build/r014-build.log, build/r014-validation.log e build/r014-handoff.log. Prima campagna ASan/QEMU: elf-validation-1beb54afb0b943008c550a1dda6002a2; campagna con script senza warning: elf-validation-90bba785a3b7492399beed27cf4dc64e. Riproduttore original-probe.log nella prima campagna. Handoff: kernel-test-673c0771f3544f2088112efeb9f10203.
 

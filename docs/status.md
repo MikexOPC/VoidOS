@@ -1,9 +1,35 @@
-# Stato corrente — 10 ottobre 2026
+# Stato corrente — 11 ottobre 2026
 
 Questo e il riferimento breve dello stato reale. I checkpoint in
 `docs/review/` e i report di modulo restano evidenza del blocco in cui
 sono stati scritti; se una frase al presente li contraddice, vale questo
 file.
+
+I test sono centralizzati in `test/kernel/`, `test/arch/x86/` e `test/lib/`.
+Il runner `scripts/test/run.ps1` richiama le suite originali in processi
+separati; i gate QEMU restano distinti dai test host. Vedere
+[organizzazione ed esecuzione](../test/README.md).
+
+La shell ha ora anche un percorso video nel profilo esplicito `-ConsoleShell`:
+prompt, editor italiano UTF-8, risposte di help/echo/status/exit, wrap/scroll,
+riga corrente conservata durante le risposte e fallback seriale se il video
+manca. Un servizio RAM serializzato alimenta il worker esistente; gruppi
+di massimo otto celle con controllo completo delle risorse live.
+[Contratto e prove correnti](../kernel/console/video/documentation/shell-validation.md).
+Le descrizioni "shell solo seriale" nei checkpoint sotto valgono per quelle
+immagini storiche. Il profilo ordinario rimane distinto; GUI, hardware fisico
+e sessione senza le guardie diagnostiche v0 non sono completati.
+Ultimo blocco: corretto il rollover one-shot32 HPET riprodotto nel ramo idle.
+Contatore fermo fra le attese; un IRQ di rollover anticipato non consuma la
+deadline; il match maturato durante W1C viene riconosciuto senza risveglio
+perso. Status/config estranei, duplicati e MMIO fallita restano errori.
+Test prima/dopo, suite host C/ASan e Rust, cppcheck e 32 boot finali passano:
+10 stress/fallback, 10 video, 10 ordinari, una sessione da 812 eventi tastiera
+e un idle prolungato con 837 scadenze e attraversamento reale del contatore.
+Budget fisico ripristinato; review APPROVE per il fix nel profilo QEMU,
+senza certificare hardware fisico o assenza di altri bug futuri.
+Le campagne storiche fallite e quelle intermedie interrotte restano conservate.
+[Correzione, hash e prove](../arch/x86/kernel/timer/hpet/watchdog/documentation/idle/rollover.md).
 
 ## Cosa e oggi
 
@@ -40,7 +66,7 @@ implementati.
 ## Confermato in questa verifica
 
 - Prima della separazione `kernel/main.c` aveva 400 righe; ora ne ha 193.
-  Inizializzazione in `kernel/bootstrap/`, prove in `kernel/test/bootstrap/`.
+  Inizializzazione in `kernel/bootstrap/`, prove in `test/kernel/bootstrap/`.
   Ownership/NX restano nel percorso ordinario. [Verifica della separazione](../kernel/bootstrap/documentation/memory.md):
   dieci boot consecutivi per profilo e matrice diagnostica di 23 scenari.
 - Contraddizioni al presente, ora etichettate o corrette: [verified-state](review/verified-state.md)

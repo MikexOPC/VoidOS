@@ -23,7 +23,7 @@ generali non dipendono da `arch/` o da servizi firmware.
 
 `lib/memory/address_ranges.*` contiene il confronto numerico degli
 intervalli. ELF, mappa UEFI e piano di paging usano la stessa funzione.
-I test propri della libreria sono in `lib/memory/test/`.
+I test propri della libreria sono in `test/lib/memory/`.
 `lib/memory/buffer_capacity.h` e `lib/memory/rust/capacity/buffer_capacity.rs`
 centralizzano margine, allineamento e limiti
 numerici dei buffer con un'implementazione Rust senza puntatori o heap.
@@ -75,5 +75,5 @@ le letture privilegiate reali vengono verificate nel percorso QEMU.
 
 ```powershell
 ./arch/x86/boot/uefi/scripts/build.ps1
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```

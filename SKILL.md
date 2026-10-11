@@ -5,6 +5,10 @@
 
 R-003: seguire direttive-locali e il [riferimento verificato](docs/review/instructions/security.md). Massimo 400 righe per sorgente e cinque file diretti; limiti inferiori negli esempi sono obiettivi locali. Test e script del componente sono parte del modulo. Per documentazione pura: review delle fonti/link; nessun test runtime inventato.
 
+Dal 2026-10-10 i test sono centralizzati in `test/kernel/`, `test/arch/x86/`
+e `test/lib/`, come concordato con l'utente in direttive-locali. Restano parte
+del rispettivo modulo; i percorsi locali nei template sono esempi storici.
+
 ## Skill 1: hardware-real-device-mapper
 
 ### Trigger

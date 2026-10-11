@@ -77,7 +77,7 @@ con un modello delle pagine vive e 512 sequenze riproducibili di errori.
 
 ```powershell
 ./arch/x86/boot/uefi/scripts/build.ps1
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```
 
 Il [rilevamento CPUID](cpu-capabilities.md), il costruttore e la verifica

@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parents[5]
 MODULES = (
     'kernel/drivers/input/ps2', 'kernel/input/keyboard', 'kernel/input/integration',
     'kernel/console/line', 'kernel/shell', 'arch/x86/kernel/drivers/input/ps2',
+    'test/kernel/drivers/input/ps2', 'test/kernel/input/keyboard',
+    'test/kernel/console/line', 'test/kernel/shell', 'test/arch/x86/kernel/drivers/input/ps2',
 )
 SOURCE = {'.c', '.h', '.rs', '.asm', '.ps1', '.py'}
 

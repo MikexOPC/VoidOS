@@ -77,6 +77,9 @@ BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *source, BOOT_U32 goal,
    source is an owned aligned Count/Error prefix with Count in 0..1. */
 BOOT_U32 x86_watchdog_idle(const volatile BOOT_U32 *source);
 BOOT_U32 x86_watchdog_result(void);
+BOOT_U32 x86_watchdog_wake_detail(void);
+BOOT_U32 x86_watchdog_arm_detail(void);
+BOOT_U64 x86_watchdog_arm_registers(void);
 int x86_watchdog_close(void);
 /* BSP/IF=0 session history: first operational and first cleanup failure.
  * Reset only when opening an unowned session, not on retries or close. */

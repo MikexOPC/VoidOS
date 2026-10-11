@@ -107,5 +107,5 @@ pub fn step(state: u32, byte: u32) -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../test/decoder/set2_test.rs"]
+#[path = "../../../../../../test/kernel/drivers/input/ps2/decoder/set2_test.rs"]
 mod tests;

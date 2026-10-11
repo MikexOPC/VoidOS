@@ -111,9 +111,9 @@ impl Owner {
 }
 
 #[cfg(test)]
-#[path = "../../test/state/wait_test.rs"]
+#[path = "../../../../test/kernel/scheduler/state/wait_test.rs"]
 mod wait_test;
 
 #[cfg(test)]
-#[path = "../../test/state/wait_model.rs"]
+#[path = "../../../../test/kernel/scheduler/state/wait_model.rs"]
 mod wait_model;

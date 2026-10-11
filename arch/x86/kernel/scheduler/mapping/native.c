@@ -234,6 +234,14 @@ uint64_t x86_scheduler_live_stack_pages(void)
     return pages;
 }
 
+// ====== x86_scheduler_live_stack_pages_for ======
+
+uint64_t x86_scheduler_live_stack_pages_for(const KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root)
+{
+    if (!pool || pool != bound_pool || root != bound_root) return UINT64_MAX;
+    return x86_scheduler_live_stack_pages();
+}
+
 // ====== x86_scheduler_code_valid ======
 
 // Intel SDM093 §5.5.4: recursive access after parent checks, 4KiB supervisor RX only.

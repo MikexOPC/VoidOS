@@ -99,9 +99,9 @@ tutti i 18 scenari, inclusi 128/256 MiB, panic ed eccezioni terminali.
 
 ```powershell
 .\kernel\scripts\build.ps1 -Install
-.\kernel\test\host.ps1
-.\kernel\test\image.ps1
-.\kernel\test\firmware.ps1 -UseInstalled
+.\test\kernel\host.ps1
+.\test\kernel\image.ps1
+.\test\kernel\firmware.ps1 -UseInstalled
 ```
 
 Il mapper puo bloccare una assegnazione con un pin esclusivo. Il rilascio

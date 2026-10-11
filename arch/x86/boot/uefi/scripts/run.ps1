@@ -11,7 +11,7 @@ $qemu = Join-Path $QemuDirectory 'qemu-system-x86_64.exe'
 $code = Join-Path $QemuDirectory 'share\edk2-x86_64-code.fd'
 $template = Join-Path $QemuDirectory 'share\edk2-i386-vars.fd'
 $variables = Join-Path $output 'uefi-vars.fd'
-foreach ($required in @($qemu, $code, $template, (Join-Path $esp 'EFI\BOOT\BOOTX64.EFI'))) {
+foreach ($required in @($qemu, $code, $template, (Join-Path $esp 'EFI/BOOT/BOOTX64.EFI'))) {
     if (!(Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "File mancante: $required. Installare QEMU e compilare il bootloader."
     }

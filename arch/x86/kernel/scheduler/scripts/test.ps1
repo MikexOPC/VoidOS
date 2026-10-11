@@ -47,7 +47,7 @@ try {
     $env:LIB = $vc.FullName + '/lib/x64;' + $sdk + '/Lib/' + $version.Name + '/ucrt/x64;' +
         $sdk + '/Lib/' + $version.Name + '/um/x64'
     $asm = @('assembly/switch/context.asm','assembly/profile/capture.asm',
-        'test/assembly/preservation/probe.asm','assembly/profile/permissions.asm','assembly/irq/compute.asm')
+        '../../../../test/arch/x86/kernel/scheduler/assembly/preservation/probe.asm','assembly/profile/permissions.asm','assembly/irq/compute.asm')
     $objects = @()
     foreach ($index in 0..($asm.Count - 1)) {
         $object = "$out/asm-$index.obj"
@@ -59,7 +59,7 @@ try {
     foreach ($name in @('state','switch')) {
         $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',('/I' + $project),
             (Join-Path $module 'context.c'),(Join-Path $module 'capabilities.c'),
-            (Join-Path $module "test/context/${name}_test.c"),("/Fo$out/"),("/Fd$out/$name.pdb"),("/Fe$out/$name.exe"))
+            (Join-Path $project "test/arch/x86/kernel/scheduler/context/${name}_test.c"),("/Fo$out/"),("/Fd$out/$name.pdb"),("/Fe$out/$name.exe"))
         if ($name -eq 'state') { $flags += '/fsanitize=address' }
         $flags += @('/link','/incremental:no','/CETCOMPAT:NO') + $objects
         Invoke-Checked "$bin/cl.exe" $flags
@@ -79,7 +79,7 @@ try {
     if ($extended) { throw 'Instruction outside SSE/x87 profile; inspect disassembly' }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
         '/fsanitize=address',('/I' + $project),(Join-Path $module 'stacks.c'),
-        (Join-Path $module 'test/stacks/resources_test.c'),("/Fo$out/"),("/Fd$out/resources.pdb"),
+        (Join-Path $module '../../../../test/arch/x86/kernel/scheduler/stacks/resources_test.c'),("/Fo$out/"),("/Fd$out/resources.pdb"),
         ("/Fe$out/resources.exe"),'/link','/incremental:no')
     foreach ($object in @('stacks','resources_test')) {
         & "$bin/dumpbin.exe" /disasm "$out/$object.obj" |
@@ -97,7 +97,7 @@ try {
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
         '/fsanitize=address',('/I' + $project),(Join-Path $module 'stacks.c'),
         (Join-Path $module 'capabilities.c'),(Join-Path $module 'mapping/native.c'),
-        (Join-Path $module 'test/mapping/native_test.c'),("/Fo$out/"),("/Fd$out/native.pdb"),
+        (Join-Path $module '../../../../test/arch/x86/kernel/scheduler/mapping/native_test.c'),("/Fo$out/"),("/Fd$out/native.pdb"),
         ("/Fe$out/native.exe"),'/link','/incremental:no')
     foreach ($repetition in 1..10) {
         Invoke-Test 'native'
@@ -107,27 +107,27 @@ try {
     $cppcheck = Join-Path $project 'kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe'
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
         '/fsanitize=address',('/I' + $project),(Join-Path $module 'irq/bridge.c'),
-        (Join-Path $module 'test/irq/bridge_test.c'),("/Fo$out/"),("/Fd$out/irq.pdb"),
+        (Join-Path $module '../../../../test/arch/x86/kernel/scheduler/irq/bridge_test.c'),("/Fo$out/"),("/Fd$out/irq.pdb"),
         ("/Fe$out/irq.exe"),'/link','/incremental:no',$objects[4])
     foreach ($repetition in 1..10) { Invoke-Test 'irq' }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
         '/fsanitize=address',('/I' + $project),(Join-Path $module 'idle/idle.c'),
-        (Join-Path $module 'test/idle/idle_test.c'),("/Fo$out/"),("/Fd$out/idle.pdb"),
+        (Join-Path $module '../../../../test/arch/x86/kernel/scheduler/idle/idle_test.c'),("/Fo$out/"),("/Fd$out/idle.pdb"),
         ("/Fe$out/idle.exe"),'/link','/incremental:no')
     foreach ($repetition in 1..10) { foreach ($mode in 0..8) { Invoke-Test 'idle' "$mode" } }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
         '/fsanitize=address',('/I' + $project),
         (Join-Path $project 'arch/x86/kernel/timer/hpet/watchdog/accounting/budget.c'),
-        (Join-Path $project 'lib/memory/address_ranges.c'),(Join-Path $module 'test/idle/budget_test.c'),
+        (Join-Path $project 'lib/memory/address_ranges.c'),(Join-Path $module '../../../../test/arch/x86/kernel/scheduler/idle/budget_test.c'),
         ("/Fo$out/"),("/Fd$out/budget.pdb"),("/Fe$out/budget.exe"),'/link','/incremental:no')
     foreach ($repetition in 1..10) { Invoke-Test 'budget' }
     if (!(Test-Path $cppcheck)) { throw 'Cppcheck unavailable' }
-    $inputs = @('context.c','capabilities.c','stacks.c','test/stacks/resources_test.c',
+    $inputs = @('context.c','capabilities.c','stacks.c','../../../../test/arch/x86/kernel/scheduler/stacks/resources_test.c',
         'mapping/native.c','mapping/access.c','integration/kernel.c','integration/workload.c','irq/bridge.c','runtime/memory.c','runtime/payload.c',
-        'test/mapping/native_test.c','test/context/state_test.c','test/context/switch_test.c','test/irq/bridge_test.c',
-        'idle/idle.c','integration/report.c','persistent/workload.c','test/fault/fault.c',
-        'dispatcher/engine.c','diagnostic/profiles.c','test/dispatcher/engine_test.c',
-        'test/idle/idle_test.c','test/idle/budget_test.c') |
+        '../../../../test/arch/x86/kernel/scheduler/mapping/native_test.c','../../../../test/arch/x86/kernel/scheduler/context/state_test.c','../../../../test/arch/x86/kernel/scheduler/context/switch_test.c','../../../../test/arch/x86/kernel/scheduler/irq/bridge_test.c',
+        'idle/idle.c','integration/report.c','persistent/workload.c','../../../../test/arch/x86/kernel/scheduler/fault/fault.c',
+        'dispatcher/engine.c','diagnostic/profiles.c','../../../../test/arch/x86/kernel/scheduler/dispatcher/engine_test.c',
+        '../../../../test/arch/x86/kernel/scheduler/idle/idle_test.c','../../../../test/arch/x86/kernel/scheduler/idle/budget_test.c') |
         ForEach-Object { Join-Path $module $_ }
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") @inputs 2> "$out/cppcheck.xml"

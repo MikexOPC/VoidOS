@@ -23,5 +23,5 @@ pub fn mapping_tables(pages: u64) -> u64 {
 }
 
 #[cfg(test)]
-#[path = "../../test/mapping/geometry_test.rs"]
+#[path = "../../../../../../test/kernel/drivers/video/framebuffer/mapping/geometry_test.rs"]
 mod tests;

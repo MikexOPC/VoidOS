@@ -52,7 +52,7 @@ try {
         $sdk+'/Include/'+$version.Name+'/um;'+$sdk+'/Include/'+$version.Name+'/shared'
     $env:LIB=$vc.FullName+'/lib/x64;'+$sdk+'/Lib/'+$version.Name+'/ucrt/x64;'+$sdk+'/Lib/'+$version.Name+'/um/x64'
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',("/I$project"),"$boot/graphics/gop.c","$boot/graphics/test/selection_test.c",
+        '/MD','/O2',("/I$project"),"$boot/graphics/gop.c","$boot/../../../../test/arch/x86/boot/uefi/graphics/selection_test.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"),("/Fe$out/host.exe"),'/link','/incremental:no',"$out/mode.obj")
     Invoke-Checked "$out/host.exe" @()
 
@@ -64,7 +64,7 @@ try {
     $handoffObjects = @("$out/mode.obj","$out/capacity.obj")
     $handoffIndex = 0
     foreach ($handoffSource in @("$module/handoff.c","$boot/graphics/handoff.c",
-        "$boot/memory/map.c","$project/lib/memory/address_ranges.c","$module/test/handoff/validation_test.c")) {
+        "$boot/memory/map.c","$project/lib/memory/address_ranges.c","$module/../../../../test/kernel/drivers/video/framebuffer/handoff/validation_test.c")) {
         $handoffObject = "$out/handoff-source-$handoffIndex.obj"
         Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
             '/MD','/O2','/c',("/I$project"),("/I$boot"),$handoffSource,
@@ -79,14 +79,14 @@ try {
     # ============ mapping geometry with transactional output ============
 
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',("/I$project"),"$module/mapping.c","$module/test/mapping/geometry_test.c",
+        '/MD','/O2',("/I$project"),"$module/mapping.c","$module/../../../../test/kernel/drivers/video/framebuffer/mapping/geometry_test.c",
         ("/Fo$out/"),("/Fd$out/mapping.pdb"),("/Fe$out/mapping.exe"),'/link','/incremental:no',"$out/mode.obj")
     Invoke-Checked "$out/mapping.exe" @()
 
     # ============ isolated EFI probe, production loader unchanged ============
 
     $objects = @("$out/mode.obj")
-    foreach ($sourceFile in @('graphics/gop.c','graphics/test/probe.c','console/log.c')) {
+    foreach ($sourceFile in @('graphics/gop.c','../../../../test/arch/x86/boot/uefi/graphics/probe.c','console/log.c')) {
         $object = Join-Path $out (($sourceFile -replace '/','-') + '.obj')
         Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/Oi','/c',
             ("/I$project"),("/I$boot"),"$boot/$sourceFile",("/Fo$object"))
@@ -97,10 +97,10 @@ try {
         ("/out:$out/BOOTX64.EFI")) + $objects)
     $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
-        ("-I$project") ("-I$boot") "$boot/graphics/gop.c" "$boot/graphics/test/selection_test.c" `
-        "$boot/graphics/test/probe.c" "$boot/graphics/handoff.c" "$module/handoff.c" `
-        "$module/test/handoff/validation_test.c" "$module/mapping.c" `
-        "$module/test/mapping/geometry_test.c" 2> "$out/cppcheck.xml"
+        ("-I$project") ("-I$boot") "$boot/graphics/gop.c" "$boot/../../../../test/arch/x86/boot/uefi/graphics/selection_test.c" `
+        "$boot/../../../../test/arch/x86/boot/uefi/graphics/probe.c" "$boot/graphics/handoff.c" "$module/handoff.c" `
+        "$module/../../../../test/kernel/drivers/video/framebuffer/handoff/validation_test.c" "$module/mapping.c" `
+        "$module/../../../../test/kernel/drivers/video/framebuffer/mapping/geometry_test.c" 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml=Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {

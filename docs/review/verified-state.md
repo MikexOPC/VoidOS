@@ -14,7 +14,7 @@ Dalla radice del progetto, eseguire in sequenza:
 
 ```powershell
 & .\arch\x86\boot\uefi\scripts\build.ps1
-& .\arch\x86\boot\uefi\test\firmware_test.ps1
+& .\test\arch\x86\boot\uefi\firmware_test.ps1
 ```
 
 La build corrente ha superato i test C/C++, le 5000 mutazioni ELF,

@@ -1,5 +1,12 @@
 # Shell PS/2 v0 — progetto, 9 ottobre 2026
 
+Checkpoint del blocco shell seriale del 9 ottobre. Dall'11 ottobre il profilo
+esplicito `-ConsoleShell` collega anche il video tramite un sink sincrono
+con bind/unbind originali; FIFO e task separate restano. Il contratto e le
+prove della nuova immagine sono nel
+[report console](../../console/video/documentation/shell-validation.md).
+Gli hash e conteggi sotto restano quelli del checkpoint precedente.
+
 Scelta utente: task shell separata con coda. Modulo input, profilo Ps2Input:
 task0 decoder/editor, task1 finestra IRQ verificata, task2 shell. Lo scheduler
 gia supporta8 task; il profilo input ne pubblica3. L'integrazione verifica
