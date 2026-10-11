@@ -8,7 +8,7 @@ param([Parameter(Mandatory)][string]$ImageDirectory,
 $ErrorActionPreference = 'Stop'
 $module = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $project = (Resolve-Path (Join-Path $module '../../../../../..')).Path
-. (Join-Path $project 'kernel/test/timer/lapic/scripts/firmware.ps1')
+. (Join-Path $project 'test/kernel/timer/lapic/scripts/firmware.ps1')
 $out = Join-Path $project ('kernel/build/watchdog-' + $Mode + '-' + [guid]::NewGuid().ToString('N'))
 $boot = Join-Path $out 'esp/EFI/BOOT'
 New-Item -ItemType Directory -Path $boot -Force | Out-Null

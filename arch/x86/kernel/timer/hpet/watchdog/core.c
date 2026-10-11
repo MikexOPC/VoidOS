@@ -123,7 +123,7 @@ static int handle(void)
         watchdog.Error = 1;
         return x86_watchdog_fail(X86_WATCHDOG_IRQ);
     }
-    ++watchdog.Count;
+    if (!watchdog.Armed) ++watchdog.Count;
     return 1;
 }
 

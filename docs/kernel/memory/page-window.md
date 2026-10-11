@@ -72,9 +72,9 @@ i reset iniziali del firmware non sono considerati fault del kernel.
 ```powershell
 .\arch\x86\boot\uefi\scripts\build.ps1 -BootKernel
 .\kernel\scripts\build.ps1 -Install
-.\kernel\test\host.ps1
-.\kernel\test\image.ps1
-.\kernel\test\firmware.ps1 -UseInstalled
+.\test\kernel\host.ps1
+.\test\kernel\image.ps1
+.\test\kernel\firmware.ps1 -UseInstalled
 ```
 
 Loader e kernel devono essere ricostruiti insieme: il vecchio loader

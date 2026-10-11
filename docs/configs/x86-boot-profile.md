@@ -49,7 +49,7 @@ anche la coda non utilizzata da un blocco piu piccolo rimane assente.
 
 La build compila l'header nei consumatori C e C++ e verifica il piano,
 le tabelle, il contratto e il probe. I test firmware restano in
-`arch/x86/boot/uefi/test/`.
+`test/arch/x86/boot/uefi/`.
 `test/configs/profile_test.ps1` verifica in entrambi i linguaggi il
 profilo valido e otto varianti invalide: geometria, allineamento,
 indirizzo non canonico, sovrapposizione, fine stack fuori intervallo,

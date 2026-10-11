@@ -23,7 +23,7 @@ La verifica indipendente usa `info lapic`, gia impiegato dal test APIC.
 
 ## Evidenza sullo stato corrente
 
-- `kernel/test/host.ps1`: test C e 56 test Rust superati.
+- `test/kernel/host.ps1`: test C e 56 test Rust superati.
 - FADT: checksum, GAS, duplicati, dimensioni, alias e profili invalidi.
 - Calibrazione: wrap, clock fermo, overflow e scritture fallite.
 - IRQ: stop, EOI fallito, vettore errato e piu ISR contemporanei.

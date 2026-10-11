@@ -69,5 +69,5 @@ impl Queue {
 }
 
 #[cfg(test)]
-#[path = "../../test/state/queue_test.rs"]
+#[path = "../../../../test/kernel/scheduler/state/queue_test.rs"]
 mod queue_test;

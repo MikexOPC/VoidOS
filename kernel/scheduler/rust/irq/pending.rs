@@ -47,5 +47,5 @@ impl Pending {
 }
 
 #[cfg(test)]
-#[path = "../../test/irq/pending_test.rs"]
+#[path = "../../../../test/kernel/scheduler/irq/pending_test.rs"]
 mod pending_test;

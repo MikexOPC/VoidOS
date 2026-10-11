@@ -29,5 +29,5 @@ pub fn fb_descriptor_bytes(base: u64, capacity: u64, width: u32,
 }
 
 #[cfg(test)]
-#[path = "../../test/mode/validation_test.rs"]
+#[path = "../../../../../../test/kernel/drivers/video/framebuffer/mode/validation_test.rs"]
 mod tests;

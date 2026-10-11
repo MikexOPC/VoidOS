@@ -69,14 +69,14 @@ try {
         (Join-Path $module 'rust/ffi/gateway.rs'),'-o',"$out/scheduler.lib")
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
         '/DSCHEDULER_HOST_UNBOUND',
-        '/MD','/O2',('/I' + $project),(Join-Path $module 'test/ffi/gateway_test.c'),
+        '/MD','/O2',('/I' + $project),(Join-Path $module '../../test/kernel/scheduler/ffi/gateway_test.c'),
         ("/Fo$out/gateway-test.obj"),("/Fd$out/gateway-test.pdb"),("/Fe$out/gateway-test.exe"),
         '/link','/incremental:no',"$out/scheduler.lib")
     Invoke-Checked "$out/gateway-test.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
         '/DSCHEDULER_HOST_UNBOUND',
         '/MD','/O2',('/I' + $project),(Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
-        (Join-Path $project 'arch/x86/kernel/scheduler/test/dispatcher/engine_test.c'),
+        (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/engine_test.c'),
         ("/Fo$out/"),("/Fd$out/engine.pdb"),("/Fe$out/engine.exe"),
         '/link','/incremental:no',"$out/scheduler.lib")
     foreach ($mode in 0..8) { Invoke-Checked "$out/engine.exe" @("$mode") }
@@ -85,12 +85,12 @@ try {
         '-C','panic=abort','-C','opt-level=2','-D','warnings',
         (Join-Path $module 'rust/ffi/gateway.rs'),'-o',"$out/scheduler-bound.lib")
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',('/I' + $project),(Join-Path $module 'test/ffi/binding_test.c'),
+        '/MD','/O2',('/I' + $project),(Join-Path $module '../../test/kernel/scheduler/ffi/binding_test.c'),
         ("/Fo$out/binding-test.obj"),("/Fd$out/binding-test.pdb"),("/Fe$out/binding-test.exe"),
         '/link','/incremental:no',"$out/scheduler-bound.lib")
     Invoke-Checked "$out/binding-test.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',('/I' + $project),(Join-Path $module 'test/ffi/payload_test.c'),
+        '/MD','/O2',('/I' + $project),(Join-Path $module '../../test/kernel/scheduler/ffi/payload_test.c'),
         ("/Fo$out/payload-test.obj"),("/Fd$out/payload-test.pdb"),("/Fe$out/payload-test.exe"),
         '/link','/incremental:no',"$out/scheduler-bound.lib")
     Invoke-Checked "$out/payload-test.exe" @()
@@ -109,8 +109,8 @@ try {
     if (!(Test-Path -LiteralPath $CppcheckPath)) { throw 'Supply -CppcheckPath for C fixture analysis' }
     $cppcheckArguments = @('--enable=all','--check-level=exhaustive','--platform=win64',
         '--std=c11','--xml','--xml-version=2','-DSCHEDULER_HOST_UNBOUND',('-I' + $project),
-        (Join-Path $module 'test/ffi/gateway_test.c'),(Join-Path $module 'test/ffi/binding_test.c'),
-        (Join-Path $module 'test/ffi/payload_test.c'))
+        (Join-Path $module '../../test/kernel/scheduler/ffi/gateway_test.c'),(Join-Path $module '../../test/kernel/scheduler/ffi/binding_test.c'),
+        (Join-Path $module '../../test/kernel/scheduler/ffi/payload_test.c'))
     & $CppcheckPath @cppcheckArguments 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck execution failed' }
     [xml]$analysis = Get-Content -LiteralPath "$out/cppcheck.xml"
@@ -120,7 +120,7 @@ try {
     $sources = @(Get-ChildItem $module -Recurse -File | Where-Object { $_.Extension -in @('.rs','.c','.h','.ps1','.toml') })
     $sources += @(Get-Item (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
         (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.h'),
-        (Join-Path $project 'arch/x86/kernel/scheduler/test/dispatcher/engine_test.c'))
+        (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/engine_test.c'))
     $sources | ForEach-Object { Get-FileHash -LiteralPath $_.FullName } |
         ConvertTo-Json | Out-File "$out/sources.json" -Encoding utf8
     Write-Output "PASS: scheduler host evidence $out"

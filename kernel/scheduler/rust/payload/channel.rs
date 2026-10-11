@@ -67,5 +67,5 @@ impl Channel {
 }
 
 #[cfg(test)]
-#[path = "../../test/payload/channel_test.rs"]
+#[path = "../../../../test/kernel/scheduler/payload/channel_test.rs"]
 mod tests;

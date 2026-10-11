@@ -1,6 +1,11 @@
 #include "watchdog.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "lib/memory/address_ranges.h"
+static BOOT_U32 wake_detail;
+
+// ====== x86_watchdog_wake_detail ======
+
+BOOT_U32 x86_watchdog_wake_detail(void) { return wake_detail; }
 
 // ====== source_valid ======
 
@@ -32,6 +37,7 @@ static BOOT_U32 wait_private(const volatile BOOT_U32 *source, BOOT_U32 goal,
 {
     X86_HPET_WATCHDOG *owner = x86_watchdog_state();
     BOOT_U32 next, slept, request;
+    wake_detail = 0;
     if (!x86_watchdog_valid() || !owner->Ready || owner->Armed || owner->Error || owner->Count == ~0U ||
         !x86_irq_registry_token_live(x86_irq_registry(),&owner->Token)) {
         return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_WAIT_STATE);
@@ -44,8 +50,13 @@ static BOOT_U32 wait_private(const volatile BOOT_U32 *source, BOOT_U32 goal,
     next = owner->Count + 1;
     if (!x86_watchdog_device(2)) { return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_ARM); }
     slept = x86_irq_sleep(&owner->Count,next,8);
-    if (!slept || slept > 9 || owner->Count != next || owner->Error || owner->Armed ||
-        !x86_page_window_idle_valid(owner->Env.Window) || !x86_lapic_idle(owner->Env.Mapping)) {
+    if (!slept || slept > 9) wake_detail = 1;
+    else if (owner->Count != next) wake_detail = 2;
+    else if (owner->Error) wake_detail = 3;
+    else if (owner->Armed) wake_detail = 4;
+    else if (!x86_page_window_idle_valid(owner->Env.Window)) wake_detail = 5;
+    else if (!x86_lapic_idle(owner->Env.Mapping)) wake_detail = 6;
+    if (wake_detail) {
         return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_WAKE);
     }
     request = stop ? *stop : 0;

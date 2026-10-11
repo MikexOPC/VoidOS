@@ -1,5 +1,59 @@
 #include "shell.h"
 #include "kernel/diagnostics/log.h"
+static KERNEL_SHELL_OUTPUT output;
+static void *output_context;
+#define TEXT(literal) text_private(literal, (uint32_t)(sizeof(literal) - 1U))
+#define LOG(level, literal) log_private(level, literal, (uint32_t)(sizeof(literal) - 1U))
+
+// ====== kernel_ps2_shell_output_bind ======
+
+int kernel_ps2_shell_output_bind(KERNEL_SHELL_OUTPUT callback, void *context)
+{
+    if (!callback || !context || output || output_context) return 0;
+    output = callback; output_context = context;
+    return 1;
+}
+
+// ====== kernel_ps2_shell_output_unbind ======
+
+int kernel_ps2_shell_output_unbind(KERNEL_SHELL_OUTPUT callback, void *context)
+{
+    if (!callback || callback != output || context != output_context) return 0;
+    output = 0; output_context = 0;
+    return 1;
+}
+
+// ====== video_private ======
+
+static int video_private(const char *data, uint32_t length)
+{
+    return !output || output(output_context, data, length);
+}
+
+// ====== text_private ======
+
+static int text_private(const char *data, uint32_t length)
+{
+    return data && length < 256 && kernel_text(data) && video_private(data, length);
+}
+
+// ====== log_private ======
+
+static int log_private(uint32_t level, const char *data, uint32_t length)
+{
+    return data && length < 256 && kernel_log(level, data) && video_private(data, length) && video_private("\n", 1);
+}
+
+// ====== number_private ======
+
+static int number_private(uint64_t value)
+{
+    static const char digits[] = "0123456789abcdef";
+    char text[18] = {'0', 'x'};
+    for (uint32_t index = 0; index < 16; ++index)
+        text[index + 2] = digits[(value >> (60 - 4 * index)) & 15];
+    return kernel_number(value) && video_private(text, sizeof(text));
+}
 
 // ====== kernel_ps2_shell_write ======
 
@@ -15,7 +69,7 @@ int kernel_ps2_shell_write(const char *data, uint32_t length)
         if (!kernel_text(chunk)) return 0;
         offset += count;
     }
-    return 1;
+    return video_private(data, length);
 }
 
 // ====== kernel_ps2_shell_execute ======
@@ -30,7 +84,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     if (line->Data[line->Length]) return 0;
     for (uint32_t index = 0; index < line->Length; ++index)
         if ((uint8_t)line->Data[index] < 32 || (uint8_t)line->Data[index] == 127) return 0;
-    if (command->Truncated) return kernel_log(2,"SHELL_LINE_REJECTED_TRUNCATED");
+    if (command->Truncated) return LOG(2,"SHELL_LINE_REJECTED_TRUNCATED");
     while (start < line->Length && line->Data[start] == ' ') ++start;
     end = start;
     while (end < line->Length && line->Data[end] != ' ') ++end;
@@ -40,14 +94,14 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     while (argument < line->Length && line->Data[argument] == ' ') ++argument;
     kind = kernel_ps2_shell_classify(word,end - start,argument != line->Length);
     if (kind == UINT32_MAX) return 0;
-    if (!kind) return kernel_log(1,"SHELL_EMPTY");
-    if (kind == 1) return kernel_log(1,"SHELL_HELP: help | echo <testo> | status | exit");
-    if (kind == 2) return kernel_text("SHELL_ECHO: ") &&
-        kernel_ps2_shell_write(line->Data + argument,line->Length - argument) && kernel_text("\n");
-    if (kind == 3) return kernel_log(1,"SHELL_STATUS: BSP PS2, cooperative, kernel tasks") &&
-        kernel_text("SHELL_INPUT_BYTES: ") && kernel_number(status->Bytes) &&
-        kernel_text("\nSHELL_INPUT_KEYS: ") && kernel_number(status->Keys) &&
-        kernel_text("\nSHELL_INPUT_LINES: ") && kernel_number(status->Lines) && kernel_text("\n");
-    if (kind == 4) return kernel_log(1,"SHELL_EXIT_REQUEST") ? 2 : 0;
-    return kernel_log(2,kind == 6 ? "SHELL_BAD_ARGUMENTS" : "SHELL_UNKNOWN_COMMAND");
+    if (!kind) return LOG(1,"SHELL_EMPTY");
+    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | exit");
+    if (kind == 2) return TEXT("SHELL_ECHO: ") &&
+        kernel_ps2_shell_write(line->Data + argument,line->Length - argument) && TEXT("\n");
+    if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, cooperative, kernel tasks") &&
+        TEXT("SHELL_INPUT_BYTES: ") && number_private(status->Bytes) &&
+        TEXT("\nSHELL_INPUT_KEYS: ") && number_private(status->Keys) &&
+        TEXT("\nSHELL_INPUT_LINES: ") && number_private(status->Lines) && TEXT("\n");
+    if (kind == 4) return LOG(1,"SHELL_EXIT_REQUEST") ? 2 : 0;
+    return kind == 6 ? LOG(2,"SHELL_BAD_ARGUMENTS") : LOG(2,"SHELL_UNKNOWN_COMMAND");
 }

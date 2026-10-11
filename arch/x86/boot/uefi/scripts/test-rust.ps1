@@ -14,8 +14,8 @@ try {
     $compiler = Join-Path $ToolchainBin 'cl.exe'
     $compilerInclude = (Resolve-Path (Join-Path $ToolchainBin '..\..\..\include')).Path
     $bootRoot = Split-Path -Parent $PSScriptRoot
-    $projectRoot = (Resolve-Path (Join-Path $bootRoot '..\..\..\..')).Path
-    $output = Join-Path $bootRoot 'build\rust-tests'
+    $projectRoot = (Resolve-Path (Join-Path $bootRoot '../../../..')).Path
+    $output = Join-Path $bootRoot 'build/rust-tests'
     New-Item -ItemType Directory -Force -Path $output | Out-Null
     $rustc = (Get-Command rustc -ErrorAction Stop).Source
 
@@ -31,23 +31,23 @@ try {
     Invoke-RustChecked $rustc @('--version')
     $flags = @('/nologo', '/TC', '/std:c11', '/W4', '/WX', '/GS-', '/Zl', '/Od', '/c', ('/I' + $bootRoot), ('/I' + $projectRoot), ('/I' + $compilerInclude))
     $objects = @()
-    foreach ($source in @('paging\plan.c', 'paging\tables.c', 'test\paging\bridge.c')) {
+    foreach ($source in @('paging\plan.c', 'paging\tables.c', '../../../../test/arch/x86/boot/uefi/paging/bridge.c')) {
         $object = Join-Path $output (([IO.Path]::GetFileNameWithoutExtension($source)) + '.obj')
         Invoke-RustChecked $compiler ($flags + @((Join-Path $bootRoot $source), ('/Fo' + $object)))
         $objects += $object
     }
     $rangeObject = Join-Path $output 'address_ranges.obj'
-    Invoke-RustChecked $compiler ($flags + @((Join-Path $projectRoot 'lib\memory\address_ranges.c'), ('/Fo' + $rangeObject)))
+    Invoke-RustChecked $compiler ($flags + @((Join-Path $projectRoot 'lib/memory/address_ranges.c'), ('/Fo' + $rangeObject)))
     $objects += $rangeObject
     $contentsObject = Join-Path $output 'contents.obj'
-    Invoke-RustChecked $compiler ($flags + @((Join-Path $bootRoot 'paging\verification\contents.c'), ('/Fo' + $contentsObject)))
+    Invoke-RustChecked $compiler ($flags + @((Join-Path $bootRoot 'paging/verification/contents.c'), ('/Fo' + $contentsObject)))
     $objects += $contentsObject
 
     # ====== test host senza dipendenze esterne ====== #
 
     $executable = Join-Path $output 'allocation_tests.exe'
     $arguments = @('--test', '--edition=2024', '--target', 'x86_64-pc-windows-msvc', '-D', 'warnings',
-                   (Join-Path $bootRoot 'test\paging\rust\allocation\allocation_tests.rs'), '-o', $executable)
+                   (Join-Path $bootRoot '../../../../test/arch/x86/boot/uefi/paging/rust/allocation/allocation_tests.rs'), '-o', $executable)
     foreach ($object in $objects) { $arguments += @('-C', ('link-arg=' + $object)) }
     Invoke-RustChecked $rustc $arguments
     Write-BootSection 'test Rust delle allocazioni C'

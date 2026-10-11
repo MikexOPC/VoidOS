@@ -36,7 +36,9 @@ uint32_t kernel_console_batch_flush(KERNEL_CONSOLE_BATCH *owner, uint32_t budget
     uint32_t index, scalar, next, count, offset, captured[KERNEL_CONSOLE_BATCH_LIMIT], result = 0;
     uint32_t columns, rows, start;
     uint64_t ticks = 0, cells, groups;
+
     int pending;
+
     if (!owner || (uintptr_t)owner % _Alignof(KERNEL_CONSOLE_BATCH) ||
         owner->Self != (uintptr_t)owner || owner->Busy || owner->Failed || !owner->Draw ||
         !(render = owner->Render) || (uintptr_t)render % _Alignof(KERNEL_CONSOLE_RENDER) ||

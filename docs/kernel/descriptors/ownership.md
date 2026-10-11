@@ -70,9 +70,9 @@ e gia pronto. `KERNEL_DESCRIPTORS_OK` viene stampato dopo le verifiche.
 ## Test e limiti
 
 ```powershell
-./kernel/test/host.ps1
+./test/kernel/host.ps1
 ./kernel/scripts/build.ps1 -Install
-./kernel/test/firmware.ps1 -UseInstalled
+./test/kernel/firmware.ps1 -UseInstalled
 ```
 
 La ESP deve contenere il loader costruito con `-BootKernel`. Gli artefatti dei

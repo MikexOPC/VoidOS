@@ -73,9 +73,9 @@ try {
         'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
         'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
         'arch/x86/kernel/drivers/video/framebuffer/font/font.c',
-        'arch/x86/kernel/drivers/video/framebuffer/test/pixels/write_test.c',
-        'arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/platform.c',
-        'arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c')) {
+        'test/arch/x86/kernel/drivers/video/framebuffer/pixels/write_test.c',
+        'test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/platform.c',
+        'test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/cases.c')) {
         $object = "$out/" + ($source -replace '/', '-') + '.obj'
         Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
             '/MD','/O2','/c',("/I$project"),"$project/$source",("/Fo$object"),("/Fd$out/host.pdb"))
@@ -92,14 +92,14 @@ try {
         "$project/arch/x86/kernel/drivers/video/framebuffer/authority.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/native/access.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/platform.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/test/lifecycle/cases.c" `
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/platform.c" `
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/write.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/font/font.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/test/drawing/probe.c" `
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/native.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/test/pixels/write_test.c" 2> "$out/cppcheck.xml"
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/pixels/write_test.c" 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml = Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {

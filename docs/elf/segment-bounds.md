@@ -32,7 +32,7 @@ nel firmware con la fixture ELF e i casi di errore gia presenti.
 
 ```powershell
 ./arch/x86/boot/uefi/scripts/build.ps1
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```
 
 Questo passo sposta in Rust i controlli numerici dei segmenti, non l'intero

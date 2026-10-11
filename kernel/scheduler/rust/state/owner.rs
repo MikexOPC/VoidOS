@@ -234,15 +234,15 @@ impl Owner {
 }
 
 #[cfg(test)]
-#[path = "../../test/state/owner_test.rs"]
+#[path = "../../../../test/kernel/scheduler/state/owner_test.rs"]
 mod owner_test;
 
 #[cfg(test)]
-#[path = "../../test/state/model_test.rs"]
+#[path = "../../../../test/kernel/scheduler/state/model_test.rs"]
 mod model_test;
 
 #[cfg(test)]
-#[path = "../../test/irq/batch_test.rs"]
+#[path = "../../../../test/kernel/scheduler/irq/batch_test.rs"]
 mod batch_test;
 
 #[cfg(test)]

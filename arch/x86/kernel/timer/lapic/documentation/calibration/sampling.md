@@ -70,7 +70,7 @@ necessari: root del modulo con quattro file, runtime con due.
   `kernel/build/hpet-kernel-e539991fb5cd4a6cbc5a05eafa2c7495/` e
   `kernel/build/hpet-kernel-4e55ec307f6e4f3ba82d0b12c25506c1/`.
   Un retry osservato nella prima suite, seguito da boot valido.
-- `kernel/test/timer/lapic/scripts/calibration-firmware.ps1` verifica
+- `test/kernel/timer/lapic/scripts/calibration-firmware.ps1` verifica
   campioni raw/reload, owner, consegne IRQ 0x41, opcodes STI/HLT/CLI,
   contatori arrestati, token rimosso e LVT/divide ripristinati. Rifiuta 14
   alterazioni della fotografia reale. Evidenza finale aggiunta sotto.

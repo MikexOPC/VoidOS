@@ -47,7 +47,7 @@ try {
         '-C', 'panic=abort', '-C', 'opt-level=2', '-D', 'warnings',
         (Join-Path $module 'rust/validation/fields.rs'), '-o', "$out/fields.obj")
     Invoke-Checked $rustc @('--edition=2024', '--test', '-D', 'warnings',
-        (Join-Path $module 'test/rust/validation/fields_test.rs'), '-o', "$out/rust-tests.exe")
+        (Join-Path $module '../../../../../../test/arch/x86/kernel/timer/hpet/description/rust/validation/fields_test.rs'), '-o', "$out/rust-tests.exe")
     Invoke-Checked "$out/rust-tests.exe" @()
     $runner = @'
 #include <stdio.h>
@@ -71,7 +71,7 @@ int main(void) {
     [IO.File]::WriteAllText("$out/runner.c", $runner, [Text.UTF8Encoding]::new($false))
     $objects = @()
     foreach ($source in @('table.c', 'scan.c', 'integration/kernel.c',
-        'test/table_test.c', 'test/scan_test.c', 'test/integration/kernel_test.c')) {
+        '../../../../../../test/arch/x86/kernel/timer/hpet/description/table_test.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/scan_test.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/integration/kernel_test.c')) {
         $object = Join-Path $out ($source.Replace('/', '-') + '-asan.obj')
         Invoke-Checked $compiler @('/nologo', '/std:c11', '/W4', '/WX', '/TC', '/c',
             '/fsanitize=address', '/Zi', '/MD', '/Od', ("/I" + $project), "/Fd$out/asan.pdb", "/Fo$object",
@@ -99,7 +99,7 @@ int main(void) {
 '@
     [IO.File]::WriteAllText("$out/probe-runner.c", $probeRunner, [Text.UTF8Encoding]::new($false))
     $probeObjects = @()
-    foreach ($source in @('probe/policy.c', 'probe/hardware.c', 'test/probe/probe_test.c')) {
+    foreach ($source in @('probe/policy.c', 'probe/hardware.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/probe/probe_test.c')) {
         $object = Join-Path $out ($source.Replace('/', '-') + '-asan.obj')
         Invoke-Checked $compiler @('/nologo', '/std:c11', '/W4', '/WX', '/TC', '/c',
             '/fsanitize=address', '/Zi', '/MD', '/Od', ("/I" + $project), "/Fd$out/asan.pdb", "/Fo$object",
@@ -116,7 +116,7 @@ int main(void) {
     # ============ freestanding UEFI component harness ============
 
     $objects = @()
-    foreach ($source in @('table.c', 'scan.c', 'test/table_test.c', 'test/scan_test.c', 'test/uefi/entry.c')) {
+    foreach ($source in @('table.c', 'scan.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/table_test.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/scan_test.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/uefi/entry.c')) {
         $object = Join-Path $out ($source.Replace('/', '-') + '-efi.obj')
         Invoke-Checked $compiler @('/nologo', '/std:c11', '/W4', '/WX', '/TC', '/c',
             '/GS-', '/Zl', '/Od', ("/I" + $project), "/Fo$object", (Join-Path $module $source))

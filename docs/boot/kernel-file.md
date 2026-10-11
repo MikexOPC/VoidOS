@@ -90,7 +90,7 @@ restituisce il relativo stato UEFI anche se la stampa fallisce.
 
 ```powershell
 ./arch/x86/boot/uefi/scripts/build.ps1
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```
 
 I test C coprono metadati, directory, limite dimensione prima dell'allocazione,

@@ -41,13 +41,13 @@ try {
             '-C','opt-level=2','-D','warnings',(Join-Path $module $entry[1]),'-o',"$out/$($entry[0]).obj")
     }
     Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings',
-        (Join-Path $module 'test/rust/deadline/policy_test.rs'),'-o',"$out/rust-tests.exe")
+        (Join-Path $module '../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/rust/deadline/policy_test.rs'),'-o',"$out/rust-tests.exe")
     Invoke-Checked "$out/rust-tests.exe" @()
     Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings',
-        (Join-Path $module 'test/rust/selection/routes_test.rs'),'-o',"$out/route-tests.exe")
+        (Join-Path $module '../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/rust/selection/routes_test.rs'),'-o',"$out/route-tests.exe")
     Invoke-Checked "$out/route-tests.exe" @()
     Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings',
-        (Join-Path $module 'test/rust/recovery/policy_test.rs'),'-o',"$out/recovery-tests.exe")
+        (Join-Path $module '../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/rust/recovery/policy_test.rs'),'-o',"$out/recovery-tests.exe")
     Invoke-Checked "$out/recovery-tests.exe" @()
     $runner = @'
 #include <stdio.h>
@@ -76,10 +76,10 @@ int main(void) {
 '@
     [IO.File]::WriteAllText("$out/runner.c",$runner,[Text.UTF8Encoding]::new($false))
     $objects = @()
-    foreach ($source in @('core.c','device.c','route.c','wait.c','accounting/budget.c','compatibility/select.c','test/platform.c','test/state_test.c',
-        'test/compatibility/selection_test.c',
-        'test/diagnostics/failure_test.c',
-        'recovery/control.c','test/recovery/control_test.c',
+    foreach ($source in @('core.c','device.c','route.c','wait.c','accounting/budget.c','compatibility/select.c','../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/platform.c','../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/state_test.c',
+        '../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/compatibility/selection_test.c',
+        '../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/diagnostics/failure_test.c',
+        'recovery/control.c','../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/recovery/control_test.c',
         '../../../../../../lib/memory/address_ranges.c')) {
         $object = Join-Path $out ((Split-Path $source -Leaf) + '.obj')
         Invoke-Checked $compiler @('/nologo','/std:c11','/W4','/WX','/TC','/c',
@@ -98,7 +98,7 @@ int main(void) {
         (Join-Path $module 'hardware/access.c'))
     Invoke-Checked $compiler $arguments
     Invoke-Checked $compiler @('/nologo','/std:c11','/W4','/WX','/fsanitize=address','/Zi','/MD',
-        ("/I"+$project),("/Tc"+(Join-Path $module 'test/access/access_test.c')),
+        ("/I"+$project),("/Tc"+(Join-Path $module '../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/access/access_test.c')),
         "/Fd$out/adapter.pdb","/Fo$out/adapter-runner.obj","/Fe$out/adapter-tests.exe",
         "$out/adapter.obj",'/link','/incremental:no')
     Invoke-Checked "$out/adapter-tests.exe" @()

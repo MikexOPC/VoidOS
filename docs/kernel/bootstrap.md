@@ -15,9 +15,9 @@ ibrido: ring 3, syscall e spazi utente restano fuori.
 ```powershell
 .\arch\x86\boot\uefi\scripts\build.ps1 -BootKernel
 .\kernel\scripts\build.ps1 -Install
-.\kernel\test\host.ps1
-.\kernel\test\image.ps1
-.\kernel\test\firmware.ps1 -UseInstalled
+.\test\kernel\host.ps1
+.\test\kernel\image.ps1
+.\test\kernel\firmware.ps1 -UseInstalled
 ```
 
 La build del bootloader mette il vecchio probe nella ESP; eseguire la

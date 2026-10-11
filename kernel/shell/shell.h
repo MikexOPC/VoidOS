@@ -27,6 +27,9 @@ void kernel_ps2_command_clear(KERNEL_PS2_COMMAND *command);
 uint64_t kernel_ps2_queue_plan(uint32_t state, uint32_t operation);
 uint32_t kernel_ps2_shell_classify(uint64_t word, uint32_t length, uint32_t arguments);
 int kernel_ps2_shell_write(const char *data, uint32_t length);
+typedef int (*KERNEL_SHELL_OUTPUT)(void *context, const char *data, uint32_t length);
+int kernel_ps2_shell_output_bind(KERNEL_SHELL_OUTPUT output, void *context);
+int kernel_ps2_shell_output_unbind(KERNEL_SHELL_OUTPUT output, void *context);
 /* Return0 output/state failure,1 continue,2 request session stop. */
 int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2_SHELL_STATUS *status);
 #endif

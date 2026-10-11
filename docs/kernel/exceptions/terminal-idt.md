@@ -56,9 +56,9 @@ e globale al profilo a una CPU, non per CPU. Non e una prova su hardware.
 Da PowerShell nella root del progetto:
 
 ```powershell
-./kernel/test/host.ps1
+./test/kernel/host.ps1
 ./kernel/scripts/build.ps1 -Install
-./kernel/test/firmware.ps1 -UseInstalled
+./test/kernel/firmware.ps1 -UseInstalled
 ```
 
 La ESP deve gia contenere il bootloader costruito con `-BootKernel`.

@@ -16,7 +16,7 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 
 # ============ Rust debug release and Clippy ============
 
-$test = "$project/kernel/test/mm/paging/rust/validation/entries_test.rs"
+$test = "$project/test/kernel/mm/paging/rust/validation/entries_test.rs"
 foreach ($mode in @('debug', 'release')) {
     $flags = @('--edition=2024','--test','-D','warnings','-C','overflow-checks=yes',
         $test,'-o',"$out/entries-$mode.exe")
@@ -58,7 +58,7 @@ try {
     $env:LIB=$vc.FullName+'/lib/x64;'+$sdk+'/Lib/'+$version.Name+'/ucrt/x64;'+$sdk+'/Lib/'+$version.Name+'/um/x64'
     foreach ($source in @('arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/authorization/validation.c',
         'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','lib/memory/address_ranges.c',
-        'kernel/test/mm/paging/inventory_test.c','kernel/test/mm/paging/runner.c')) {
+        'test/kernel/mm/paging/inventory_test.c','test/kernel/mm/paging/runner.c')) {
         $object = "$out/" + ($source -replace '/', '-') + '.obj'
         Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
             '/MD','/O2','/c',("/I$project"),"$project/$source",("/Fo$object"),("/Fd$out/host.pdb"))
@@ -71,8 +71,8 @@ try {
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/arch/x86/mm/paging/inventory.c" `
         "$project/arch/x86/mm/paging/authorization/validation.c" `
-        "$project/kernel/test/mm/paging/inventory_test.c" `
-        "$project/kernel/test/mm/paging/runner.c" 2> "$out/cppcheck.xml"
+        "$project/test/kernel/mm/paging/inventory_test.c" `
+        "$project/test/kernel/mm/paging/runner.c" 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml = Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {

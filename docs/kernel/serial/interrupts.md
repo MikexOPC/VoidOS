@@ -105,5 +105,5 @@ Hardware fisico non testato.
 - [Intel SDM Vol. 3A](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf):
   ISR/IRR, EOI, interrupt gate e ritorno IA-32e.
 
-Per ripetere: `kernel/test/host.ps1`, `kernel/scripts/build.ps1 -Install`,
-`kernel/test/image.ps1` e `kernel/test/firmware.ps1 -UseInstalled`.
+Per ripetere: `test/kernel/host.ps1`, `kernel/scripts/build.ps1 -Install`,
+`test/kernel/image.ps1` e `test/kernel/firmware.ps1 -UseInstalled`.

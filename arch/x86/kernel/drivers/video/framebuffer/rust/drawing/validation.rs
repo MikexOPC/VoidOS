@@ -58,5 +58,5 @@ pub extern "C" fn x86_fb_font_height(height: u32) -> u32 {
 }
 
 #[cfg(test)]
-#[path = "../../test/rust/drawing/validation_test.rs"]
+#[path = "../../../../../../../../test/arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation_test.rs"]
 mod tests;

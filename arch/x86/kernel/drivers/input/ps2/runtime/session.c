@@ -1,6 +1,9 @@
 #include "session.h"
+#ifdef KERNEL_CONSOLE_SHELL
+#include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
+#endif
 #ifdef KERNEL_TEST_CONSOLE_DRAW
-#include "kernel/console/video/test/active/worker.h"
+#include "test/kernel/console/video/active/worker.h"
 #endif
 #include "kernel/scheduler/payload.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
@@ -126,10 +129,16 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         !x86_irq_registry_bind(x86_irq_registry(),0x41,x86_ps2_handle,x86_ps2_quiet,&session.Token)) {
         kernel_log(3,"PS2_BINDING_FAILED"); return 0;
     }
+#ifdef KERNEL_CONSOLE_SHELL
+    if (!x86_console_open(&session)) return 0;
+#endif
     session.Active = 1;
     if (!x86_scheduler_run_input() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
         !kernel_scheduler_irq_unbind(4,(BOOT_U64)&session,session.Binding) || !x86_watchdog_valid()) return 0;
     session.Active = 0;
+#ifdef KERNEL_CONSOLE_SHELL
+    if (!x86_console_finish(&session)) return 0;
+#endif
 #ifdef KERNEL_TEST_CONSOLE_DRAW
     if (!kernel_console_active_finish(&session)) return 0;
 #endif

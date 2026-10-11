@@ -21,7 +21,7 @@ int x86_hpet_owned_preflight(const KERNEL_BOOT_CONTEXT *context,
         !x86_hpet_table_span(physical + 4096 - 4, 4, pool->PhysicalBits) ||
         !kernel_inventory_memory(context->MemoryMap, context->Info.MemoryMapBytes,
             context->Info.MemoryDescriptorBytes, &map)) { return 0; }
-#ifdef KERNEL_TEST_CONSOLE_ACTIVE
+#if defined(KERNEL_TEST_CONSOLE_ACTIVE) || defined(KERNEL_CONSOLE_SHELL)
     if (inventory->Video.AperturePages && kernel_regions_overlap(physical, 1,
         inventory->Video.Physical, inventory->Video.AperturePages)) return 0;
 #endif

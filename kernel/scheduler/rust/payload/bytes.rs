@@ -61,5 +61,5 @@ impl Bytes {
 }
 
 #[cfg(test)]
-#[path = "../../test/payload/bytes_test.rs"]
+#[path = "../../../../test/kernel/scheduler/payload/bytes_test.rs"]
 mod tests;

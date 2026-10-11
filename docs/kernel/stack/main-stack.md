@@ -54,9 +54,9 @@ dell'ingresso, non dello stack attivo. Nessuna pagina loader viene liberata.
 ## Test
 
 ```powershell
-./kernel/test/host.ps1
+./test/kernel/host.ps1
 ./kernel/scripts/build.ps1 -Install
-./kernel/test/firmware.ps1 -UseInstalled
+./test/kernel/firmware.ps1 -UseInstalled
 ```
 
 La ESP deve contenere il loader con -BootKernel. I test host coprono pin/zeroing,

@@ -1,13 +1,19 @@
 param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
-    [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch,
+    [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell,
     [switch]$TestWatchdogCleanupRecovery,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
+if ($ConsoleShell) {
+    if ($TestConsoleActive -or $TestConsoleDraw -or $TestConsoleBatch -or $TestFramebufferMapping) {
+        throw 'ConsoleShell is separate from console diagnostic profiles.'
+    }
+    $Ps2Input = $true
+}
 if ($TestConsoleBatch) {
     if ($TestConsoleDraw) { throw 'Choose one draw diagnostic profile.' }
     $TestConsoleDraw = $true
@@ -78,6 +84,7 @@ if ($TestFramebufferMapping) { $flags += '/DKERNEL_TEST_FRAMEBUFFER_MAPPING=1' }
 if ($TestConsoleActive) { $flags += '/DKERNEL_TEST_CONSOLE_ACTIVE=1' }
 if ($TestConsoleDraw) { $flags += '/DKERNEL_TEST_CONSOLE_DRAW=1' }
 if ($TestConsoleBatch) { $flags += '/DKERNEL_TEST_CONSOLE_BATCH=1' }
+if ($ConsoleShell) { $flags += '/DKERNEL_CONSOLE_SHELL=1' }
 if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
 if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
 if ($bootstrapDiagnostics) { $flags += '/DKERNEL_TEST_BOOTSTRAP_MEMORY=1' }
@@ -115,7 +122,7 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/scheduler/mapping/access.c',
     'arch/x86/kernel/scheduler/integration/kernel.c','arch/x86/kernel/scheduler/integration/workload.c',
     'arch/x86/kernel/scheduler/integration/report.c','arch/x86/kernel/scheduler/integration/validation.c','arch/x86/kernel/scheduler/idle/idle.c',
-    'arch/x86/kernel/scheduler/test/fault/fault.c','arch/x86/kernel/scheduler/persistent/workload.c',
+    'test/arch/x86/kernel/scheduler/fault/fault.c','arch/x86/kernel/scheduler/persistent/workload.c',
     'arch/x86/kernel/scheduler/dispatcher/engine.c','arch/x86/kernel/scheduler/diagnostic/profiles.c',
     'arch/x86/kernel/scheduler/irq/bridge.c','arch/x86/kernel/scheduler/runtime/memory.c','arch/x86/kernel/scheduler/runtime/payload.c','arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
     'kernel/bootstrap/memory.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c','kernel/drivers/video/framebuffer/mapping.c',
@@ -136,7 +143,7 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c',
     'arch/x86/kernel/drivers/video/framebuffer/gateway/native.c',
     'arch/x86/kernel/drivers/video/framebuffer/font/font.c',
-    'arch/x86/kernel/drivers/video/framebuffer/test/drawing/probe.c',
+    'test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.c',
     'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c',
     'lib/firmware/acpi/rsdp.c',
     'kernel/firmware/acpi/root.c',
@@ -167,7 +174,7 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
 }
 if ($bootstrapDiagnostics) {
     $object = Join-Path $output 'bootstrap-probes.obj'
-    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'kernel/test/bootstrap/probes.c'),('/Fo' + $object)))
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'test/kernel/bootstrap/probes.c'),('/Fo' + $object)))
     $objects += $object
 }
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/io.obj'),
@@ -198,26 +205,30 @@ foreach ($entry in @('entry/return','verification/registers')) {
 }
 if ($TestCpuFault -ne 'none') {
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/cpu-fault.obj'),
-        (Join-Path $project 'kernel/test/exceptions/assembly/fault/probe.asm'))
+        (Join-Path $project 'test/kernel/exceptions/assembly/fault/probe.asm'))
     $objects += ($output + '/cpu-fault.obj')
 }
 if ($TestWindowFault -ne 'none') {
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/fault.obj'),
-        (Join-Path $project 'kernel/test/mm/window/assembly/fault/probe.asm'))
+        (Join-Path $project 'test/kernel/mm/window/assembly/fault/probe.asm'))
     $objects += ($output + '/fault.obj')
 }
 foreach ($source in @('assembly/irq/compute.asm','assembly/switch/context.asm','assembly/profile/capture.asm',
-    'assembly/profile/permissions.asm','test/assembly/preservation/probe.asm')) {
+    'assembly/profile/permissions.asm','../../../../test/arch/x86/kernel/scheduler/assembly/preservation/probe.asm')) {
     $object = $output + '/scheduler-' + $source.Replace('/','-').Replace('.asm','.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo'+$object),
         (Join-Path $project ('arch/x86/kernel/scheduler/'+$source)))
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
-if ($TestFramebufferMapping -or $TestConsoleDraw) {
-    $consoleSources = @('kernel/console/video/console.c','kernel/console/video/render.c')
-    if ($TestFramebufferMapping) { $consoleSources += @('kernel/console/video/test/kernel/probe.c','kernel/console/video/test/kernel/render_probe.c') }
-    if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/batch/render.c','kernel/console/video/test/active/worker.c','kernel/console/video/test/active/snapshot.c','kernel/console/video/test/profiling/profile.c') }
+if ($TestFramebufferMapping -or $TestConsoleDraw -or $ConsoleShell) {
+    $consoleSources = @('kernel/console/video/console.c','kernel/console/video/render.c',
+        'kernel/console/video/service/console.c')
+    if ($TestFramebufferMapping) { $consoleSources += @('test/kernel/console/video/kernel/probe.c','test/kernel/console/video/kernel/render_probe.c','test/kernel/console/video/kernel/service_probe.c') }
+    if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/batch/render.c','test/kernel/console/video/active/worker.c','test/kernel/console/video/active/snapshot.c','test/kernel/console/video/profiling/profile.c') }
+    if ($ConsoleShell) { $consoleSources += @('kernel/console/video/measurement/budget.c',
+        'kernel/console/video/batch/render.c','arch/x86/kernel/drivers/video/framebuffer/live/group.c',
+        'arch/x86/kernel/drivers/video/framebuffer/console/runtime.c') }
     foreach ($source in $consoleSources) {
         $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
         Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
@@ -228,7 +239,12 @@ if ($TestFramebufferMapping -or $TestConsoleDraw) {
         '-C','overflow-checks=yes','-D','warnings',
         (Join-Path $project 'kernel/console/video/rust/cursor/plan.rs'),'-o',($output + '/console-grid.obj'))
     $objects += ($output + '/console-grid.obj')
-    if ($TestConsoleDraw) {
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj',
+        '--target','x86_64-pc-windows-msvc','-C','panic=abort','-C','opt-level=2',
+        '-C','overflow-checks=yes','-D','warnings',
+        (Join-Path $project 'kernel/console/video/rust/text/utf8.rs'),'-o',($output + '/console-text.obj'))
+    $objects += ($output + '/console-text.obj')
+    if ($TestConsoleDraw -or $ConsoleShell) {
         Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj',
             '--target','x86_64-pc-windows-msvc','-C','panic=abort','-C','opt-level=2',
             '-C','overflow-checks=yes','-D','warnings',
@@ -375,7 +391,7 @@ if ($TestPs2Controller -or $Ps2Input) {
 }
 if ($TestPs2Decoder) {
     $object = Join-Path $output 'ps2-decoder-abi.obj'
-    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'kernel/drivers/input/ps2/test/decoder/abi_test.c'),('/Fo' + $object)))
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'test/kernel/drivers/input/ps2/decoder/abi_test.c'),('/Fo' + $object)))
     $objects += $object
 }
 if ($TestPs2Decoder -or $Ps2Input) {

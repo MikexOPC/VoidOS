@@ -103,7 +103,7 @@ kernel/build/framebuffer-mapping-kernel/, non installato sulla ESP ordinaria.
 Sorgenti del modulo: massimo207 righe; cinque file diretti nella radice.
 Interfacce di integrazione main/build: massimo326 righe. Controlli di
 dimensione, spazi, sintassi Python, link locali e git diff --check passano.
-La segnalazione CRLF preesistente di kernel/test/firmware.ps1 e distinta
+La segnalazione CRLF preesistente di test/kernel/firmware.ps1 e distinta
 da un errore di diff. Nuovo codice con soli separatori; reuse/ intatto.
 Il repository include lavoro precedente non committato: i totali del
 diff Git non rappresentano esclusivamente questa implementazione.

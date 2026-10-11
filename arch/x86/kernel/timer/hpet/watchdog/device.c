@@ -1,4 +1,15 @@
 #include "watchdog.h"
+static BOOT_U32 arm_detail;
+static BOOT_U64 arm_registers;
+static BOOT_U32 rollover_seen;
+
+// ====== x86_watchdog_arm_detail ======
+
+BOOT_U32 x86_watchdog_arm_detail(void) { return arm_detail; }
+
+// ====== x86_watchdog_arm_registers ======
+
+BOOT_U64 x86_watchdog_arm_registers(void) { return arm_registers; }
 
 // ====== confirmed ======
 
@@ -78,7 +89,9 @@ static int device_operation(void *argument)
             x86_watchdog_mmio_read(0x10,&global) &&
             (global == owner->GlobalSaved || global == (owner->GlobalSaved | 1));
     }
+    if (op == 2) arm_detail = 2;
     if (!x86_watchdog_mmio_read(offset,&config) || !x86_watchdog_mmio_read(0x20,&pending)) { return 0; }
+    if (op == 2) arm_registers = ((BOOT_U64)config << 32) | pending;
     if (op == 1) {
         BOOT_U32 index;
         if (!confirmed(offset,owner->ConfigBase | (owner->Pin << 9)) ||
@@ -87,37 +100,86 @@ static int device_operation(void *argument)
         for (index = 0; index < 2000; ++index) {
             BOOT_U32 current;
             if (!x86_watchdog_mmio_read(0xf0,&current)) { return 0; }
-            if (current != now) { return 1; }
+            if (current != now) {
+                /* HPET 1.0a 2.3.5/2.3.6: quiesce after the liveness probe;
+                 * no deadline exists yet, so only this timer's status may be cleared. */
+                BOOT_U32 bit = 1u << owner->Timer;
+                return confirmed(0x10,owner->GlobalSaved) &&
+                    x86_watchdog_mmio_read(0x20,&pending) && !(pending & ~bit) &&
+                    (!pending || x86_watchdog_mmio_write(0x20,bit)) &&
+                    x86_watchdog_mmio_read(0x20,&pending) && !pending;
+            }
         }
         return 0;
     }
     if (op == 2) {
         BOOT_U32 expected = owner->ConfigBase | (owner->Pin << 9);
-        if (owner->Armed || pending || config != expected ||
-            !x86_watchdog_mmio_read(0x10,&now) || now != (owner->GlobalSaved | 1) ||
-            !confirmed(0x10,owner->GlobalSaved) ||
-            !x86_watchdog_mmio_read(0xf0,&owner->Start)) { return 0; }
+        arm_detail = 3;
+        if (owner->Armed) return 0;
+        arm_detail = 13;
+        if (pending & ~(1u << owner->Timer)) return 0;
+        arm_detail = 14;
+        if (config != expected) return 0;
+        arm_detail = 4;
+        if (!x86_watchdog_mmio_read(0x10,&now) ||
+            (now != owner->GlobalSaved && now != (owner->GlobalSaved | 1))) return 0;
+        arm_detail = 5;
+        if (!confirmed(0x10,owner->GlobalSaved)) return 0;
+        /* HPET 1.0a 2.3.6/2.3.8: INT_ENB_CNF bit2 masks delivery, not status.
+         * Halt at 0x10 before W1C at 0x20; discard only the owned inactive timer. */
+        arm_detail = 13;
+        if (!x86_watchdog_mmio_read(0x20,&pending) ||
+            (pending & ~(1u << owner->Timer)) ||
+            (pending && !x86_watchdog_mmio_write(0x20,1u << owner->Timer)) ||
+            !x86_watchdog_mmio_read(0x20,&pending) || pending) return 0;
+        arm_detail = 6;
+        if (!x86_watchdog_mmio_read(0xf0,&owner->Start)) return 0;
         owner->Target = owner->Start + owner->Ticks;
+        arm_detail = 7;
         if (!confirmed(offset+8,owner->Target)) { return 0; }
         owner->Armed = 1;
-        if (!confirmed(offset,expected | 4) || !x86_watchdog_mmio_read(0xf0,&now) ||
-            now != owner->Start || !x86_watchdog_ahead(owner->Start,now,owner->Ticks) ||
-            !x86_watchdog_mmio_read(0x20,&pending) || pending ||
-            !confirmed(0x10,owner->GlobalSaved | 1)) {
+        rollover_seen = 0;
+        arm_detail = 8;
+        if (!confirmed(offset,expected | 4)) goto arm_failed;
+        arm_detail = 9;
+        if (!x86_watchdog_mmio_read(0xf0,&now) || now != owner->Start ||
+            !x86_watchdog_ahead(owner->Start,now,owner->Ticks)) goto arm_failed;
+        arm_detail = 10;
+        if (!x86_watchdog_mmio_read(0x20,&pending) || pending) goto arm_failed;
+        arm_detail = 11;
+        if (!confirmed(0x10,owner->GlobalSaved | 1)) goto arm_failed;
+        arm_detail = 0;
+        return 1;
+arm_failed:
+        {
             if (confirmed(offset,expected) && confirmed(0x10,owner->GlobalSaved) &&
                 x86_watchdog_mmio_read(0x20,&pending) && !pending) {
                 owner->Armed = 0;
             }
             return 0;
         }
-        return 1;
     }
     if (op == 3) {
         BOOT_U32 bit = 1u << owner->Timer;
         if (!owner->Armed || config != (owner->ConfigBase | (owner->Pin << 9) | 4) ||
             pending != bit || !x86_watchdog_mmio_read(0xf0,&now) ||
-            (BOOT_U32)(now - owner->Start) < owner->Ticks ||
-            (BOOT_U32)(now - owner->Start) >= 0x80000000u ||
+            (BOOT_U32)(now - owner->Start) >= 0x80000000u) return 0;
+        /* HPET 1.0a 2.4.3.1: a 32-bit one-shot also interrupts at rollover.
+         * Acknowledge at most one wrap before the target; retain the deadline.
+         * Read W1C status before time so a newly pending match cannot be mistaken
+         * for an early duplicate using an older counter sample. */
+        if ((BOOT_U32)(now - owner->Start) < owner->Ticks) {
+            if (rollover_seen || owner->Target >= owner->Start || now >= owner->Start ||
+                !x86_watchdog_mmio_write(0x20,bit) ||
+                !x86_watchdog_mmio_read(0x20,&pending) || (pending & ~bit) ||
+                !x86_watchdog_mmio_read(0xf0,&now) ||
+                (BOOT_U32)(now - owner->Start) >= 0x80000000u) return 0;
+            rollover_seen = 1;
+            if ((BOOT_U32)(now - owner->Start) < owner->Ticks) return !pending;
+        }
+        /* HPET 1.0a 2.3.5/2.3.6/2.3.8: stop owned block (0x10 bit0) before
+         * masking comparator (bit2) and W1C status, preventing idle wrap events. */
+        if (!confirmed(0x10,owner->GlobalSaved) ||
             !confirmed(offset,config & ~4u) || !x86_watchdog_mmio_write(0x20,bit) ||
             !x86_watchdog_mmio_read(0x20,&pending) || pending) { return 0; }
         owner->Armed = 0;
@@ -134,10 +196,14 @@ static int device_operation(void *argument)
 int x86_watchdog_device(BOOT_U32 operation)
 {
     X86_HPET_WATCHDOG *owner = x86_watchdog_state();
+    int result;
+    if (operation == 2) { arm_detail = 1; arm_registers = 0; }
     if (!x86_watchdog_valid() || operation > 7 ||
         (operation == 6 && (owner->Ready || owner->Armed || owner->RouteOwned)) ||
         (operation && operation != 7 && !owner->Acquired) || (!operation && owner->Acquired) ||
         (operation == 7 && (owner->Timer >= 32 || owner->Armed || owner->Error))) { return 0; }
-    return x86_apic_borrow(owner->Env.Window,owner->Physical,owner->Cache,
+    result = x86_apic_borrow(owner->Env.Window,owner->Physical,owner->Cache,
         operation != 0 && operation != 6 && operation != 7,device_operation,&operation);
+    if (operation == 2 && !result && !arm_detail) arm_detail = 12;
+    return result;
 }

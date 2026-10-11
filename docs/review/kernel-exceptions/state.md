@@ -15,7 +15,7 @@ kernel. Questo non misura la completezza di un OS o il supporto a PC reali.
 
 ## Test dello stato finale
 
-- `kernel/test/host.ps1`: regressione C di contratto, memoria fisica, mapping,
+- `test/kernel/host.ps1`: regressione C di contratto, memoria fisica, mapping,
   pool e logging; test IDT con corruzione dei 512 byte dei gate e dei 10 byte
   dell'operando, rifiuto alias/null/disallineamento e preflight host negativo.
 - Rust: 14 test complessivi, di cui 3 nuovi su indirizzi e frame delle eccezioni.

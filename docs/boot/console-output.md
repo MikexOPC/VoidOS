@@ -94,7 +94,7 @@ Il primo comando compila ed esegue i test C; il secondo apre QEMU.
 Per verificare automaticamente anche gli otto scenari nel firmware:
 
 ```powershell
-./arch/x86/boot/uefi/test/firmware_test.ps1
+./test/arch/x86/boot/uefi/firmware_test.ps1
 ```
 
 I log restano in `build/firmware-test-<id>/<scenario>/serial.log`.

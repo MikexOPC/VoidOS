@@ -132,7 +132,7 @@ Da D:\OS, PowerShell:
 ```powershell
 & arch/x86/kernel/timer/hpet/watchdog/scripts/test.ps1
 & arch/x86/kernel/timer/hpet/description/scripts/test.ps1
-& kernel/test/timer/lapic/scripts/asan.ps1
+& test/kernel/timer/lapic/scripts/asan.ps1
 & arch/x86/kernel/timer/hpet/watchdog/scripts/kernel.ps1
 ```
 
