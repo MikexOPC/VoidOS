@@ -12,6 +12,10 @@ static KERNEL_CONSOLE_BATCH batch;
 static KERNEL_CONSOLE_MEASUREMENT measured;
 static X86_PS2_SESSION *source;
 static uint32_t absent;
+// Timing of flushes in PM ticks (3.579545 MHz), reported when the session closes. Idle
+// flushes found nothing to draw; settle is the time spent in the serial pointer record.
+static uint64_t flush_count, flush_total, settle_total, idle_count, idle_total;
+static uint32_t flush_max;
 #ifdef KERNEL_PS2_MOUSE
 static KERNEL_CONSOLE_POINTER pointer;
 static uint64_t pointer_frame = UINT64_MAX;
@@ -53,6 +57,13 @@ static uint32_t clock_read(void *context)
 {
     if (context != source || !task_valid(source, 1)) kernel_scheduler_fail_stop();
     return x86_pm_read((unsigned short)source->Clock.Port) & source->Clock.Mask;
+}
+
+// ====== elapsed ======
+
+static uint32_t elapsed(uint32_t start)
+{
+    return (clock_read(source) - start) & source->Clock.Mask;
 }
 
 // ====== draw_group ======
@@ -196,10 +207,11 @@ static int pointer_settled(void)
 
 int x86_console_flush(X86_PS2_SESSION *session)
 {
-    uint32_t result;
+    uint32_t result, begin, spent;
     uint64_t overruns = measured.Overruns;
     if (!task_valid(session, 1)) return flush_failure(1);
     if (absent) return 1;
+    begin = clock_read(source);
 #ifdef KERNEL_PS2_MOUSE
     if (pointer_pending) {
         uint32_t index = pointer.Image.Y / 16 * view.Columns + pointer.Image.X / 8;
@@ -213,8 +225,17 @@ int x86_console_flush(X86_PS2_SESSION *session)
     if (!kernel_console_service_render_end(&service, result != 0)) return flush_failure(3);
     if (!result || measured.Failed || batch.Failed || render.Busy) return flush_failure(4);
 #ifdef KERNEL_PS2_MOUSE
-    if (!pointer_settled()) return flush_failure(6);
+    {
+        uint32_t mark = clock_read(source);
+        int settled = pointer_settled();
+        settle_total += elapsed(mark);
+        if (!settled) return flush_failure(6);
+    }
 #endif
+    spent = elapsed(begin);
+    ++flush_count; flush_total += spent;
+    if (result == KERNEL_CONSOLE_RENDER_IDLE) { ++idle_count; idle_total += spent; }
+    if (spent > flush_max) flush_max = spent;
     if (measured.Overruns != overruns && !(measured.Overruns & (measured.Overruns - 1))) {
         if (!kernel_text("CONSOLE_SLOW_GROUP_PM: ") || !kernel_number(measured.LastTicks) ||
             !kernel_text("\n") || !kernel_log(2, "KERNEL_CONSOLE_SLOW_GROUP")) return flush_failure(5);
@@ -247,5 +268,11 @@ int x86_console_finish(X86_PS2_SESSION *session)
         kernel_text("\nKERNEL_CONSOLE_SHELL_GROUPS: ") && kernel_number(batch.Groups) &&
         kernel_text("\nKERNEL_CONSOLE_SHELL_MAX_PM: ") && kernel_number(measured.MaxTicks) &&
         kernel_text("\nKERNEL_CONSOLE_SHELL_OVERRUNS: ") && kernel_number(measured.Overruns) &&
+        kernel_text("\nKERNEL_CONSOLE_FLUSHES: ") && kernel_number(flush_count) &&
+        kernel_text("\nKERNEL_CONSOLE_FLUSH_TOTAL_PM: ") && kernel_number(flush_total) &&
+        kernel_text("\nKERNEL_CONSOLE_FLUSH_MAX_PM: ") && kernel_number(flush_max) &&
+        kernel_text("\nKERNEL_CONSOLE_IDLE_FLUSHES: ") && kernel_number(idle_count) &&
+        kernel_text("\nKERNEL_CONSOLE_IDLE_TOTAL_PM: ") && kernel_number(idle_total) &&
+        kernel_text("\nKERNEL_CONSOLE_SETTLE_TOTAL_PM: ") && kernel_number(settle_total) &&
         kernel_text("\n") && kernel_log(0, "KERNEL_CONSOLE_SHELL_CLEAN");
 }

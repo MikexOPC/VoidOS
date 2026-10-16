@@ -95,12 +95,15 @@ int kernel_console_peek(const KERNEL_VIDEO_CONSOLE *console, uint32_t start,
     if (!valid(console) || !index || !scalar) return -1;
     count = console->Columns * console->Rows;
     if (start > count) return -1;
-    for (current = start; current < count; ++current) {
-        if (console->Dirty[current / 8] & (1U << (current % 8))) {
-            *index = current;
-            *scalar = console->Cells[current];
-            return 1;
-        }
+    // Byte-wise scan: an empty bitmap costs one test per 8 cells instead of one per cell.
+    for (current = start; current < count; current = (current / 8 + 1) * 8) {
+        uint32_t pending = (uint32_t)console->Dirty[current / 8] >> (current % 8);
+        if (!pending) continue;
+        while (!(pending & 1U)) { pending >>= 1; ++current; }
+        if (current >= count) break;
+        *index = current;
+        *scalar = console->Cells[current];
+        return 1;
     }
     return 0;
 }
