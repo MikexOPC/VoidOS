@@ -27,8 +27,8 @@ class PointerTests(unittest.TestCase):
                 counts[0 if pixel == 0 else 2 if pixel == 512 else 1] += 1
         self.assertTrue(all(counts))
         self.assertEqual(sum(counts),324)
-        self.assertGreater(pointer.sample(0,0),0)
-        self.assertEqual(pointer.sample(3,6),512)
+        self.assertGreater(pointer.sample(2,0),0)
+        self.assertEqual(pointer.sample(1,6),512)
         for x,y in [(-1,0),(18,0),(0,-1),(0,18),(2**32,0)]:
             self.assertEqual(pointer.sample(x,y),0)
 

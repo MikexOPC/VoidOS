@@ -2,29 +2,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[5]
 SIZE = 18
 
-# ============ hand-drawn sharp arrow, tip at the hotspot (0,0) ============
+# ============ sharp arrow after the user's reference image ============
 
-# X = black outline, o = white fill, . = transparent. No antialiasing: every
-# sample is fully black (16), fully white (16 << 5) or transparent (0).
+# Reference: scripts/pointer/reference-cursor.png (16 October 2026): black arrow with a white
+# outline, tip on the upper left, slightly tilted left edge, notch and short tail at the bottom.
+# The art was fitted to 18x18 from that image and then thresholded to a crisp 1 px outline.
+# X = black fill, o = white outline, . = transparent. No antialiasing: every sample is fully
+# black (16), fully white (16 << 5) or transparent (0). Hotspot: the tip at (2,0).
 ART = [
-    'X.................',
-    'XX................',
-    'XoX...............',
-    'XooX..............',
-    'XoooX.............',
-    'XooooX............',
-    'XoooooX...........',
-    'XooooooX..........',
-    'XoooooooX.........',
-    'XooooooooX........',
-    'XoooooXXXXX.......',
-    'XoooXooX..........',
-    'XooXXooX..........',
-    'XoX..XooX.........',
-    'XX...XooX.........',
-    'X.....XooX........',
-    '......XooX........',
-    '.......XX.........',
+    '..o...............',
+    '.oXo..............',
+    '.oXXo.............',
+    '.oXXXo............',
+    '.oXXXoo...........',
+    '.oXXXXoo..........',
+    '.oXXXXXo..........',
+    '.oXXXXXXo.........',
+    '.oXXXXXXXo........',
+    '.oXXXXXXXXo.......',
+    'oXXXXXXXXXXo......',
+    'oXXXXXXXXXXoo.....',
+    'oXXXXXXXXXXXo.....',
+    'oXXXXXooooooo.....',
+    'oXXXXo............',
+    'oXXoo.............',
+    'oXoo..............',
+    'oo................',
 ]
 LEVEL = {'.': 0, 'X': 16, 'o': 16 << 5}
 
@@ -68,7 +71,8 @@ uint32_t kernel_pointer_blend(uint32_t sample, uint32_t background)
     reference = ROOT/'kernel/console/video/scripts/pointer/firmware.py'
     text = reference.read_text(encoding='utf-8')
     start = text.index('COVERAGE =') if 'COVERAGE =' in text else text.index('BOUNDS =')
-    end = text.index('def expected_position')
+    marker = '# Console cell in pixels'
+    end = text.index(marker) if marker in text else text.index('def expected_position')
     values = '\n'.join('    '+repr(row)+',' for row in rows)
     replacement = 'COVERAGE = [\n'+values+'\n]\n\n# ============ bitmap coverage reference ============\n\n'
     replacement += 'def sample(x, y):\n    return COVERAGE[y][x] if 0 <= x < 18 and 0 <= y < 18 else 0\n\n'
