@@ -1,6 +1,6 @@
-# Font console 10x20 (storico 8x16) — aggiornato il 16 ottobre 2026
+# Font console 9x18 (storico 8x16 e 10x20) — aggiornato il 16 ottobre 2026
 
-Dal 16 ottobre la cella e 10x20: parametri del generatore, contratto e prove in
+Dal 16 ottobre la cella e 9x18 (prima 10x20): parametri del generatore, contratto e prove in
 [font-cell.md](../../../../../../kernel/console/video/documentation/font-cell.md). Le sezioni
 sotto descrivono il checkpoint del 10 ottobre con la cella 8x16 e restano come storico;
 dove citano 8x16, soglia 128, 16 righe o 32 celle valgono i nuovi valori del documento

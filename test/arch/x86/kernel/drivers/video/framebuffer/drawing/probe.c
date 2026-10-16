@@ -29,12 +29,12 @@ static int font_probe(X86_FB_MAPPING *owner)
     if (!x86_fb_text(owner, &text, x86_fb_console_font())) return 0;
     for (index = 0; index < 95; ++index) ascii[index] = (unsigned char)(32 + index);
     text.Y = 88;
-    // 10x20 cells: one text call holds at most 20 cells (4096 pixels), so each line of 32 is two calls of 16.
+    // 9x18 cells: one text call holds at most 25 cells (4096 pixels), so each line of 32 is two calls of 16.
     for (index = 0; index < 95; index += 32) {
         for (half = 0; half < 2 && index + half * 16 < 95; ++half) {
             BOOT_U32 first = index + half * 16, left = 95 - first;
             text.Text = ascii + first; text.Bytes = left < 16 ? left : 16; text.Capacity = left;
-            text.X = 16 + half * 160;
+            text.X = 16 + half * 16 * x86_fb_console_font()->Width;
             if (!x86_fb_text(owner, &text, x86_fb_console_font())) return 0;
         }
         text.Y += 20;

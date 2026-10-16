@@ -54,7 +54,7 @@ pub extern "C" fn x86_fb_utf8_scalar(packed: u32, remaining: u32) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_fb_font_height(height: u32) -> u32 {
-    u32::from(matches!(height, 8 | 16 | 20))
+    u32::from(matches!(height, 8 | 16 | 18 | 20))
 }
 
 #[cfg(test)]

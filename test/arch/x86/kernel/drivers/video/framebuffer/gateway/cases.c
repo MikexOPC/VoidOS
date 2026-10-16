@@ -31,7 +31,7 @@ int x86_fb_text(X86_FB_MAPPING *mapping, const X86_FB_TEXT *text, const X86_FB_F
 {
     BOOT_U32 offset = 0, glyph = 0;
     BOOT_U64 scalar;
-    CHECK(mapping == &owner && !(flags & 512) && text->Capacity == (group_count ? 32U : 4U) && font->Height == 20 && font->Width == 10);
+    CHECK(mapping == &owner && !(flags & 512) && text->Capacity == (group_count ? 32U : 4U) && font->Height == 18 && font->Width == 9);
     CHECK(text->Bytes >= 1 && text->Bytes <= text->Capacity);
     while (offset < text->Bytes) {
         BOOT_U32 packed = 0, byte;
@@ -43,7 +43,7 @@ int x86_fb_text(X86_FB_MAPPING *mapping, const X86_FB_TEXT *text, const X86_FB_F
         offset += (BOOT_U32)(scalar >> 32); ++glyph;
     }
     CHECK(glyph == (group_count ? group_count : 1U));
-    CHECK(text->X % 10 == 0 && text->Y % 20 == 0);
+    CHECK(text->X % 9 == 0 && text->Y % 18 == 0);
     ++calls;
     return !failure;
 }
@@ -63,7 +63,7 @@ int main(void)
             int expected = (int)x86_fb_font_scalar(scalar);
             expected_scalar = scalar;
             ticks = 7;
-            CHECK(x86_fb_cell(&owner, 191, 53, scalar, 0xffffff, 0, &ticks) == expected);
+            CHECK(x86_fb_cell(&owner, 212, 59, scalar, 0xffffff, 0, &ticks) == expected);
             CHECK(flags == (2 | ((BOOT_U64)initial << 9)));
             CHECK(ticks == (expected ? 100U : 7U));
             ++count;
@@ -75,8 +75,8 @@ int main(void)
         supported = 0; ticks = 7;
         CHECK(!x86_fb_cell(&owner, 0, 0, 'A', 0, 0, &ticks) && ticks == 7);
         supported = 1;
-        CHECK(!x86_fb_cell(&owner, 192, 0, 'A', 0, 0, &ticks) && !x86_fb_cell(&owner, 240, 0, 'A', 0, 0, &ticks));
-        CHECK(!x86_fb_cell(&owner, 0, 54, 'A', 0, 0, &ticks) && !x86_fb_cell(&owner, 0, 67, 'A', 0, 0, &ticks));
+        CHECK(!x86_fb_cell(&owner, 213, 0, 'A', 0, 0, &ticks) && !x86_fb_cell(&owner, 240, 0, 'A', 0, 0, &ticks));
+        CHECK(!x86_fb_cell(&owner, 0, 60, 'A', 0, 0, &ticks) && !x86_fb_cell(&owner, 0, 67, 'A', 0, 0, &ticks));
         CHECK(!x86_fb_cell(&owner, 0, 0, 'A', UINT32_MAX, 0, &ticks));
         CHECK(!x86_fb_cell(&owner, 0, 0, 'A', 0, 0, NULL));
         CHECK(!x86_fb_cell(NULL, 0, 0, 'A', 0, 0, &ticks));
@@ -87,12 +87,12 @@ int main(void)
     for (initial = 0; initial < 2; ++initial) {
         flags = 2 | ((BOOT_U64)initial << 9);
         ticks = 7;
-        CHECK(x86_fb_group(&owner, 184, 53, group_scalars, 8, 0xffffff, 0, &ticks) && ticks == 100);
+        CHECK(x86_fb_group(&owner, 205, 59, group_scalars, 8, 0xffffff, 0, &ticks) && ticks == 100);
         failure = 1;
         CHECK(!x86_fb_group(&owner, 0, 0, group_scalars, 8, 0, 0, &ticks)); failure = 0;
         CHECK(flags == (2 | ((BOOT_U64)initial << 9)));
         ticks = 7;
-        CHECK(!x86_fb_group(&owner, 185, 53, group_scalars, 8, 0, 0, &ticks));
+        CHECK(!x86_fb_group(&owner, 206, 59, group_scalars, 8, 0, 0, &ticks));
         CHECK(!x86_fb_group(&owner, 0, 0, group_scalars, 0, 0, 0, &ticks));
         CHECK(!x86_fb_group(&owner, 0, 0, group_scalars, 9, 0, 0, &ticks));
         CHECK(!x86_fb_group(&owner, 0, 0, NULL, 8, 0, 0, &ticks));
@@ -103,14 +103,14 @@ int main(void)
     }
     CHECK(switches == calls);
     for (scalar = 0; scalar < 8; ++scalar) group_scalars[scalar] = 0x1f600;
-    CHECK(x86_fb_group(&owner, 184, 53, group_scalars, 8, 0, 0, &ticks));
+    CHECK(x86_fb_group(&owner, 205, 59, group_scalars, 8, 0, 0, &ticks));
     group_count = 1;
-    CHECK(x86_fb_group(&owner, 191, 53, group_scalars, 1, 0, 0, &ticks));
-    CHECK(x86_fb_group_caret(&owner, 191, 53, group_scalars, 1, 0, 0, &ticks, 0));
+    CHECK(x86_fb_group(&owner, 212, 59, group_scalars, 1, 0, 0, &ticks));
+    CHECK(x86_fb_group_caret(&owner, 212, 59, group_scalars, 1, 0, 0, &ticks, 0));
     scalar = calls;
-    CHECK(!x86_fb_group_caret(&owner, 191, 53, group_scalars, 1, 0, 0, &ticks, 1));
+    CHECK(!x86_fb_group_caret(&owner, 212, 59, group_scalars, 1, 0, 0, &ticks, 1));
     CHECK(calls == scalar);
-    CHECK(!x86_fb_group(&owner, 0, 54, group_scalars, 1, 0, 0, &ticks));
+    CHECK(!x86_fb_group(&owner, 0, 60, group_scalars, 1, 0, 0, &ticks));
     CHECK(!x86_fb_group(&owner, 0, 0, group_scalars, 1, UINT32_MAX, 0, &ticks));
     CHECK(!x86_fb_group(&owner, 0, 0, group_scalars, 1, 0, 0, NULL));
     CHECK(switches == calls);

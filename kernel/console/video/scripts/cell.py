@@ -68,7 +68,7 @@ def verify(vm, scenario, log):
     # The guest draws the measured cells from grid cell (2, 10).
     left, top = 2 * font.WIDTH, 10 * font.HEIGHT
     for row in range(font.HEIGHT):
-        words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((top + row) * stride + left) * 4, font.WIDTH * size // 2)
+        words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((top + row) * stride + left) * 4, (font.WIDTH * size + 1) // 2)
         for column in range(font.WIDTH * size):
             bitmap = glyphs[column // font.WIDTH][row]
             r, g, b = (255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - column % font.WIDTH)) else (8, 16, 24)

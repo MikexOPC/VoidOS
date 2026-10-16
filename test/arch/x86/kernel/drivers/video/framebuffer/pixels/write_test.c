@@ -283,7 +283,7 @@ static int caret_pixels(void)
     const BOOT_U32 w = font->Width, h = font->Height, stride = 2 * w + 4;
     const unsigned char sample[] = "AA";
     X86_FB_TEXT text = {sample, 2, sizeof(sample), 0, 0, 0x112233, 0x445566};
-    CHECK(w == 10 && h == 20);
+    CHECK(w == 9 && h == 18);
     for (BOOT_U32 format = 0; format < 2; ++format) {
         CHECK(draw_setup(2 * w, h, stride, format));
         visits = 0;
@@ -312,11 +312,11 @@ static int caret_pixels(void)
 static int console_font(void)
 {
     const X86_FB_FONT *font = x86_fb_console_font();
-    const BOOT_U32 w = font->Width, h = font->Height, cells = 20;
+    const BOOT_U32 w = font->Width, h = font->Height, cells = 25;
     unsigned char sample[132];
     X86_FB_TEXT text = {sample, cells, sizeof(sample), 0, 0, 0xffffff, 0};
     BOOT_U32 index, row, col;
-    CHECK(h == 20 && w == 10 && font->Count == 109);
+    CHECK(h == 18 && w == 9 && font->Count == 109);
     for (index = 0; index < font->Count; ++index) {
         for (row = 0; row < h; ++row) CHECK(font->Glyphs[index].Rows[row] >> w == 0);
     }
@@ -345,7 +345,7 @@ static int console_font(void)
         }
         bad = *font;
         for (index = 0; index < 4; ++index) {
-            bad.Width = index == 0 ? 0 : index == 1 ? 9 : index == 2 ? 16 : ~0U;
+            bad.Width = index == 0 ? 0 : index == 1 ? 10 : index == 2 ? 16 : ~0U;
             CHECK(!x86_fb_text(&owner, &text, &bad) && !visits);
         }
     }

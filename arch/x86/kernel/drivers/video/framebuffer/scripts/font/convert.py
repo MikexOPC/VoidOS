@@ -10,9 +10,9 @@ SCALARS = sorted(list(range(32, 127)) + [192, 200, 201, 204, 210, 217,
 
 # ============ bounded offline rasterization ============
 
-# 10x20 cell: Cascadia Mono advance is 0.586 em, so a 17 px em gives exactly 10 px;
-# ascent 16 and descent 4 fill the 20 rows with the baseline on row 16 (row 0 is the top).
-WIDTH, HEIGHT, SIZE, BASELINE, THRESHOLD = 10, 20, 17, 16, 100
+# 9x18 cell: Cascadia Mono advance is 0.586 em, so a 15 px em rounds to 9 px;
+# ascent 14 and descent 4 fill the 18 rows with the baseline on row 14 (row 0 is the top).
+WIDTH, HEIGHT, SIZE, BASELINE, THRESHOLD = 9, 18, 15, 14, 100
 MARGIN = 2
 
 def raster():
