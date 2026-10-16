@@ -1,33 +1,37 @@
 from pathlib import Path
-from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[5]
+SIZE = 18
 
-# ============ original rounded arrow, four by four coverage ============
+# ============ hand-drawn sharp arrow, tip at the hotspot (0,0) ============
+
+# X = black outline, o = white fill, . = transparent. No antialiasing: every
+# sample is fully black (16), fully white (16 << 5) or transparent (0).
+ART = [
+    'X.................',
+    'XX................',
+    'XoX...............',
+    'XooX..............',
+    'XoooX.............',
+    'XooooX............',
+    'XoooooX...........',
+    'XooooooX..........',
+    'XoooooooX.........',
+    'XooooooooX........',
+    'XoooooXXXXX.......',
+    'XoooXooX..........',
+    'XooXXooX..........',
+    'XoX..XooX.........',
+    'XX...XooX.........',
+    'X.....XooX........',
+    '......XooX........',
+    '.......XX.........',
+]
+LEVEL = {'.': 0, 'X': 16, 'o': 16 << 5}
 
 def raster():
-    points = [(4.7, 2.8)]
-    def curve(a, b, end):
-        start = points[-1]
-        for step in range(1, 33):
-            t = step / 32
-            points.append(tuple((1-t)**3*start[k]+3*(1-t)**2*t*a[k]+
-                                3*(1-t)*t*t*b[k]+t**3*end[k] for k in range(2)))
-    curve((2,1),(1.5,2),(2.2,4.6))
-    points.append((7.7,20.4))
-    curve((8.2,22.5),(9.7,22.6),(10.5,20.5))
-    points.append((12.9,15.1))
-    curve((13.4,13.8),(14,13.1),(15.5,12.7))
-    points.append((20.8,10.9))
-    curve((23,10.2),(23,8.7),(20.9,7.9))
-    points.append(points[0])
-    image = Image.new('L',(96,96))
-    draw = ImageDraw.Draw(image)
-    scaled = [(round(x*4),round(y*4)) for x,y in points]
-    draw.polygon(scaled,fill=2)
-    draw.line(scaled,fill=1,width=8,joint='curve')
-    return [[sum((1 if image.getpixel((x*4+dx,y*4+dy)) == 1 else
-                  32 if image.getpixel((x*4+dx,y*4+dy)) == 2 else 0)
-                 for dy in range(4) for dx in range(4)) for x in range(24)] for y in range(24)]
+    if len(ART) != SIZE or any(len(row) != SIZE for row in ART):
+        raise SystemExit('Pointer art must be %dx%d' % (SIZE, SIZE))
+    return [[LEVEL[cell] for cell in row] for row in ART]
 
 # ============ fixed production asset and independent test reference ============
 
@@ -35,7 +39,7 @@ def main():
     rows = raster()
     table = '\n'.join('    {'+','.join(map(str,row))+'},' for row in rows)
     source = '''#include "shape.h"
-static const uint16_t coverage[24][24] = {
+static const uint16_t coverage[18][18] = {
 TABLE
 };
 
@@ -43,7 +47,7 @@ TABLE
 
 uint32_t kernel_pointer_sample(uint32_t x, uint32_t y)
 {
-    return x < 24 && y < 24 ? coverage[y][x] : 0;
+    return x < 18 && y < 18 ? coverage[y][x] : 0;
 }
 
 // ====== kernel_pointer_blend ======
@@ -67,15 +71,19 @@ uint32_t kernel_pointer_blend(uint32_t sample, uint32_t background)
     end = text.index('def expected_position')
     values = '\n'.join('    '+repr(row)+',' for row in rows)
     replacement = 'COVERAGE = [\n'+values+'\n]\n\n# ============ bitmap coverage reference ============\n\n'
-    replacement += 'def sample(x, y):\n    return COVERAGE[y][x] if 0 <= x < 24 and 0 <= y < 24 else 0\n\n'
+    replacement += 'def sample(x, y):\n    return COVERAGE[y][x] if 0 <= x < 18 and 0 <= y < 18 else 0\n\n'
     replacement += 'def blend(pixel, rgb):\n    black, white = pixel & 31, pixel >> 5\n    return bytes((c*(16-black-white)+255*white+8)//16 for c in rgb)\n\n'
     reference.write_text(text[:start]+replacement+text[end:],encoding='utf-8',newline='\n')
-    preview = Image.new('RGB',(24,24),(8,16,24))
-    for y in range(24):
-        for x in range(24):
+    try:
+        from PIL import Image
+    except ImportError:
+        return
+    preview = Image.new('RGB',(SIZE,SIZE),(8,16,24))
+    for y in range(SIZE):
+        for x in range(SIZE):
             b,w = rows[y][x]&31,rows[y][x]>>5
             preview.putpixel((x,y),tuple((c*(16-b-w)+255*w+8)//16 for c in (8,16,24)))
-    preview.resize((192,192)).save(ROOT/'kernel/build/pointer-rounded-preview.png')
+    preview.resize((SIZE*12,SIZE*12),Image.NEAREST).save(ROOT/'kernel/build/pointer-sharp-preview.png')
 
 if __name__ == '__main__':
     main()

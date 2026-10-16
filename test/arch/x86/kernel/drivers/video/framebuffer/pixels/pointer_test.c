@@ -38,7 +38,7 @@ int run_pointer_drawing_tests(POINTER_DRAW_SETUP setup, X86_FB_MAPPING *owner, B
         CHECK(x86_fb_transaction_end(&tx));
         CHECK(!x86_fb_transaction_pixel(&tx,0,0,&word,0));
         CHECK(x86_fb_transaction_begin(owner,rects,2,&tx));
-        for (BOOT_U32 index = 0; index < 2752; ++index)
+        for (BOOT_U32 index = 0; index < 1996; ++index)
             CHECK(x86_fb_transaction_pixel(&tx,0,0,&word,0));
         CHECK(!x86_fb_transaction_pixel(&tx,0,0,&word,0) && !x86_fb_transaction_end(&tx));
         CHECK(x86_fb_transaction_abort(&tx));

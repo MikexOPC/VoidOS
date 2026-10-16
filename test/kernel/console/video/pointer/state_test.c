@@ -30,12 +30,12 @@ static uint32_t dirty_count(void)
 int main(void)
 {
     uint32_t black = 0, white = 0, transparent = 0;
-    for (uint32_t y = 0; y < 24; ++y) for (uint32_t x = 0; x < 24; ++x) {
+    for (uint32_t y = 0; y < 18; ++y) for (uint32_t x = 0; x < 18; ++x) {
         uint32_t sample = kernel_pointer_sample(x, y);
         CHECK((sample & 31) + (sample >> 5) <= 16);
         black += sample != 0 && sample != 512; white += sample == 512; transparent += sample == 0;
     }
-    CHECK(black && white && transparent && black + white + transparent == 576);
+    CHECK(black && white && transparent && black + white + transparent == 324);
     CHECK(!kernel_pointer_sample(UINT32_MAX, 1) && !kernel_pointer_sample(1, UINT32_MAX));
     CHECK(kernel_pointer_sample(KERNEL_POINTER_HOTSPOT_X, KERNEL_POINTER_HOTSPOT_Y) != 0);
     CHECK(kernel_pointer_blend(512, 0x123456) == 0xffffff);

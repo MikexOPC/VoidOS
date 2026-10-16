@@ -25,7 +25,7 @@ int x86_fb_transaction_begin(X86_FB_MAPPING *owner, const X86_FB_PIXEL_RECT *rec
             start > pages * 4096 - 4 - last) return 0;
         area += (BOOT_U64)captured[index].Width * captured[index].Height;
     }
-    if (area > 2176 || !x86_fb_pixels_begin(owner, captured[0].X, captured[0].Y,
+    if (area > 1672 || !x86_fb_pixels_begin(owner, captured[0].X, captured[0].Y,
         captured[0].Width, captured[0].Height, &transaction->Pixel)) return 0;
     transaction->Self = (BOOT_U64)transaction;
     transaction->Root = owner->Authority.Root;
@@ -55,7 +55,7 @@ int x86_fb_transaction_pixel(X86_FB_PIXEL_TRANSACTION *transaction,
         const X86_FB_PIXEL_RECT *rect = &transaction->Rects[index];
         accepted |= x >= rect->X && y >= rect->Y && x - rect->X < rect->Width && y - rect->Y < rect->Height;
     }
-    if (!accepted || transaction->Accesses >= 2752 || x >= transaction->Pixel.Surface.Width ||
+    if (!accepted || transaction->Accesses >= 1996 || x >= transaction->Pixel.Surface.Width ||
         y >= transaction->Pixel.Surface.Height) goto failed;
     offset = fb_pixel_offset(transaction->Pixel.Surface.Width, transaction->Pixel.Surface.Height,
         transaction->Pixel.Surface.Stride, transaction->Pixel.Surface.Format,
