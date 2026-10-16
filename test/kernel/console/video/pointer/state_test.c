@@ -44,7 +44,7 @@ int main(void)
     CHECK(kernel_pointer_blend(256, 0) == 0x808080);
     CHECK(kernel_pointer_blend(0, 0x123456) == 0x123456);
     CHECK(!kernel_pointer_init(NULL, &view));
-    CHECK(kernel_console_init(&view, 102, 38)); clean_dirty(); // 1024x768 in 10x20 cells: 1020x760 usable pixels
+    CHECK(kernel_console_init(&view, 113, 42)); clean_dirty(); // 1024x768 in 9x18 cells: 1017x756 usable pixels
     CHECK(kernel_pointer_init(&owner, &view));
     CHECK(dirty_count() <= 12 && dirty_count() != 0); clean_dirty();
     CHECK(!kernel_pointer_init(&owner, &view));
@@ -55,7 +55,7 @@ int main(void)
     for (uint32_t index = 0; index < 1000; ++index) {
         int32_t dx = (int32_t)(index % 512) - 256;
         int32_t dy = (int32_t)((index * 37) % 512) - 256;
-        uint64_t expected = kernel_pointer_plan(1020, 760, owner.Image.X, owner.Image.Y, dx, dy);
+        uint64_t expected = kernel_pointer_plan(1017, 756, owner.Image.X, owner.Image.Y, dx, dy);
         CHECK(kernel_pointer_move(&owner, dx, dy, index % 8));
         CHECK(owner.Image.X == (uint32_t)expected && owner.Image.Y == expected >> 32);
         CHECK(dirty_count() <= 12); // two 18x18 images touch at most 3x2 cells each

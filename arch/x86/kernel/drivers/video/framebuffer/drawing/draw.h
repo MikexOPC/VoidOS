@@ -6,10 +6,10 @@
 #define X86_FB_TEXT_BYTES 256U
 #define X86_FB_TEXT_CELLS 64U
 #define X86_FB_FONT_GLYPHS 128U
-/* Console cell: the console font is 10x20 and the pointer/caret path requires exactly it.
+/* Console cell: the console font is 9x18 and the pointer/caret path requires exactly it.
    A glyph row holds Width bits, bit Width-1 on the left; other fonts may be 8 wide. */
-#define X86_FB_CELL_WIDTH 10U
-#define X86_FB_CELL_HEIGHT 20U
+#define X86_FB_CELL_WIDTH 9U
+#define X86_FB_CELL_HEIGHT 18U
 typedef struct {
     BOOT_U32  Scalar;
     unsigned short  Rows[X86_FB_CELL_HEIGHT];

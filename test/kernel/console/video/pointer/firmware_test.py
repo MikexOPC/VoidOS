@@ -11,8 +11,8 @@ spec.loader.exec_module(pointer)
 
 class PointerTests(unittest.TestCase):
     def test_position_and_clamp(self):
-        self.assertEqual(pointer.expected_position(1024,768,[]),(501,371,0))
-        self.assertEqual(pointer.expected_position(1024,768,[(127,-127,7)]*8),(1002,742,4))
+        self.assertEqual(pointer.expected_position(1024,768,[]),(499,369,0))
+        self.assertEqual(pointer.expected_position(1024,768,[(127,-127,7)]*8),(999,738,4))
         self.assertEqual(pointer.expected_position(1024,768,[(-127,127,0)]*8),(0,0,4))
         for width,height in [(0,768),(1024,16),(1921,768),(1024,1081)]:
             with self.assertRaises(RuntimeError): pointer.expected_position(width,height,[])
@@ -44,9 +44,9 @@ class PointerTests(unittest.TestCase):
     def test_cleanup_must_match(self):
         log = '\n'.join(f'{field}: 0x{value:016x}' for field,value in [
             ('KERNEL_FB_WIDTH',1024),('KERNEL_FB_HEIGHT',768),
-            ('KERNEL_POINTER_X',501),('KERNEL_POINTER_Y',371),('KERNEL_POINTER_MOVES',0)])
+            ('KERNEL_POINTER_X',499),('KERNEL_POINTER_Y',369),('KERNEL_POINTER_MOVES',0)])
         with self.assertRaises(RuntimeError): pointer.finish(log,[])
-        self.assertEqual(pointer.finish(log+'\nKERNEL_POINTER_CLEAN',[])['X'],501)
+        self.assertEqual(pointer.finish(log+'\nKERNEL_POINTER_CLEAN',[])['X'],499)
         with self.assertRaises(RuntimeError): pointer.finish(log+'\nKERNEL_POINTER_CLEAN',[(1,0,0)])
 
     def test_repeated_physical_reads_are_fresh(self):

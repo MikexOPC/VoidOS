@@ -7,8 +7,9 @@ SIZE = 18
 # Reference: scripts/pointer/reference-cursor.png (16 October 2026): black arrow with a white
 # outline, tip on the upper left, slightly tilted left edge, notch and short tail at the bottom.
 # The art was fitted to 18x18 from that image and then thresholded to a crisp 1 px outline.
-# X = black fill, o = white outline, . = transparent. No antialiasing: every sample is fully
-# black (16), fully white (16 << 5) or transparent (0). Hotspot: the tip at (2,0).
+# X = grey fill (the reference black is invisible on the dark console), o = white outline,
+# . = transparent. No antialiasing: every sample is
+# grey (6 << 5), fully white (16 << 5) or transparent (0). Hotspot: the tip at (2,0).
 ART = [
     '..o...............',
     '.oXo..............',
@@ -29,7 +30,7 @@ ART = [
     'oXoo..............',
     'oo................',
 ]
-LEVEL = {'.': 0, 'X': 16, 'o': 16 << 5}
+LEVEL = {'.': 0, 'X': 6 << 5, 'o': 16 << 5}
 
 def raster():
     if len(ART) != SIZE or any(len(row) != SIZE for row in ART):

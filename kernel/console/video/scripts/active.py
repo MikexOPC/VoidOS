@@ -11,7 +11,7 @@ spec = importlib.util.spec_from_file_location('measured_cell', Path(__file__).pa
 cell = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cell)
 ROOT = Path(__file__).resolve().parents[4]
-CELL_PIXELS = 10 * 20  # console cell: WIDTH * HEIGHT of arch/x86/kernel/drivers/video/framebuffer/scripts/font/convert.py
+CELL_PIXELS = 9 * 18  # console cell: WIDTH * HEIGHT of arch/x86/kernel/drivers/video/framebuffer/scripts/font/convert.py
 
 # ============ active resource campaign verification ============
 

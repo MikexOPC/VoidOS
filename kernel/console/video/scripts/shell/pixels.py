@@ -83,7 +83,7 @@ def verify(vm, scenario, log):
     for index in sorted(selected):
         x, y = index % columns * font.WIDTH, index // columns * font.HEIGHT
         for row, bitmap in enumerate(raster.get(cells[index], raster[65533])):
-            words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((y + row) * stride + x) * 4, font.WIDTH // 2)
+            words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((y + row) * stride + x) * 4, (font.WIDTH + 1) // 2)
             if index == caret and row >= font.HEIGHT - 2:
                 bitmap = (1 << font.WIDTH) - 1
             for col in range(font.WIDTH):

@@ -38,7 +38,7 @@ int run_pointer_drawing_tests(POINTER_DRAW_SETUP setup, X86_FB_MAPPING *owner, B
         CHECK(x86_fb_transaction_end(&tx));
         CHECK(!x86_fb_transaction_pixel(&tx,0,0,&word,0));
         CHECK(x86_fb_transaction_begin(owner,rects,2,&tx));
-        for (BOOT_U32 index = 0; index < 2572; ++index)
+        for (BOOT_U32 index = 0; index < 2268; ++index)
             CHECK(x86_fb_transaction_pixel(&tx,0,0,&word,0));
         CHECK(!x86_fb_transaction_pixel(&tx,0,0,&word,0) && !x86_fb_transaction_end(&tx));
         CHECK(x86_fb_transaction_abort(&tx));
@@ -48,7 +48,7 @@ int run_pointer_drawing_tests(POINTER_DRAW_SETUP setup, X86_FB_MAPPING *owner, B
     }
     for (BOOT_U32 format = 0; format < 2; ++format) {
         const BOOT_U32 w = font->Width, h = font->Height, stride = 4 * w + 4;
-        CHECK(w == 10 && h == 20);
+        CHECK(w == 9 && h == 18);
         CHECK(setup(4 * w,2 * h,stride,format));
         for (BOOT_U32 phase = 0; phase < 2; ++phase) {
             BOOT_U32 visible = phase == 0;
