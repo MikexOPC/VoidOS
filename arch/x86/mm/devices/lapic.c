@@ -204,10 +204,19 @@ int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector) {
 // ====== nessuna consegna pendente prima di arm o revoca ===== //
 
 int x86_lapic_idle(const X86_LAPIC_MAPPING *owner) {
+    return x86_lapic_idle_except(owner,0);
+}
+
+// ====== ISR vuoto e IRR limitato ai vettori autorizzati ancora pendenti ===== //
+
+// Intel SDM rev089 Vol3, 12.8.4/Fig12-20: ISR100h..170h, IRR200h..270h.
+// IRR bank2 (220h) bits0..2 = vettori40h..42h; un IRQ input vivo puo pendere dopo EOI.
+int x86_lapic_idle_except(const X86_LAPIC_MAPPING *owner, BOOT_U32 pending) {
     BOOT_U32 index, value;
-    if (!isr(owner,0)) return 0;
+    if ((pending & ~7U) || !isr(owner,0)) return 0;
     for (index = 0; index < 8; ++index)
-        if (!x86_lapic_read(owner,0x200+index*16,&value) || value) return 0;
+        if (!x86_lapic_read(owner,0x200+index*16,&value) ||
+            (value & ~(index == 2 ? pending : 0U))) return 0;
     return 1;
 }
 

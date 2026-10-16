@@ -130,6 +130,14 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t event, 
     return reply;
 }
 
+// ====== wake_result ======
+
+// Mode0 returns the shared upper bound, mode9 one wake beyond it.
+static BOOT_U32 wake_result(void)
+{
+    return mode == 9 ? X86_WATCHDOG_WAKE_LIMIT + 1 : mode == 0 ? X86_WATCHDOG_WAKE_LIMIT : 3;
+}
+
 // ====== x86_watchdog_wait_mock ======
 
 BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *count, BOOT_U32 goal,
@@ -143,7 +151,7 @@ BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *count, BOOT_U32 goal,
     if (mode == 2) source.Error = 1;
     check_private(x86_scheduler_idle_notify(&source) == (mode != 2 && mode != 3));
     check_private(!x86_scheduler_idle_notify(&source));
-    return 3;
+    return wake_result();
 }
 
 // ====== x86_scheduler_run_idle_mock ======
@@ -162,7 +170,7 @@ int x86_scheduler_run_idle(void)
     index = KERNEL_SCHEDULER_NONE;
     if (!x86_scheduler_idle_wait()) return 0;
     check_private(!x86_scheduler_idle_wait()); // Exactly one hardware wait per session.
-    check_private(x86_scheduler_idle_slept() == 3);
+    check_private(x86_scheduler_idle_slept() == wake_result());
     index = 0; x86_scheduler_idle_task(index);
     index = 1; x86_scheduler_idle_task(index);
     index = KERNEL_SCHEDULER_NONE;
@@ -189,7 +197,7 @@ int main(int argc, char **argv)
 {
     check_private(argc == 2);
     mode = (uint32_t)strtoul(argv[1],NULL,10);
-    check_private(mode <= 8);
+    check_private(mode <= 9);
     check_private(!x86_scheduler_idle_wait());
     check_private(x86_scheduler_idle_notify(NULL)); // Inactive bridge ignores other workloads.
     check_private(!x86_scheduler_timer_idle_tasks(NULL));
@@ -204,6 +212,13 @@ int main(int argc, char **argv)
         check_private(!x86_scheduler_timer_idle_tasks(&source));
         check_private(!x86_scheduler_idle_notify(&foreign));
         printf("PASS: %u idle quiescence rejection checks, hardware MOCK\n",checks);
+        return 0;
+    }
+    if (mode == 9) {
+        check_private(!x86_scheduler_timer_idle_tasks(&source));
+        check_private(arms == 1 && waits == 1 && persistent_runs == 0);
+        check_private(x86_scheduler_idle_failure() == 3 && !x86_scheduler_idle_verified());
+        printf("PASS: %u idle wake-limit rejection checks, hardware MOCK\n",checks);
         return 0;
     }
     check_private(x86_scheduler_timer_idle_tasks(&source) == (mode == 0 || mode >= 6));

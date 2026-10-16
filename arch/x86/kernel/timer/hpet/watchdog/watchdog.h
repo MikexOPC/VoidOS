@@ -8,6 +8,12 @@
 #define X86_WATCHDOG_FAULT 3U
 #define X86_WATCHDOG_STOP 4U
 #define X86_WATCHDOG_IDLE 5U
+/* HLT wakes accepted by one watchdog wait; x86_irq_sleep returns wakes+1.
+   Callers bound the returned value with these, never with a local copy. */
+#define X86_WATCHDOG_WAKE_BUDGET 256U
+#define X86_WATCHDOG_WAKE_LIMIT (X86_WATCHDOG_WAKE_BUDGET + 1U)
+_Static_assert(X86_WATCHDOG_WAKE_BUDGET >= 1 && X86_WATCHDOG_WAKE_BUDGET <= 1024,
+    "Budget entro i limiti di x86_irq_sleep");
 /* Stable diagnostic phases, not a claim about the underlying hardware cause. */
 #define X86_WATCHDOG_ENVIRONMENT 1U
 #define X86_WATCHDOG_PROFILE 2U

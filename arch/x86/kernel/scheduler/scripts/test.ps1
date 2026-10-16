@@ -114,7 +114,7 @@ try {
         '/fsanitize=address',('/I' + $project),(Join-Path $module 'idle/idle.c'),
         (Join-Path $module '../../../../test/arch/x86/kernel/scheduler/idle/idle_test.c'),("/Fo$out/"),("/Fd$out/idle.pdb"),
         ("/Fe$out/idle.exe"),'/link','/incremental:no')
-    foreach ($repetition in 1..10) { foreach ($mode in 0..8) { Invoke-Test 'idle' "$mode" } }
+    foreach ($repetition in 1..10) { foreach ($mode in 0..9) { Invoke-Test 'idle' "$mode" } }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
         '/fsanitize=address',('/I' + $project),
         (Join-Path $project 'arch/x86/kernel/timer/hpet/watchdog/accounting/budget.c'),

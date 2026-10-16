@@ -18,7 +18,7 @@ void test_lapic_ram_busy(BOOT_U32 busy);
 static BOOT_U32 local[64], routes[240], selector, calls, fail, stores, bad, port_writes;
 static unsigned char master, slave;
 static unsigned char ier, iir, lcr;
-static BOOT_U32 in_service, eois, uart_bad;
+static BOOT_U32 in_service, eois, uart_bad, irr_pending;
 static BOOT_U32 tx_writes;
 static unsigned char tx_last;
 
@@ -88,7 +88,7 @@ static int reset(void)
     for (index = 0; index < 64; ++index) local[index] = 0;
     for (index = 0; index < 240; ++index) routes[index] = 0;
     selector = 17; calls = fail = stores = bad = port_writes = 0; master = slave = 0;
-    ier = 2; iir = 0xc2; lcr = 3; in_service = eois = uart_bad = 0;
+    ier = 2; iir = 0xc2; lcr = 3; in_service = eois = uart_bad = irr_pending = 0;
     tx_writes = 0; tx_last = 0;
     return test_mask_reset();
 }
@@ -168,7 +168,7 @@ int x86_lapic_native_eoi(void)
 int x86_lapic_native_read(BOOT_U32 offset, BOOT_U32 *value)
 {
     if (++calls == fail) return 0;
-    *value = offset == 0x120 ? in_service : 0;
+    *value = offset == 0x120 ? in_service : offset == 0x220 ? irr_pending : 0;
     return 1;
 }
 // ====== attesa privilegiata esclusa dal processo host ===== //
@@ -206,6 +206,18 @@ __declspec(dllexport) int run_lapic_timer_eoi_tests(void)
     if (x86_lapic_eoi_vector(state.Mapping,0x42) || eois != 2 || in_service != 4) return 8;
     uart_bad = 0;
     if (!x86_lapic_eoi_vector(state.Mapping,0x42) || in_service) return 9;
+    if (!x86_lapic_idle(state.Mapping) || !x86_lapic_idle_except(state.Mapping,0) ||
+        !x86_lapic_idle_except(state.Mapping,6) || x86_lapic_idle_except(state.Mapping,8)) return 10;
+    irr_pending = 2;
+    if (x86_lapic_idle(state.Mapping) || x86_lapic_idle_except(state.Mapping,4) ||
+        !x86_lapic_idle_except(state.Mapping,2) || !x86_lapic_idle_except(state.Mapping,6)) return 11;
+    irr_pending = 6;
+    if (x86_lapic_idle_except(state.Mapping,2) || !x86_lapic_idle_except(state.Mapping,6)) return 12;
+    irr_pending = 8;
+    if (x86_lapic_idle_except(state.Mapping,7)) return 13;
+    irr_pending = 0; in_service = 2;
+    if (x86_lapic_idle_except(state.Mapping,2) || eois != 3) return 14;
+    in_service = 0;
     return 0;
 }
 
