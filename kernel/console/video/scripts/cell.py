@@ -63,13 +63,15 @@ def verify(vm, scenario, log):
     glyphs = [raster[(0x41, 0xe8, 0x20ac)[(record['CELLS'] - size + index) % 3]] for index in range(size)]
     base, stride, pixel_format, width, height = [number('KERNEL_FB_' + name)
         for name in ['BASE', 'STRIDE', 'FORMAT', 'WIDTH', 'HEIGHT']]
-    if pixel_format not in (0, 1) or width < 16 + size * 8 or height < 176 or stride < width:
+    if pixel_format not in (0, 1) or width < 2 * font.WIDTH + size * font.WIDTH or height < 10 * font.HEIGHT + font.HEIGHT or stride < width:
         raise RuntimeError('Unsupported measured cell geometry')
-    for row in range(16):
-        words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((160 + row) * stride + 16) * 4, 4 * size)
-        for column in range(8 * size):
-            bitmap = glyphs[column // 8][row]
-            r, g, b = (255, 255, 255) if bitmap & (0x80 >> (column % 8)) else (8, 16, 24)
+    # The guest draws the measured cells from grid cell (2, 10).
+    left, top = 2 * font.WIDTH, 10 * font.HEIGHT
+    for row in range(font.HEIGHT):
+        words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((top + row) * stride + left) * 4, font.WIDTH * size // 2)
+        for column in range(font.WIDTH * size):
+            bitmap = glyphs[column // font.WIDTH][row]
+            r, g, b = (255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - column % font.WIDTH)) else (8, 16, 24)
             expected = r | (g << 8) | (b << 16) if pixel_format == 0 else b | (g << 8) | (r << 16)
             if (words[column // 2] >> ((column % 2) * 32)) & 0xffffffff != expected:
                 raise RuntimeError('Measured physical cell pixel mismatch')
@@ -90,12 +92,12 @@ def verify(vm, scenario, log):
     if (int(header[1]), int(header[2])) != (width, height):
         raise RuntimeError('Measured screenshot geometry mismatch')
     pixels = data[header.end():]
-    for row in range(16):
-        for column in range(8 * size):
-            bitmap = glyphs[column // 8][row]
-            expected = bytes((255, 255, 255) if bitmap & (0x80 >> (column % 8)) else (8, 16, 24))
-            offset = ((160 + row) * width + 16 + column) * 3
+    for row in range(font.HEIGHT):
+        for column in range(font.WIDTH * size):
+            bitmap = glyphs[column // font.WIDTH][row]
+            expected = bytes((255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - column % font.WIDTH)) else (8, 16, 24))
+            offset = ((top + row) * width + left + column) * 3
             if pixels[offset:offset + 3] != expected:
                 raise RuntimeError('Measured visible cell pixel mismatch')
-    record.update({'PhysicalPixels': 128 * size, 'VisiblePixels': 128 * size})
+    record.update({'PhysicalPixels': font.WIDTH * font.HEIGHT * size, 'VisiblePixels': font.WIDTH * font.HEIGHT * size})
     return record

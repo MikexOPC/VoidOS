@@ -5,6 +5,9 @@
 #include "kernel/console/video/pointer/state.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
+#include "../drawing/draw.h"
+_Static_assert(X86_FB_CELL_WIDTH == KERNEL_CONSOLE_CELL_WIDTH && X86_FB_CELL_HEIGHT == KERNEL_CONSOLE_CELL_HEIGHT,
+    "Console cell size must match the framebuffer font cell");
 static KERNEL_CONSOLE_SERVICE service;
 static KERNEL_VIDEO_CONSOLE view;
 static KERNEL_CONSOLE_RENDER render;
@@ -102,7 +105,7 @@ int x86_console_open(X86_PS2_SESSION *session)
     source = session;
     fb = &session->Env.Context->Info.Framebuffer;
     if (!fb->Base) { absent = 1; return kernel_log(1, "KERNEL_CONSOLE_SHELL_ABSENT"); }
-    if (!kernel_console_service_init(&service, &view, fb->Width / 8, fb->Height / 16)) return 0;
+    if (!kernel_console_service_init(&service, &view, fb->Width / KERNEL_CONSOLE_CELL_WIDTH, fb->Height / KERNEL_CONSOLE_CELL_HEIGHT)) return 0;
 #ifdef KERNEL_PS2_MOUSE
     if (!kernel_pointer_init(&pointer, &view) || !kernel_log(0, "KERNEL_POINTER_OPEN")) return 0;
 #endif
@@ -124,7 +127,7 @@ int x86_console_mouse(X86_PS2_SESSION *session, int32_t dx, int32_t dy, uint32_t
         !kernel_pointer_request(&pointer, dx, dy, buttons)) return 0;
     if (pointer.Moves == before) return 1;
     pointer_pending = 1;
-    render.Next = pointer.Image.Y / 16 * view.Columns + pointer.Image.X / 8;
+    render.Next = pointer.Image.Y / KERNEL_CONSOLE_CELL_HEIGHT * view.Columns + pointer.Image.X / KERNEL_CONSOLE_CELL_WIDTH;
     return wake();
 #else
     (void)session; (void)dx; (void)dy; (void)buttons;
@@ -214,7 +217,7 @@ int x86_console_flush(X86_PS2_SESSION *session)
     begin = clock_read(source);
 #ifdef KERNEL_PS2_MOUSE
     if (pointer_pending) {
-        uint32_t index = pointer.Image.Y / 16 * view.Columns + pointer.Image.X / 8;
+        uint32_t index = pointer.Image.Y / KERNEL_CONSOLE_CELL_HEIGHT * view.Columns + pointer.Image.X / KERNEL_CONSOLE_CELL_WIDTH;
         view.Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
         render.Next = index;
         pointer_pending = 0;

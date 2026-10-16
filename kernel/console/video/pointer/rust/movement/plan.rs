@@ -3,7 +3,7 @@
 // ====== position ======
 
 pub fn position(width: u32, height: u32, x: u32, y: u32, dx: i32, dy: i32) -> u64 {
-    if !(18..=1920).contains(&width) || !(18..=1072).contains(&height)
+    if !(18..=2400).contains(&width) || !(18..=1340).contains(&height)
         || x > width - 18 || y > height - 18
         || !(-256..=255).contains(&dx) || !(-256..=255).contains(&dy) {
         return u64::MAX;

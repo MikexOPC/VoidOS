@@ -30,20 +30,22 @@ def cases(console=False):
     converter = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(converter)
     bitmap = converter.raster()
-    for y, text in [(64, 'MikeSW OS: àèéìòù €'), (80, ''.join(map(chr, range(32, 64)))),
-        (96, ''.join(map(chr, range(64, 96)))), (112, ''.join(map(chr, range(96, 127))))]:
+    width, height = converter.WIDTH, converter.HEIGHT
+    for y, text in [(64, 'MikeSW OS: àèéìòù €'), (88, ''.join(map(chr, range(32, 64)))),
+        (108, ''.join(map(chr, range(64, 96)))), (128, ''.join(map(chr, range(96, 127))))]:
         for cell, char in enumerate(text):
             for row, mask in enumerate(bitmap[ord(char)]):
-                for col in range(8):
-                    pixels[16 + cell * 8 + col, y + row] = (
-                        (255, 255, 255) if mask & (0x80 >> col) else (8, 16, 24))
+                for col in range(width):
+                    pixels[16 + cell * width + col, y + row] = (
+                        (255, 255, 255) if mask & (1 << (width - 1 - col)) else (8, 16, 24))
     if console:
+        # The guest draws the console probe at grid cell (2, 10).
         for line, text in enumerate(['ciao è €', 'prova AC', 'Tutto OK🙂']):
             for cell, char in enumerate(text.ljust(24)):
                 for row, mask in enumerate(bitmap.get(ord(char), bitmap[65533])):
-                    for col in range(8):
-                        pixels[16 + cell * 8 + col, 160 + line * 16 + row] = (
-                            (255, 255, 255) if mask & (0x80 >> col) else (8, 16, 24))
+                    for col in range(width):
+                        pixels[2 * width + cell * width + col, 10 * height + line * height + row] = (
+                            (255, 255, 255) if mask & (1 << (width - 1 - col)) else (8, 16, 24))
     return pixels
 
 # ============ physical color and reserved byte ============

@@ -6,8 +6,8 @@ use movement::position as plan;
 
 #[test]
 fn clamp_and_direction() {
-    for width in [18, 32, 800, 1024, 1920] {
-        for height in [18, 32, 600, 768, 1072] {
+    for width in [18, 32, 800, 1024, 2400] {
+        for height in [18, 32, 600, 768, 1340] {
             for x in [0, (width - 18) / 2, width - 18] {
                 for y in [0, (height - 18) / 2, height - 18] {
                     for dx in -256..=255 {
@@ -28,8 +28,8 @@ fn clamp_and_direction() {
 
 #[test]
 fn invalid_state() {
-    for value in [0, 17, 1921, u32::MAX] { assert_eq!(plan(value, 768, 0, 0, 0, 0), u64::MAX); }
-    for value in [0, 17, 1073, u32::MAX] { assert_eq!(plan(1024, value, 0, 0, 0, 0), u64::MAX); }
+    for value in [0, 17, 2401, u32::MAX] { assert_eq!(plan(value, 768, 0, 0, 0, 0), u64::MAX); }
+    for value in [0, 17, 1341, u32::MAX] { assert_eq!(plan(1024, value, 0, 0, 0, 0), u64::MAX); }
     assert_eq!(plan(1024, 768, 1007, 0, 0, 0), u64::MAX);
     assert_eq!(plan(1024, 768, 0, 751, 0, 0), u64::MAX);
     for value in [i32::MIN, -257, 256, i32::MAX] {

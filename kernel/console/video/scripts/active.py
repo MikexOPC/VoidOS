@@ -11,6 +11,7 @@ spec = importlib.util.spec_from_file_location('measured_cell', Path(__file__).pa
 cell = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cell)
 ROOT = Path(__file__).resolve().parents[4]
+CELL_PIXELS = 10 * 20  # console cell: WIDTH * HEIGHT of arch/x86/kernel/drivers/video/framebuffer/scripts/font/convert.py
 
 # ============ active resource campaign verification ============
 
@@ -37,8 +38,8 @@ def verify(directory, digest, boots, draw=False):
         if draw:
             record = result.get('ConsoleDraw', {})
             cell.validate(record)
-            if record.get('PhysicalPixels') != 128 * record['BATCH_SIZE'] or \
-                    record.get('VisiblePixels') != 128 * record['BATCH_SIZE'] or \
+            if record.get('PhysicalPixels') != CELL_PIXELS * record['BATCH_SIZE'] or \
+                    record.get('VisiblePixels') != CELL_PIXELS * record['BATCH_SIZE'] or \
                     'KERNEL_CONSOLE_DRAW_ACTIVE_OK' not in log:
                 raise RuntimeError('Missing measured pixels or completion')
     return evidence

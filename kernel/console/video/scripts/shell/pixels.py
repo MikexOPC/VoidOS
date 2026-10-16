@@ -71,9 +71,9 @@ def verify(vm, scenario, log):
     raster = font.raster()
     base, stride, pixel_format, width, height = [number('KERNEL_FB_' + name) for name in
         ['BASE', 'STRIDE', 'FORMAT', 'WIDTH', 'HEIGHT']]
-    if pixel_format not in (0, 1) or stride < width or not 8 <= width <= 1920 or not 16 <= height <= 1080:
+    if pixel_format not in (0, 1) or stride < width or not font.WIDTH <= width <= 1920 or not font.HEIGHT <= height <= 1080:
         raise RuntimeError('Invalid shell video geometry')
-    columns, rows = width // 8, height // 16
+    columns, rows = width // font.WIDTH, height // font.HEIGHT
     cells, caret = expected(log, columns, rows)
     if 0xe8 not in cells or 0x20ac not in cells:
         raise RuntimeError('Italian glyph evidence missing from expected transcript')
@@ -81,13 +81,13 @@ def verify(vm, scenario, log):
     prompts = [index for index, scalar in enumerate(cells) if scalar == ord('>')]
     selected.add(prompts[-1]); selected.add(caret)
     for index in sorted(selected):
-        x, y = index % columns * 8, index // columns * 16
+        x, y = index % columns * font.WIDTH, index // columns * font.HEIGHT
         for row, bitmap in enumerate(raster.get(cells[index], raster[65533])):
-            words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((y + row) * stride + x) * 4, 4)
-            if index == caret and row >= 14:
-                bitmap = 255
-            for col in range(8):
-                r, g, b = (255, 255, 255) if bitmap & (0x80 >> col) else (8, 16, 24)
+            words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((y + row) * stride + x) * 4, font.WIDTH // 2)
+            if index == caret and row >= font.HEIGHT - 2:
+                bitmap = (1 << font.WIDTH) - 1
+            for col in range(font.WIDTH):
+                r, g, b = (255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - col)) else (8, 16, 24)
                 color = r | g << 8 | b << 16 if pixel_format == 0 else b | g << 8 | r << 16
                 if words[col // 2] >> ((col % 2) * 32) & 0xffffffff != color:
                     raise RuntimeError(f'Shell physical pixel mismatch: cell {index}, pixel {col},{row}')
@@ -108,14 +108,14 @@ def verify(vm, scenario, log):
         raise RuntimeError('Invalid shell screenshot geometry')
     pixels = data[header.end():]
     for index, scalar in enumerate(cells):
-        x, y = index % columns * 8, index // columns * 16
+        x, y = index % columns * font.WIDTH, index // columns * font.HEIGHT
         for row, bitmap in enumerate(raster.get(scalar, raster[65533])):
-            if index == caret and row >= 14:
-                bitmap = 255
-            for col in range(8):
-                color = bytes((255, 255, 255) if bitmap & (0x80 >> col) else (8, 16, 24))
+            if index == caret and row >= font.HEIGHT - 2:
+                bitmap = (1 << font.WIDTH) - 1
+            for col in range(font.WIDTH):
+                color = bytes((255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - col)) else (8, 16, 24))
                 offset = ((y + row) * width + x + col) * 3
                 if pixels[offset:offset + 3] != color:
                     raise RuntimeError(f'Shell visible pixel mismatch: cell {index}, pixel {col},{row}')
     return {'Cells': cells_done, 'Groups': groups, 'MaxPm': maximum, 'Overruns': overruns,
-        'CaretCell': caret, 'PhysicalPixels': len(selected) * 128, 'VisiblePixels': len(cells) * 128}
+        'CaretCell': caret, 'PhysicalPixels': len(selected) * font.WIDTH * font.HEIGHT, 'VisiblePixels': len(cells) * font.WIDTH * font.HEIGHT}

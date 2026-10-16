@@ -38,7 +38,7 @@ int run_pointer_drawing_tests(POINTER_DRAW_SETUP setup, X86_FB_MAPPING *owner, B
         CHECK(x86_fb_transaction_end(&tx));
         CHECK(!x86_fb_transaction_pixel(&tx,0,0,&word,0));
         CHECK(x86_fb_transaction_begin(owner,rects,2,&tx));
-        for (BOOT_U32 index = 0; index < 1996; ++index)
+        for (BOOT_U32 index = 0; index < 2572; ++index)
             CHECK(x86_fb_transaction_pixel(&tx,0,0,&word,0));
         CHECK(!x86_fb_transaction_pixel(&tx,0,0,&word,0) && !x86_fb_transaction_end(&tx));
         CHECK(x86_fb_transaction_abort(&tx));
@@ -47,18 +47,20 @@ int run_pointer_drawing_tests(POINTER_DRAW_SETUP setup, X86_FB_MAPPING *owner, B
         CHECK(x86_fb_unbind(owner));
     }
     for (BOOT_U32 format = 0; format < 2; ++format) {
-        CHECK(setup(32,32,36,format));
+        const BOOT_U32 w = font->Width, h = font->Height, stride = 4 * w + 4;
+        CHECK(w == 10 && h == 20);
+        CHECK(setup(4 * w,2 * h,stride,format));
         for (BOOT_U32 phase = 0; phase < 2; ++phase) {
             BOOT_U32 visible = phase == 0;
             pointer.Visible = visible;
             for (BOOT_U32 row = 0; row < 2; ++row) {
-                text.Y = row * 16;
+                text.Y = row * h;
                 CHECK(x86_fb_text_pointer(owner,&text,font,1,&pointer));
             }
-            for (BOOT_U32 y = 0; y < 32; ++y) for (BOOT_U32 x = 0; x < 32; ++x) {
+            for (BOOT_U32 y = 0; y < 2 * h; ++y) for (BOOT_U32 x = 0; x < 4 * w; ++x) {
                 BOOT_U32 sample = visible && x >= 2 && y >= 4 ? kernel_pointer_sample(x-2,y-4) : 0;
-                BOOT_U32 rgb = ((y % 16 >= 14 && x >= 8 && x < 16) ||
-                    (font->Glyphs[65-32].Rows[y%16] & (0x80U >> (x%8)))) ? 0x112233 : 0x445566;
+                BOOT_U32 rgb = ((y % h >= h - 2 && x >= w && x < 2 * w) ||
+                    (font->Glyphs[65-32].Rows[y%h] & (1U << (w - 1 - x % w)))) ? 0x112233 : 0x445566;
                 if (sample) {
                     BOOT_U32 expected = 0, black = sample & 31, white = sample >> 5;
                     for (BOOT_U32 shift = 0; shift < 24; shift += 8)
@@ -66,8 +68,8 @@ int run_pointer_drawing_tests(POINTER_DRAW_SETUP setup, X86_FB_MAPPING *owner, B
                     rgb = expected;
                 }
                 BOOT_U32 color = format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16);
-                CHECK(words[y*36+x] == color);
-                CHECK(words[y*36+32] == 0xa5a5a5a5);
+                CHECK(words[y*stride+x] == color);
+                CHECK(words[y*stride+4*w] == 0xa5a5a5a5);
             }
         }
         pointer.Visible = 1; pointer.X = ~0U;

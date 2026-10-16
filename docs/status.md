@@ -10,6 +10,16 @@ Il runner `scripts/test/run.ps1` richiama le suite originali in processi
 separati; i gate QEMU restano distinti dai test host. Vedere
 [organizzazione ed esecuzione](../test/README.md).
 
+Checkpoint 16 ottobre: console con cella 10x20 (102x38 a 1024x768) e puntatore 18x18
+nitido nero con contorno bianco, da immagine di riferimento. Mouse PS/2 tollerante a
+perdite, header errati e overflow; scansione dirty a byte e contatori di tempo dei flush.
+10 boot mouse+puntatore+shell, stress, senza video, diagnostici framebuffer/console e
+ordinario passano. La fluidita non e certificata e il limite del display QEMU e solo
+un'ipotesi: [cella](../kernel/console/video/documentation/font-cell.md),
+[puntatore](../kernel/console/video/documentation/pointer-sharp.md),
+[costo dei flush](../kernel/console/video/documentation/flush-cost.md),
+[mouse](../kernel/drivers/input/ps2/mouse/documentation/resync.md).
+
 Blocco corrente completato nei test: transazione save/restore del cursore approvata,
 backup fisso24x24, verifica completa e tre rettangoli autorizzati.
 Movimenti attivano una sola cella; il vecchio sfondo viene ripristinato

@@ -15,7 +15,7 @@ static const X86_FB_GLYPH glyphs[] = {
     {0xf2, {0x10,0x08,0x00,0x3c,0x42,0x42,0x42,0x3c}},
     {0xf9, {0x10,0x08,0x00,0x42,0x42,0x42,0x46,0x3a}}};
 static const X86_FB_FONT font = {glyphs, 10, sizeof(glyphs),
-    {0xff,0x81,0x81,0x81,0x81,0x81,0x81,0xff}, 8};
+    {0xff,0x81,0x81,0x81,0x81,0x81,0x81,0xff}, 8, 8};
 static const unsigned char sample[] = "OS: \xc3\xa0\xc3\xa8\xc3\xa9\xc3\xac\xc3\xb2\xc3\xb9\xe2\x82\xac";
 static const unsigned char console[] = "MikeSW OS: \xc3\xa0\xc3\xa8\xc3\xa9\xc3\xac\xc3\xb2\xc3\xb9 \xe2\x82\xac";
 
@@ -24,16 +24,20 @@ static const unsigned char console[] = "MikeSW OS: \xc3\xa0\xc3\xa8\xc3\xa9\xc3\
 static int font_probe(X86_FB_MAPPING *owner)
 {
     unsigned char ascii[95];
-    BOOT_U32 index;
+    BOOT_U32 index, half;
     X86_FB_TEXT text = {console, sizeof(console) - 1, sizeof(console), 16, 64, 0xffffff, 0x081018};
     if (!x86_fb_text(owner, &text, x86_fb_console_font())) return 0;
     for (index = 0; index < 95; ++index) ascii[index] = (unsigned char)(32 + index);
-    text.Text = ascii; text.Capacity = sizeof(ascii); text.Y = 80;
+    text.Y = 88;
+    // 10x20 cells: one text call holds at most 20 cells (4096 pixels), so each line of 32 is two calls of 16.
     for (index = 0; index < 95; index += 32) {
-        text.Text = ascii + index; text.Bytes = index < 64 ? 32 : 31;
-        text.Capacity = 95 - index;
-        if (!x86_fb_text(owner, &text, x86_fb_console_font())) return 0;
-        text.Y += 16;
+        for (half = 0; half < 2 && index + half * 16 < 95; ++half) {
+            BOOT_U32 first = index + half * 16, left = 95 - first;
+            text.Text = ascii + first; text.Bytes = left < 16 ? left : 16; text.Capacity = left;
+            text.X = 16 + half * 160;
+            if (!x86_fb_text(owner, &text, x86_fb_console_font())) return 0;
+        }
+        text.Y += 20;
     }
     return 1;
 }

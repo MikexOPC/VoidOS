@@ -4,7 +4,7 @@ use super::{x86_fb_font_scalar as scalar, x86_fb_rect_valid as rect, x86_fb_utf8
 
 #[test]
 fn font_height_contract() {
-    for height in 0..=256 { assert_eq!(super::x86_fb_font_height(height), u32::from(height == 8 || height == 16)); }
+    for height in 0..=256 { assert_eq!(super::x86_fb_font_height(height), u32::from(height == 8 || height == 16 || height == 20)); }
     assert_eq!(super::x86_fb_font_height(u32::MAX), 0);
 }
 

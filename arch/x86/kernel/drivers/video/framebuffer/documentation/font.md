@@ -1,4 +1,10 @@
-# Font console 8x16 — 10 ottobre 2026
+# Font console 10x20 (storico 8x16) — aggiornato il 16 ottobre 2026
+
+Dal 16 ottobre la cella e 10x20: parametri del generatore, contratto e prove in
+[font-cell.md](../../../../../../kernel/console/video/documentation/font-cell.md). Le sezioni
+sotto descrivono il checkpoint del 10 ottobre con la cella 8x16 e restano come storico;
+dove citano 8x16, soglia 128, 16 righe o 32 celle valgono i nuovi valori del documento
+richiamato.
 
 Scelta utente: Cascadia Mono per la console; Barlow resta riferimento
 futuro per la GUI. Modulo framebuffer x86, nessun cambiamento alla shell.
