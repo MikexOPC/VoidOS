@@ -44,12 +44,12 @@ int kernel_ps2_discover(const KERNEL_ACPI_DIRECTORY *directory, uint32_t bits,
     }
     if (sum & 255) return 0;
 
-    /* 
+    /*
         ACPI 6.6 Table5.9: IAPC_BOOT_ARCH u16 at109; Table5.11 bit1=8042.
         Revision1 predates this field: do not guess presence from reserved bytes.
-        Unknown revisions are outside this explicit v0 discovery profile. 
+        Unknown revisions are outside this explicit v0 discovery profile.
     */
-   
+
     if  (prefix[8] >= 3 && prefix[8] <= 6) {
         flags = prefix[109] | ((uint32_t)prefix[110] << 8);
         if (flags & 0xffc0) return 0;
