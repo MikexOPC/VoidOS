@@ -4,31 +4,30 @@ SIZE = 18
 
 # ============ sharp arrow after the user's reference image ============
 
-# Reference: scripts/pointer/reference-cursor.png (16 October 2026): black arrow with a white
-# outline, tip on the upper left, slightly tilted left edge, notch and short tail at the bottom.
-# The art was fitted to 18x18 from that image and then thresholded to a crisp 1 px outline.
+# Source: scripts/pointer/left_ptr.svg (user's cursor, 16 October 2026), rasterized to 18 rows by
+# scripts/pointer/svg_art.py (16x supersampling, stroke 17/256 of the height, 50% thresholds).
 # X = grey fill (the reference black is invisible on the dark console), o = white outline,
 # . = transparent. No antialiasing: every sample is
-# grey (6 << 5), fully white (16 << 5) or transparent (0). Hotspot: the tip at (2,0).
+# grey (6 << 5), fully white (16 << 5) or transparent (0). Hotspot: the tip at (1,0).
 ART = [
-    '..o...............',
-    '.oXo..............',
-    '.oXXo.............',
-    '.oXXXo............',
-    '.oXXXoo...........',
-    '.oXXXXoo..........',
-    '.oXXXXXo..........',
-    '.oXXXXXXo.........',
-    '.oXXXXXXXo........',
-    '.oXXXXXXXXo.......',
-    'oXXXXXXXXXXo......',
-    'oXXXXXXXXXXoo.....',
-    'oXXXXXXXXXXXo.....',
-    'oXXXXXooooooo.....',
-    'oXXXXo............',
-    'oXXoo.............',
-    'oXoo..............',
-    'oo................',
+    'oooo..............',
+    'oooooo............',
+    'ooXXooo...........',
+    'oXXXXooo..........',
+    'oXXXXXooo.........',
+    'oXXXXXXooo........',
+    'oXXXXXXXooo.......',
+    'oXXXXXXXXooo......',
+    'oXXXXXXXXXooo.....',
+    'oXXXXXXXXXXXoo....',
+    'oXXXXXXXXXXXXo....',
+    'oXXXXXXXXXXXXo....',
+    'oXXXXXXXXXXooo....',
+    'oXXXXXoooooooo....',
+    'oXXXXooo..........',
+    'ooXXooo...........',
+    'oooooo............',
+    '.oooo.............',
 ]
 LEVEL = {'.': 0, 'X': 6 << 5, 'o': 16 << 5}
 
