@@ -140,6 +140,49 @@ static void maximum_and_stress(void)
     CHECK(fixture.Before == 0xabcdef1234567890ULL && fixture.After == fixture.Before);
 }
 
+// ====== peek_reference ======
+
+static int peek_reference(const KERNEL_VIDEO_CONSOLE *console, uint32_t start, uint32_t *index)
+{
+    uint32_t count = console->Columns * console->Rows, current;
+    for (current = start; current < count; ++current) {
+        if (console->Dirty[current / 8] & (1U << (current % 8))) { *index = current; return 1; }
+    }
+    return 0;
+}
+
+// ====== peek_matches_reference ======
+
+// The byte-wise scan must agree with the per-cell definition for every start, including
+// starts inside a byte, grids that do not fill the last byte and stray bits past the end.
+static void peek_matches_reference(void)
+{
+    static const uint32_t shapes[][2] = {{1, 1}, {3, 2}, {5, 3}, {8, 1}, {9, 1}, {13, 7}, {40, 15}, {128, 48}, {240, 67}};
+    uint32_t seed = 12345, shape, round, start, bit, count, step, want = 0, got, scalar;
+    for (shape = 0; shape < sizeof(shapes) / sizeof(shapes[0]); ++shape) {
+        CHECK(kernel_console_init(&fixture.Console, shapes[shape][0], shapes[shape][1]));
+        count = shapes[shape][0] * shapes[shape][1];
+        step = count > 200 ? 37 : 1;
+        for (round = 0; round < 12; ++round) {
+            memset(fixture.Console.Dirty, 0, sizeof(fixture.Console.Dirty));
+            for (bit = 0; bit < round % 4; ++bit) {
+                seed = seed * 1664525U + 1013904223U;
+                fixture.Console.Dirty[(seed >> 8) % ((count + 7) / 8)] |= (uint8_t)(1U << ((seed >> 4) % 8));
+            }
+            if (round & 1) {
+                for (bit = count; bit < count + 8 && bit / 8 < sizeof(fixture.Console.Dirty); ++bit)
+                    fixture.Console.Dirty[bit / 8] |= (uint8_t)(1U << (bit % 8));
+            }
+            for (start = 0; start <= count; start += step) {
+                int expected = peek_reference(&fixture.Console, start, &want);
+                got = 0xffffffffU; scalar = 0xffffffffU;
+                CHECK(kernel_console_peek(&fixture.Console, start, &got, &scalar) == expected);
+                if (expected) CHECK(got == want && scalar == fixture.Console.Cells[want]);
+            }
+        }
+    }
+}
+
 // ====== main ======
 
 int main(void)
@@ -147,6 +190,7 @@ int main(void)
     invalid_and_ownership();
     editing_and_scroll();
     maximum_and_stress();
+    peek_matches_reference();
     kernel_console_render_test();
     kernel_console_measure_test();
     printf("PASS console grid: %u checks; size %zu; no allocations\n", checks, sizeof(fixture.Console));
