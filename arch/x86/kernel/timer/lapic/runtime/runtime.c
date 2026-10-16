@@ -168,7 +168,7 @@ static int step(X86_LAPIC_TIMER *state)
         state->Active = 0; state->Phase = X86_TIMER_READY;
         return 2;
     }
-    if (!waited || waited > 9 || state->Count != goal || state->Error ||
+    if (!waited || waited > X86_WATCHDOG_WAKE_LIMIT || state->Count != goal || state->Error ||
         !x86_timer_take(state,&event) || event != goal) return 0;
     if (waited-1 > ~0U-control.Sleeps) return 0;
     control.Sleeps += waited-1;

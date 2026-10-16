@@ -28,12 +28,11 @@ static int source_valid(const volatile BOOT_U32 *source, const volatile BOOT_U32
 
 // ====== wake_lapic_valid ======
 
-// Intel SDM rev089 Vol3, 12.8.4/Fig12-20: ISR100h..170h, IRR200h..270h.
-// Bank2 bits1/2 represent vectors41h/42h; a live input IRQ may pend after EOI.
+// Only vectors41h/42h with a live registry token may remain pending in IRR.
 static int wake_lapic_valid(const X86_HPET_WATCHDOG *owner)
 {
     const X86_IRQ_REGISTRY *registry = x86_irq_registry();
-    BOOT_U32 allowed = 0, index, value;
+    BOOT_U32 allowed = 0, index;
     if (!x86_irq_registry_validate(registry) || registry->Busy) return 0;
     for (index = 1; index <= 2; ++index) {
         const X86_IRQ_SUBSCRIPTION *item = &registry->Slots[index];
@@ -43,12 +42,7 @@ static int wake_lapic_valid(const X86_HPET_WATCHDOG *owner)
             allowed |= 1U << index;
         }
     }
-    for (index = 0; index < 8; ++index) {
-        if (!x86_lapic_read(owner->Env.Mapping, 0x100 + index * 16, &value) || value ||
-            !x86_lapic_read(owner->Env.Mapping, 0x200 + index * 16, &value) ||
-            (value & ~(index == 2 ? allowed : 0U))) return 0;
-    }
-    return 1;
+    return x86_lapic_idle_except(owner->Env.Mapping, allowed);
 }
 
 // ====== wait_private ======
@@ -76,8 +70,8 @@ static BOOT_U32 wait_private(const volatile BOOT_U32 *source, BOOT_U32 goal,
     owner->Ticks = x86_watchdog_ticks(owner->Period, idle ? 5 : 100);
     if (!owner->Ticks) return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_ARM);
     if (!x86_watchdog_device(2)) { return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_ARM); }
-    slept = x86_irq_sleep(&owner->Count,next,256);
-    if (!slept || slept > 257) wake_detail = 1;
+    slept = x86_irq_sleep(&owner->Count,next,X86_WATCHDOG_WAKE_BUDGET);
+    if (!slept || slept > X86_WATCHDOG_WAKE_LIMIT) wake_detail = 1;
     else if (owner->Count != next) wake_detail = 2;
     else if (owner->Error) wake_detail = 3;
     else if (owner->Armed) wake_detail = 4;

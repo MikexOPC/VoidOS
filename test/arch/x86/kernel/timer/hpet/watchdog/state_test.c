@@ -138,7 +138,7 @@ int run_watchdog_tests(void)
         if (!x86_watchdog_open(&test_env)) return (int)(1000 + mode);
         result = x86_watchdog_idle(test_source);
         if (mode <= 72) {
-            if (result != (mode == 71 ? 17U : 257U) || x86_watchdog_failure() ||
+            if (result != (mode == 71 ? 17U : X86_WATCHDOG_WAKE_LIMIT) || x86_watchdog_failure() ||
                 x86_watchdog_wake_detail()) return (int)(1100 + mode);
         } else if (result || x86_watchdog_failure() != X86_WATCHDOG_WAKE ||
             x86_watchdog_wake_detail() != 1) return (int)(1200 + mode);

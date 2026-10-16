@@ -79,7 +79,7 @@ int x86_scheduler_idle_wait(void)
     slept = x86_watchdog_wait(&idle_source->Count,goal,NULL);
     idle_source->DeadlinePm[goal-1] = x86_pm_elapsed(start,
         x86_pm_read((unsigned short)idle_source->Clock.Port) & idle_source->Clock.Mask,idle_source->Clock.Mask);
-    if (!slept || slept > 9 || x86_watchdog_result() != X86_WATCHDOG_EVENT) return 0;
+    if (!slept || slept > X86_WATCHDOG_WAKE_LIMIT || x86_watchdog_result() != X86_WATCHDOG_EVENT) return 0;
     failure = 4; // Verified delivery and dispatcher context.
     if (!posted || idle_source->Count != goal || idle_source->Error ||
         idle_source->Phase != X86_TIMER_PENDING || !kernel_scheduler_context_valid()) return 0;
@@ -103,7 +103,7 @@ uint32_t x86_scheduler_idle_failure(void) { return failure; }
 
 int x86_scheduler_idle_verified(void)
 {
-    return idle_source && waits == 1 && posted == 1 && resumed == 3 && slept && slept <= 9 &&
+    return idle_source && waits == 1 && posted == 1 && resumed == 3 && slept && slept <= X86_WATCHDOG_WAKE_LIMIT &&
         idle_source->Count == goal && !idle_source->Error && idle_source->Phase == X86_TIMER_PENDING;
 }
 

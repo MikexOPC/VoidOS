@@ -100,6 +100,21 @@ int x86_lapic_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *va
     }
     return 1;
 }
+
+// ====== lapic_idle_except_model ======
+
+// Same contract as arch/x86/mm/devices/lapic.c, evaluated on the register model above.
+int x86_lapic_idle_except(const X86_LAPIC_MAPPING *owner, BOOT_U32 pending)
+{
+    BOOT_U32 index, value;
+    if (pending & ~7U) return 0;
+    for (index = 0; index < 8; ++index) {
+        if (!x86_lapic_read(owner,0x100+index*16,&value) || value ||
+            !x86_lapic_read(owner,0x200+index*16,&value) ||
+            (value & ~(index == 2 ? pending : 0U))) return 0;
+    }
+    return 1;
+}
 int x86_apic_read_profile(X86_APIC_RAW *cpu)
 {
     cpu->Pat = profile.Raw.Pat; cpu->ApicBase = profile.Raw.ApicBase;
@@ -260,7 +275,7 @@ int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector)
 BOOT_U32 x86_irq_sleep(volatile BOOT_U32 *source, BOOT_U32 goal, BOOT_U32 budget)
 {
     X86_HPET_WATCHDOG *owner = x86_watchdog_state();
-    if (source != &owner->Count || goal != owner->Count + 1 || budget != 256 || !handler) { return 0; }
+    if (source != &owner->Count || goal != owner->Count + 1 || budget != X86_WATCHDOG_WAKE_BUDGET || !handler) { return 0; }
     if (test_mode != 2 && test_mode != 23) { ++test_source[0]; }
     if (test_mode == 3 || test_mode == 23) { test_stop = 1; }
     test_hpet[0xf0/4] = test_mode == 36 || test_mode == 38 ||
@@ -288,8 +303,8 @@ BOOT_U32 x86_irq_sleep(volatile BOOT_U32 *source, BOOT_U32 goal, BOOT_U32 budget
     }
     if (test_mode == 35) test_hpet[0x20/4] = 1u << owner->Timer;
     if (test_mode == 71) return 17;
-    if (test_mode == 72) return 257;
-    if (test_mode == 73) return 258;
+    if (test_mode == 72) return X86_WATCHDOG_WAKE_LIMIT;
+    if (test_mode == 73) return X86_WATCHDOG_WAKE_LIMIT + 1;
     if (test_mode == 74) return 0;
     return test_mode == 2 || test_mode == 23 ? 2u : 3u;
 }

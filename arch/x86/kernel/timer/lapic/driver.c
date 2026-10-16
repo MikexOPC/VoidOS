@@ -157,7 +157,7 @@ static int deadlines(void)
 #else
         waited = x86_watchdog_wait(&timer.Count,goal,NULL);
 #endif
-        if (!x86_timer_wait_result(waited,8,timer.Count,timer.Error,goal) ||
+        if (!x86_timer_wait_result(waited,X86_WATCHDOG_WAKE_BUDGET,timer.Count,timer.Error,goal) ||
             timer.Count != goal || timer.Error || !x86_lapic_idle(timer.Mapping)) {
             return 0;
         }
