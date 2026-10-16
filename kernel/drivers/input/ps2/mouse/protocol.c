@@ -48,20 +48,20 @@ int kernel_ps2_mouse_prepare(KERNEL_PS2_CONTROLLER *owner)
         !owner->Io.Timeout || owner->Io.Timeout > 357955U) return 0;
     owner->Phase = KERNEL_PS2_DIRTY;
 
-    /* 
+    /*
         QEMU v10.1.0 pckbd.c TEST_MOUSE A9 returns controller byte00,
-        MOUSE_ENABLE A8 clears mode bit5. Both IRQ bits remain zero. 
+        MOUSE_ENABLE A8 clears mode bit5. Both IRQ bits remain zero.
     */
-   
+
     if (!kernel_ps2_send(owner, 0x64, 0xa9) ||
         !kernel_ps2_receive(owner, &reply)) goto failed;
     if (reply != 0) goto protocol;
     if (!kernel_ps2_send(owner, 0x64, 0xa8)) goto failed;
 
-    /* 
+    /*
         QEMU v10.1.0 ps2.c ps2_write_mouse: FF resets to type00 and
         returns FA AA 00; F5 disables, E6 scale1:1, EA stream, F2 type.
-        No F4 is sent: preparation never enables data reporting. 
+        No F4 is sent: preparation never enables data reporting.
     */
 
     if (!kernel_ps2_mouse_command(owner, 0xff) || !mouse_reply(owner, 0xaa) ||
