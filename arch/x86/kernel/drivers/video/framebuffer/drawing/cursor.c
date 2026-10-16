@@ -5,7 +5,7 @@ typedef struct {
     X86_FB_MAPPING  *Owner;
     OS_FRAMEBUFFER  Surface;
     KERNEL_POINTER_IMAGE  Image;
-    BOOT_U32  Pixels[576], Valid, Failed;
+    BOOT_U32  Pixels[324], Valid, Failed;
 } CURSOR_BACKUP;
 static CURSOR_BACKUP backup;
 
@@ -22,7 +22,7 @@ static int same_surface(const OS_FRAMEBUFFER *first, const OS_FRAMEBUFFER *secon
 
 static X86_FB_PIXEL_RECT cursor_rectangle(const KERNEL_POINTER_IMAGE *image)
 {
-    X86_FB_PIXEL_RECT rect = {image->X, image->Y, 24, 24};
+    X86_FB_PIXEL_RECT rect = {image->X, image->Y, 18, 18};
     return rect;
 }
 
@@ -44,9 +44,9 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
     if (pointer->Visible) rects[rectangles++] = cursor_rectangle(pointer);
     if (!x86_fb_transaction_begin(owner, rects, rectangles, &transaction)) return 0;
     if (backup.Valid) {
-        for (BOOT_U32 y = 0; y < 24; ++y) for (BOOT_U32 x = 0; x < 24; ++x)
+        for (BOOT_U32 y = 0; y < 18; ++y) for (BOOT_U32 x = 0; x < 18; ++x)
             if (!x86_fb_transaction_pixel(&transaction, backup.Image.X + x, backup.Image.Y + y,
-                &backup.Pixels[y * 24 + x], 1)) goto failed;
+                &backup.Pixels[y * 18 + x], 1)) goto failed;
         backup.Valid = 0;
     }
     foreground = fb_color_word(transaction.Pixel.Surface.Format, (unsigned char)(text->Foreground >> 16),
@@ -59,8 +59,8 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
             if (!x86_fb_transaction_pixel(&transaction, text->X + cell * 8 + x, text->Y + y, &color, 1)) goto failed;
         }
     if (pointer->Visible) {
-        for (BOOT_U32 y = 0; y < 24; ++y) for (BOOT_U32 x = 0; x < 24; ++x) {
-            BOOT_U32 *pixel = &backup.Pixels[y * 24 + x];
+        for (BOOT_U32 y = 0; y < 18; ++y) for (BOOT_U32 x = 0; x < 18; ++x) {
+            BOOT_U32 *pixel = &backup.Pixels[y * 18 + x];
             BOOT_U32 sample = kernel_pointer_sample(x, y), color;
             if (!x86_fb_transaction_pixel(&transaction, pointer->X + x, pointer->Y + y, pixel, 0)) goto failed;
             color = kernel_pointer_blend(sample, *pixel & 0xffffff);

@@ -11,8 +11,8 @@ spec.loader.exec_module(pointer)
 
 class PointerTests(unittest.TestCase):
     def test_position_and_clamp(self):
-        self.assertEqual(pointer.expected_position(1024,768,[]),(500,372,0))
-        self.assertEqual(pointer.expected_position(1024,768,[(127,-127,7)]*8),(1000,744,4))
+        self.assertEqual(pointer.expected_position(1024,768,[]),(503,375,0))
+        self.assertEqual(pointer.expected_position(1024,768,[(127,-127,7)]*8),(1006,750,4))
         self.assertEqual(pointer.expected_position(1024,768,[(-127,127,0)]*8),(0,0,4))
         for width,height in [(0,768),(1024,16),(1921,768),(1024,1081)]:
             with self.assertRaises(RuntimeError): pointer.expected_position(width,height,[])
@@ -20,16 +20,16 @@ class PointerTests(unittest.TestCase):
 
     def test_bitmap_transparency(self):
         counts = [0,0,0]
-        for y in range(24):
-            for x in range(24):
+        for y in range(18):
+            for x in range(18):
                 pixel = pointer.sample(x,y)
                 self.assertLessEqual((pixel & 31) + (pixel >> 5),16)
                 counts[0 if pixel == 0 else 2 if pixel == 512 else 1] += 1
         self.assertTrue(all(counts))
-        self.assertEqual(sum(counts),576)
-        self.assertGreater(pointer.sample(3,1),0)
-        self.assertEqual(pointer.sample(9,9),512)
-        for x,y in [(-1,0),(24,0),(0,-1),(0,24),(2**32,0)]:
+        self.assertEqual(sum(counts),324)
+        self.assertGreater(pointer.sample(0,0),0)
+        self.assertEqual(pointer.sample(3,6),512)
+        for x,y in [(-1,0),(18,0),(0,-1),(0,18),(2**32,0)]:
             self.assertEqual(pointer.sample(x,y),0)
 
     def test_geometry_preserves_row_padding(self):
@@ -44,9 +44,9 @@ class PointerTests(unittest.TestCase):
     def test_cleanup_must_match(self):
         log = '\n'.join(f'{field}: 0x{value:016x}' for field,value in [
             ('KERNEL_FB_WIDTH',1024),('KERNEL_FB_HEIGHT',768),
-            ('KERNEL_POINTER_X',500),('KERNEL_POINTER_Y',372),('KERNEL_POINTER_MOVES',0)])
+            ('KERNEL_POINTER_X',503),('KERNEL_POINTER_Y',375),('KERNEL_POINTER_MOVES',0)])
         with self.assertRaises(RuntimeError): pointer.finish(log,[])
-        self.assertEqual(pointer.finish(log+'\nKERNEL_POINTER_CLEAN',[])['X'],500)
+        self.assertEqual(pointer.finish(log+'\nKERNEL_POINTER_CLEAN',[])['X'],503)
         with self.assertRaises(RuntimeError): pointer.finish(log+'\nKERNEL_POINTER_CLEAN',[(1,0,0)])
 
     def test_repeated_physical_reads_are_fresh(self):
@@ -61,13 +61,13 @@ class PointerTests(unittest.TestCase):
                 def write(self,text):
                     address = int(text.rsplit('0x',1)[1],16)
                     with monitor.open('a',encoding='utf-8') as stream:
-                        for index in range(12): stream.write(f'{address+index*8:08x}: 0x{self.value:016x}\n')
+                        for index in range(9): stream.write(f'{address+index*8:08x}: 0x{self.value:016x}\n')
                 def flush(self): pass
                 def poll(self): return None
             vm = VM()
-            self.assertEqual(pointer.physical(vm,monitor,4096),[1]*12)
+            self.assertEqual(pointer.physical(vm,monitor,4096),[1]*9)
             vm.value = 2
-            self.assertEqual(pointer.physical(vm,monitor,4096),[2]*12)
+            self.assertEqual(pointer.physical(vm,monitor,4096),[2]*9)
             import sys
             sys.path.insert(0,str(ROOT/'arch/x86/kernel/drivers/video/framebuffer/scripts'))
             framebuffer = pointer.load('fresh_framebuffer','arch/x86/kernel/drivers/video/framebuffer/scripts/firmware.py')

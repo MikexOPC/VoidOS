@@ -5,50 +5,44 @@ import re
 import time
 ROOT = Path(__file__).resolve().parents[5]
 COVERAGE = [
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 6, 16, 15, 8, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 12, 16, 16, 16, 16, 11, 6, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 12, 16, 264, 171, 47, 16, 16, 16, 12, 7, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 11, 16, 264, 512, 512, 357, 202, 47, 16, 16, 16, 13, 7, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 5, 16, 78, 512, 512, 512, 512, 512, 419, 233, 78, 16, 16, 16, 13, 7, 3, 0, 0, 0, 0, 0, 0],
-    [0, 0, 15, 16, 419, 512, 512, 512, 512, 512, 512, 512, 419, 233, 78, 16, 16, 16, 14, 9, 3, 0, 0, 0],
-    [0, 0, 10, 16, 233, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 419, 264, 109, 16, 16, 16, 14, 4, 0],
-    [0, 0, 4, 16, 78, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 450, 295, 109, 16, 16, 3],
-    [0, 0, 0, 14, 16, 357, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 202, 16, 8],
-    [0, 0, 0, 9, 16, 202, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 357, 140, 16, 16, 4],
-    [0, 0, 0, 3, 16, 47, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 357, 202, 47, 16, 16, 14, 5, 0],
-    [0, 0, 0, 0, 14, 16, 357, 512, 512, 512, 512, 512, 512, 419, 140, 16, 16, 16, 16, 11, 6, 1, 0, 0],
-    [0, 0, 0, 0, 9, 16, 202, 512, 512, 512, 512, 512, 419, 47, 16, 16, 11, 6, 1, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 3, 16, 47, 512, 512, 512, 512, 512, 140, 16, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 14, 16, 357, 512, 512, 512, 388, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 8, 16, 202, 512, 512, 512, 140, 16, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 2, 16, 16, 481, 512, 419, 16, 16, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 13, 16, 326, 512, 202, 16, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 7, 16, 171, 450, 16, 16, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 2, 16, 16, 233, 16, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 13, 16, 16, 16, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 3, 15, 16, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 512, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 512, 512, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 512, 512, 512, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 512, 512, 512, 512, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 512, 512, 512, 16, 16, 16, 16, 16, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 512, 16, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 512, 16, 16, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 512, 16, 0, 0, 16, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 16, 0, 0, 0, 16, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [16, 0, 0, 0, 0, 0, 16, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 16, 512, 512, 16, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 16, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 ]
 
 # ============ bitmap coverage reference ============
 
 def sample(x, y):
-    return COVERAGE[y][x] if 0 <= x < 24 and 0 <= y < 24 else 0
+    return COVERAGE[y][x] if 0 <= x < 18 and 0 <= y < 18 else 0
 
 def blend(pixel, rgb):
     black, white = pixel & 31, pixel >> 5
     return bytes((c*(16-black-white)+255*white+8)//16 for c in rgb)
 
 def expected_position(width, height, packets):
-    if not 24 <= width <= 1920 or not 32 <= height <= 1080:
+    if not 18 <= width <= 1920 or not 32 <= height <= 1080:
         raise RuntimeError('Invalid pointer geometry')
     width, height = width // 8 * 8, height // 16 * 16
-    x, y, moves = (width-24)//2, (height-24)//2, 0
+    x, y, moves = (width-18)//2, (height-18)//2, 0
     for dx, dy, buttons in packets:
         if not -256 <= dx <= 255 or not -256 <= dy <= 255 or not 0 <= buttons <= 7:
             raise RuntimeError('Invalid expected mouse packet')
-        next_x, next_y = max(0,min(width-24,x+dx)), max(0,min(height-24,y-dy))
+        next_x, next_y = max(0,min(width-18,x+dx)), max(0,min(height-18,y-dy))
         moves += (next_x,next_y) != (x,y)
         x, y = next_x, next_y
     return x, y, moves
@@ -102,7 +96,7 @@ def settled(vm, serial, packets, read_serial, wait_marker):
 
 def physical(vm, monitor, address):
     offset = monitor.stat().st_size
-    vm.stdin.write(f'xp /12gx 0x{address:x}\n'); vm.stdin.flush()
+    vm.stdin.write(f'xp /9gx 0x{address:x}\n'); vm.stdin.flush()
     deadline = time.monotonic()+5
     while time.monotonic() < deadline:
         values = {}
@@ -111,8 +105,8 @@ def physical(vm, monitor, address):
             start = int(match[1],16)
             for index,value in enumerate(re.findall(r'0x([0-9a-fA-F]{16})',match[2])):
                 values[start+index*8] = int(value,16)
-        if all(address+index*8 in values for index in range(12)):
-            return [values[address+index*8] for index in range(12)]
+        if all(address+index*8 in values for index in range(9)):
+            return [values[address+index*8] for index in range(9)]
         if vm.poll() is not None:
             raise RuntimeError('Owned VM exited before pointer physical read')
         time.sleep(0.005)
@@ -137,8 +131,8 @@ def verify(vm, scenario, serial, packets, read_serial, wait_marker, command, lab
                 rgb = b'\xff\xff\xff' if bits & (0x80>>col) else b'\x08\x10\x18'
                 offset = ((cy+row)*width+cx+col)*3
                 expected[offset:offset+3] = rgb
-    for row in range(24):
-        for col in range(24):
+    for row in range(18):
+        for col in range(18):
             pixel = sample(col,row)
             if pixel:
                 offset = ((y+row)*width+x+col)*3
@@ -160,15 +154,15 @@ def verify(vm, scenario, serial, packets, read_serial, wait_marker, command, lab
     visible = width*(height//16*16)*3
     if data[header.end():header.end()+visible] != expected[:visible]:
         raise RuntimeError('Pointer scene or restored background mismatch: '+label)
-    for row in range(24):
+    for row in range(18):
         words = physical(vm,scenario/'monitor.log',base+((y+row)*stride+x)*4)
-        for col in range(24):
+        for col in range(18):
             offset = ((y+row)*width+x+col)*3
             r,g,b = expected[offset:offset+3]
             rgb = r | g<<8 | b<<16 if format_id == 0 else b | g<<8 | r<<16
             if words[col//2] >> ((col%2)*32) & 0xffffffff != rgb:
                 raise RuntimeError('Pointer physical pixel mismatch')
-    result = dict(X=x,Y=y,Moves=moves,Cells=cells_done,PhysicalPixels=576,VisiblePixels=visible//3)
+    result = dict(X=x,Y=y,Moves=moves,Cells=cells_done,PhysicalPixels=324,VisiblePixels=visible//3)
     (scenario/('pointer-'+label+'.json')).write_text(json.dumps(result,indent=2),encoding='utf-8')
     command(vm,'cont')
     return result

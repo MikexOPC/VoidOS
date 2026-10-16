@@ -26,8 +26,8 @@ int kernel_pointer_valid(const KERNEL_CONSOLE_POINTER *owner)
 
 static void invalidate(KERNEL_VIDEO_CONSOLE *view, const KERNEL_POINTER_IMAGE *image)
 {
-    for (uint32_t row = image->Y / 16; row <= (image->Y + 23) / 16; ++row)
-        for (uint32_t column = image->X / 8; column <= (image->X + 23) / 8; ++column) {
+    for (uint32_t row = image->Y / 16; row <= (image->Y + 17) / 16; ++row)
+        for (uint32_t column = image->X / 8; column <= (image->X + 17) / 8; ++column) {
             uint32_t index = row * view->Columns + column;
             view->Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
         }
@@ -45,8 +45,8 @@ int kernel_pointer_init(KERNEL_CONSOLE_POINTER *owner, KERNEL_VIDEO_CONSOLE *vie
         0, 0);
     if (plan == UINT64_MAX) return 0;
     owner->Self = (uintptr_t)owner; owner->View = view;
-    owner->Image.X = (view->Columns * 8 - 24) / 2;
-    owner->Image.Y = (view->Rows * 16 - 24) / 2;
+    owner->Image.X = (view->Columns * 8 - 18) / 2;
+    owner->Image.Y = (view->Rows * 16 - 18) / 2;
     owner->Image.Visible = 1; owner->Buttons = owner->Closed = 0; owner->Moves = 0;
     invalidate(view, &owner->Image);
     return 1;
