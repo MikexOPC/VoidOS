@@ -5,6 +5,10 @@
 #define KERNEL_CONSOLE_ROWS 67U
 #define KERNEL_CONSOLE_CELLS (KERNEL_CONSOLE_COLUMNS * KERNEL_CONSOLE_ROWS)
 #define KERNEL_CONSOLE_DIRTY ((KERNEL_CONSOLE_CELLS + 7U) / 8U)
+/* Pixel size of one console cell. The pointer maps pixels to cells with it; the framebuffer
+   console font (X86_FB_CELL_WIDTH/HEIGHT) must match, console/runtime.c asserts it. */
+#define KERNEL_CONSOLE_CELL_WIDTH 10U
+#define KERNEL_CONSOLE_CELL_HEIGHT 20U
 #define KERNEL_CONSOLE_INVALID UINT64_MAX
 typedef struct {
     uintptr_t  Self;

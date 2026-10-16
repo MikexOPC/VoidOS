@@ -176,7 +176,7 @@ static int text_utf8(void)
         {0xec, {0x20,0x10,0x00,0x30,0x10,0x10,0x10,0x38}},
         {0xf2, {0x10,0x08,0x00,0x3c,0x42,0x42,0x42,0x3c}},
         {0xf9, {0x10,0x08,0x00,0x42,0x42,0x42,0x46,0x3a}}};
-    X86_FB_FONT font = {glyphs, 7, sizeof(glyphs), {0xff,0x81,0x81,0x81,0x81,0x81,0x81,0xff}, 8};
+    X86_FB_FONT font = {glyphs, 7, sizeof(glyphs), {0xff,0x81,0x81,0x81,0x81,0x81,0x81,0xff}, 8, 8};
     const unsigned char sample[] = "A\xc3\xa0\xc3\xa8\xc3\xa9\xc3\xac\xc3\xb2\xc3\xb9\xf0\x9f\x98\x80";
     X86_FB_TEXT text = {sample, sizeof(sample) - 1, sizeof(sample), 3, 2, 0x112233, 0x445566};
     BOOT_U32 format, cell, row, col, scan;
@@ -187,7 +187,7 @@ static int text_utf8(void)
         CHECK(x86_fb_text(&owner, &text, &font));
         CHECK(visits == 512 && table_views == scan);
         for (cell = 0; cell < 8; ++cell) for (row = 0; row < 8; ++row) for (col = 0; col < 8; ++col) {
-            unsigned char bitmap = cell < 7 ? glyphs[cell].Rows[row] : font.Missing[row];
+            unsigned short bitmap = cell < 7 ? glyphs[cell].Rows[row] : font.Missing[row];
             BOOT_U32 rgb = (bitmap & (0x80U >> col)) ? text.Foreground : text.Background;
             BOOT_U32 color = format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16);
             CHECK(words[(row + 2) * 84 + cell * 8 + col + 3] == color);
@@ -206,7 +206,7 @@ static int text_utf8(void)
 static int drawing_rejections(void)
 {
     X86_FB_GLYPH glyph = {65, {0xff,0,0,0,0,0,0,0}};
-    X86_FB_FONT font = {&glyph, 1, sizeof(glyph), {0xff,0,0,0,0,0,0,0}, 8};
+    X86_FB_FONT font = {&glyph, 1, sizeof(glyph), {0xff,0,0,0,0,0,0,0}, 8, 8};
     unsigned char sample[257];
     X86_FB_TEXT text = {sample, 64, sizeof(sample), 0, 0, 0xffffff, 0};
     BOOT_U32 index;
@@ -280,25 +280,27 @@ static int drawing_rejections(void)
 static int caret_pixels(void)
 {
     const X86_FB_FONT *font = x86_fb_console_font();
+    const BOOT_U32 w = font->Width, h = font->Height, stride = 2 * w + 4;
     const unsigned char sample[] = "AA";
     X86_FB_TEXT text = {sample, 2, sizeof(sample), 0, 0, 0x112233, 0x445566};
+    CHECK(w == 10 && h == 20);
     for (BOOT_U32 format = 0; format < 2; ++format) {
-        CHECK(draw_setup(16, 16, 20, format));
+        CHECK(draw_setup(2 * w, h, stride, format));
         visits = 0;
-        CHECK(x86_fb_text_caret(&owner, &text, font, 1) && visits == 256);
-        for (BOOT_U32 row = 0; row < 16; ++row) for (BOOT_U32 col = 0; col < 16; ++col) {
-            BOOT_U32 rgb = ((row >= 14 && col >= 8) ||
-                (font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8)))) ? 0x112233 : 0x445566;
+        CHECK(x86_fb_text_caret(&owner, &text, font, 1) && visits == 2 * w * h);
+        for (BOOT_U32 row = 0; row < h; ++row) for (BOOT_U32 col = 0; col < 2 * w; ++col) {
+            BOOT_U32 rgb = ((row >= h - 2 && col >= w) ||
+                (font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w)))) ? 0x112233 : 0x445566;
             BOOT_U32 color = format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16);
-            CHECK(words[row * 20 + col] == color);
-            CHECK(words[row * 20 + 16] == 0xa5a5a5a5);
+            CHECK(words[row * stride + col] == color);
+            CHECK(words[row * stride + 2 * w] == 0xa5a5a5a5);
         }
         visits = 0;
         CHECK(!x86_fb_text_caret(&owner, &text, font, 2) && !visits);
-        CHECK(x86_fb_text_caret(&owner, &text, font, 0) && visits == 256);
-        for (BOOT_U32 row = 14; row < 16; ++row) for (BOOT_U32 col = 8; col < 16; ++col) {
-            BOOT_U32 rgb = (font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0x112233 : 0x445566;
-            CHECK(words[row * 20 + col] == (format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16)));
+        CHECK(x86_fb_text_caret(&owner, &text, font, 0) && visits == 2 * w * h);
+        for (BOOT_U32 row = h - 2; row < h; ++row) for (BOOT_U32 col = w; col < 2 * w; ++col) {
+            BOOT_U32 rgb = (font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w))) ? 0x112233 : 0x445566;
+            CHECK(words[row * stride + col] == (format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16)));
         }
         CHECK(x86_fb_unbind(&owner) && pool.FreePages == 128);
     }
@@ -310,30 +312,41 @@ static int caret_pixels(void)
 static int console_font(void)
 {
     const X86_FB_FONT *font = x86_fb_console_font();
+    const BOOT_U32 w = font->Width, h = font->Height, cells = 20;
     unsigned char sample[132];
-    X86_FB_TEXT text = {sample, 32, sizeof(sample), 0, 0, 0xffffff, 0};
+    X86_FB_TEXT text = {sample, cells, sizeof(sample), 0, 0, 0xffffff, 0};
     BOOT_U32 index, row, col;
-    CHECK(font->Height == 16 && font->Count == 109);
-    CHECK(draw_setup(256, 16, 256, 1)); memset(sample, 'A', sizeof(sample));
-    CHECK(x86_fb_text(&owner, &text, font) && visits == 4096);
-    for (row = 0; row < 16; ++row) for (col = 0; col < 256; ++col)
-        CHECK(words[row * 256 + col] == ((font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0xffffffU : 0));
+    CHECK(h == 20 && w == 10 && font->Count == 109);
+    for (index = 0; index < font->Count; ++index) {
+        for (row = 0; row < h; ++row) CHECK(font->Glyphs[index].Rows[row] >> w == 0);
+    }
+    for (row = 0; row < h; ++row) CHECK(font->Missing[row] >> w == 0);
+    CHECK(draw_setup(cells * w, h, cells * w, 1)); memset(sample, 'A', sizeof(sample));
+    CHECK(x86_fb_text(&owner, &text, font) && visits == cells * w * h);
+    for (row = 0; row < h; ++row) for (col = 0; col < cells * w; ++col)
+        CHECK(words[row * cells * w + col] == ((font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w))) ? 0xffffffU : 0));
     visits = 0;
-    CHECK(x86_fb_text_caret(&owner, &text, font, 31) && visits == 4096);
-    for (row = 0; row < 16; ++row) for (col = 0; col < 256; ++col)
-        CHECK(words[row * 256 + col] == ((row >= 14 && col >= 248) ||
-            (font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0xffffffU : 0));
+    CHECK(x86_fb_text_caret(&owner, &text, font, cells - 1) && visits == cells * w * h);
+    for (row = 0; row < h; ++row) for (col = 0; col < cells * w; ++col)
+        CHECK(words[row * cells * w + col] == ((row >= h - 2 && col >= (cells - 1) * w) ||
+            (font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w))) ? 0xffffffU : 0));
     visits = 0;
-    CHECK(!x86_fb_text_caret(&owner, &text, font, 32) && !visits);
-    CHECK(x86_fb_text(&owner, &text, font) && visits == 4096);
-    for (row = 14; row < 16; ++row) for (col = 248; col < 256; ++col)
-        CHECK(words[row * 256 + col] == ((font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0xffffffU : 0));
-    text.Bytes = 33; visits = 0; CHECK(!x86_fb_text(&owner, &text, font) && !visits);
+    CHECK(!x86_fb_text_caret(&owner, &text, font, cells) && !visits);
+    CHECK(x86_fb_text(&owner, &text, font) && visits == cells * w * h);
+    for (row = h - 2; row < h; ++row) for (col = (cells - 1) * w; col < cells * w; ++col)
+        CHECK(words[row * cells * w + col] == ((font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w))) ? 0xffffffU : 0));
+    text.Bytes = cells + 1; visits = 0; CHECK(!x86_fb_text(&owner, &text, font) && !visits);
     {
         X86_FB_FONT bad = *font;
+        text.Bytes = 1;
         for (index = 0; index < 3; ++index) {
             bad.Height = index == 0 ? 0 : index == 1 ? 17 : ~0U;
-            text.Bytes = 1; CHECK(!x86_fb_text(&owner, &text, &bad) && !visits);
+            CHECK(!x86_fb_text(&owner, &text, &bad) && !visits);
+        }
+        bad = *font;
+        for (index = 0; index < 4; ++index) {
+            bad.Width = index == 0 ? 0 : index == 1 ? 9 : index == 2 ? 16 : ~0U;
+            CHECK(!x86_fb_text(&owner, &text, &bad) && !visits);
         }
     }
     CHECK(x86_fb_unbind(&owner) && pool.FreePages == 128);

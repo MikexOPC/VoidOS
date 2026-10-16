@@ -34,10 +34,13 @@ def blend(pixel, rgb):
     black, white = pixel & 31, pixel >> 5
     return bytes((c*(16-black-white)+255*white+8)//16 for c in rgb)
 
+# Console cell in pixels: must equal WIDTH/HEIGHT of scripts/font/convert.py (checked in verify()).
+CELL_W, CELL_H = 10, 20
+
 def expected_position(width, height, packets):
     if not 18 <= width <= 1920 or not 32 <= height <= 1080:
         raise RuntimeError('Invalid pointer geometry')
-    width, height = width // 8 * 8, height // 16 * 16
+    width, height = width // CELL_W * CELL_W, height // CELL_H * CELL_H
     x, y, moves = (width-18)//2, (height-18)//2, 0
     for dx, dy, buttons in packets:
         if not -256 <= dx <= 255 or not -256 <= dy <= 255 or not 0 <= buttons <= 7:
@@ -119,16 +122,18 @@ def verify(vm, scenario, serial, packets, read_serial, wait_marker, command, lab
     x,y,moves,cells_done = frame
     width,height,stride,base,format_id = geometry(log)
     reference = load('pointer_terminal','kernel/console/video/scripts/shell/pixels.py')
-    font = load('pointer_font','arch/x86/kernel/drivers/video/framebuffer/scripts/font/convert.py').raster()
-    cells,caret = reference.expected(log,width//8,height//16)
+    converter = load('pointer_font','arch/x86/kernel/drivers/video/framebuffer/scripts/font/convert.py')
+    if (converter.WIDTH, converter.HEIGHT) != (CELL_W, CELL_H): raise RuntimeError('Font cell differs from the pointer reference')
+    font = converter.raster()
+    cells,caret = reference.expected(log,width//CELL_W,height//CELL_H)
     expected = bytearray(width*height*3)
     for index,scalar in enumerate(cells):
-        cx,cy = index%(width//8)*8,index//(width//8)*16
+        cx,cy = index%(width//CELL_W)*CELL_W,index//(width//CELL_W)*CELL_H
         for row,bits in enumerate(font.get(scalar,font[65533])):
-            if index == caret and row >= 14:
-                bits = 255
-            for col in range(8):
-                rgb = b'\xff\xff\xff' if bits & (0x80>>col) else b'\x08\x10\x18'
+            if index == caret and row >= CELL_H-2:
+                bits = (1<<CELL_W)-1
+            for col in range(CELL_W):
+                rgb = b'\xff\xff\xff' if bits & (1<<(CELL_W-1-col)) else b'\x08\x10\x18'
                 offset = ((cy+row)*width+cx+col)*3
                 expected[offset:offset+3] = rgb
     for row in range(18):
@@ -151,7 +156,7 @@ def verify(vm, scenario, serial, packets, read_serial, wait_marker, command, lab
         raise TimeoutError('Pointer screenshot incomplete')
     if (int(header[1]),int(header[2])) != (width,height):
         raise RuntimeError('Pointer screenshot geometry mismatch')
-    visible = width*(height//16*16)*3
+    visible = width*(height//CELL_H*CELL_H)*3
     if data[header.end():header.end()+visible] != expected[:visible]:
         raise RuntimeError('Pointer scene or restored background mismatch: '+label)
     for row in range(18):

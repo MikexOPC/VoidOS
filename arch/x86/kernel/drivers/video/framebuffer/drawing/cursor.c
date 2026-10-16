@@ -29,7 +29,7 @@ static X86_FB_PIXEL_RECT cursor_rectangle(const KERNEL_POINTER_IMAGE *image)
 // ====== x86_fb_cursor_text ======
 
 int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
-    const unsigned char rows[X86_FB_TEXT_CELLS][16], BOOT_U32 count,
+    const unsigned short rows[X86_FB_TEXT_CELLS][X86_FB_CELL_HEIGHT], BOOT_U32 count,
     const KERNEL_POINTER_IMAGE *pointer)
 {
     X86_FB_PIXEL_TRANSACTION transaction = {0};
@@ -40,7 +40,7 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
         backup.Owner != owner || backup.Root != owner->Authority.Root ||
         !same_surface(&backup.Surface, &owner->Context->Info.Framebuffer)))) return 0;
     if (backup.Valid) rects[rectangles++] = cursor_rectangle(&backup.Image);
-    rects[rectangles++] = (X86_FB_PIXEL_RECT){text->X, text->Y, count * 8, 16};
+    rects[rectangles++] = (X86_FB_PIXEL_RECT){text->X, text->Y, count * X86_FB_CELL_WIDTH, X86_FB_CELL_HEIGHT};
     if (pointer->Visible) rects[rectangles++] = cursor_rectangle(pointer);
     if (!x86_fb_transaction_begin(owner, rects, rectangles, &transaction)) return 0;
     if (backup.Valid) {
@@ -53,10 +53,10 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
         (unsigned char)(text->Foreground >> 8), (unsigned char)text->Foreground);
     background = fb_color_word(transaction.Pixel.Surface.Format, (unsigned char)(text->Background >> 16),
         (unsigned char)(text->Background >> 8), (unsigned char)text->Background);
-    for (BOOT_U32 cell = 0; cell < count; ++cell) for (BOOT_U32 y = 0; y < 16; ++y)
-        for (BOOT_U32 x = 0; x < 8; ++x) {
-            BOOT_U32 color = rows[cell][y] & (0x80U >> x) ? foreground : background;
-            if (!x86_fb_transaction_pixel(&transaction, text->X + cell * 8 + x, text->Y + y, &color, 1)) goto failed;
+    for (BOOT_U32 cell = 0; cell < count; ++cell) for (BOOT_U32 y = 0; y < X86_FB_CELL_HEIGHT; ++y)
+        for (BOOT_U32 x = 0; x < X86_FB_CELL_WIDTH; ++x) {
+            BOOT_U32 color = rows[cell][y] & (1U << (X86_FB_CELL_WIDTH - 1 - x)) ? foreground : background;
+            if (!x86_fb_transaction_pixel(&transaction, text->X + cell * X86_FB_CELL_WIDTH + x, text->Y + y, &color, 1)) goto failed;
         }
     if (pointer->Visible) {
         for (BOOT_U32 y = 0; y < 18; ++y) for (BOOT_U32 x = 0; x < 18; ++x) {
