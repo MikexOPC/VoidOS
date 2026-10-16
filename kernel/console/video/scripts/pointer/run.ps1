@@ -28,6 +28,15 @@ if ($binary.Length -lt 64 -or $binary[0] -ne 127 -or $binary[1] -ne 69 -or
     throw 'Richiesta immagine ELF del profilo Ps2Mouse + ConsoleShell con puntatore.'
 }
 
+# ============ the loader must be the one that starts the kernel ============
+
+# The host boot suite rebuilds this file as a diagnostic loader that returns to the firmware
+# menu without starting the kernel; its message is the only difference visible in the text.
+$loaderText = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($loader))
+if ($loaderText.Contains(([char[]]'cleanup senza attivazione' -join [char]0))) {
+    throw 'Il loader in build/esp e la versione diagnostica dei test e non avvia il kernel. Rigenerarlo con: arch/x86/boot/uefi/scripts/build.ps1 -BootKernel'
+}
+
 # ============ isolated ESP and fresh firmware variables ============
 
 $session = Join-Path $project ('kernel/build/pointer-interactive-' + [guid]::NewGuid().ToString('N'))
