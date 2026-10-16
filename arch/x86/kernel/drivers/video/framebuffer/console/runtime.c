@@ -228,7 +228,7 @@ int x86_console_finish(X86_PS2_SESSION *session)
 {
 #ifdef KERNEL_PS2_MOUSE
     if (!session || !session->Mouse.Done || session->Mouse.Token.Id || session->Mouse.RouteOwned ||
-        session->Mouse.Decoder.State || session->Mouse.Buttons || session->Mouse.Losses) return 0;
+        session->Mouse.Decoder.State || session->Mouse.Buttons) return 0;
 #endif
     if (!source || session != source || session->Active || !session->Quiet ||
         !session->WorkerDone || !session->ConsumerDone || !session->ShellDone || session->Error || session->Losses)

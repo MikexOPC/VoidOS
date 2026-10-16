@@ -162,7 +162,8 @@ int main(void)
     clean_session(); session.Mouse.RouteOwned = 1; CHECK(!x86_console_finish(&session));
     clean_session(); session.Mouse.Decoder.State = 1; CHECK(!x86_console_finish(&session));
     clean_session(); session.Mouse.Buttons = 1; CHECK(!x86_console_finish(&session));
-    clean_session(); session.Mouse.Losses = 1; CHECK(!x86_console_finish(&session));
+    clean_session(); session.Mouse.Losses = 1; session.Mouse.Rejected = 2; session.Mouse.Saturated = 3;
+    CHECK(x86_console_finish(&session)); // Counted, recovered framing errors are not a cleanup failure.
 #endif
     clean_session(); session.Active = 1; CHECK(!x86_console_finish(&session));
     clean_session(); session.WorkerDone = 0; CHECK(!x86_console_finish(&session));

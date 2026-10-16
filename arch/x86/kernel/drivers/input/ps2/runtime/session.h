@@ -10,12 +10,17 @@
 typedef struct {
     BOOT_U32 Io, Pin, Gsi, Bits, Destination, Reserved;
 } X86_PS2_ROUTE;
+/* Consecutive framing errors (rejected header or payload loss) tolerated without a
+   valid event before the session fails. Resync skips one byte per rejection and
+   converges within a packet; 64 is a hypothesis to measure, not a hardware value. */
+#define X86_PS2_MOUSE_RESYNC_LIMIT 64U
 typedef struct {
     X86_PS2_ROUTE Route;
     X86_IRQ_TOKEN Token;
     BOOT_U64 Binding, Generation;
     BOOT_U32 SavedLow, SavedHigh, RouteOwned, Done;
     BOOT_U32 Bytes, Irqs, Events, Buttons, Losses, TaskIrqs;
+    BOOT_U32 Rejected, Saturated, Streak;
     KERNEL_PS2_MOUSE_DECODER Decoder;
 } X86_PS2_MOUSE;
 typedef struct {
