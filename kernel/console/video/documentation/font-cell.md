@@ -1,8 +1,8 @@
 # Cella console 9x18 (da 10x20) — 16 ottobre 2026
 
 Aggiornamento richiesto dall'utente: font un poco piu piccolo. La cella e ora 9x18 (113 colonne
-x 42 righe a 1024x768, area usata 1017x756). Generatore: corpo 15 px (advance 9 px), baseline
-sulla riga 14, soglia 100, 109 glifi con righe da 9 bit. Costanti aggiornate: `X86_FB_CELL_*`,
+x 42 righe a 1024x768, area usata 1017x756). Generatore: corpo 15,36 px (advance 9 px), supercampionato 8x senza hinting e mediato (box), baseline
+sulla riga 14, soglia 90, 109 glifi con righe da 9 bit. Costanti aggiornate: `X86_FB_CELL_*`,
 `KERNEL_CONSOLE_CELL_*`, `font_valid` accetta Width 8 o 9, altezza 18 valida in Rust. Budget del
 cursore: area 324 + 1296 + 324 = 1944, accessi 3 x 324 + 1296 = 2268. Una chiamata di testo
 contiene al massimo 25 celle. Le larghezze dispari richiedono di leggere 5 parole da 8 byte per
@@ -10,7 +10,7 @@ cella negli script (`(WIDTH + 1) // 2`). Le sezioni seguenti descrivono il passa
 dove citano 10x20, 20 celle, 2248/2572 o 102x38 valgono i valori sopra.
 
 Puntatore: il riempimento nero dell'immagine di riferimento era invisibile sulla console scura
-(rimaneva solo il contorno bianco); ora e grigio nitido (campione 6 << 5, circa 37% di bianco).
+(rimaneva solo il contorno bianco); ora e grigio nitido (campione 6 << 5). Forma presa dall'SVG dell'utente (scripts/pointer/left_ptr.svg, rasterizzato da svg_art.py), hotspot (1,0).
 Prove: 12 suite host, QEMU 10 boot per mouse+puntatore+shell (60 scene pixel per pixel),
 stress da 200 tasti, 3 boot senza video, diagnostici framebuffer/console x10, ordinari x10
 (`kernel/build/font9-campaign`).

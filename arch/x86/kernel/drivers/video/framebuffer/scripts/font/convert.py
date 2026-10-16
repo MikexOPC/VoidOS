@@ -10,9 +10,10 @@ SCALARS = sorted(list(range(32, 127)) + [192, 200, 201, 204, 210, 217,
 
 # ============ bounded offline rasterization ============
 
-# 9x18 cell: Cascadia Mono advance is 0.586 em, so a 15 px em rounds to 9 px;
-# ascent 14 and descent 4 fill the 18 rows with the baseline on row 14 (row 0 is the top).
-WIDTH, HEIGHT, SIZE, BASELINE, THRESHOLD = 9, 18, 15, 14, 100
+# 9x18 cell: Cascadia Mono advance is 0.586 em, so a 15.36 px em gives 9 px. Glyphs are drawn
+# unhinted at 8x and averaged down (box filter) so the shapes keep their proportions; baseline row 14.
+WIDTH, HEIGHT, SIZE, BASELINE, THRESHOLD = 9, 18, 15.36, 14, 90
+SUPERSAMPLE = 8
 MARGIN = 2
 
 def raster():
@@ -20,15 +21,16 @@ def raster():
     origin = json.loads((source.parent / 'origin.json').read_text())
     if hashlib.sha256(source.read_bytes()).hexdigest().upper() != origin['SHA256']:
         raise ValueError('Source font hash mismatch')
-    font = ImageFont.truetype(source, SIZE, layout_engine=ImageFont.Layout.BASIC)
+    font = ImageFont.truetype(source, SIZE * SUPERSAMPLE, layout_engine=ImageFont.Layout.BASIC)
     glyphs = {}
     for scalar in SCALARS:
         ch = chr(scalar)
-        if font.getlength(ch) != WIDTH:
+        if abs(font.getlength(ch) / SUPERSAMPLE - WIDTH) > 0.02:
             raise ValueError(f'Glyph advance is not {WIDTH}: {scalar:x}')
         # Wider canvas than the cell: ink that would leave the cell must be detected, not clipped.
-        image = Image.new('L', (WIDTH + 2 * MARGIN, HEIGHT + 2 * MARGIN))
-        ImageDraw.Draw(image).text((MARGIN, MARGIN + BASELINE), ch, font=font, fill=255, anchor='ls')
+        big = Image.new('L', ((WIDTH + 2 * MARGIN) * SUPERSAMPLE, (HEIGHT + 2 * MARGIN) * SUPERSAMPLE))
+        ImageDraw.Draw(big).text((MARGIN * SUPERSAMPLE, (MARGIN + BASELINE) * SUPERSAMPLE), ch, font=font, fill=255, anchor='ls')
+        image = big.resize((WIDTH + 2 * MARGIN, HEIGHT + 2 * MARGIN), Image.BOX)
         ink = [(x, y) for y in range(image.height) for x in range(image.width) if image.getpixel((x, y)) >= THRESHOLD]
         if any(not MARGIN <= x < MARGIN + WIDTH or not MARGIN <= y < MARGIN + HEIGHT for x, y in ink):
             raise ValueError(f'Glyph does not fit {WIDTH}x{HEIGHT} cell: {scalar:x}')
