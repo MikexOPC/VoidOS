@@ -46,7 +46,7 @@ static int callback(const X86_IRQ_REGISTRY *registry, X86_IRQ_CALLBACK function)
 
 static BOOT_U32 slot(BOOT_U32 vector)
 {
-    return vector == 0x40 ? 0 : vector == 0x41 ? 1 : 2;
+    return vector >= 0x40 && vector <= 0x42 ? vector - 0x40 : 3;
 }
 
 // ====== registro e ogni subscription verificati prima di invocare callback ===== //
@@ -59,7 +59,7 @@ int x86_irq_registry_validate(const X86_IRQ_REGISTRY *registry)
         registry->CodeEnd > (1ULL<<47) || !registry->Next || registry->Busy > 1 || registry->Reserved) {
         return 0;
     }
-    for (index = 0; index < 2; ++index) {
+    for (index = 0; index < 3; ++index) {
         const X86_IRQ_SUBSCRIPTION *item = &registry->Slots[index];
         if (!item->Id) {
             if (!zero(item,sizeof(*item))) {
@@ -73,8 +73,10 @@ int x86_irq_registry_validate(const X86_IRQ_REGISTRY *registry)
             return 0;
         }
     }
-    return !registry->Slots[0].Id || !registry->Slots[1].Id ||
-        registry->Slots[0].Id != registry->Slots[1].Id;
+    for (index = 0; index < 3; ++index)
+        for (BOOT_U32 other = index + 1; other < 3; ++other)
+            if (registry->Slots[index].Id && registry->Slots[index].Id == registry->Slots[other].Id) return 0;
+    return 1;
 }
 
 // ====== owner vergine senza riinizializzare subscription ancora vive ===== //
@@ -125,7 +127,7 @@ int x86_irq_registry_bind(X86_IRQ_REGISTRY *registry, BOOT_U32 vector,
 {
     BOOT_U32 index = slot(vector);
     X86_IRQ_SUBSCRIPTION *item;
-    if (!control(registry) || index >= 2 || !token_valid(registry,token) ||
+    if (!control(registry) || index >= 3 || !token_valid(registry,token) ||
         !zero(token,sizeof(*token)) || !callback(registry,handle) || !callback(registry,is_quiet) ||
         registry->Next == ~0ULL || registry->Slots[index].Id) {
         return 0;
@@ -150,7 +152,7 @@ static const X86_IRQ_SUBSCRIPTION *lookup(const X86_IRQ_REGISTRY *registry, cons
     BOOT_U32 index;
     if (!token_valid(registry,token) || token->Reserved || !token->Id) return 0;
     index = slot(token->Vector);
-    if (index >= 2 || registry->Slots[index].Id != token->Id) return 0;
+    if (index >= 3 || registry->Slots[index].Id != token->Id) return 0;
     return &registry->Slots[index];
 }
 
@@ -178,7 +180,7 @@ int x86_irq_registry_deliver(X86_IRQ_REGISTRY *registry, BOOT_U32 vector)
     BOOT_U32 index = slot(vector);
     X86_IRQ_SUBSCRIPTION *item;
     int result;
-    if (!control(registry) || index >= 2) return 0;
+    if (!control(registry) || index >= 3) return 0;
     item = &registry->Slots[index];
     if (!item->Id || item->Fault || item->Delivered == ~0ULL) return 0;
     registry->Busy = 1;

@@ -46,6 +46,23 @@ Ogni byte richiede FA; FE consente al massimo tre invii totali dello stesso
 byte. Query richiede anche il valore02. Nessuna risposta di comando va
 inoltrata come scancode al decoder.
 
+Stop runtime: la route è già masked e il dispatcher possiede il controller
+a IF=0. Si scrive il mode con IRQ disabilitati senza leggere subito il
+readback: un byte già in OBF può precedere la risposta READ_MODE.
+F5 ammette al massimo32 byte residui totali prima dell'ACK, mantenendo
+al massimo tre invii su RESEND; solo FA conferma lo stop. Aux, parity,
+errori callback, assenza dell'ACK e superamento del limite restano failure.
+La coda residua viene scartata soltanto nella chiusura; gli altri comandi
+restano rigorosi. Dopo F5, close disabilita entrambe le interfacce, drena
+la coda e conferma il mode tramite readback. Non si dichiara CLOSED prima
+di questa verifica. Un'IRQ già pendente viene gestita dal percorso di
+quiescenza esistente prima del distacco dell'handler.
+
+Fonti: `pckbd.c` v10.1.0, `kbd_write_data`, case WRITE_MODE, e
+`kbd_safe_update_irq` (OBF già pieno); `ps2.c`, `ps2_write_keyboard`,
+RESET_DISABLE e risposte FA/FE. Le attese ricevono la deadline esistente:
+non è un limite100ms totale della transazione, che può avere più attese.
+
 ## Ownership e failure
 
 Owner C inizialmente zero. Callback e Context sono prestiti esclusivi,
@@ -76,6 +93,12 @@ non un confine userspace. Source continua/stale oltre32byte viene
 rifiutata; nessun loop illimitato. Nessuna promessa di DMA isolation.
 
 ## Integrazione e lavoro restante
+
+Il profilo `-TestPs2Controller` verifica ora anche reset/query del mouse
+standard sullo stesso owner, senza streaming o IRQ12. `Auxiliary=1` è
+pubblicato solo dopo protocollo e readback; close lo azzera soltanto dopo
+quiescenza verificata. Tastiera e mouse non acquisiscono owner indipendenti.
+[Contratto e prove AUX](../mouse/documentation/controller-validation.md).
 
 Il profilo isolato `-TestPs2Controller` include le prove decoder e chiama
 il probe dopo ACPI discovery. Logga successo solo dopo prepare/close,

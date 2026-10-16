@@ -1,4 +1,7 @@
 #include "session.h"
+#ifdef KERNEL_PS2_MOUSE
+#include "kernel/drivers/input/ps2/mouse/stream/control.h"
+#endif
 #ifdef KERNEL_CONSOLE_SHELL
 #include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
 #endif
@@ -55,9 +58,13 @@ static int clock_read(void *context, uint32_t *ticks)
 
 int x86_ps2_activate(void)
 {
-    return session.Active && !session.Quiet && x86_watchdog_budget_active() &&
-        kernel_ps2_start(&session.Controller) && x86_ps2_route_apply(&session,0) &&
-        kernel_log(0,"KERNEL_PS2_INPUT_READY");
+    if (!session.Active || session.Quiet || !x86_watchdog_budget_active()) return 0;
+#ifdef KERNEL_PS2_MOUSE
+    if (!kernel_ps2_pair_start(&session.Controller) || !x86_ps2_mouse_route_apply(&session,0)) return 0;
+#else
+    if (!kernel_ps2_start(&session.Controller)) return 0;
+#endif
+    return x86_ps2_route_apply(&session,0) && kernel_log(0,"KERNEL_PS2_INPUT_READY");
 }
 
 // ====== x86_ps2_after_dispatch ======
@@ -66,13 +73,24 @@ int x86_ps2_after_dispatch(void)
 {
     KERNEL_EVENT_REPLY reply;
     if (!session.Stop || session.Quiet) return 1;
-    if (!session.WorkerGeneration || !x86_ps2_route_apply(&session,1) ||
-        !kernel_ps2_stop(&session.Controller)) return 0;
+    if (!session.WorkerGeneration || !x86_ps2_route_apply(&session,1)) return 0;
+#ifdef KERNEL_PS2_MOUSE
+    if (!session.Mouse.Generation || !x86_ps2_mouse_route_apply(&session,1) ||
+        !kernel_ps2_pair_stop(&session.Controller)) return 0;
+#else
+    if (!kernel_ps2_stop(&session.Controller)) return 0;
+#endif
     session.Quiet = 1; session.Ready = 1;
     // Drain any owned IRR before releasing the handler; independent HPET ack.
     if (!x86_watchdog_idle(&session.Ready) || !x86_lapic_idle(session.Env.Mapping) ||
         x86_irq_registry_deliveries(x86_irq_registry(),&session.Token) != session.Irqs ||
         !x86_irq_registry_unbind(x86_irq_registry(),&session.Token) || !x86_ps2_route_apply(&session,2)) return 0;
+#ifdef KERNEL_PS2_MOUSE
+    if (x86_irq_registry_deliveries(x86_irq_registry(),&session.Mouse.Token) != session.Mouse.Irqs ||
+        !x86_irq_registry_unbind(x86_irq_registry(),&session.Mouse.Token) || !x86_ps2_mouse_route_apply(&session,2)) return 0;
+    reply = kernel_scheduler_stop_apply(0,3,session.Mouse.Generation);
+    if (reply.reply.status != KERNEL_SCHEDULER_OK) return 0;
+#endif
     reply = kernel_scheduler_stop_apply(0,1,session.WorkerGeneration);
     if (reply.reply.status != KERNEL_SCHEDULER_OK || !session.ConsumerGeneration) return 0;
     reply = kernel_scheduler_stop_apply(0,0,session.ConsumerGeneration);
@@ -84,6 +102,9 @@ int x86_ps2_after_dispatch(void)
 int x86_ps2_before_collect(void)
 {
     if (!session.Quiet || session.Token.Id || session.RouteOwned || !session.Stop) return 0;
+#ifdef KERNEL_PS2_MOUSE
+    if (session.Mouse.Token.Id || session.Mouse.RouteOwned) return 0;
+#endif
     if (session.ScopeEnded) return 1;
     if (!x86_watchdog_budget_end()) return 0;
     session.ScopeEnded = 1; return 1;
@@ -93,6 +114,10 @@ int x86_ps2_before_collect(void)
 
 int x86_ps2_complete(void)
 {
+#ifdef KERNEL_PS2_MOUSE
+    if (!session.Mouse.Done || session.Mouse.Token.Id || session.Mouse.RouteOwned ||
+        session.Mouse.Decoder.State || session.Mouse.Buttons) return 0;
+#endif
     return session.Stop && session.Quiet && session.ScopeEnded && session.ConsumerDone && session.WorkerDone &&
         session.ShellDone && kernel_ps2_command_closed_empty(&session.Commands) &&
         !session.Error && !session.TextState && !session.LineTruncated && !session.Line.Length && !session.Line.Data[0] &&
@@ -129,12 +154,18 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         !x86_irq_registry_bind(x86_irq_registry(),0x41,x86_ps2_handle,x86_ps2_quiet,&session.Token)) {
         kernel_log(3,"PS2_BINDING_FAILED"); return 0;
     }
+#ifdef KERNEL_PS2_MOUSE
+    if (!x86_ps2_mouse_open(&session)) { kernel_log(3,"PS2_MOUSE_OPEN_FAILED"); return 0; }
+#endif
 #ifdef KERNEL_CONSOLE_SHELL
     if (!x86_console_open(&session)) return 0;
 #endif
     session.Active = 1;
     if (!x86_scheduler_run_input() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
         !kernel_scheduler_irq_unbind(4,(BOOT_U64)&session,session.Binding) || !x86_watchdog_valid()) return 0;
+#ifdef KERNEL_PS2_MOUSE
+    if (!x86_ps2_mouse_close(&session) || !x86_ps2_mouse_report(&session)) return 0;
+#endif
     session.Active = 0;
 #ifdef KERNEL_CONSOLE_SHELL
     if (!x86_console_finish(&session)) return 0;

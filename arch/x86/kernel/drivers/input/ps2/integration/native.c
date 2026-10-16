@@ -1,5 +1,6 @@
 #include "native.h"
 #include "kernel/drivers/input/ps2/controller/controller.h"
+#include "kernel/drivers/input/ps2/mouse/controller.h"
 #include "arch/x86/kernel/timer/lapic/timer.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "kernel/diagnostics/log.h"
@@ -80,7 +81,9 @@ int x86_ps2_controller_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW
         kernel_text("PS2_ERROR: "); kernel_number(owner.Error); kernel_text("\n");
         return 0;
     }
-    if (!kernel_ps2_close(&owner) || owner.Error || !x86_page_window_idle_valid(window) ||
+    if (!kernel_ps2_mouse_prepare(&owner) || owner.Auxiliary != 1 ||
+        !kernel_ps2_close(&owner) || owner.Auxiliary || owner.Error || !x86_page_window_idle_valid(window) ||
         window->Pool->FreePages != free_pages) return 0;
-    return kernel_log(0, "KERNEL_PS2_CONTROLLER_SET2_OK");
+    return kernel_log(0, "KERNEL_PS2_MOUSE_PREPARED") &&
+        kernel_log(0, "KERNEL_PS2_CONTROLLER_SET2_OK");
 }

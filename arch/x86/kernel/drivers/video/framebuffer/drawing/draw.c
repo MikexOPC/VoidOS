@@ -75,10 +75,12 @@ static BOOT_U32 text_plan(const X86_FB_TEXT *text, const X86_FB_FONT *font,
     return count;
 }
 
-// ====== x86_fb_text ======
+// ====== x86_fb_text_pointer ======
 
-int x86_fb_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *input, const X86_FB_FONT *input_font)
+int x86_fb_text_pointer(X86_FB_MAPPING *owner, const X86_FB_TEXT *input,
+    const X86_FB_FONT *input_font, BOOT_U32 caret, const KERNEL_POINTER_IMAGE *input_pointer)
 {
+    KERNEL_POINTER_IMAGE pointer = {0};
     X86_FB_TEXT text;
     X86_FB_FONT font;
     X86_FB_PIXEL_SESSION session;
@@ -87,18 +89,37 @@ int x86_fb_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *input, const X86_FB_FO
     if (!input || !input_font || ((BOOT_U64)input & 7) || ((BOOT_U64)input_font & 7) ||
         !x86_exception_environment()) return 0;
     text = *input; font = *input_font;
+    if (input_pointer) {
+        if ((BOOT_U64)input_pointer & 3) return 0;
+        pointer = *input_pointer;
+        if (pointer.Visible > 1 || (pointer.Visible && (!owner || !owner->Context ||
+            owner->Context->Info.Framebuffer.Width < 24 || owner->Context->Info.Framebuffer.Height < 24 ||
+            pointer.X > owner->Context->Info.Framebuffer.Width - 24 ||
+            pointer.Y > owner->Context->Info.Framebuffer.Height - 24))) return 0;
+    }
     if ((text.Foreground | text.Background) & 0xff000000U) return 0;
     DRAW_MARK(1);
     count = text_plan(&text, &font, rows);
     DRAW_MARK(2);
-    if (!count || !x86_fb_pixels_begin(owner, text.X, text.Y, count * 8, font.Height, &session)) return 0;
+    if (!count || (caret != ~0U && (caret >= count || font.Height != 16))) return 0;
+    if (caret != ~0U) rows[caret][14] = rows[caret][15] = 255;
+    if (input_pointer) {
+        if (font.Height != 16) return 0;
+        return x86_fb_cursor_text(owner, &text, rows, count, &pointer);
+    }
+    if (!x86_fb_pixels_begin(owner, text.X, text.Y, count * 8, font.Height, &session)) return 0;
     DRAW_MARK(3);
     foreground = color_word(session.Surface.Format, text.Foreground);
     background = color_word(session.Surface.Format, text.Background);
     for (cell = 0; cell < count; ++cell) for (row = 0; row < font.Height; ++row)
-        for (column = 0; column < 8; ++column)
-            if (!x86_fb_pixels_store(&session, text.X + cell * 8 + column, text.Y + row,
-                (rows[cell][row] & (0x80U >> column)) ? foreground : background)) return 0;
+        for (column = 0; column < 8; ++column) {
+            BOOT_U32 x = text.X + cell * 8 + column, y = text.Y + row;
+            BOOT_U32 sample = pointer.Visible && x >= pointer.X && y >= pointer.Y ?
+                kernel_pointer_sample(x - pointer.X, y - pointer.Y) : 0;
+            BOOT_U32 color = (rows[cell][row] & (0x80U >> column)) ? foreground : background;
+            if (sample) color = kernel_pointer_blend(sample, color);
+            if (!x86_fb_pixels_store(&session, x, y, color)) return 0;
+        }
 #if defined(KERNEL_TEST_CONSOLE_DRAW)
     DRAW_MARK(4);
     if (!x86_fb_pixels_end(&session)) return 0;
@@ -107,4 +128,19 @@ int x86_fb_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *input, const X86_FB_FO
 #else
     return x86_fb_pixels_end(&session);
 #endif
+}
+
+// ====== x86_fb_text_caret ======
+
+int x86_fb_text_caret(X86_FB_MAPPING *owner, const X86_FB_TEXT *input,
+    const X86_FB_FONT *font, BOOT_U32 caret)
+{
+    return x86_fb_text_pointer(owner, input, font, caret, NULL);
+}
+
+// ====== x86_fb_text ======
+
+int x86_fb_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *input, const X86_FB_FONT *font)
+{
+    return x86_fb_text_caret(owner, input, font, ~0U);
 }

@@ -31,6 +31,7 @@ int kernel_ps2_close(KERNEL_PS2_CONTROLLER *owner)
         return 0;
     }
     owner->Error = error;
+    owner->Auxiliary = 0;
     owner->Phase = KERNEL_PS2_CLOSED;
     return 1;
 }
@@ -56,8 +57,12 @@ int kernel_ps2_stop(KERNEL_PS2_CONTROLLER *owner)
 {
     if (!owner || !controller_io_valid(&owner->Io) || owner->Reserved ||
         owner->Phase != KERNEL_PS2_DIRTY || owner->Error) return 0;
-    if (!kernel_ps2_mode(owner, (uint8_t)((owner->Mode & 4) | 0x20)) ||
-        !kernel_ps2_command(owner, 0xf5)) return 0;
+    /* QEMU v10.1.0 pckbd.c kbd_write_data WRITE_MODE (0x60): mode bit0
+       controls IRQ1; an existing OBF byte can precede READ_MODE (0x20).
+       Clear IRQ bits before F5; verify mode only after scanning stops. */
+    if (!kernel_ps2_send(owner, 0x64, 0x60) ||
+        !kernel_ps2_send(owner, 0x60, (uint8_t)((owner->Mode & 4) | 0x20)) ||
+        !kernel_ps2_stop_scanning(owner)) return 0;
     return kernel_ps2_close(owner);
 }
 
@@ -66,7 +71,7 @@ int kernel_ps2_stop(KERNEL_PS2_CONTROLLER *owner)
 int kernel_ps2_prepare(KERNEL_PS2_CONTROLLER *owner, const KERNEL_PS2_IO *io)
 {
     uint8_t original, reply;
-    if (!owner || owner->Phase || owner->Error || owner->Mode || owner->Reserved ||
+    if (!owner || owner->Phase || owner->Error || owner->Mode || owner->Auxiliary || owner->Reserved ||
         !controller_io_valid(io)) return 0;
     owner->Io = *io;
     owner->Phase = KERNEL_PS2_DIRTY;

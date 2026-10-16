@@ -58,7 +58,7 @@ int x86_scheduler_dispatch(const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS
     if (entered || !config || !stats || !config->run || !config->collect || !config->reply || !config->release_actor ||
         !config->task_count || config->task_count > KERNEL_SCHEDULER_CAPACITY ||
         config->step_limit < config->task_count || config->step_limit > 65536 ||
-        config->idle_limit > 1024 || config->drain_irq > 1 || (!config->idle && config->idle_limit) ||
+        config->idle_limit > 32768 || config->drain_irq > 1 || (!config->idle && config->idle_limit) ||
         stats->steps || stats->completed || stats->waiting_count || stats->changed_count ||
         stats->signal_count || stats->stop_waits || stats->idle_calls || stats->failure) return 0;
     entered = 1;

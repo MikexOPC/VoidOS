@@ -157,7 +157,7 @@ __declspec(dllexport) int run_apic_control_tests(void)
 int x86_lapic_native_eoi(void)
 {
     if ((test_lapic_entry() & 0x000ffffffffff000ULL) != 0xfee00000 ||
-        (in_service != 1 && in_service != 2) || (in_service == 1 && ier && !tx_writes)) return 0;
+        (in_service != 1 && in_service != 2 && in_service != 4) || (in_service == 1 && ier && !tx_writes)) return 0;
     ++eois;
     if (uart_bad != 2) in_service = 0;
     return 1;
@@ -195,6 +195,17 @@ __declspec(dllexport) int run_lapic_timer_eoi_tests(void)
     if (x86_lapic_eoi_vector(state.Mapping,0x41) || eois != 2 || in_service != 2) return 4;
     uart_bad = 0;
     if (!x86_lapic_eoi_vector(state.Mapping,0x41) || !reset()) return 5;
+    test_uart_owner(&state); in_service = 4;
+    if (x86_lapic_eoi_vector(state.Mapping,0x41) || x86_lapic_eoi_vector(state.Mapping,0x43) || eois ||
+        !x86_lapic_eoi_vector(state.Mapping,0x42) || eois != 1 || in_service) return 6;
+    for (BOOT_U32 extra = 1; extra <= 3; ++extra) {
+        in_service = 4 | extra;
+        if (x86_lapic_eoi_vector(state.Mapping,0x42) || eois != 1 || in_service != (4 | extra)) return 7;
+    }
+    in_service = 4; uart_bad = 2;
+    if (x86_lapic_eoi_vector(state.Mapping,0x42) || eois != 2 || in_service != 4) return 8;
+    uart_bad = 0;
+    if (!x86_lapic_eoi_vector(state.Mapping,0x42) || in_service) return 9;
     return 0;
 }
 

@@ -29,6 +29,7 @@ static int draw(void *context, uint32_t column, uint32_t row,
     ++calls; seen += count; *ticks = mode == 2 ? 0 : 100;
     if (mode == 3) ++console.Cells[row * 8 + column];
     if (mode == 4) console.Columns = 7;
+    if (mode == 5) console.Caret = 0;
     return mode != 1;
 }
 
@@ -72,7 +73,7 @@ int main(void)
         assert(!console.Dirty[0] && !console.Dirty[1]);
         assert(kernel_console_batch_flush(&batch, 8) == KERNEL_CONSOLE_RENDER_IDLE && seen == 8);
     }
-    for (error = 1; error <= 4; ++error) {
+    for (error = 1; error <= 5; ++error) {
         init(); mode = error;
         assert(!kernel_console_batch_flush(&batch, 8) && batch.Failed);
         assert(console.Dirty[0] == 255 && console.Dirty[1] == 255 && !render.CellsDone && !batch.Groups);

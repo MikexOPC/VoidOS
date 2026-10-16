@@ -7,13 +7,21 @@
 int x86_ps2_route_plan(const KERNEL_MADT_TOPOLOGY *topology, const X86_APIC_CAPABILITIES *caps,
     BOOT_U32 physical_bits, X86_PS2_ROUTE *output)
 {
-    X86_PS2_ROUTE draft = {0,0,1,0x41,0,0};
+    return x86_ps2_route_plan_source(topology,caps,physical_bits,1,output);
+}
+
+// ====== x86_ps2_route_plan_source ======
+
+int x86_ps2_route_plan_source(const KERNEL_MADT_TOPOLOGY *topology, const X86_APIC_CAPABILITIES *caps,
+    BOOT_U32 physical_bits, BOOT_U32 source, X86_PS2_ROUTE *output)
+{
+    X86_PS2_ROUTE draft = {0,0,source,source == 1 ? 0x41U : 0x42U,0,0};
     BOOT_U32 index, found = 0;
-    if (!topology || !caps || !output || !kernel_madt_validate(topology,physical_bits) || caps->Ready != 1 ||
+    if ((source != 1 && source != 12) || !topology || !caps || !output || !kernel_madt_validate(topology,physical_bits) || caps->Ready != 1 ||
         caps->LapicId > 255 || caps->IoCount != topology->IoCount ||
         os_address_ranges_overlap((BOOT_U64)output,sizeof(*output),(BOOT_U64)topology,sizeof(*topology)) ||
         os_address_ranges_overlap((BOOT_U64)output,sizeof(*output),(BOOT_U64)caps,sizeof(*caps))) return 0;
-    for (index = 0; index < topology->IsoCount; ++index) if (topology->Iso[index].Source == 1) {
+    for (index = 0; index < topology->IsoCount; ++index) if (topology->Iso[index].Source == source) {
         BOOT_U32 polarity = topology->Iso[index].Flags & 3;
         BOOT_U32 trigger = (topology->Iso[index].Flags >> 2) & 3;
         if (polarity == 2 || trigger == 2 || topology->Iso[index].Flags & ~15U) return 0;
@@ -24,7 +32,7 @@ int x86_ps2_route_plan(const KERNEL_MADT_TOPOLOGY *topology, const X86_APIC_CAPA
         if (topology->Nmi[index].Kind == 3 && topology->Nmi[index].Value == draft.Gsi) return 0;
     for (index = 0; index < 16; ++index) {
         BOOT_U32 gsi = index;
-        if (index == 1) continue;
+        if (index == source) continue;
         for (BOOT_U32 iso = 0; iso < topology->IsoCount; ++iso)
             if (topology->Iso[iso].Source == index) gsi = topology->Iso[iso].Gsi;
         if (gsi == draft.Gsi) return 0;
@@ -107,11 +115,29 @@ int x86_ps2_route_apply(X86_PS2_SESSION *owner, BOOT_U32 masked)
     if (!owner || !owner->Env.Capabilities || !owner->Env.Profile || masked > 2 ||
         owner->Env.Capabilities->Ready != 1 || owner->Env.Capabilities->IoCount > 16 ||
         owner->Route.Io >= owner->Env.Capabilities->IoCount ||
-        owner->Route.Reserved || (owner->Route.Bits & ~0xa000U) != 0x41 ||
+        owner->Route.Reserved || ((owner->Route.Bits & ~0xa000U) != 0x41 &&
+            (owner->Route.Bits & ~0xa000U) != 0x42) ||
         owner->Route.Destination != owner->Env.Profile->InitialId || owner->Route.Destination > 255) return 0;
     io = &owner->Env.Capabilities->Io[owner->Route.Io];
     if (owner->Route.Pin >= io->Inputs || owner->Route.Pin >= 120 ||
         owner->Route.Gsi != (BOOT_U64)io->Base + owner->Route.Pin || io->Id > 15 ||
         (masked == 2 && !owner->Quiet)) return 0;
     return x86_apic_borrow(owner->Env.Window,io->Address,owner->Env.Profile->CacheBits,1,configure_route,&request);
+}
+
+// ====== x86_ps2_mouse_route_apply ======
+
+int x86_ps2_mouse_route_apply(X86_PS2_SESSION *owner, BOOT_U32 masked)
+{
+    X86_PS2_SESSION draft = {0};
+    int result;
+    if (!owner || (owner->Mouse.Route.Bits & ~0xa000U) != 0x42) return 0;
+    draft.Env = owner->Env; draft.Quiet = owner->Quiet;
+    draft.Route = owner->Mouse.Route;
+    draft.SavedLow = owner->Mouse.SavedLow; draft.SavedHigh = owner->Mouse.SavedHigh;
+    draft.RouteOwned = owner->Mouse.RouteOwned;
+    result = x86_ps2_route_apply(&draft,masked);
+    owner->Mouse.SavedLow = draft.SavedLow; owner->Mouse.SavedHigh = draft.SavedHigh;
+    owner->Mouse.RouteOwned = draft.RouteOwned;
+    return result;
 }

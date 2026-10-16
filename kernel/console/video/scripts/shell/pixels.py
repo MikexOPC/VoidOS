@@ -34,19 +34,32 @@ def expected(log, columns, rows):
             if y == rows:
                 cells = cells[columns:] + [32] * columns
                 y -= 1
-    return cells
+    return cells, y * columns + min(x, columns - 1)
 
 # ============ independent physical and visible pixels ============
+
+def accounting(log):
+    values = []
+    for field in ['CELLS', 'GROUPS', 'MAX_PM', 'OVERRUNS']:
+        match = re.search('KERNEL_CONSOLE_SHELL_' + field + r': 0x([0-9a-fA-F]{16})', log)
+        if not match:
+            raise RuntimeError('Missing renderer accounting: ' + field)
+        values.append(int(match[1], 16))
+    cells_done, groups, maximum, overruns = values
+    if (not 0 < groups <= cells_done <= 8 * groups or not 0 < maximum <= 0xffffffff or
+        overruns > groups or bool(overruns) != (maximum > 357955)):
+        raise RuntimeError('Invalid bounded renderer accounting')
+    return values
+
+# ============ verify ============
 
 def verify(vm, scenario, log):
     if 'KERNEL_CONSOLE_SHELL_CLEAN' not in log or 'KERNEL_CONSOLE_SHELL_OPEN' not in log:
         raise RuntimeError('Missing operational console lifetime evidence')
     number = lambda field: int(re.search(re.escape(field) + r': 0x([0-9a-fA-F]{16})', log)[1], 16)
-    cells_done = number('KERNEL_CONSOLE_SHELL_CELLS')
-    groups = number('KERNEL_CONSOLE_SHELL_GROUPS')
-    maximum = number('KERNEL_CONSOLE_SHELL_MAX_PM')
-    if not 0 < groups <= cells_done <= 8 * groups or not 0 < maximum <= 357955:
-        raise RuntimeError('Invalid bounded renderer accounting')
+    cells_done, groups, maximum, overruns = accounting(log)
+    if overruns and 'KERNEL_CONSOLE_SLOW_GROUP' not in log:
+        raise RuntimeError('Missing latency warning')
     scripts = ROOT / 'arch/x86/kernel/drivers/video/framebuffer/scripts'
     sys.path.insert(0, str(scripts))
     spec = importlib.util.spec_from_file_location('shell_framebuffer', scripts / 'firmware.py')
@@ -61,16 +74,18 @@ def verify(vm, scenario, log):
     if pixel_format not in (0, 1) or stride < width or not 8 <= width <= 1920 or not 16 <= height <= 1080:
         raise RuntimeError('Invalid shell video geometry')
     columns, rows = width // 8, height // 16
-    cells = expected(log, columns, rows)
+    cells, caret = expected(log, columns, rows)
     if 0xe8 not in cells or 0x20ac not in cells:
         raise RuntimeError('Italian glyph evidence missing from expected transcript')
     selected = {0, len(cells) - 1, cells.index(0xe8), cells.index(0x20ac)}
     prompts = [index for index, scalar in enumerate(cells) if scalar == ord('>')]
-    selected.add(prompts[-1])
+    selected.add(prompts[-1]); selected.add(caret)
     for index in sorted(selected):
         x, y = index % columns * 8, index // columns * 16
         for row, bitmap in enumerate(raster.get(cells[index], raster[65533])):
             words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((y + row) * stride + x) * 4, 4)
+            if index == caret and row >= 14:
+                bitmap = 255
             for col in range(8):
                 r, g, b = (255, 255, 255) if bitmap & (0x80 >> col) else (8, 16, 24)
                 color = r | g << 8 | b << 16 if pixel_format == 0 else b | g << 8 | r << 16
@@ -95,10 +110,12 @@ def verify(vm, scenario, log):
     for index, scalar in enumerate(cells):
         x, y = index % columns * 8, index // columns * 16
         for row, bitmap in enumerate(raster.get(scalar, raster[65533])):
+            if index == caret and row >= 14:
+                bitmap = 255
             for col in range(8):
                 color = bytes((255, 255, 255) if bitmap & (0x80 >> col) else (8, 16, 24))
                 offset = ((y + row) * width + x + col) * 3
                 if pixels[offset:offset + 3] != color:
                     raise RuntimeError(f'Shell visible pixel mismatch: cell {index}, pixel {col},{row}')
-    return {'Cells': cells_done, 'Groups': groups, 'MaxPm': maximum,
-        'PhysicalPixels': len(selected) * 128, 'VisiblePixels': len(cells) * 128}
+    return {'Cells': cells_done, 'Groups': groups, 'MaxPm': maximum, 'Overruns': overruns,
+        'CaretCell': caret, 'PhysicalPixels': len(selected) * 128, 'VisiblePixels': len(cells) * 128}

@@ -5,6 +5,7 @@
 
 #define X86_FB_VIRTUAL ((225ULL << 39) + 4096)
 #define X86_FB_SLOT 225U
+#define X86_FB_RENDERING 4U
 typedef struct {
     BOOT_U64  Root, Pat;
     BOOT_U32  PhysicalBits, Reserved;

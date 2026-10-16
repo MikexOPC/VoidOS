@@ -4,7 +4,9 @@ Modulo: `kernel/console/video/` e sole interfacce necessarie alla sessione
 input/shell, inventario stack e gateway framebuffer. Scelta approvata:
 [servizio unico con aggiornamenti RAM serializzati](shell-design.md).
 
-Esito corrente: **APPROVE per il fix idle nel profilo QEMU**.
+Esito del checkpoint: **APPROVE per il fix idle nel profilo QEMU**.
+Il blocco successivo aggiunge il cursore e corregge la chiusura PS/2:
+[prove correnti e immagini finali](caret-validation.md).
 Il rollover HPET riprodotto e corretto con regressioni deterministiche,
 32 boot finali, verifica video e attraversamento reale del contatore.
 [Report corrente, immagini e limiti](../../../../arch/x86/kernel/timer/hpet/watchdog/documentation/idle/rollover.md).

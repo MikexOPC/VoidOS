@@ -106,10 +106,32 @@ int main(void)
     CHECK(x86_fb_group(&owner, 232, 66, group_scalars, 8, 0, 0, &ticks));
     group_count = 1;
     CHECK(x86_fb_group(&owner, 239, 66, group_scalars, 1, 0, 0, &ticks));
+    CHECK(x86_fb_group_caret(&owner, 239, 66, group_scalars, 1, 0, 0, &ticks, 0));
+    scalar = calls;
+    CHECK(!x86_fb_group_caret(&owner, 239, 66, group_scalars, 1, 0, 0, &ticks, 1));
+    CHECK(calls == scalar);
     CHECK(!x86_fb_group(&owner, 0, 67, group_scalars, 1, 0, 0, &ticks));
     CHECK(!x86_fb_group(&owner, 0, 0, group_scalars, 1, UINT32_MAX, 0, &ticks));
     CHECK(!x86_fb_group(&owner, 0, 0, group_scalars, 1, 0, 0, NULL));
     CHECK(switches == calls);
     printf("PASS gateway: %u scalar cases; IF0/1 restored, failed draw retained, no allocations\n", count);
     return 0;
+}
+
+// ====== x86_fb_text_caret ======
+
+int x86_fb_text_caret(X86_FB_MAPPING *mapping, const X86_FB_TEXT *text,
+    const X86_FB_FONT *font, BOOT_U32 caret)
+{
+    CHECK(caret == ~0U || caret < group_count);
+    return x86_fb_text(mapping, text, font);
+}
+
+// ====== x86_fb_text_pointer ======
+
+int x86_fb_text_pointer(X86_FB_MAPPING *mapping, const X86_FB_TEXT *text,
+    const X86_FB_FONT *font, BOOT_U32 caret, const KERNEL_POINTER_IMAGE *pointer)
+{
+    CHECK(pointer != NULL);
+    return x86_fb_text_caret(mapping, text, font, caret);
 }

@@ -60,7 +60,7 @@ def number(log, field):
 # ====== run_boot ======
 
 def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress, shell, console_draw=False,
-             console_shell=False, video_absent=False, idle_race=False, idle_rollover=False):
+             console_shell=False, video_absent=False, idle_race=False, idle_rollover=False, mouse=False, pointer=False):
     scenario = out / f"boot-{index}"
     esp = scenario / "esp" / "EFI" / "BOOT"
     esp.mkdir(parents=True)
@@ -89,6 +89,19 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
             vm = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=monitor, stderr=error,
                                   text=True, creationflags=subprocess.CREATE_NO_WINDOW)
             wait_marker(vm, serial, "KERNEL_PS2_TASK_POLL_READY")
+            mouse_expected = None
+            pointer_frames = []
+            if mouse:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location('mouse_firmware',
+                    project / 'kernel/drivers/input/ps2/scripts/mouse/firmware.py')
+                mouse_firmware = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mouse_firmware)
+                mouse_expected = mouse_firmware.exercise(vm, serial, command, wait_marker, read_serial)
+                if pointer and not video_absent:
+                    spec = importlib.util.spec_from_file_location('pointer_firmware', project / 'kernel/console/video/scripts/pointer/firmware.py')
+                    pointer_firmware = importlib.util.module_from_spec(spec); spec.loader.exec_module(pointer_firmware)
+                    pointer_frames = pointer_firmware.exercise(vm,scenario,serial,mouse_expected,read_serial,wait_marker,command,mouse_firmware)
             if idle_rollover:
                 idle_deadline = time.monotonic() + 80
                 while time.monotonic() < idle_deadline:
@@ -99,6 +112,8 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
             time.sleep(0.5)  # Normal empty input must survive multiple HPET acknowledgements.
             for key, code in [("b", 0x32), ("up", 0x175), ("print", 0x17c), ("pause", 0x200)]:
                 command(vm, "sendkey " + key + " 30")
+                if mouse:
+                    mouse_firmware.interleave(vm, serial, command, wait_marker, read_serial, mouse_expected)
                 wait_marker(vm, serial, f"PS2_KEY: 0x{code:016x}", 5)
                 time.sleep(0.15)
             for key_index in range(stress):
@@ -173,6 +188,8 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                         command(vm, "sendkey ret 20")
                         wait_marker(vm, serial, "PS2_KEY: ", 5, 5 + stress + extra_keys)
                         time.sleep(0.12)
+                        if pointer and not video_absent and line in ('status','echo exit'):
+                            pointer_frames.append(pointer_firmware.verify(vm,scenario,serial,mouse_expected,read_serial,wait_marker,command,line.replace(' ','-')))
             time.sleep(0.05)
             if not shell:
                 command(vm, "sendkey esc 30")
@@ -200,7 +217,7 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
             expected_keys = 5 + int(not shell) + stress + extra_keys
             # Pause has no break; stopping may disable scanning before the
             # final Esc/Enter break. All other injected releases are required.
-            if counters["PS2_KEYS"] != expected_keys or counters["PS2_RELEASES"] < expected_keys - 2 or not counters["PS2_TASK_IRQS"] or counters["PS2_IDLE"] < 2:
+            if counters["PS2_KEYS"] != expected_keys or counters["PS2_RELEASES"] < expected_keys - 2 or (not video_absent and not counters["PS2_TASK_IRQS"]) or counters["PS2_IDLE"] < 2:
                 raise RuntimeError("Input/IRQ/idle evidence insufficient: " + str(counters))
             if text_profile:
                 actual = [int(value, 16) for value in re.findall(r"PS2_UNICODE: 0x([0-9a-fA-F]{16})", log)]
@@ -235,6 +252,12 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                     raise RuntimeError("Truncated command was not rejected")
             command(vm, "stop")
             command(vm, "info registers")
+            if pointer:
+                if video_absent:
+                    if 'KERNEL_POINTER_OPEN' in log: raise RuntimeError('Pointer initialized without video')
+                    counters['Pointer'] = {'Absent': True}
+                else:
+                    counters['Pointer'] = {**pointer_firmware.finish(log,mouse_expected), 'Frames': pointer_frames}
             if console_shell:
                 if video_absent:
                     if 'KERNEL_CONSOLE_SHELL_SERIAL_CLEAN' not in log or 'KERNEL_CONSOLE_SHELL_OPEN' in log:
@@ -261,6 +284,8 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                 raise RuntimeError("Unexpected triple fault")
             if len(re.findall(r"Servicing hardware INT=0x41", cpu)) < 4:
                 raise RuntimeError("Hardware input IRQ trace missing")
+            if mouse:
+                counters['Mouse'] = mouse_firmware.verify(log, cpu, mouse_expected, number, task_irq_required=not video_absent)
             (scenario / "results.json").write_text(json.dumps(counters, indent=2))
             return counters
         except Exception:
@@ -292,6 +317,8 @@ def main():
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--boots", type=int, default=10, choices=range(1, 21))
     parser.add_argument("--qemu", type=Path, default=Path("C:/Program Files/qemu"))
+    parser.add_argument("--mouse", action="store_true")
+    parser.add_argument("--pointer", action="store_true")
     parser.add_argument("--stress", type=int, default=0, choices=range(201))
     parser.add_argument("--idle-race", action="store_true")
     parser.add_argument("--idle-rollover", action="store_true")
@@ -302,6 +329,9 @@ def main():
     parser.add_argument("--console-shell", action="store_true")
     parser.add_argument("--video-absent", action="store_true")
     args = parser.parse_args()
+    if args.pointer and not (args.mouse and args.console_shell): parser.error('--pointer requires --mouse --console-shell')
+    if args.mouse and args.console_draw:
+        parser.error("Mouse runtime excludes --console-draw diagnostic")
     if args.idle_race and not args.stress:
         parser.error('--idle-race requires --stress')
     if (args.line_stress or args.shell) and not args.text:
@@ -316,7 +346,7 @@ def main():
     out = project / "kernel/build" / ("ps2-input-firmware-" + uuid.uuid4().hex)
     out.mkdir()
     manifest = {"Image": image_hash(args.image), "Boots": args.boots, "StressKeys": args.stress,
-                "IdleRace": args.idle_race,
+                "Mouse": args.mouse, "Pointer": args.pointer, "IdleRace": args.idle_race,
                 "IdleRollover": args.idle_rollover,
                 "ItalianText": args.text,
                 "LineStress": args.line_stress,
@@ -331,7 +361,7 @@ def main():
     for index in range(1, args.boots + 1):
         results.append(run_boot(project, args.image, args.qemu, out, index, args.stress, args.text,
             args.line_stress, args.shell, args.console_draw, args.console_shell, args.video_absent,
-            args.idle_race, args.idle_rollover))
+            args.idle_race, args.idle_rollover, args.mouse, args.pointer))
         print(f"PASS: PS/2 QEMU {index}/{args.boots}, keys/IRQ/idle/cleanup", flush=True)
     (out / "results.json").write_text(json.dumps({**manifest, "Results": results}, indent=2))
     print("PASS: PS/2 input firmware evidence " + str(out), flush=True)

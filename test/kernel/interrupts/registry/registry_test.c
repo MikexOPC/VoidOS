@@ -117,7 +117,7 @@ static int invalid(void)
     if (!reset()) return 1;
     save();
     for (vector = 0; vector < 256; ++vector) {
-        if (vector == 0x40 || vector == 0x41) continue;
+        if (vector >= 0x40 && vector <= 0x42) continue;
         if (x86_irq_registry_bind(&registry,vector,handler,quiet,&output) || !unchanged()) return 2;
     }
     if (x86_irq_registry_bind(&registry,0x40,0,quiet,&output) ||
@@ -201,6 +201,28 @@ static int tokens(void)
     return x86_irq_registry_unbind(&registry,&first) ? 0 : 5;
 }
 
+// ====== three_simultaneous_subscriptions ======
+
+static int three_subscriptions(void)
+{
+    X86_IRQ_TOKEN third = {0}, stale;
+    if (!reset() || !x86_irq_registry_bind(&registry,0x40,handler,quiet,&first) ||
+        !x86_irq_registry_bind(&registry,0x41,handler,quiet,&second) ||
+        !x86_irq_registry_bind(&registry,0x42,handler,quiet,&third)) return 1;
+    if (third.Id != 3 || !x86_irq_registry_deliver(&registry,0x42) ||
+        x86_irq_registry_deliveries(&registry,&third) != 1 ||
+        x86_irq_registry_deliveries(&registry,&first) || x86_irq_registry_deliveries(&registry,&second)) return 2;
+    registry.Slots[2].Id = first.Id;
+    if (x86_irq_registry_validate(&registry)) return 3;
+    registry.Slots[2].Id = third.Id; stale = third;
+    if (!x86_irq_registry_unbind(&registry,&third) || x86_irq_registry_token_live(&registry,&stale) ||
+        !x86_irq_registry_bind(&registry,0x42,handler,quiet,&third) || third.Id != 4 ||
+        x86_irq_registry_unbind(&registry,&stale)) return 4;
+    if (!x86_irq_registry_unbind(&registry,&third) || !x86_irq_registry_unbind(&registry,&second) ||
+        !x86_irq_registry_unbind(&registry,&first)) return 5;
+    return x86_irq_registry_validate(&registry) ? 0 : 6;
+}
+
 // ====== gruppi di verifiche con esito diagnostico distinto ===== //
 
 __declspec(dllexport) int run_irq_registry_tests(void)
@@ -212,5 +234,6 @@ __declspec(dllexport) int run_irq_registry_tests(void)
     result = corruption(); if (result) return 400+result;
     result = generations(); if (result) return 500+result;
     result = tokens(); if (result) return 600+result;
+    result = three_subscriptions(); if (result) return 700+result;
     return 0;
 }

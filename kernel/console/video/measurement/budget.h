@@ -8,7 +8,7 @@ typedef struct {
     KERNEL_CONSOLE_RENDER  *Render;
     KERNEL_CONSOLE_CLOCK  Read;
     void  *Context;
-    uint64_t  Cells, SlowCells;
+    uint64_t  Cells, SlowCells, Overruns;
     uint32_t  Mask, LastTicks, MaxTicks, Busy, Failed;
 } KERNEL_CONSOLE_MEASUREMENT;
 uint64_t kernel_console_pm_sample(uint32_t start, uint32_t end, uint32_t mask);
@@ -18,4 +18,5 @@ int kernel_console_measure_init(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOL
     KERNEL_CONSOLE_CLOCK read, void *context, uint32_t mask);
 uint32_t kernel_console_measure_step(KERNEL_CONSOLE_MEASUREMENT *owner);
 uint32_t kernel_console_measure_batch_step(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH *batch);
+uint32_t kernel_console_measure_batch_step_live(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH *batch);
 #endif

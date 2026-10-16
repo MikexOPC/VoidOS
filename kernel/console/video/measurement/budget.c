@@ -23,21 +23,22 @@ int kernel_console_measure_init(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOL
         kernel_console_pm_sample(0, 1, mask) != (UINT64_C(1) << 32 | 1)) return 0;
     owner->Self = (uintptr_t)owner;
     owner->Render = render; owner->Read = read; owner->Context = context;
-    owner->Mask = mask; owner->Cells = owner->SlowCells = 0;
+    owner->Mask = mask; owner->Cells = owner->SlowCells = owner->Overruns = 0;
     owner->LastTicks = owner->MaxTicks = owner->Busy = owner->Failed = 0;
     return 1;
 }
 
 // ====== measure ======
 
-static uint32_t measure(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH *batch)
+static uint32_t measure(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH *batch, uint32_t live)
 {
     uint32_t index, scalar, start, end, result = 0;
     uint64_t before, sample, cells;
     int pending;
     if (!owner || owner->Self != (uintptr_t)owner || !owner->Render || !owner->Read ||
         owner->Busy || owner->Failed || owner->Render->Self != (uintptr_t)owner->Render ||
-        owner->Render->Busy || owner->Cells == UINT64_MAX || owner->SlowCells > owner->Cells) return 0;
+        owner->Render->Busy || owner->Cells == UINT64_MAX || owner->SlowCells > owner->Cells ||
+        owner->Overruns > owner->Cells || owner->Overruns == UINT64_MAX) return 0;
     if (batch && ((uintptr_t)batch % _Alignof(KERNEL_CONSOLE_BATCH) || batch->Self != (uintptr_t)batch ||
         batch->Render != owner->Render || batch->Busy || batch->Failed)) return 0;
     pending = kernel_console_peek(owner->Render->Console, 0, &index, &scalar);
@@ -53,13 +54,15 @@ static uint32_t measure(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH 
     if (sample != UINT64_MAX) owner->LastTicks = (uint32_t)sample;
     if (owner->LastTicks > owner->MaxTicks) owner->MaxTicks = owner->LastTicks;
     cells = owner->Render->CellsDone >= before ? owner->Render->CellsDone - before : 0;
-    if (!result || sample == UINT64_MAX || sample >> 32 != 1 || !cells ||
+    if (!result || sample == UINT64_MAX ||
+        (sample >> 32 != 1 && !(live && sample >> 32 == 3)) || !cells ||
         cells > (batch ? KERNEL_CONSOLE_BATCH_LIMIT : 1U) || owner->Cells > UINT64_MAX - cells) {
         owner->Failed = 1;
         result = 0;
     } else {
         owner->Cells += cells;
         if (owner->LastTicks > kernel_console_pm_goal()) owner->SlowCells += cells;
+        if (sample >> 32 == 3) ++owner->Overruns;
     }
     owner->Busy = 0;
     return result;
@@ -69,12 +72,19 @@ static uint32_t measure(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH 
 
 uint32_t kernel_console_measure_step(KERNEL_CONSOLE_MEASUREMENT *owner)
 {
-    return measure(owner, NULL);
+    return measure(owner, NULL, 0);
 }
 
 // ====== kernel_console_measure_batch_step ======
 
 uint32_t kernel_console_measure_batch_step(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH *batch)
 {
-    return batch ? measure(owner, batch) : 0;
+    return batch ? measure(owner, batch, 0) : 0;
+}
+
+// ====== kernel_console_measure_batch_step_live ======
+
+uint32_t kernel_console_measure_batch_step_live(KERNEL_CONSOLE_MEASUREMENT *owner, KERNEL_CONSOLE_BATCH *batch)
+{
+    return batch ? measure(owner, batch, 1) : 0;
 }

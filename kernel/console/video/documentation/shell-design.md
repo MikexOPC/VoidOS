@@ -11,10 +11,11 @@ shell, gateway video e inventario delle risorse della sessione.
 
 La griglia ammette un proprietario e non mutazioni concorrenti. Task0
 gestisce editor/input, task2 esegue i comandi, task1 ospita la finestra
-Assembly IRQ verificata. Il rendering durante le task usa ancora
-`test/kernel/console/video/active/snapshot.c`: prepara una vista attesa
-con esattamente 48 pagine aggiunte e presta temporaneamente il puntatore
-Inventory. Questo adattatore resta diagnostico; non diventa una API ordinaria.
+Assembly IRQ verificata. Il rendering operativo passa dal backend
+`arch/x86/kernel/drivers/video/framebuffer/live/group.c`: verifica i lease
+stack pinned correnti e prepara una vista attesa per il gruppo, poi ripristina
+Inventory. Il numero di pagine deriva dai lease verificati; non e fisso a 48.
+`test/kernel/console/video/active/snapshot.c` resta un adattatore diagnostico.
 
 [Linux v6.12 fbcon, Attaching, Detaching and Unloading](https://www.kernel.org/doc/html/v6.12/fb/fbcon.html)
 separa console, console framebuffer e driver, con vincoli sul distacco.
@@ -115,7 +116,9 @@ Il gateway operativo verifica il pool/root originali, le lease pinned
 degli stack live e il budget, poi presta uno snapshot locale soltanto al
 controllo completo del gruppo. Ripristina il puntatore originale anche
 se il disegno fallisce. Non conserva autorizzazioni fra gruppi; un errore
-rimane terminale. Il numero di pagine e derivato dagli owner live, non
+di disegno/ownership rimane terminale. Il solo ritardo di un gruppo gia
+verificato produce WARN e accounting, come scelto dall'utente nel
+[contratto aggiornato](measured-design.md). Il numero di pagine e derivato dagli owner live, non
 dal valore diagnostico fisso 48.
 
 Nessuna sequenza hardware nuova: restano mapping UC/RW/NX, clock PM e

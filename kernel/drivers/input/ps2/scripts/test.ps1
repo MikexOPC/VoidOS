@@ -22,6 +22,7 @@ if (!$Python) {
     $Python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
 }
 Invoke-Checked $Python @("$PSScriptRoot/structure.py")
+& "$PSScriptRoot/mouse/test.ps1" -OutputDirectory "$out/mouse"
 Invoke-Checked 'rustc' @('--version')
 foreach ($mode in @('debug','release')) {
     $flags = @('--edition=2024','--test','-D','warnings','-C','overflow-checks=yes',
@@ -142,6 +143,15 @@ try {
         "$out/kernel-firmware-acpi-rust-root-layout.obj","$out/lib-firmware-acpi-rust-rsdp-validation.obj",
         "$out/kernel-firmware-acpi-madt-rust-records-validation.obj", "$out/arch-x86-kernel-interrupts-apic-rust-registers-validation.obj")
     Invoke-Checked "$out/runtime.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/Gy','/DKERNEL_PS2_MOUSE=1',("/I$project"),"$project/arch/x86/kernel/drivers/input/ps2/runtime/route.c",
+        "$project/arch/x86/kernel/drivers/input/ps2/runtime/interrupt.c", "$project/test/arch/x86/kernel/drivers/input/ps2/runtime/runtime_test.c",
+        "$project/test/kernel/drivers/input/ps2/controller/platform.c", "$project/kernel/firmware/acpi/madt/records.c",
+        "$project/kernel/firmware/acpi/root.c","$project/lib/firmware/acpi/rsdp.c", "$project/lib/memory/address_ranges.c",
+        ("/Fo$out/"),("/Fd$out/runtime.pdb"),("/Fe$out/runtime-mouse.exe"),'/link','/incremental:no','/opt:ref',
+        "$out/kernel-firmware-acpi-rust-root-layout.obj","$out/lib-firmware-acpi-rust-rsdp-validation.obj",
+        "$out/kernel-firmware-acpi-madt-rust-records-validation.obj", "$out/arch-x86-kernel-interrupts-apic-rust-registers-validation.obj")
+    Invoke-Checked "$out/runtime-mouse.exe" @()
     $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") -DKERNEL_PS2_HOST_TEST "$project/test/kernel/drivers/input/ps2/decoder/abi_test.c" "$project/kernel/drivers/input/ps2/controller/controller.c" `

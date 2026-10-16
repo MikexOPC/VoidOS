@@ -28,6 +28,7 @@ foreach ($boot in 1..$Boots) {
     if ($serial.Contains('KERNEL_PS2_DECODER_OK') -eq $Ordinary.IsPresent -or !$serial.Contains('KERNEL_READY') -or
         $serial.Contains('PS2_DECODER_ABI_FAILED')) { throw "Missing decoder success in boot $boot" }
     if ($Controller -and (!$serial.Contains('KERNEL_PS2_CONTROLLER_SET2_OK') -or
+        !$serial.Contains('KERNEL_PS2_MOUSE_PREPARED') -or
         $serial.Contains('KERNEL_PS2_CONTROLLER_ABSENT') -or $serial.Contains('PS2_CONTROLLER_FAILED'))) {
         throw "Controller negotiation unproven in boot $boot"
     }

@@ -61,3 +61,24 @@ fn backspace_and_return() {
     assert_eq!(step(3, 2, 0, 1, 8), 2 | (2_u64 << 32));
     assert_eq!(step(3, 2, 3, 1, 13), 1_u64 << 16);
 }
+
+// ====== caret_position ======
+
+#[test]
+fn caret_position() {
+    use plan::kernel_console_caret_index as caret;
+    for columns in 1..=240 {
+        for rows in [1, 2, 67] {
+            for y in 0..rows {
+                for x in 0..=columns {
+                    assert_eq!(caret(columns, rows, x, y), y * columns + x.min(columns - 1));
+                }
+            }
+            assert_eq!(caret(columns, rows, columns + 1, 0), u32::MAX);
+            assert_eq!(caret(columns, rows, 0, rows), u32::MAX);
+        }
+    }
+    for (c, r) in [(0, 1), (241, 1), (1, 0), (1, 68), (u32::MAX, u32::MAX)] {
+        assert_eq!(caret(c, r, 0, 0), u32::MAX);
+    }
+}

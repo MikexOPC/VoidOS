@@ -51,11 +51,12 @@ unsigned char x86_read_port(unsigned short port)
 }
 BOOT_U32 kernel_scheduler_payload_push(BOOT_U32 event, BOOT_U64 source, BOOT_U64 generation, BOOT_U32 byte)
 {
-    CHECK(event == 4 && source == (BOOT_U64)&owner && generation == 7 && byte < 256);
+    CHECK(((event == 4 && source == (BOOT_U64)&owner && generation == 7) ||
+        (event == 6 && source == (BOOT_U64)&owner.Mouse && generation == 8)) && byte < 256);
     ++pushed; return push_result;
 }
 int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *mapping, BOOT_U32 vector)
-{ (void)mapping; CHECK(vector == 0x41); ++eoi; return (int)eoi_result; }
+{ (void)mapping; CHECK(vector == 0x41 || vector == 0x42); ++eoi; return (int)eoi_result; }
 uint32_t x86_scheduler_index(void) { return 1; }
 int x86_scheduler_task_valid(void) { return 1; }
 uint64_t x86_task_stack_base(uint32_t index) { (void)index; return 0x700000150000; }
@@ -152,7 +153,22 @@ static void interrupt_tests(void)
         CHECK(owner.Bytes == head && owner.Irqs == 1 && owner.Ready == (BOOT_U32)(count != 0));
         CHECK(eoi == (count <= 32 ? 1U : 0U));
     }
-    for (BOOT_U32 bit = 5; bit <= 7; ++bit) {
+    #ifdef KERNEL_PS2_MOUSE
+    for (BOOT_U32 vector = 0x41; vector <= 0x42; ++vector) {
+        for (BOOT_U32 auxiliary = 0; auxiliary <= 1; ++auxiliary) {
+            reset(); owner.Active = 1; owner.Binding = 7; owner.Mouse.Binding = 8;
+            size = 3; bad_status = auxiliary << 5;
+            CHECK(vector == 0x41 ? x86_ps2_handle() : x86_ps2_mouse_handle());
+            CHECK(head == 3 && pushed == 3 && eoi == 1);
+            CHECK(owner.Bytes == (auxiliary ? 0U : 3U) && owner.Mouse.Bytes == (auxiliary ? 3U : 0U));
+            CHECK(owner.Irqs == (BOOT_U32)(vector == 0x41) && owner.Mouse.Irqs == (BOOT_U32)(vector == 0x42));
+        }
+    }
+    for (BOOT_U32 bit = 6; bit <= 7; ++bit)
+#else
+    for (BOOT_U32 bit = 5; bit <= 7; ++bit)
+#endif
+    {
         reset(); owner.Active = 1; size = 1; bad_status = 1U << bit;
         CHECK(!x86_ps2_handle() && owner.Error && !head && !pushed && !eoi);
     }
@@ -170,11 +186,39 @@ static void interrupt_tests(void)
     CHECK(!x86_ps2_handle() && eoi == 1);
 }
 
+// ====== mouse_route_tests ======
+
+static void mouse_route_tests(void)
+{
+    reset();
+    CHECK(x86_ps2_route_plan_source(&topology,&caps,48,12,&owner.Mouse.Route));
+    CHECK(owner.Mouse.Route.Pin == 12 && owner.Mouse.Route.Bits == 0x42);
+    regs[0x28] = 0x10066; regs[0x29] = 0x2000000;
+    CHECK(x86_ps2_mouse_route_apply(&owner,1) && owner.Mouse.RouteOwned && !owner.RouteOwned);
+    CHECK(regs[0x28] == 0x10042 && !regs[0x29] && selector == 7);
+    CHECK(x86_ps2_mouse_route_apply(&owner,0) && regs[0x28] == 0x42);
+    CHECK(!x86_ps2_mouse_route_apply(&owner,2)); owner.Quiet = 1;
+    CHECK(x86_ps2_mouse_route_apply(&owner,2) && !owner.Mouse.RouteOwned &&
+        regs[0x28] == 0x10066 && regs[0x29] == 0x2000000);
+    for (BOOT_U32 flags = 0; flags < 32; ++flags) {
+        reset(); topology.Length += 10; topology.IsoCount = 1;
+        topology.Iso[0].Source = 12; topology.Iso[0].Gsi = 20; topology.Iso[0].Flags = flags;
+        int valid = flags < 16 && (flags & 3) != 2 && ((flags >> 2) & 3) != 2;
+        CHECK(x86_ps2_route_plan_source(&topology,&caps,48,12,&owner.Mouse.Route) == valid);
+        if (valid) CHECK(owner.Mouse.Route.Pin == 20);
+    }
+    reset(); topology.Length += 10; topology.IsoCount = 1;
+    topology.Iso[0].Source = 12; topology.Iso[0].Gsi = 1;
+    CHECK(!x86_ps2_route_plan_source(&topology,&caps,48,12,&owner.Mouse.Route));
+    reset();
+    CHECK(!x86_ps2_route_plan_source(&topology,&caps,48,11,&owner.Mouse.Route));
+}
+
 // ====== runtime_host_main ======
 
 int main(void)
 {
-    plan_tests(); route_tests(); interrupt_tests();
+    plan_tests(); route_tests(); mouse_route_tests(); interrupt_tests();
     printf("PASS: PS2 runtime %u checks, actual MADT validator, route/IRQ hardware MOCK\n",checks);
     return 0;
 }

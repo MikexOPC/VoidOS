@@ -4,6 +4,7 @@
 static KERNEL_VIDEO_CONSOLE console;
 static KERNEL_CONSOLE_RENDER render;
 static KERNEL_CONSOLE_MEASUREMENT owner, copy;
+static KERNEL_CONSOLE_BATCH batch;
 static uint32_t reads, draws, ticks, start, reenter, failure, raw;
 #define CHECK(value) do { if (!(value)) { \
     fprintf(stderr, "FAIL measure line %d\n", __LINE__); exit(1); } } while (0)
@@ -22,6 +23,16 @@ static uint32_t clock_read(void *context)
 static int draw(void *context, uint32_t column, uint32_t row, uint32_t scalar, uint64_t *duration)
 {
     CHECK(context == &draws && column < 2 && !row && scalar == 32);
+    ++draws; *duration = 1;
+    return !failure;
+}
+
+// ====== group_draw ======
+
+static int group_draw(void *context, uint32_t column, uint32_t row,
+    const uint32_t *scalars, uint32_t count, uint64_t *duration)
+{
+    CHECK(context == &draws && !column && !row && count == 2 && scalars[0] == 32 && scalars[1] == 32);
     ++draws; *duration = 1;
     return !failure;
 }
@@ -78,5 +89,29 @@ void kernel_console_measure_test(void)
     CHECK(!kernel_console_measure_step(&owner) && !draws && !reads);
     reset(); owner.SlowCells = 1;
     CHECK(!kernel_console_measure_step(&owner) && !draws && !reads);
+    for (uint32_t mode = 0; mode < 5; ++mode) {
+        reset(); ticks = kernel_console_pm_limit() + 1;
+        CHECK(kernel_console_batch_init(&batch, &render, group_draw, &draws));
+        if (mode == 1) ticks = 0;
+        if (mode == 2) raw = 1;
+        if (mode == 3) failure = 1;
+        if (mode == 4) owner.Overruns = 1;
+        uint32_t result = kernel_console_measure_batch_step_live(&owner, &batch);
+        if (!mode) {
+            CHECK(result == KERNEL_CONSOLE_RENDER_IDLE && !owner.Failed && !batch.Failed);
+            CHECK(owner.Cells == 2 && render.CellsDone == 2 && owner.Overruns == 1 && owner.SlowCells == 2);
+            CHECK(owner.LastTicks == ticks && !owner.Busy && !render.Busy);
+            CHECK(kernel_console_measure_batch_step_live(&owner, &batch) == KERNEL_CONSOLE_RENDER_IDLE);
+            CHECK(owner.Overruns == 1 && reads == 2);
+        } else {
+            CHECK(!result && !owner.Cells && !owner.Busy && !render.Busy);
+            if (mode < 4) CHECK(owner.Failed && !owner.Overruns);
+            else CHECK(!draws && !reads && !owner.Failed);
+        }
+    }
+    reset(); ticks = kernel_console_pm_limit() + 1;
+    CHECK(kernel_console_batch_init(&batch, &render, group_draw, &draws));
+    CHECK(!kernel_console_measure_batch_step(&owner, &batch) && owner.Failed && !owner.Overruns);
+    CHECK(!kernel_console_measure_batch_step_live(&owner, NULL));
     printf("PASS measured flush: single cell, wrap, timing limits, stopped clock, ownership/reentry\n");
 }

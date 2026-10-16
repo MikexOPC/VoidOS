@@ -138,11 +138,42 @@ static void limits_and_scroll(void)
     CHECK(fixture.Before == fixture.After);
 }
 
+// ====== caret_updates ======
+
+static void caret_updates(void)
+{
+    uint32_t index, scalar;
+    setup(8, 2);
+    CHECK(view.Caret == 2 && view.Cells[2] == 32);
+    while (kernel_console_peek(&view, 0, &index, &scalar) == 1)
+        CHECK(kernel_console_ack(&view, index, scalar));
+    CHECK(EDIT("a"));
+    CHECK(view.Caret == 3 && view.Cells[2] == 'a');
+    CHECK(view.Dirty[0] & (1U << 2)); CHECK(view.Dirty[0] & (1U << 3));
+    CHECK(EDIT("")); CHECK(view.Caret == 2 && view.Cells[2] == 32);
+    CHECK(EDIT("abcdef")); CHECK(view.X == 8 && view.Caret == 7 && view.Cells[7] == 'f');
+    CHECK(EDIT("abcdefg")); CHECK(view.Caret == 9 && view.Cells[8] == 'g');
+    CHECK(WRITE("response\n")); CHECK(view.Caret < 16);
+    saved_view = view;
+    CHECK(!kernel_console_caret(&view, 2)); CHECK(!memcmp(&view, &saved_view, sizeof(view)));
+    CHECK(kernel_console_service_render_begin(&fixture.Service));
+    CHECK(!EDIT("x")); CHECK(kernel_console_service_render_end(&fixture.Service, 1));
+    CHECK(kernel_console_caret(&view, 0)); CHECK(view.Caret == UINT32_MAX);
+    CHECK(kernel_console_caret(&view, 1)); CHECK(view.Caret < 16);
+    CHECK(kernel_console_clear(&view)); CHECK(view.Caret == 0);
+    view.Caret = view.Columns * view.Rows;
+    saved_view = view; saved = fixture.Service;
+    CHECK(!EDIT("x") && !WRITE("x")); unchanged();
+    setup(8, 2); fixture.Service.Transcript.Caret = 0;
+    saved_view = view; saved = fixture.Service;
+    CHECK(!EDIT("x") && !WRITE("x")); unchanged();
+}
+
 // ====== main ======
 
 int main(void)
 {
-    ownership_and_bounds(); interleaved_response(); limits_and_scroll();
+    ownership_and_bounds(); interleaved_response(); limits_and_scroll(); caret_updates();
     printf("PASS console service: %u checks; owner %zu bytes; fixed storage, no allocations\n",
         checks, sizeof(fixture.Service));
     return 0;

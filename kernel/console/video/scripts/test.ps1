@@ -1,4 +1,4 @@
-param([string]$OutputDirectory)
+param([string]$OutputDirectory, [string]$Python)
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path "$PSScriptRoot/../../../..").Path
 $out = if ($OutputDirectory) { $OutputDirectory } else { "$project/kernel/build/console-grid-host" }
@@ -9,6 +9,15 @@ New-Item -ItemType Directory -Force $out | Out-Null
 function Invoke-Checked([string]$program, [string[]]$arguments) {
     & $program @arguments
     if ($LASTEXITCODE) { throw "Failed: $program" }
+}
+
+# ============ firmware harness regression tests ============
+
+if (!$Python) {
+    $Python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+}
+foreach ($name in @('firmware_test.py', 'active_test.py', 'shell_pixels_test.py')) {
+    Invoke-Checked $Python @('-B', "$project/test/kernel/console/video/scripts/$name")
 }
 
 # ============ supported host ABI ============
@@ -72,6 +81,7 @@ try {
         "$out/budget.obj","$out/batch-render.obj","$out/measurement_cases.obj","$out/timing.obj",("/Fe$out/host.exe"),
         '/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/host.exe" @()
+    . "$PSScriptRoot/pointer/test.ps1"
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
         "$project/kernel/console/video/service/console.c",("/Fo$out/service.obj"),("/Fd$out/service.pdb"))
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/c',
@@ -108,12 +118,18 @@ try {
         "$project/test/arch/x86/kernel/drivers/video/framebuffer/live/cases.c",
         ("/Fo$out/"),("/Fd$out/live.pdb"),("/Fe$out/live.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/live.exe" @()
-    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/Gy',
-        '/DKERNEL_CONSOLE_SHELL=1',("/I$project"),
-        "$project/test/kernel/console/video/runtime/worker_test.c",
-        ("/Fo$out/worker.obj"),("/Fd$out/worker.pdb"),("/Fe$out/worker.exe"),
-        '/link','/incremental:no','/DEBUG','/OPT:REF','/WX')
-    Invoke-Checked "$out/worker.exe" @()
+    foreach ($profile in @('keyboard','mouse')) {
+        $profileFlags = @('/DKERNEL_CONSOLE_SHELL=1')
+        if ($profile -eq 'mouse') { $profileFlags += '/DKERNEL_PS2_MOUSE=1' }
+        foreach ($case in @('worker','session')) {
+            $target = "$out/$case-$profile"
+            Invoke-Checked "$bin/cl.exe" (@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/Gy',
+                ("/I$project"),"$project/test/kernel/console/video/runtime/${case}_test.c",
+                ("/Fo$target.obj"),("/Fd$target.pdb"),("/Fe$target.exe")) + $profileFlags +
+                @('/link','/incremental:no','/DEBUG','/OPT:REF','/WX'))
+            Invoke-Checked "$target.exe" @()
+        }
+    }
     Invoke-Checked $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
         '-C','panic=abort','-C','opt-level=2',
         "$project/arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs",'-o',"$out/drawing.obj")
@@ -141,6 +157,8 @@ try {
     $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/kernel/console/video/console.c" `
+        "$project/kernel/console/video/pointer/state.c" "$project/kernel/console/video/pointer/shape.c" `
+        "$project/test/kernel/console/video/pointer/state_test.c" `
         "$project/kernel/console/video/service/console.c" "$project/test/kernel/console/video/service/cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c" `
         "$project/test/arch/x86/kernel/drivers/video/framebuffer/live/cases.c" `
@@ -185,21 +203,25 @@ try {
     if (@($activeXml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
         throw 'Blocking active static diagnostics'
     }
-    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
-        -DKERNEL_CONSOLE_SHELL=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
-        "$project/kernel/console/video/service/console.c" "$project/kernel/shell/shell.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/console/runtime.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `
-        "$project/arch/x86/kernel/drivers/input/ps2/runtime/task.c" `
-        "$project/arch/x86/kernel/drivers/input/ps2/runtime/session.c" `
-        "$project/arch/x86/kernel/drivers/input/ps2/shell/task.c" `
-        "$project/arch/x86/kernel/scheduler/integration/kernel.c" `
-        "$project/arch/x86/kernel/scheduler/mapping/native.c" 2> "$out/cppcheck-shell.xml"
-    if ($LASTEXITCODE) { throw 'Operational console cppcheck failed' }
-    [xml]$shellXml = Get-Content "$out/cppcheck-shell.xml"
-    if (@($shellXml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
-        throw 'Blocking operational console static diagnostics'
+    foreach ($profile in @('keyboard','mouse')) {
+        $profileFlags = @()
+        if ($profile -eq 'mouse') { $profileFlags += '-DKERNEL_PS2_MOUSE=1' }
+        & $cppcheck @profileFlags --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+            -DKERNEL_CONSOLE_SHELL=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
+            "$project/kernel/console/video/service/console.c" "$project/kernel/shell/shell.c" `
+            "$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c" `
+            "$project/arch/x86/kernel/drivers/video/framebuffer/console/runtime.c" `
+            "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `
+            "$project/arch/x86/kernel/drivers/input/ps2/runtime/task.c" `
+            "$project/arch/x86/kernel/drivers/input/ps2/runtime/session.c" `
+            "$project/arch/x86/kernel/drivers/input/ps2/shell/task.c" `
+            "$project/arch/x86/kernel/scheduler/integration/kernel.c" `
+            "$project/arch/x86/kernel/scheduler/mapping/native.c" 2> "$out/cppcheck-shell-$profile.xml"
+        if ($LASTEXITCODE) { throw 'Operational console cppcheck failed' }
+        [xml]$shellXml = Get-Content "$out/cppcheck-shell-$profile.xml"
+        if (@($shellXml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
+            throw 'Blocking operational console static diagnostics'
+        }
     }
 } finally {
     $env:INCLUDE=$savedInclude; $env:LIB=$savedLib; $env:PATH=$savedPath

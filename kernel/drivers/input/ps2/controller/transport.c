@@ -45,13 +45,21 @@ int kernel_ps2_send(KERNEL_PS2_CONTROLLER *owner, uint16_t port, uint8_t byte)
 
 int kernel_ps2_receive(KERNEL_PS2_CONTROLLER *owner, uint8_t *byte)
 {
+    return kernel_ps2_receive_channel(owner, 0, byte);
+}
+
+// ====== kernel_ps2_receive_channel ======
+
+int kernel_ps2_receive_channel(KERNEL_PS2_CONTROLLER *owner, uint32_t auxiliary, uint8_t *byte)
+{
     uint8_t status;
+    if (auxiliary > 1 || !byte) return 0;
     if (!wait_status(owner, 1, 1, &status)) return 0;
     if (!owner->Io.Read(owner->Io.Context, 0x60, byte)) {
         owner->Error = KERNEL_PS2_IO_ERROR;
         return 0;
     }
-    if (status & 0x20) { owner->Error = KERNEL_PS2_PROTOCOL; return 0; }
+    if (((status >> 5) & 1U) != auxiliary) { owner->Error = KERNEL_PS2_PROTOCOL; return 0; }
     return 1;
 }
 
@@ -103,6 +111,30 @@ int kernel_ps2_command(KERNEL_PS2_CONTROLLER *owner, uint8_t command)
         if (reply == 0xfa) return 1;
         if (reply != 0xfe) break;
     }
+    owner->Error = KERNEL_PS2_PROTOCOL;
+    return 0;
+}
+
+// ====== kernel_ps2_stop_scanning ======
+
+int kernel_ps2_stop_scanning(KERNEL_PS2_CONTROLLER *owner)
+{
+    uint8_t reply;
+    uint32_t attempt, discarded = 0;
+    /* QEMU v10.1.0 ps2.c ps2_write_keyboard RESET_DISABLE=F5,
+       ACK=FA, RESEND=FE. Only FA proves stop; bounded in-flight data
+       is discarded exclusively during shutdown, never delivered as input. */
+    for (attempt = 0; attempt < 3; ++attempt) {
+        if (!kernel_ps2_send(owner, 0x60, 0xf5)) return 0;
+        for (;;) {
+            if (!kernel_ps2_receive(owner, &reply)) return 0;
+            if (reply == 0xfa) return 1;
+            if (reply == 0xfe) break;
+            if (discarded == 32) goto protocol;
+            ++discarded;
+        }
+    }
+protocol:
     owner->Error = KERNEL_PS2_PROTOCOL;
     return 0;
 }
