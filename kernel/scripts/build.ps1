@@ -1,5 +1,5 @@
 param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
-    [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
+    [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
     [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell,
     [switch]$TestWatchdogCleanupRecovery,
@@ -8,6 +8,8 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
+if ($Ps2Mouse -and ($TestConsoleActive -or $TestConsoleDraw -or $TestConsoleBatch)) { throw 'Mouse runtime excludes console diagnostic profiles.' }
+if ($Ps2Mouse) { $Ps2Input = $true }
 if ($ConsoleShell) {
     if ($TestConsoleActive -or $TestConsoleDraw -or $TestConsoleBatch -or $TestFramebufferMapping) {
         throw 'ConsoleShell is separate from console diagnostic profiles.'
@@ -87,6 +89,7 @@ if ($TestConsoleBatch) { $flags += '/DKERNEL_TEST_CONSOLE_BATCH=1' }
 if ($ConsoleShell) { $flags += '/DKERNEL_CONSOLE_SHELL=1' }
 if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
 if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
+if ($Ps2Mouse) { $flags += '/DKERNEL_PS2_MOUSE=1' }
 if ($bootstrapDiagnostics) { $flags += '/DKERNEL_TEST_BOOTSTRAP_MEMORY=1' }
 if ($TestSchedulerFault -ne 'none') {
     $mode = switch ($TestSchedulerFault) { 'guard-low' {1} 'guard-high' {2} 'nx' {3} 'retired' {4} 'rollback' {5} 'blocked' {6} 'irq-timeout' {7} 'idle-timeout' {8} 'idle-repeat-timeout' {9} }
@@ -136,9 +139,9 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/drivers/video/framebuffer/construction.c',
     'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
     'arch/x86/kernel/drivers/video/framebuffer/native/access.c',
-    'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
+    'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c','arch/x86/kernel/drivers/video/framebuffer/pixels/transaction.c',
     'arch/x86/kernel/drivers/video/framebuffer/pixels/native.c',
-    'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
+    'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c','arch/x86/kernel/drivers/video/framebuffer/drawing/cursor.c','kernel/console/video/pointer/shape.c',
     'arch/x86/kernel/drivers/video/framebuffer/gateway/cell.c',
     'arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c',
     'arch/x86/kernel/drivers/video/framebuffer/gateway/native.c',
@@ -228,7 +231,7 @@ if ($TestFramebufferMapping -or $TestConsoleDraw -or $ConsoleShell) {
     if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/batch/render.c','test/kernel/console/video/active/worker.c','test/kernel/console/video/active/snapshot.c','test/kernel/console/video/profiling/profile.c') }
     if ($ConsoleShell) { $consoleSources += @('kernel/console/video/measurement/budget.c',
         'kernel/console/video/batch/render.c','arch/x86/kernel/drivers/video/framebuffer/live/group.c',
-        'arch/x86/kernel/drivers/video/framebuffer/console/runtime.c') }
+        'arch/x86/kernel/drivers/video/framebuffer/console/runtime.c','kernel/console/video/pointer/state.c') }
     foreach ($source in $consoleSources) {
         $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
         Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
@@ -256,6 +259,7 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/drivers/video/framebuffer/rust/ffi/mode.rs'),
     '-o',($output + '/framebuffer-fields.obj'))
 $objects += ($output + '/framebuffer-fields.obj')
+. (Join-Path $project 'kernel/console/video/scripts/build/pointer.ps1')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=staticlib','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-C','lto=fat','-C','codegen-units=1','-C','overflow-checks=yes','-D','warnings',
     (Join-Path $project 'kernel/scheduler/rust/ffi/gateway.rs'),'-o',($output+'/scheduler.lib'))
@@ -370,25 +374,7 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/mm/objects/rust/validation/bounds.rs'),
     '-o',($output + '/object-bounds.obj'))
-if ($TestPs2Controller -or $Ps2Input) {
-    foreach ($source in @('kernel/drivers/input/ps2/controller/controller.c','kernel/drivers/input/ps2/controller/transport.c',
-        'kernel/drivers/input/ps2/controller/discovery.c')) {
-        $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
-        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
-        $objects += $object
-    }
-}
-if ($TestPs2Controller -or $Ps2Input) {
-    $sources = if ($Ps2Input) { @('route','interrupt','session','task') | ForEach-Object { 'arch/x86/kernel/drivers/input/ps2/runtime/' + $_ + '.c' } }
-        else { @('arch/x86/kernel/drivers/input/ps2/integration/native.c') }
-    if ($Ps2Input) { $sources += @('kernel/console/line/line.c','kernel/shell/shell.c',
-        'kernel/shell/queue.c','arch/x86/kernel/drivers/input/ps2/shell/task.c') }
-    foreach ($source in $sources) {
-        $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
-        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
-        $objects += $object
-    }
-}
+. (Join-Path $project 'kernel/drivers/input/ps2/scripts/build/controller.ps1')
 if ($TestPs2Decoder) {
     $object = Join-Path $output 'ps2-decoder-abi.obj'
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'test/kernel/drivers/input/ps2/decoder/abi_test.c'),('/Fo' + $object)))

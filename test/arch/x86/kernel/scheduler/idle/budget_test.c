@@ -6,8 +6,8 @@
 static X86_HPET_WATCHDOG owner;
 static X86_PAGE_WINDOW window;
 static KERNEL_PHYSICAL_ALLOCATOR pool;
-static KERNEL_PHYSICAL_LEASE canonical[3];
-static uint32_t checks, context = 1, pins[3] = {1,1,1};
+static KERNEL_PHYSICAL_LEASE canonical[4];
+static uint32_t checks, context = 1, pins[4] = {1,1,1,1};
 
 // ====== check_private ======
 
@@ -29,7 +29,7 @@ int kernel_physical_validate(const KERNEL_PHYSICAL_ALLOCATOR *input) { return in
 int kernel_physical_is_pinned(const KERNEL_PHYSICAL_ALLOCATOR *input, const KERNEL_PHYSICAL_LEASE *lease)
 {
     if (input != &pool || !lease) return -1;
-    for (uint32_t index = 0; index < 3; ++index)
+    for (uint32_t index = 0; index < 4; ++index)
         if (!memcmp(lease,&canonical[index],sizeof(*lease))) return (int)pins[index];
     return -1;
 }
@@ -98,6 +98,30 @@ static void three_lifecycle(void)
 
 // ====== main ======
 
+// ====== four_lifecycle ======
+
+static void four_lifecycle(void)
+{
+    KERNEL_PHYSICAL_LEASE fourth = canonical[3];
+    pool.FreePages = 36;
+    check_private(!x86_watchdog_budget_begin_three(&canonical[0],&canonical[1],&canonical[2]));
+    check_private(!x86_watchdog_budget_begin_four(&canonical[0],&canonical[1],NULL,&fourth));
+    check_private(!x86_watchdog_budget_begin_four(&canonical[0],&canonical[1],&canonical[2],&canonical[0]));
+    fourth.Pages = 8;
+    check_private(!x86_watchdog_budget_begin_four(&canonical[0],&canonical[1],&canonical[2],&fourth));
+    fourth = canonical[3]; pins[3] = 0;
+    check_private(!x86_watchdog_budget_begin_four(&canonical[0],&canonical[1],&canonical[2],&fourth));
+    pins[3] = 1; context = 0;
+    check_private(!x86_watchdog_budget_begin_four(&canonical[0],&canonical[1],&canonical[2],&fourth));
+    check_private(!x86_watchdog_budget_active()); context = 1;
+    check_private(x86_watchdog_budget_begin_four(&canonical[0],&canonical[1],&canonical[2],&fourth));
+    fourth.Id = 999; check_private(x86_watchdog_valid());
+    pins[3] = 0; check_private(!x86_watchdog_valid() && !x86_watchdog_budget_end());
+    pins[3] = 1; ++pool.FreePages; check_private(!x86_watchdog_valid() && !x86_watchdog_budget_end());
+    pool.FreePages = 36; check_private(x86_watchdog_budget_end());
+    pool.FreePages = 100; check_private(x86_watchdog_valid());
+}
+
 int main(void)
 {
     window.Pool = &pool; owner.Env.Window = &window;
@@ -105,7 +129,8 @@ int main(void)
     canonical[0] = (KERNEL_PHYSICAL_LEASE){0x200000,16,11,(BOOT_U64)&pool};
     canonical[1] = (KERNEL_PHYSICAL_LEASE){0x300000,16,12,(BOOT_U64)&pool};
     canonical[2] = (KERNEL_PHYSICAL_LEASE){0x400000,16,13,(BOOT_U64)&pool};
-    for (uint32_t iteration = 0; iteration < 10000; ++iteration) { scope_lifecycle(); three_lifecycle(); }
+    canonical[3] = (KERNEL_PHYSICAL_LEASE){0x500000,16,14,(BOOT_U64)&pool};
+    for (uint32_t iteration = 0; iteration < 10000; ++iteration) { scope_lifecycle(); three_lifecycle(); four_lifecycle(); }
     pool.FreePages = 68;
     canonical[1].Base = canonical[0].Base + 4096;
     check_private(!x86_watchdog_budget_begin(&canonical[0],&canonical[1]));

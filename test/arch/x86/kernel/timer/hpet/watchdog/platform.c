@@ -29,6 +29,7 @@ void watchdog_test_reset(BOOT_U32 mode)
     memset(x86_watchdog_state(),0,sizeof(X86_HPET_WATCHDOG));
     memset(test_hpet,0,sizeof(test_hpet)); memset(test_io,0,sizeof(test_io));
     memset(&topology,0,sizeof(topology)); memset(&caps,0,sizeof(caps));
+    memset(&registry,0,sizeof(registry));
     test_mode = mode; test_borrows = test_in_irq = test_interrupts = 0;
     handler = quiet_callback = NULL; borrowed = 0; selected = 7; selection_reads = 0;
     stop_requests = 0;
@@ -80,7 +81,25 @@ int kernel_physical_is_pinned(const KERNEL_PHYSICAL_ALLOCATOR *owner, const KERN
 int x86_apic_cache_state(void) { return 1; }
 int x86_lapic_validate(const X86_LAPIC_MAPPING *owner) { return owner == &mapping; }
 int x86_lapic_idle(const X86_LAPIC_MAPPING *owner)
-{ return owner == &mapping && !test_in_irq && !(test_mode == 34 && test_interrupts); }
+{ return owner == &mapping && !test_in_irq && !((test_mode == 34 || test_mode >= 60) && test_interrupts); }
+
+// ====== lapic_wake_register_model ======
+
+int x86_lapic_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *value)
+{
+    if (owner != &mapping || !value || test_mode == 66 || (offset & 15)) return 0;
+    *value = 0;
+    if (!test_interrupts) return 1;
+    if (offset == 0x120 && test_mode == 63) *value = 2;
+    if (offset == 0x200 && test_mode == 70) *value = 1;
+    if (offset == 0x220) {
+        if (test_mode == 34 || test_mode == 60 || test_mode == 62 || test_mode == 69) *value = 2;
+        if (test_mode == 61) *value = 6;
+        if (test_mode == 64) *value = 8;
+        if (test_mode == 65) *value = 1;
+    }
+    return 1;
+}
 int x86_apic_read_profile(X86_APIC_RAW *cpu)
 {
     cpu->Pat = profile.Raw.Pat; cpu->ApicBase = profile.Raw.ApicBase;
@@ -221,7 +240,14 @@ int x86_irq_registry_unbind(X86_IRQ_REGISTRY *r, X86_IRQ_TOKEN *token)
     handler = quiet_callback = NULL; memset(token,0,sizeof(*token)); return 1;
 }
 int x86_irq_registry_token_live(const X86_IRQ_REGISTRY *r, const X86_IRQ_TOKEN *token)
-{ return r == &registry && handler && token->Id == 1 && token->Vector == 0x40; }
+{
+    if (r != &registry || !handler || !token || token->Reserved) return 0;
+    if (token->Id == 1 && token->Vector == 0x40) return 1;
+    return test_mode != 69 && token->Vector >= 0x41 && token->Vector <= 0x42 &&
+        r->Slots[token->Vector - 0x40].Id == token->Id && token->Id != 0;
+}
+int x86_irq_registry_validate(const X86_IRQ_REGISTRY *r)
+{ return r == &registry && test_mode != 67; }
 int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector)
 {
     if (owner != &mapping || vector != 0x40 || !test_in_irq || test_hpet[0x20/4] || test_mode == 22) { return 0; }
@@ -234,7 +260,7 @@ int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector)
 BOOT_U32 x86_irq_sleep(volatile BOOT_U32 *source, BOOT_U32 goal, BOOT_U32 budget)
 {
     X86_HPET_WATCHDOG *owner = x86_watchdog_state();
-    if (source != &owner->Count || goal != owner->Count + 1 || budget != 8 || !handler) { return 0; }
+    if (source != &owner->Count || goal != owner->Count + 1 || budget != 256 || !handler) { return 0; }
     if (test_mode != 2 && test_mode != 23) { ++test_source[0]; }
     if (test_mode == 3 || test_mode == 23) { test_stop = 1; }
     test_hpet[0xf0/4] = test_mode == 36 || test_mode == 38 ||
@@ -246,6 +272,11 @@ BOOT_U32 x86_irq_sleep(volatile BOOT_U32 *source, BOOT_U32 goal, BOOT_U32 budget
     test_in_irq = 1;
     if (!handler()) { return 0; }
     ++test_interrupts;
+    if (test_mode == 60 || test_mode == 61 || test_mode == 69) {
+        registry.Slots[1].Id = 2; registry.Slots[1].Vector = 0x41;
+        if (test_mode == 61) { registry.Slots[2].Id = 3; registry.Slots[2].Vector = 0x42; }
+    }
+    if (test_mode == 68) registry.Busy = 1;
     if (test_mode == 36 || test_mode == 38) {
         if (!owner->Armed || owner->Count != goal - 1 || test_in_irq) return 0;
         test_hpet[0xf0/4] = test_mode == 38 ? 0 : owner->Target;
@@ -256,5 +287,9 @@ BOOT_U32 x86_irq_sleep(volatile BOOT_U32 *source, BOOT_U32 goal, BOOT_U32 budget
         ++test_interrupts;
     }
     if (test_mode == 35) test_hpet[0x20/4] = 1u << owner->Timer;
+    if (test_mode == 71) return 17;
+    if (test_mode == 72) return 257;
+    if (test_mode == 73) return 258;
+    if (test_mode == 74) return 0;
     return test_mode == 2 || test_mode == 23 ? 2u : 3u;
 }

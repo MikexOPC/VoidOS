@@ -25,6 +25,7 @@ typedef struct {
     uint32_t      Phase;
     uint32_t      Error;
     uint32_t      Mode;
+    uint32_t      Auxiliary;
     uint32_t      Reserved;
 } KERNEL_PS2_CONTROLLER;
 
@@ -50,10 +51,13 @@ int kernel_ps2_close(KERNEL_PS2_CONTROLLER *owner);
 int kernel_ps2_start(KERNEL_PS2_CONTROLLER *owner);
 int kernel_ps2_stop(KERNEL_PS2_CONTROLLER *owner);
 
-/* Internal protocol operations; only an initialized exclusive owner. */
+// Internal protocol operations; only an initialized exclusive owner
+
 int kernel_ps2_send(KERNEL_PS2_CONTROLLER *owner, uint16_t port, uint8_t byte);
 int kernel_ps2_receive(KERNEL_PS2_CONTROLLER *owner, uint8_t *byte);
+int kernel_ps2_receive_channel(KERNEL_PS2_CONTROLLER *owner, uint32_t auxiliary, uint8_t *byte);
 int kernel_ps2_drain(KERNEL_PS2_CONTROLLER *owner);
 int kernel_ps2_mode(KERNEL_PS2_CONTROLLER *owner, uint8_t mode);
 int kernel_ps2_command(KERNEL_PS2_CONTROLLER *owner, uint8_t command);
+int kernel_ps2_stop_scanning(KERNEL_PS2_CONTROLLER *owner);
 #endif

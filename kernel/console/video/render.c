@@ -32,7 +32,8 @@ uint32_t kernel_console_render_flush(KERNEL_CONSOLE_RENDER *render, uint32_t bud
     uint32_t index, scalar, done, result = 0;
     int available;
     if (!render || render->Self != (uintptr_t)render || !render->Draw || render->Busy ||
-        !budget || budget > KERNEL_CONSOLE_RENDER_BUDGET) return 0;
+        !budget || budget > KERNEL_CONSOLE_RENDER_BUDGET ||
+        !render->Console || render->Console->Caret != UINT32_MAX) return 0;
     render->Busy = 1;
     for (done = 0; done < budget; ++done) {
         uint64_t ticks = 0;

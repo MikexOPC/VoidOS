@@ -7,6 +7,7 @@ typedef struct {
     uint8_t  Queue[64];
     uint32_t Head, Count, Mode, Pending, Set, Scan;
     uint32_t Calls, Fail, Writes, Tick, Frozen, Busy, Fault, Aux, Resend, BadSet, BadMode, Silent, BadAck;
+    uint32_t StopTail, StopReplyTail;
 } MOCK;
 static uint32_t checks;
 #define CHECK(expression) do { ++checks; assert(expression); } while (0)
@@ -60,7 +61,12 @@ static int mock_write(void *context, uint16_t port, uint8_t byte)
         }
     } else {
         CHECK(port == 0x60);
-        if (mock->Pending == 0x60) { mock->Mode = byte; mock->Pending = 0; }
+        if (mock->Pending == 0x60) {
+            mock->Mode = byte; mock->Pending = 0;
+            if (mock->Scan && byte == 0x20 && mock->StopTail) {
+                mock_push(mock, 0xf0); mock_push(mock, 0x5a); mock->StopTail = 0;
+            }
+        }
         else if (mock->Silent) { return 1; }
         else if (mock->BadAck) { mock_push(mock, 0x1c); }
         else if (mock->Resend) { --mock->Resend; mock_push(mock, 0xfe); }
@@ -69,7 +75,11 @@ static int mock_write(void *context, uint16_t port, uint8_t byte)
             if (byte) mock->Set = byte;
             else mock_push(mock, (uint8_t)(mock->BadSet ? 1 : mock->Set));
             mock->Pending = 0;
-        } else if (byte == 0xf5) { mock->Scan = 0; mock->Set = 2; mock_push(mock, 0xfa); }
+        } else if (byte == 0xf5) {
+            if (mock->Scan) for (uint32_t index = 0; index < mock->StopReplyTail; ++index)
+                mock_push(mock, index & 1 ? 0x5a : 0xf0);
+            mock->Scan = 0; mock->Set = 2; mock_push(mock, 0xfa);
+        }
         else if (byte == 0xf4) { mock->Scan = 1; mock_push(mock, 0xfa); }
         else if (byte == 0xf0) { mock->Pending = 0xf0; mock_push(mock, 0xfa); }
         else CHECK(0);
@@ -243,7 +253,41 @@ static void start_stop_and_callback_failures(void)
     }
 }
 
-// ====== controller_host_main ======
+// ====== stop_with_inflight_input ======
+
+static void stop_with_inflight_input(void)
+{
+    for (uint32_t tail = 0; tail <= 33; ++tail) {
+        MOCK mock = {0}; KERNEL_PS2_CONTROLLER owner = {0};
+        KERNEL_PS2_IO io = mock_io(&mock);
+        CHECK(kernel_ps2_prepare(&owner, &io)); CHECK(kernel_ps2_start(&owner));
+        mock.StopTail = tail == 0; mock.StopReplyTail = tail;
+        if (tail == 0) { mock_push(&mock, 0xf0); mock_push(&mock, 0x5a); }
+        if (tail <= 32) {
+            CHECK(kernel_ps2_stop(&owner));
+            CHECK(owner.Phase == KERNEL_PS2_CLOSED && !owner.Error && !mock.Scan && !mock.Count);
+        } else {
+            CHECK(!kernel_ps2_stop(&owner) && owner.Phase == KERNEL_PS2_DIRTY && owner.Error);
+            CHECK(kernel_ps2_close(&owner) && !mock.Count);
+        }
+    }
+    for (uint32_t scenario = 0; scenario < 9; ++scenario) {
+        MOCK mock = {0}; KERNEL_PS2_CONTROLLER owner = {0};
+        KERNEL_PS2_IO io = mock_io(&mock);
+        CHECK(kernel_ps2_prepare(&owner, &io)); CHECK(kernel_ps2_start(&owner));
+        if (scenario < 4) mock.Resend = scenario;
+        if (scenario == 4) mock.BadAck = 1;
+        if (scenario == 5) mock.Silent = 1;
+        if (scenario == 6) mock.Aux = 0x20;
+        if (scenario == 7) mock.Fault = 0x80;
+        if (scenario == 8) { mock.Busy = 1; mock.Frozen = 1; }
+        if (scenario < 3) CHECK(kernel_ps2_stop(&owner) && owner.Phase == KERNEL_PS2_CLOSED);
+        else CHECK(!kernel_ps2_stop(&owner) && owner.Phase == KERNEL_PS2_DIRTY && owner.Error);
+        CHECK(mock.Calls < 5000010);
+    }
+}
+
+// ====== main ======
 
 int main(void)
 {
@@ -252,6 +296,7 @@ int main(void)
     protocol_faults_and_deadlines();
     start_stop_and_callback_failures();
     repeated_lifecycle();
+    stop_with_inflight_input();
     printf("PASS: controller %u checks, callback rollback, protocol and deadlines\n", checks);
     return 0;
 }

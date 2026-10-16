@@ -40,11 +40,12 @@ def screenshot_pixels(path, record, draw, console=False):
 # ============ bounded independent physical reads ============
 
 def physical(vm, monitor, base, count):
+    offset = monitor.stat().st_size
     vm.stdin.write(f'xp /{count}gx 0x{base:x}\n')
     vm.stdin.flush()
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        text = monitor.read_text(errors='replace')
+        text = monitor.read_bytes()[offset:].decode('utf-8', errors='replace')
         values = {}
         for match in re.finditer(r'(?m)^([0-9a-fA-F]{8,16}):\s*((?:0x[0-9a-fA-F]{16}\s*)+)', text):
             start = int(match[1], 16)

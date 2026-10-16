@@ -34,7 +34,7 @@ uint32_t kernel_console_batch_flush(KERNEL_CONSOLE_BATCH *owner, uint32_t budget
     KERNEL_CONSOLE_RENDER *render;
     KERNEL_VIDEO_CONSOLE *console;
     uint32_t index, scalar, next, count, offset, captured[KERNEL_CONSOLE_BATCH_LIMIT], result = 0;
-    uint32_t columns, rows, start;
+    uint32_t columns, rows, start, caret;
     uint64_t ticks = 0, cells, groups;
 
     int pending;
@@ -49,6 +49,7 @@ uint32_t kernel_console_batch_flush(KERNEL_CONSOLE_BATCH *owner, uint32_t budget
     if (pending < 0) { owner->Failed = 1; return 0; }
     if (!pending) return KERNEL_CONSOLE_RENDER_IDLE;
     console = render->Console; columns = console->Columns; rows = console->Rows;
+    caret = console->Caret;
     cells = render->CellsDone; groups = owner->Groups; start = render->Next;
     captured[0] = scalar;
     for (count = 1; count < budget && count < render->Console->Columns - index % render->Console->Columns; ++count) {
@@ -66,7 +67,7 @@ uint32_t kernel_console_batch_flush(KERNEL_CONSOLE_BATCH *owner, uint32_t budget
     if (owner->Self != (uintptr_t)owner || owner->Render != render || owner->Groups != groups ||
         owner->Failed || owner->Busy != 1 || render->Busy != 1 ||
         render->Self != (uintptr_t)render || render->Console != console || render->CellsDone != cells ||
-        render->Next != start || console->Columns != columns || console->Rows != rows) goto finish;
+        render->Next != start || console->Columns != columns || console->Rows != rows || console->Caret != caret) goto finish;
     for (offset = 0; offset < count; ++offset)
         if (kernel_console_peek(render->Console, index + offset, &next, &scalar) != 1 ||
             next != index + offset || scalar != captured[offset]) goto finish;

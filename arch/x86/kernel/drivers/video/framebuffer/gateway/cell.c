@@ -54,17 +54,18 @@ int x86_fb_cell(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row, BOOT_U32 s
     return drawn;
 }
 
-// ====== x86_fb_group ======
+// ====== x86_fb_group_pointer ======
 
-int x86_fb_group(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
-    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+int x86_fb_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
+    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background,
+    BOOT_U64 *ticks, BOOT_U32 caret, const KERNEL_POINTER_IMAGE *pointer)
 {
     unsigned char bytes[32];
     X86_FB_TEXT text;
     BOOT_U32 index, length = 0, columns;
     BOOT_U64 start, end, flags;
     int drawn, restored;
-    if (!ticks || !scalars || ((BOOT_U64)scalars & 3) || !count || count > 8 ||
+    if (!ticks || !scalars || ((BOOT_U64)scalars & 3) || !count || count > 8 || (caret != ~0U && caret >= count) ||
         (BOOT_U64)scalars > ~0ULL - count * sizeof(*scalars) ||
         !owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 || !owner->Context ||
         !owner->Context->Info.Framebuffer.Base || row >= 67 ||
@@ -80,9 +81,27 @@ int x86_fb_group(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
     text.X = column * 8; text.Y = row * 16;
     text.Foreground = foreground; text.Background = background;
     start = x86_fb_cell_stamp(); flags = x86_fb_cell_suspend();
-    drawn = x86_fb_text(owner, &text, x86_fb_console_font());
+    drawn = pointer ? x86_fb_text_pointer(owner, &text, x86_fb_console_font(), caret, pointer) :
+        x86_fb_text_caret(owner, &text, x86_fb_console_font(), caret);
     restored = x86_fb_cell_resume(flags); end = x86_fb_cell_stamp();
     if (!restored || end <= start) return 0;
     *ticks = end - start;
     return drawn;
+}
+
+// ====== x86_fb_group_caret ======
+
+int x86_fb_group_caret(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
+    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background,
+    BOOT_U64 *ticks, BOOT_U32 caret)
+{
+    return x86_fb_group_pointer(owner, column, row, scalars, count, foreground, background, ticks, caret, NULL);
+}
+
+// ====== x86_fb_group ======
+
+int x86_fb_group(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
+    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+{
+    return x86_fb_group_caret(owner, column, row, scalars, count, foreground, background, ticks, ~0U);
 }

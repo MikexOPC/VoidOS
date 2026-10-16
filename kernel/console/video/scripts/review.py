@@ -38,7 +38,10 @@ def main():
         'arch/x86/kernel/timer/lapic/driver.c', 'arch/x86/kernel/timer/hpet/watchdog/core.c',
         'arch/x86/kernel/timer/hpet/watchdog/recovery/control.c',
         'arch/x86/kernel/timer/hpet/description/probe/policy.c']]
-    for path in candidates:
+    candidates += [ROOT / 'arch/x86/kernel/drivers/video/framebuffer/drawing/cursor.c',
+        ROOT / 'arch/x86/kernel/drivers/video/framebuffer/pixels/transaction.c',
+        ROOT / 'arch/x86/kernel/drivers/video/framebuffer/pixels/session.h']
+    for path in dict.fromkeys(candidates):
         if not path.is_file() or '__pycache__' in path.parts:
             continue
         data = path.read_bytes()

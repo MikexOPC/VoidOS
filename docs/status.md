@@ -1,4 +1,4 @@
-# Stato corrente — 11 ottobre 2026
+# Stato corrente — 14 ottobre 2026
 
 Questo e il riferimento breve dello stato reale. I checkpoint in
 `docs/review/` e i report di modulo restano evidenza del blocco in cui
@@ -10,16 +10,113 @@ Il runner `scripts/test/run.ps1` richiama le suite originali in processi
 separati; i gate QEMU restano distinti dai test host. Vedere
 [organizzazione ed esecuzione](../test/README.md).
 
+Blocco corrente completato nei test: transazione save/restore del cursore approvata,
+backup fisso24x24, verifica completa e tre rettangoli autorizzati.
+Movimenti attivano una sola cella; il vecchio sfondo viene ripristinato
+dal backup e il nuovo salvato dopo il testo. Pacchetti senza spostamento
+non richiedono ridisegno. Revoca e transazioni annidate sono negate mentre
+il mapping e occupato; dopo scritture fallite resta trattenuto.
+Passano dieci boot consecutivi,6000 invii continui e60 scene, zero perdite
+e zero gruppi oltre100ms; passano scroll e fallback, con budget ripristinato.
+Fluidita manuale e60FPS non certificati; nessun nuovo driver GPU.
+[Contratto](../kernel/console/video/documentation/cursor-transaction-design.md)
+e [prove](../kernel/console/video/documentation/cursor-transaction-validation.md).
+
+Checkpoint precedente: una seconda prova manuale ha riprodotto
+perdita e scomparsa dopo557 eventi. Il precedente test non copriva
+adeguatamente il carico. Nuovo consumo a raffiche di32 pacchetti,
+priorita alla posizione corrente e freccia arrotondata antialias concordati.
+Passano10 boot consecutivi con6000 invii continui, zero perdite e60 scene
+confrontate; passano stress con scroll e fallback. Le scansioni paging
+restano costose: due boot segnalano un gruppo lento. La fluidita nella
+finestra SDL non e certificata dai test automatici.
+[Implementazione e nuove prove](../kernel/console/video/documentation/pointer-burst.md).
+
+Checkpoint precedente: la prova manuale del puntatore ha prodotto
+perdita mouse e panic, non coperti dai movimenti distanziati del checkpoint.
+Corretti consumo per pacchetto, polling1ms, idle HPET5ms e budget dei risvegli;
+sagoma con contorno piu regolare. Dieci boot consecutivi finali passano,
+con1500 movimenti continui,60 scene controllate, zero perdite e budget
+ripristinato. Passano stress con scroll, fallback senza video e smoke
+dell'ESP interattiva e regressione della console con sola tastiera.
+Un gruppo ha superato100ms ed emesso il WARN previsto:
+resta un costo del paging e non e dimostrato un framerate costante.
+[Cause, prove e limiti](../kernel/console/video/documentation/pointer-latency.md).
+
+Checkpoint precedente: puntatore bianco a contorno nero24x24 nel profilo
+`-Ps2Mouse -ConsoleShell`. Rust valida movimento e clamp; un solo worker
+compone testo/caret e maschera, ricostruendo lo sfondo dalla griglia RAM.
+Dieci boot consecutivi passano con50 scene live confrontate tramite screenshot
+e pixel fisici,51 eventi mouse per boot, nessuna perdita e budget ripristinato.
+Passano anche stress da812 tasti con scroll, fallback senza video e console
+senza mouse:13 boot finali positivi, oltre al primo collaudo.
+C/ASan, Rust debug/release/Clippy, test Python e cppcheck passati. Bitmap fissa
+nell'area della console; nessuna azione GUI dei pulsanti, finestre o compositore.
+[Design](../kernel/console/video/documentation/pointer-design.md) e
+[prove, hash e limiti](../kernel/console/video/documentation/pointer-validation.md).
+Disponibile l'[avvio interattivo](../kernel/console/video/documentation/pointer-manual.md)
+per provare il cursore nella finestra QEMU; ESP isolata, log seriale e opzione
+di ricompilazione. Preparazione e smoke input/cleanup verificati; nessuna
+sessione desktop permanente o prova manuale umana automatizzata dichiarata.
+
+Checkpoint completato: integrazione `-Ps2Mouse -ConsoleShell`, quattro
+task e un solo worker video. La prima campagna passa otto boot e fallisce
+nel nono nel watchdog idle. Corretto il rifiuto di IRQ input pendenti con
+token live; regressione host prima/dopo e revoca negata fino a quiescenza
+passate. Dieci boot consecutivi finali, stress da812 tasti, fallback senza
+video e regressione console senza mouse passano (13 boot finali totali).
+Pixel, IRQ e budget fisico ripristinato verificati; suite C/ASan, Rust,
+Python e cppcheck passate. Il puntatore grafico e nel blocco successivo sopra.
+[Contratto, debug e prove](../kernel/console/video/documentation/mouse-integration.md).
+
 La shell ha ora anche un percorso video nel profilo esplicito `-ConsoleShell`:
 prompt, editor italiano UTF-8, risposte di help/echo/status/exit, wrap/scroll,
 riga corrente conservata durante le risposte e fallback seriale se il video
 manca. Un servizio RAM serializzato alimenta il worker esistente; gruppi
 di massimo otto celle con controllo completo delle risorse live.
-[Contratto e prove correnti](../kernel/console/video/documentation/shell-validation.md).
+[Contratto della console](../kernel/console/video/documentation/shell-design.md).
+Il cursore di testo è ora una sottolineatura fissa separata dai caratteri:
+Rust valida la posizione, il worker ripristina la vecchia cella e disegna
+la nuova, senza timer o task aggiuntive. Corretto anche un panic intermittente
+allo stop PS/2, con regressione host prima/dopo e gestione limitata dei byte
+residui prima dell'ACK. Suite console/PS2/framebuffer con ASan e cppcheck,
+22 boot finali:10 video,10 ordinari, uno senza video e uno stress da812 tasti.
+Budget fisico ripristinato; immagini e limiti nel
+[report corrente](../kernel/console/video/documentation/caret-validation.md).
 Le descrizioni "shell solo seriale" nei checkpoint sotto valgono per quelle
 immagini storiche. Il profilo ordinario rimane distinto; GUI, hardware fisico
 e sessione senza le guardie diagnostiche v0 non sono completati.
-Ultimo blocco: corretto il rollover one-shot32 HPET riprodotto nel ramo idle.
+Checkpoint mouse PS/2 collegato al kernel nel profilo separato `-Ps2Mouse`:
+movimento e tre pulsanti, decoder Rust, task3, IRQ12/vettore42h, due code
+con source/token distinti e quattro stack pinned. Dieci boot consecutivi
+dell'ultima immagine verificano35 eventi mouse per boot insieme alla
+tastiera, IRQ durante il worker, idle, stop e budget20.460 ripristinato.
+Passa anche un boot con mouse e shell seriale italiana (98 tasti,10 comandi).
+Host C/ASan e Rust, registry/frame, accounting quattro lease e mock EOI passano.
+Nessun puntatore grafico, rotella o certificazione hardware fisico introdotti.
+[Contratto](../kernel/drivers/input/ps2/mouse/documentation/runtime-design.md) e
+[prove, hash e limiti](../kernel/drivers/input/ps2/mouse/documentation/runtime-validation.md).
+
+Corretto il fail-stop temporale del worker video, riprodotto con rallentamento
+TCG dopo l'avvio: il disegno era valido, ma una misura oltre100ms marcava il
+servizio Failed. Scelta utente: nella console operativa WARN e contatore dei
+gruppi lenti; nelle API diagnostiche il limite rimane terminale. Errori di
+draw, ownership, clock e accounting restano terminali; nessuna soglia alzata.
+La prova prima/dopo verifica WARN, progresso input, pixel, cleanup e memoria.
+Dieci boot finali consecutivi e un boot stress da812 tasti passano con
+budget20.419 ripristinato, pixel e cleanup verificati sulla stessa immagine.
+La suite include ora anche19 test Python dei runner, oltre a C/ASan, Rust
+e cppcheck. Il vecchio dump concorrente non conteneva lo stato del misuratore:
+e compatibile con questa causa, senza attribuzione retroattiva certa.
+[Correzione e limiti](../kernel/console/video/documentation/latency-fix.md);
+[checkpoint diagnostico](../kernel/console/video/documentation/worker-diagnostics.md).
+
+Checkpoint mouse precedenti: decoder host e preparazione AUX senza
+streaming; le frasi "mouse non operativo" valgono per quelle immagini.
+[Preparazione](../kernel/drivers/input/ps2/mouse/documentation/controller-validation.md),
+[decoder](../kernel/drivers/input/ps2/mouse/documentation/validation.md).
+
+Checkpoint precedente: corretto il rollover one-shot32 HPET riprodotto nel ramo idle.
 Contatore fermo fra le attese; un IRQ di rollover anticipato non consuma la
 deadline; il match maturato durante W1C viene riconosciuto senza risveglio
 perso. Status/config estranei, duplicati e MMIO fallita restano errori.

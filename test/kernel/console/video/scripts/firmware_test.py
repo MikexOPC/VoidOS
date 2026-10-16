@@ -30,9 +30,13 @@ class CampaignTests(unittest.TestCase):
             'LoaderUnchanged': True, 'Results': [{}]}
         (self.directory / 'boot-1').mkdir()
 
-    def execute(self, diagnostic=False, marker=False, returncode=0, rendered=False, extra=''):
+    def execute(self, diagnostic=False, marker=False, returncode=0, rendered=False, extra='', service=None):
         (self.directory / 'results.json').write_text(json.dumps(self.evidence), encoding='utf-8')
-        (self.directory / 'boot-1/serial.log').write_text(('KERNEL_CONSOLE_GRID_OK' if marker else '') + extra, encoding='utf-8')
+        if service is None:
+            service = marker
+        log = ('KERNEL_CONSOLE_GRID_OK\n' if marker else '') + \
+            ('KERNEL_CONSOLE_SERVICE_RAM_OK\n' if service else '') + extra
+        (self.directory / 'boot-1/serial.log').write_text(log, encoding='utf-8')
         arguments = ['firmware.py', '--kernel', str(self.image), '--boots', '1']
         if diagnostic:
             arguments.append('--diagnostic')
@@ -57,6 +61,12 @@ class CampaignTests(unittest.TestCase):
     def test_failed_provider_never_passes(self):
         with self.assertRaises(RuntimeError):
             self.execute(returncode=1)
+
+    def test_service_marker_required(self):
+        with self.assertRaisesRegex(RuntimeError, 'service RAM'):
+            self.execute(diagnostic=True, marker=True, service=False)
+        with self.assertRaisesRegex(RuntimeError, 'service RAM'):
+            self.execute(service=True)
 
     def test_corrupt_evidence_never_passes(self):
         for field, value in [('Kernel', 'wrong'), ('LoaderUnchanged', False), ('Results', []), ('Failure', 'failed')]:

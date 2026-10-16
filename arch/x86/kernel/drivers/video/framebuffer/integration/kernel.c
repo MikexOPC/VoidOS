@@ -17,20 +17,33 @@ static X86_FB_MAPPING mapping;
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #endif
 
-// ====== x86_fb_kernel_group ======
+// ====== x86_fb_kernel_group_pointer ======
 
-int x86_fb_kernel_group(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
-    BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+#ifdef KERNEL_CONSOLE_SHELL
+int x86_fb_kernel_group_pointer(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
+    BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks,
+    BOOT_U32 caret, const KERNEL_POINTER_IMAGE *pointer)
+{
+    if (!pointer || !x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    return x86_fb_live_group_pointer(&mapping, column, row, scalars, count, foreground, background, ticks, caret, pointer);
+}
+#endif
+
+// ====== x86_fb_kernel_group_caret ======
+
+int x86_fb_kernel_group_caret(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
+    BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks, BOOT_U32 caret)
 {
 #if defined(KERNEL_CONSOLE_SHELL)
     if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
-    return x86_fb_live_group(&mapping, column, row, scalars, count, foreground, background, ticks);
+    return x86_fb_live_group_caret(&mapping, column, row, scalars, count, foreground, background, ticks, caret);
 #elif defined(KERNEL_TEST_CONSOLE_DRAW)
     if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    if (caret != ~0U) return 0;
     return kernel_console_active_group(&mapping, x86_scheduler_live_stack_pages(),
         column, row, scalars, count, foreground, background, ticks);
 #else
-    return x86_fb_group(&mapping, column, row, scalars, count, foreground, background, ticks);
+    return x86_fb_group_caret(&mapping, column, row, scalars, count, foreground, background, ticks, caret);
 #endif
 }
 
@@ -113,4 +126,12 @@ int x86_fb_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *win
         kernel_text("\nKERNEL_FB_BUDGET_LIVE: ") && kernel_number(window->Pool->FreePages) &&
         kernel_text("\nKERNEL_FB_MAPPING_INVENTORY: ") && kernel_number((BOOT_U64)inventory) &&
         kernel_text("\n") && kernel_log(0, "KERNEL_FB_MAPPING_LIVE");
+}
+
+// ====== x86_fb_kernel_group ======
+
+int x86_fb_kernel_group(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
+    BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+{
+    return x86_fb_kernel_group_caret(column, row, scalars, count, foreground, background, ticks, ~0U);
 }

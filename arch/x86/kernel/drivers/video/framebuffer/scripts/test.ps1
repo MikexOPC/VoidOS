@@ -70,10 +70,12 @@ try {
         'arch/x86/kernel/drivers/video/framebuffer/preflight.c',
         'arch/x86/kernel/drivers/video/framebuffer/construction.c',
         'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
-        'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
-        'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
+        'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c','arch/x86/kernel/drivers/video/framebuffer/pixels/transaction.c',
+        'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c','arch/x86/kernel/drivers/video/framebuffer/drawing/cursor.c',
+        'kernel/console/video/pointer/shape.c',
         'arch/x86/kernel/drivers/video/framebuffer/font/font.c',
         'test/arch/x86/kernel/drivers/video/framebuffer/pixels/write_test.c',
+        'test/arch/x86/kernel/drivers/video/framebuffer/pixels/pointer_test.c',
         'test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/platform.c',
         'test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/cases.c')) {
         $object = "$out/" + ($source -replace '/', '-') + '.obj'
@@ -95,7 +97,11 @@ try {
         "$project/test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/platform.c" `
         "$project/test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/cases.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/write.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/transaction.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/cursor.c" `
+        "$project/kernel/console/video/pointer/shape.c" `
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/pixels/pointer_test.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/font/font.c" `
         "$project/test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.c" `
         "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/native.c" `

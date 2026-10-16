@@ -106,6 +106,8 @@ int x86_watchdog_budget_begin(const KERNEL_PHYSICAL_LEASE *first, const KERNEL_P
    NULL third preserves the existing exact32-page gate; non-NULL requires48. */
 int x86_watchdog_budget_begin_three(const KERNEL_PHYSICAL_LEASE *first, const KERNEL_PHYSICAL_LEASE *second,
     const KERNEL_PHYSICAL_LEASE *third);
+int x86_watchdog_budget_begin_four(const KERNEL_PHYSICAL_LEASE *first, const KERNEL_PHYSICAL_LEASE *second,
+    const KERNEL_PHYSICAL_LEASE *third, const KERNEL_PHYSICAL_LEASE *fourth);
 int x86_watchdog_budget_end(void);
 int x86_watchdog_budget_valid(void);
 int x86_watchdog_budget_active(void);

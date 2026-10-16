@@ -38,7 +38,11 @@ static const X86_SCHEDULER_PROFILE profiles[] = {
     {2,1024,0,1,x86_scheduler_persistent_task,NULL},
     {2,6,1,1,x86_scheduler_idle_task,x86_scheduler_idle_wait}
 #ifdef KERNEL_PS2_INPUT
-    ,{3,65536,1024,1,x86_ps2_task,x86_ps2_idle}
+#ifdef KERNEL_PS2_MOUSE
+    ,{4,65536,32768,1,x86_ps2_task,x86_ps2_idle}
+#else
+    ,{3,65536,32768,1,x86_ps2_task,x86_ps2_idle}
+#endif
 #endif
 };
 

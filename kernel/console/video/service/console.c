@@ -22,6 +22,8 @@ static int valid(const KERNEL_CONSOLE_SERVICE *owner)
         view->Columns == base->Columns && view->Rows == base->Rows &&
         kernel_console_plan(view->Columns, view->Rows, view->X, view->Y, 13) !=
             KERNEL_CONSOLE_INVALID &&
+        (view->Caret == UINT32_MAX || view->Caret < view->Columns * view->Rows) &&
+        base->Caret == UINT32_MAX &&
         kernel_console_plan(base->Columns, base->Rows, base->X, base->Y, 13) !=
             KERNEL_CONSOLE_INVALID;
 }
@@ -87,7 +89,7 @@ static int compose(KERNEL_CONSOLE_SERVICE *owner)
     if (!kernel_console_step(view, '>') || !kernel_console_step(view, ' ')) return 0;
     for (uint32_t index = 0; index < owner->Length; ++index)
         if (!kernel_console_step(view, owner->Line[index])) return 0;
-    return 1;
+    return kernel_console_caret(view, 1);
 }
 
 // ====== kernel_console_service_init ======

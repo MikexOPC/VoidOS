@@ -194,10 +194,10 @@ int x86_lapic_eoi(const X86_LAPIC_MAPPING *owner) {
     return x86_lapic_eoi_vector(owner,0x40);
 }
 
-// ====== EOI solo per unico ISR UART oppure timer realmente in servizio ===== //
+// ====== EOI solo per un vettore autorizzato realmente in servizio ===== //
 
 int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector) {
-    if (vector != 0x40 && vector != 0x41) return 0;
+    if (vector < 0x40 || vector > 0x42) return 0;
     return isr(owner,1U<<(vector-0x40)) && x86_lapic_native_eoi() && isr(owner,0);
 }
 

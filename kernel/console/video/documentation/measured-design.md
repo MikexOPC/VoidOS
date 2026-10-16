@@ -1,5 +1,24 @@
 # Disegno misurato nel profilo input — 10 ottobre 2026
 
+## Aggiornamento operativo — 11 ottobre 2026
+
+L'utente ha scelto di separare la diagnostica rigorosa dalla console
+operativa. Le API `kernel_console_measure_step` e
+`kernel_console_measure_batch_step` mantengono terminale una misura oltre
+357955 tick. La nuova API `kernel_console_measure_batch_step_live`, usata
+solo dalla console operativa, accetta il risultato temporale3 esclusivamente
+dopo disegno e accounting validi. Aumenta Overruns per gruppo e SlowCells
+per le celle completate, mantenendo la soglia invariata. Clock fermo,
+sample invalido, errori di draw/ownership/accounting restano terminali.
+
+Il worker emette WARN al primo overrun e ai conteggi potenza di due,
+per limitare il rumore seriale. Conserva poll/yield tra gruppi; non riceve
+IRQ durante il disegno IF0 e non promette latenza realtime. Questa soglia
+post-operazione non era un watchdog capace di interrompere un loop fermo.
+Il testo seguente descrive il contratto rigoroso originale, ancora valido
+per le API diagnostiche. Prove prima/dopo nel
+[report della correzione](latency-fix.md).
+
 Prosegue il [piano](active-design.md): un framebuffer pinned, owner privato,
 profilo diagnostico reversibile. Nessuna estensione del RIP ammesso per IRQ.
 Scelta operativa del test: una cella8x16 prima di ciascuna finestra Assembly

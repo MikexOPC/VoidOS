@@ -4,6 +4,7 @@
 #include "../../../../../../../../arch/x86/kernel/drivers/video/framebuffer/pixels/session.h"
 #include "../../../../../../../../arch/x86/kernel/drivers/video/framebuffer/font/font.h"
 #include <string.h>
+#include "pointer_test.h"
 static BOOT_U32 words[4100], visits, fail_view;
 static BOOT_U32 fail_after, corrupt_after;
 #define CHECK(expression) do { if (!(expression)) return __LINE__; } while (0)
@@ -193,6 +194,8 @@ static int text_utf8(void)
         }
         CHECK(words[2 * 84 + 2] == 0xa5a5a5a5 && words[2 * 84 + 67] == 0xa5a5a5a5);
         CHECK(words[2 * 84 + 80] == 0xa5a5a5a5);
+        visits = 0;
+        CHECK(!x86_fb_text_caret(&owner, &text, &font, 0) && !visits);
         CHECK(x86_fb_unbind(&owner));
     }
     return 0;
@@ -272,6 +275,36 @@ static int drawing_rejections(void)
     return 0;
 }
 
+// ====== caret_pixels ======
+
+static int caret_pixels(void)
+{
+    const X86_FB_FONT *font = x86_fb_console_font();
+    const unsigned char sample[] = "AA";
+    X86_FB_TEXT text = {sample, 2, sizeof(sample), 0, 0, 0x112233, 0x445566};
+    for (BOOT_U32 format = 0; format < 2; ++format) {
+        CHECK(draw_setup(16, 16, 20, format));
+        visits = 0;
+        CHECK(x86_fb_text_caret(&owner, &text, font, 1) && visits == 256);
+        for (BOOT_U32 row = 0; row < 16; ++row) for (BOOT_U32 col = 0; col < 16; ++col) {
+            BOOT_U32 rgb = ((row >= 14 && col >= 8) ||
+                (font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8)))) ? 0x112233 : 0x445566;
+            BOOT_U32 color = format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16);
+            CHECK(words[row * 20 + col] == color);
+            CHECK(words[row * 20 + 16] == 0xa5a5a5a5);
+        }
+        visits = 0;
+        CHECK(!x86_fb_text_caret(&owner, &text, font, 2) && !visits);
+        CHECK(x86_fb_text_caret(&owner, &text, font, 0) && visits == 256);
+        for (BOOT_U32 row = 14; row < 16; ++row) for (BOOT_U32 col = 8; col < 16; ++col) {
+            BOOT_U32 rgb = (font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0x112233 : 0x445566;
+            CHECK(words[row * 20 + col] == (format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16)));
+        }
+        CHECK(x86_fb_unbind(&owner) && pool.FreePages == 128);
+    }
+    return 0;
+}
+
 // ====== run_drawing_tests ======
 
 static int console_font(void)
@@ -284,6 +317,16 @@ static int console_font(void)
     CHECK(draw_setup(256, 16, 256, 1)); memset(sample, 'A', sizeof(sample));
     CHECK(x86_fb_text(&owner, &text, font) && visits == 4096);
     for (row = 0; row < 16; ++row) for (col = 0; col < 256; ++col)
+        CHECK(words[row * 256 + col] == ((font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0xffffffU : 0));
+    visits = 0;
+    CHECK(x86_fb_text_caret(&owner, &text, font, 31) && visits == 4096);
+    for (row = 0; row < 16; ++row) for (col = 0; col < 256; ++col)
+        CHECK(words[row * 256 + col] == ((row >= 14 && col >= 248) ||
+            (font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0xffffffU : 0));
+    visits = 0;
+    CHECK(!x86_fb_text_caret(&owner, &text, font, 32) && !visits);
+    CHECK(x86_fb_text(&owner, &text, font) && visits == 4096);
+    for (row = 14; row < 16; ++row) for (col = 248; col < 256; ++col)
         CHECK(words[row * 256 + col] == ((font->Glyphs[65 - 32].Rows[row] & (0x80U >> (col % 8))) ? 0xffffffU : 0));
     text.Bytes = 33; visits = 0; CHECK(!x86_fb_text(&owner, &text, font) && !visits);
     {
@@ -307,6 +350,8 @@ int run_drawing_tests(void)
         if (!result) result = text_utf8();
         if (!result) result = drawing_rejections();
         if (!result) result = console_font();
+        if (!result) result = caret_pixels();
+        if (!result) result = run_pointer_drawing_tests(draw_setup, &owner, words);
         if (result) return result;
     }
     return 0;

@@ -5,6 +5,7 @@
 static int valid(const KERNEL_VIDEO_CONSOLE *console)
 {
     return console && console->Self == (uintptr_t)console &&
+        (console->Caret == UINT32_MAX || console->Caret < console->Columns * console->Rows) &&
         kernel_console_plan(console->Columns, console->Rows, console->X, console->Y, 13) !=
             KERNEL_CONSOLE_INVALID;
 }
@@ -28,6 +29,7 @@ int kernel_console_clear(KERNEL_VIDEO_CONSOLE *console)
         mark(console, index);
     }
     console->X = console->Y = 0;
+    if (console->Caret != UINT32_MAX) console->Caret = 0;
     return 1;
 }
 
@@ -41,6 +43,7 @@ int kernel_console_init(KERNEL_VIDEO_CONSOLE *console, uint32_t columns, uint32_
     console->Columns = columns;
     console->Rows = rows;
     console->X = console->Y = 0;
+    console->Caret = UINT32_MAX;
     for (index = 0; index < KERNEL_CONSOLE_CELLS; ++index) console->Cells[index] = 0;
     for (index = 0; index < KERNEL_CONSOLE_DIRTY; ++index) console->Dirty[index] = 0;
     return kernel_console_clear(console);
@@ -110,5 +113,21 @@ int kernel_console_ack(KERNEL_VIDEO_CONSOLE *console, uint32_t index, uint32_t s
         console->Cells[index] != scalar ||
         !(console->Dirty[index / 8] & (1U << (index % 8)))) return 0;
     console->Dirty[index / 8] &= (uint8_t)~(1U << (index % 8));
+    return 1;
+}
+
+// ====== kernel_console_caret ======
+
+int kernel_console_caret(KERNEL_VIDEO_CONSOLE *console, uint32_t enabled)
+{
+    uint32_t next;
+    if (!valid(console) || enabled > 1) return 0;
+    next = enabled ? kernel_console_caret_index(console->Columns, console->Rows,
+        console->X, console->Y) : UINT32_MAX;
+    if (enabled && next == UINT32_MAX) return 0;
+    if (next == console->Caret) return 1;
+    if (console->Caret != UINT32_MAX) mark(console, console->Caret);
+    console->Caret = next;
+    if (next != UINT32_MAX) mark(console, next);
     return 1;
 }

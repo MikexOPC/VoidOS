@@ -26,7 +26,32 @@ static int source_valid(const volatile BOOT_U32 *source, const volatile BOOT_U32
         !os_address_ranges_overlap(request,4,128ULL << 39,1ULL << 39));
 }
 
-// ====== x86_watchdog_wait ======
+// ====== wake_lapic_valid ======
+
+// Intel SDM rev089 Vol3, 12.8.4/Fig12-20: ISR100h..170h, IRR200h..270h.
+// Bank2 bits1/2 represent vectors41h/42h; a live input IRQ may pend after EOI.
+static int wake_lapic_valid(const X86_HPET_WATCHDOG *owner)
+{
+    const X86_IRQ_REGISTRY *registry = x86_irq_registry();
+    BOOT_U32 allowed = 0, index, value;
+    if (!x86_irq_registry_validate(registry) || registry->Busy) return 0;
+    for (index = 1; index <= 2; ++index) {
+        const X86_IRQ_SUBSCRIPTION *item = &registry->Slots[index];
+        X86_IRQ_TOKEN token = {item->Id, item->Vector, 0};
+        if (item->Id) {
+            if (item->Vector != 0x40 + index || !x86_irq_registry_token_live(registry, &token)) return 0;
+            allowed |= 1U << index;
+        }
+    }
+    for (index = 0; index < 8; ++index) {
+        if (!x86_lapic_read(owner->Env.Mapping, 0x100 + index * 16, &value) || value ||
+            !x86_lapic_read(owner->Env.Mapping, 0x200 + index * 16, &value) ||
+            (value & ~(index == 2 ? allowed : 0U))) return 0;
+    }
+    return 1;
+}
+
+// ====== wait_private ======
 
 /* v0 waits until the independent one-shot is acknowledged as well, so
  * cancellation cannot strand a watchdog IRQ in IRR or free a live handler.
@@ -48,14 +73,16 @@ static BOOT_U32 wait_private(const volatile BOOT_U32 *source, BOOT_U32 goal,
         return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_SOURCE);
     }
     next = owner->Count + 1;
+    owner->Ticks = x86_watchdog_ticks(owner->Period, idle ? 5 : 100);
+    if (!owner->Ticks) return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_ARM);
     if (!x86_watchdog_device(2)) { return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_ARM); }
-    slept = x86_irq_sleep(&owner->Count,next,8);
-    if (!slept || slept > 9) wake_detail = 1;
+    slept = x86_irq_sleep(&owner->Count,next,256);
+    if (!slept || slept > 257) wake_detail = 1;
     else if (owner->Count != next) wake_detail = 2;
     else if (owner->Error) wake_detail = 3;
     else if (owner->Armed) wake_detail = 4;
     else if (!x86_page_window_idle_valid(owner->Env.Window)) wake_detail = 5;
-    else if (!x86_lapic_idle(owner->Env.Mapping)) wake_detail = 6;
+    else if (!wake_lapic_valid(owner)) wake_detail = 6;
     if (wake_detail) {
         return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_WAKE);
     }

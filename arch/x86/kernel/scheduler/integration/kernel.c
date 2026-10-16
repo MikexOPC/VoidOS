@@ -258,7 +258,8 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     }
     for (uint32_t index = 0; index < active_profile->task_count; ++index) prepare_private(pool,root);
     if ((irq_profile == 2 || irq_profile == 4 || irq_profile == 5) &&
-        !x86_watchdog_budget_begin_three(&stacks[0].lease,&stacks[1].lease,irq_profile == 5 ? &stacks[2].lease : NULL))
+        !x86_watchdog_budget_begin_four(&stacks[0].lease,&stacks[1].lease,irq_profile == 5 ? &stacks[2].lease : NULL,
+            active_profile->task_count == 4 ? &stacks[3].lease : NULL))
         kernel_panic("SCHEDULER_IDLE_ACCOUNTING_FAILED");
 #ifdef KERNEL_PS2_INPUT
     if (irq_profile == 5 && !x86_ps2_activate()) return 0;

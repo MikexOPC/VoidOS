@@ -21,9 +21,10 @@ uint64_t x86_scheduler_live_stack_pages_for(const KERNEL_PHYSICAL_ALLOCATOR *phy
 
 // ====== x86_fb_group ======
 
-int x86_fb_group(X86_FB_MAPPING *mapping, BOOT_U32 column, BOOT_U32 row,
-    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
+int x86_fb_group_caret(X86_FB_MAPPING *mapping, BOOT_U32 column, BOOT_U32 row,
+    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks, BOOT_U32 caret)
 {
+    CHECK(caret == ~0U || caret == 0);
     if (!ticks || !scalars) return 0;
     CHECK(mapping == &owner && column == 2 && row == 3 && scalars[0] == 'A' && count == 1);
     CHECK(foreground == 1 && background == 2 && mapping->Inventory != &inventory);
@@ -32,6 +33,16 @@ int x86_fb_group(X86_FB_MAPPING *mapping, BOOT_U32 column, BOOT_U32 row,
     ++calls; *ticks = 1;
     if (changed) --pool.FreePages;
     return !fail;
+}
+
+// ====== x86_fb_group_pointer ======
+
+int x86_fb_group_pointer(X86_FB_MAPPING *mapping, BOOT_U32 column, BOOT_U32 row,
+    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background,
+    BOOT_U64 *ticks, BOOT_U32 caret, const KERNEL_POINTER_IMAGE *pointer)
+{
+    CHECK(pointer != NULL);
+    return x86_fb_group_caret(mapping, column, row, scalars, count, foreground, background, ticks, caret);
 }
 
 // ====== setup ======
@@ -78,6 +89,12 @@ int main(void)
     setup(48); inventory.RamPages = UINT64_MAX - 47; CHECK(!run() && !calls);
     setup(48); owner.Budget = 50; CHECK(!run() && !calls);
     setup(48); owner.Self = 1; CHECK(!run() && !calls);
+    setup(48);
+    {
+        const BOOT_U32 scalar = 'A'; BOOT_U64 ticks = 0;
+        CHECK(x86_fb_live_group_caret(&owner, 2, 3, &scalar, 1, 1, 2, &ticks, 0));
+        CHECK(owner.Inventory == &inventory && calls == 1 && ticks == 1);
+    }
     printf("PASS live group: %u checks; authority/CPU/paging MOCK; scoped snapshot restored\n", checks);
     return 0;
 }

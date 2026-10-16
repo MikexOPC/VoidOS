@@ -1,0 +1,78 @@
+#include "../runtime/session.h"
+#include "kernel/scheduler/payload.h"
+#include "arch/x86/kernel/scheduler/integration/control.h"
+#include "kernel/diagnostics/log.h"
+#ifdef KERNEL_CONSOLE_SHELL
+#include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
+#endif
+
+// ====== pop_private ======
+
+static BOOT_U64 pop_private(X86_PS2_MOUSE *mouse)
+{
+    return kernel_scheduler_payload_pop(6,(BOOT_U64)mouse,mouse->Binding,3,x86_scheduler_generation());
+}
+
+// ====== delta_private ======
+
+static int delta_private(int32_t value)
+{
+    if (value < -256 || value > 255) return 0;
+    return (value >= 0 || kernel_text("-")) && kernel_number((BOOT_U64)(value < 0 ? -value : value));
+}
+
+// ====== x86_ps2_mouse_task ======
+
+void x86_ps2_mouse_task(void)
+{
+    X86_PS2_SESSION *owner = x86_ps2_session();
+    X86_PS2_MOUSE *mouse = &owner->Mouse;
+    uint32_t burst = 0;
+    mouse->Generation = x86_scheduler_generation();
+    for (;;) {
+        BOOT_U64 value = pop_private(mouse);
+        KERNEL_PS2_MOUSE_EVENT event;
+        KERNEL_PS2_MOUSE_RESULT result;
+        if (value == KERNEL_PAYLOAD_EMPTY) {
+            burst = 0;
+            KERNEL_EVENT_REPLY observed;
+            if (owner->Stop && owner->Quiet) break;
+            owner->Ready = 0;
+            observed = x86_scheduler_event_request(X86_TASK_OBSERVE,6,0);
+            value = pop_private(mouse);
+            if (value == KERNEL_PAYLOAD_EMPTY) {
+                if (owner->Stop && owner->Quiet) break;
+                (void)x86_scheduler_event_request(X86_TASK_WAIT,6,observed.epoch);
+                continue;
+            }
+        }
+        if ((uint32_t)value == KERNEL_PAYLOAD_LOSS) {
+            if (mouse->Losses == UINT32_MAX) kernel_scheduler_fail_stop();
+            ++mouse->Losses;
+            kernel_ps2_mouse_reset(&mouse->Decoder);
+            owner->Failed = owner->Stop = 1;
+            burst = 0;
+            x86_scheduler_yield();
+            continue;
+        }
+        if ((value & ~255ULL) != KERNEL_PAYLOAD_DATA) kernel_scheduler_fail_stop();
+        result = kernel_ps2_mouse_feed(&mouse->Decoder,(uint32_t)value & 255,&event);
+        if (result == KERNEL_PS2_MOUSE_WAIT) continue;
+        if (result == KERNEL_PS2_MOUSE_REJECTED || result == KERNEL_PS2_MOUSE_SATURATED) {
+            owner->Failed = owner->Stop = 1;
+        } else if (result == KERNEL_PS2_MOUSE_EVENT_READY) {
+            if (mouse->Events == UINT32_MAX || !kernel_text("MOUSE_EVENT: ") ||
+                !delta_private(event.DeltaX) || !kernel_text(" ") || !delta_private(event.DeltaY) ||
+                !kernel_text(" ") || !kernel_number(event.Buttons) || !kernel_text("\n")) kernel_scheduler_fail_stop();
+            ++mouse->Events;
+            mouse->Buttons = event.Buttons;
+#ifdef KERNEL_CONSOLE_SHELL
+            if (!x86_console_mouse(owner, event.DeltaX, event.DeltaY, event.Buttons)) kernel_scheduler_fail_stop();
+#endif
+        }
+        if (owner->Stop || ++burst == 32) { burst = 0; x86_scheduler_yield(); }
+    }
+    kernel_ps2_mouse_reset(&mouse->Decoder);
+    mouse->Buttons = 0;
+    mouse->Done = 1;
+}

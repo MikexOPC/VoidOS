@@ -12,9 +12,9 @@ typedef struct {
 typedef struct {
     BOOT_U64 Self, CodeBegin, CodeEnd, Next;
     BOOT_U32 Busy, Reserved;
-    X86_IRQ_SUBSCRIPTION Slots[2];
+    X86_IRQ_SUBSCRIPTION Slots[3];
 } X86_IRQ_REGISTRY;
-_Static_assert(sizeof(X86_IRQ_REGISTRY) == 120, "Registro IRQ statico");
+_Static_assert(sizeof(X86_IRQ_REGISTRY) == 160, "Registro IRQ statico");
 _Static_assert(sizeof(X86_IRQ_TOKEN) == 16, "Identita subscription IRQ");
 BOOT_U32 x86_irq_subscription_fields(BOOT_U32 vector, BOOT_U32 fault, BOOT_U64 id, BOOT_U64 next);
 int x86_irq_registry_initialize(X86_IRQ_REGISTRY *registry, BOOT_U64 begin, BOOT_U64 end);

@@ -137,7 +137,11 @@ int main(int argc, char **argv)
                 X86_DISPATCH_CONFIG invalid = config;
                 invalid.task_count = 9;
                 check_private(!x86_scheduler_dispatch(&invalid,&stats));
+                invalid = config;
+                invalid.idle_limit = 32769;
+                check_private(!x86_scheduler_dispatch(&invalid,&stats));
             }
+            if (cycle % 2 == 0) config.idle_limit = 32768;
             check_private(x86_scheduler_dispatch(&config,&stats));
             check_private(stats.completed == count && collected == count && stats.failure == 0 && stats.idle_calls == 1);
             check_private(stats.steps == (mode == 1 ? 3U : 2 * count) && stats.waiting_count == count);
