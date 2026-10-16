@@ -41,6 +41,8 @@ int x86_ps2_mouse_report(X86_PS2_SESSION *owner)
         kernel_text("\nMOUSE_EVENTS: ") && kernel_number(owner->Mouse.Events) &&
         kernel_text("\nMOUSE_IRQS: ") && kernel_number(owner->Mouse.Irqs) &&
         kernel_text("\nMOUSE_TASK_IRQS: ") && kernel_number(owner->Mouse.TaskIrqs) &&
-        kernel_text("\nMOUSE_LOSSES: ") && kernel_number(owner->Mouse.Losses) && kernel_text("\n") &&
+        kernel_text("\nMOUSE_LOSSES: ") && kernel_number(owner->Mouse.Losses) &&
+        kernel_text("\nMOUSE_REJECTED: ") && kernel_number(owner->Mouse.Rejected) &&
+        kernel_text("\nMOUSE_SATURATED: ") && kernel_number(owner->Mouse.Saturated) && kernel_text("\n") &&
         kernel_log(0,"KERNEL_PS2_MOUSE_CLEANUP_OK");
 }
