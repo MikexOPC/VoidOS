@@ -10,7 +10,7 @@ static KERNEL_MADT_TOPOLOGY topology;
 static X86_APIC_CAPABILITIES caps;
 static X86_APIC_PROFILE profile;
 static BOOT_U32 regs[256], selector, calls, fail, borrowed, checks;
-static unsigned char bytes[64];
+static unsigned char bytes[256];
 static BOOT_U32 head, size, port_reads, bad_status, pushed, push_result, eoi, eoi_result;
 const unsigned char x86_scheduler_irq_compute_begin[1] = {0};
 const unsigned char x86_scheduler_irq_compute_end[1] = {0};
@@ -61,6 +61,9 @@ uint32_t x86_scheduler_index(void) { return 1; }
 int x86_scheduler_task_valid(void) { return 1; }
 uint64_t x86_task_stack_base(uint32_t index) { (void)index; return 0x700000150000; }
 int x86_scheduler_code_valid(uint64_t address) { (void)address; return 1; }
+
+static BOOT_U32 line_cleared;
+void kernel_ps2_line_clear(KERNEL_PS2_LINE *line) { (void)line; ++line_cleared; }
 
 // ====== validated MADT fixture ======
 
@@ -145,13 +148,17 @@ static void route_tests(void)
 
 static void interrupt_tests(void)
 {
-    for (BOOT_U32 count = 0; count <= 33; ++count) {
+    // B2: a burst over the 32-byte budget is a recoverable fault, not a kernel stop. The ISR
+    // discards up to X86_PS2_DRAIN_LIMIT more bytes, counts them and still acknowledges.
+    for (BOOT_U32 count = 0; count <= 200; ++count) {
+        BOOT_U32 budget = 32, drained = count > budget + X86_PS2_DRAIN_LIMIT ? budget + X86_PS2_DRAIN_LIMIT : count;
         reset(); owner.Active = 1; owner.Binding = 7; size = count;
         memset(bytes,0x1c,sizeof(bytes));
-        CHECK(x86_ps2_handle() == (int)(count <= 32));
-        CHECK(head == (count > 32 ? 32 : count) && pushed == head);
-        CHECK(owner.Bytes == head && owner.Irqs == 1 && owner.Ready == (BOOT_U32)(count != 0));
-        CHECK(eoi == (count <= 32 ? 1U : 0U));
+        CHECK(x86_ps2_handle() == 1 && !owner.Error);
+        CHECK(pushed == (count > budget ? budget : count) && head == drained);
+        CHECK(owner.Bytes == pushed && owner.Irqs == 1 && owner.Ready == (BOOT_U32)(count != 0));
+        CHECK(owner.Discarded == (count > budget ? drained - budget : 0));
+        CHECK(owner.DeviceErrors == (BOOT_U32)(count > budget) && eoi == 1);
     }
     #ifdef KERNEL_PS2_MOUSE
     for (BOOT_U32 vector = 0x41; vector <= 0x42; ++vector) {
@@ -169,8 +176,14 @@ static void interrupt_tests(void)
     for (BOOT_U32 bit = 5; bit <= 7; ++bit)
 #endif
     {
+        // i8042 parity/timeout (and unexpected auxiliary data without a mouse): the byte is read
+        // and dropped, the fault is counted, the interrupt is acknowledged, nothing is terminal.
         reset(); owner.Active = 1; size = 1; bad_status = 1U << bit;
-        CHECK(!x86_ps2_handle() && owner.Error && !head && !pushed && !eoi);
+        CHECK(x86_ps2_handle() == 1 && !owner.Error && head == 1 && !pushed && eoi == 1);
+        CHECK(owner.DeviceErrors == 1 && owner.Discarded == 1);
+        reset(); owner.Active = 1; size = 0; bad_status = 1U << bit; // Error flag without a byte to read.
+        CHECK(x86_ps2_handle() == 1 && !owner.Error && !head && !pushed && eoi == 1);
+        CHECK(owner.DeviceErrors == 1 && !owner.Discarded);
     }
     for (BOOT_U32 push = 0; push <= 2; ++push) {
         reset(); owner.Active = 1; owner.Binding = 7; size = 1; push_result = push;
@@ -184,6 +197,32 @@ static void interrupt_tests(void)
     CHECK(!x86_ps2_handle() && !port_reads);
     reset(); owner.Active = 1; eoi_result = 0;
     CHECK(!x86_ps2_handle() && eoi == 1);
+}
+
+// ====== keyboard fault policy ======
+
+static void fault_policy_tests(void)
+{
+    reset(); line_cleared = 0;
+    owner.Decoder = 5; owner.TextState = 9; owner.LineTruncated = 1;
+    CHECK(x86_ps2_fault_resync(&owner, 1) == 1 && !owner.Decoder && !owner.TextState && !owner.LineTruncated);
+    CHECK(line_cleared == 1 && owner.Resyncs == 1 && !owner.Failed && !owner.Stop && !owner.Losses);
+    CHECK(x86_ps2_fault_resync(&owner, 2) == 0 && owner.Failed && owner.Stop && owner.Losses == 1 && owner.Resyncs == 2);
+    owner.Resyncs = owner.Losses = ~0U;
+    CHECK(x86_ps2_fault_resync(&owner, 2) == 0 && owner.Resyncs == ~0U && owner.Losses == ~0U);
+    reset();
+    CHECK(!x86_ps2_fault_poll(&owner) && !owner.Streak);
+    owner.DeviceErrors = 5; // Several ISR faults before the consumer runs are one discontinuity.
+    CHECK(x86_ps2_fault_poll(&owner) == 1 && owner.DeviceSeen == 5 && owner.Streak == 1);
+    CHECK(!x86_ps2_fault_poll(&owner) && owner.Streak == 1);
+    x86_ps2_fault_valid(&owner); CHECK(!owner.Streak);
+    for (BOOT_U32 index = 1; index <= X86_PS2_KEY_RESYNC_LIMIT; ++index) CHECK(x86_ps2_fault_note(&owner) == 1);
+    CHECK(x86_ps2_fault_note(&owner) == 2); // One past the limit without a valid event.
+    x86_ps2_fault_valid(&owner);
+    CHECK(x86_ps2_fault_note(&owner) == 1 && owner.Streak == 1);
+    owner.Streak = X86_PS2_KEY_RESYNC_LIMIT; owner.DeviceErrors = 6;
+    CHECK(x86_ps2_fault_poll(&owner) == 2);
+    owner.Streak = UINT32_MAX; CHECK(x86_ps2_fault_note(&owner) == 2 && owner.Streak == UINT32_MAX);
 }
 
 // ====== mouse_route_tests ======
@@ -218,7 +257,7 @@ static void mouse_route_tests(void)
 
 int main(void)
 {
-    plan_tests(); route_tests(); mouse_route_tests(); interrupt_tests();
+    plan_tests(); route_tests(); mouse_route_tests(); interrupt_tests(); fault_policy_tests();
     printf("PASS: PS2 runtime %u checks, actual MADT validator, route/IRQ hardware MOCK\n",checks);
     return 0;
 }

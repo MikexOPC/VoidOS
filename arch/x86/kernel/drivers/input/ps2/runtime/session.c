@@ -180,6 +180,9 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         !kernel_text("\nPS2_TEXT_COUNT: ") || !kernel_number(session.TextCount) ||
         !kernel_text("\nPS2_LINE_COUNT: ") || !kernel_number(session.Lines) ||
         !kernel_text("\nPS2_LINE_FULL_COUNT: ") || !kernel_number(session.LineFull) ||
+        !kernel_text("\nPS2_RESYNCS: ") || !kernel_number(session.Resyncs) ||
+        !kernel_text("\nPS2_DEVICE_ERRORS: ") || !kernel_number(session.DeviceErrors) ||
+        !kernel_text("\nPS2_DISCARDED: ") || !kernel_number(session.Discarded) ||
         !kernel_text("\nSHELL_COMMAND_COUNT: ") || !kernel_number(session.ShellCommands) || !kernel_text("\n")) return 0;
     if (session.Failed) { kernel_log(2,"KERNEL_PS2_INPUT_REJECTED_CLEAN"); return 0; }
     return kernel_log(0,"KERNEL_PS2_INPUT_CLEANUP_OK");

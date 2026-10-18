@@ -74,6 +74,11 @@ void x86_ps2_shell_task(void) { unexpected(); }
 #ifdef KERNEL_PS2_MOUSE
 void x86_ps2_mouse_task(void) { unexpected(); }
 #endif
+// Keyboard fault policy (B2) lives in ps2 interrupt.c; this fixture injects no faults.
+int x86_ps2_fault_poll(X86_PS2_SESSION *owner) { (void)owner; return 0; }
+int x86_ps2_fault_note(X86_PS2_SESSION *owner) { (void)owner; return 1; }
+void x86_ps2_fault_valid(X86_PS2_SESSION *owner) { (void)owner; }
+int x86_ps2_fault_resync(X86_PS2_SESSION *owner, int verdict) { (void)owner; (void)verdict; return 1; }
 int x86_console_edit(X86_PS2_SESSION *owner) { (void)owner; unexpected(); return 0; }
 int x86_console_submit(X86_PS2_SESSION *owner) { (void)owner; unexpected(); return 0; }
 

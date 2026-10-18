@@ -91,6 +91,19 @@ static int text_private(uint32_t event)
         kernel_number(scalar) && kernel_text("\n");
 }
 
+// ====== resync_private ======
+
+// Recoverable keyboard fault (B2): reset the stream state (policy in interrupt.c), then refresh the
+// console edit line so the screen matches the now empty line.
+static int resync_private(X86_PS2_SESSION *owner, int verdict)
+{
+    int proceed = x86_ps2_fault_resync(owner, verdict);
+#ifdef KERNEL_CONSOLE_SHELL
+    if (!x86_console_edit(owner)) { owner->Failed = 1; owner->Stop = 1; return 0; }
+#endif
+    return proceed;
+}
+
 // ====== consumer_private ======
 
 static void consumer_private(void)
@@ -99,6 +112,7 @@ static void consumer_private(void)
     owner->ConsumerGeneration = x86_scheduler_generation();
     for (;;) {
         BOOT_U64 value = pop_private(), decoded;
+        int verdict;
         if (value == KERNEL_PAYLOAD_EMPTY) {
             KERNEL_EVENT_REPLY observed;
             if (owner->Stop && owner->Quiet) break;
@@ -111,19 +125,22 @@ static void consumer_private(void)
                 continue;
             }
         }
+        // ISR-side faults (parity/timeout, discarded burst) since the last byte: resync first.
+        verdict = x86_ps2_fault_poll(owner);
+        if (verdict && !resync_private(owner, verdict)) { x86_scheduler_yield(); continue; }
         if ((value & 0xffffffffULL) == KERNEL_PAYLOAD_LOSS) {
-            owner->Decoder = owner->TextState = 0; ++owner->Losses; owner->Failed = 1; owner->Stop = 1;
-            kernel_ps2_line_clear(&owner->Line);
-            x86_scheduler_yield(); continue;
+            if (!resync_private(owner, x86_ps2_fault_note(owner))) x86_scheduler_yield();
+            continue;
         }
         if ((value & ~255ULL) != KERNEL_PAYLOAD_DATA) kernel_scheduler_fail_stop();
         decoded = kernel_ps2_decode(owner->Decoder,(uint32_t)value & 255);
         owner->Decoder = (uint32_t)(decoded >> 32);
         if ((uint32_t)decoded == KERNEL_PS2_INVALID) {
-            kernel_ps2_line_clear(&owner->Line);
-            owner->TextState = 0; owner->Failed = 1; owner->Stop = 1; x86_scheduler_yield(); continue;
+            if (!resync_private(owner, x86_ps2_fault_note(owner))) x86_scheduler_yield();
+            continue;
         }
         if ((uint32_t)decoded == KERNEL_PS2_PENDING) continue;
+        x86_ps2_fault_valid(owner);
         if (!text_private((uint32_t)decoded)) kernel_scheduler_fail_stop();
         if (((uint32_t)decoded & 0xffff0000U) == KERNEL_PS2_RELEASE) ++owner->Releases;
         else {

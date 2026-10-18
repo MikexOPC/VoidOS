@@ -202,7 +202,7 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                 if marker not in log:
                     raise RuntimeError("Missing " + marker)
             counters = {name: number(log, name) for name in
-                        ["PS2_BYTES", "PS2_KEYS", "PS2_RELEASES", "PS2_TASK_IRQS", "PS2_IDLE", "SCHEDULER_DISPATCHES"]}
+                        ["PS2_BYTES", "PS2_KEYS", "PS2_RELEASES", "PS2_TASK_IRQS", "PS2_IDLE", "SCHEDULER_DISPATCHES", "PS2_RESYNCS", "PS2_DEVICE_ERRORS", "PS2_DISCARDED"]}
             if idle_rollover:
                 fired = number(log, "KERNEL_WATCHDOG_FIRED")
                 ticks = number(log, "KERNEL_WATCHDOG_TICKS")
@@ -210,6 +210,10 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                     raise RuntimeError("No proven full 32-bit counter traversal")
                 counters["WatchdogDeadlines"] = fired
                 counters["MinimumCounterAdvance"] = fired * ticks
+            # QEMU's i8042 never produces parity/timeout/burst faults, so the recoverable-fault paths
+            # (B2) must stay idle in a healthy session.
+            if counters["PS2_RESYNCS"] or counters["PS2_DEVICE_ERRORS"] or counters["PS2_DISCARDED"]:
+                raise RuntimeError("Unexpected keyboard faults: " + str(counters))
             collected = log.index("KERNEL_INPUT_TASKS_COLLECTED")
             session_log = log[:collected].rsplit("# ============ scheduler cooperativo BSP", 1)[-1]
             counters["BudgetBefore"] = number(session_log, "SCHEDULER_BUDGET_BEFORE")
