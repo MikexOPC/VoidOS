@@ -9,6 +9,8 @@ import subprocess
 import time
 import uuid
 import sys
+
+IDLE_SECONDS = 80  # set by --idle-seconds
 sys.dont_write_bytecode = True
 
 
@@ -103,7 +105,7 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                     pointer_firmware = importlib.util.module_from_spec(spec); spec.loader.exec_module(pointer_firmware)
                     pointer_frames = pointer_firmware.exercise(vm,scenario,serial,mouse_expected,read_serial,wait_marker,command,mouse_firmware)
             if idle_rollover:
-                idle_deadline = time.monotonic() + 80
+                idle_deadline = time.monotonic() + IDLE_SECONDS
                 while time.monotonic() < idle_deadline:
                     wait_marker(vm, serial, "KERNEL_PS2_TASK_POLL_READY", 1)
                     time.sleep(0.05)
@@ -200,7 +202,7 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                 if marker not in log:
                     raise RuntimeError("Missing " + marker)
             counters = {name: number(log, name) for name in
-                        ["PS2_BYTES", "PS2_KEYS", "PS2_RELEASES", "PS2_TASK_IRQS", "PS2_IDLE"]}
+                        ["PS2_BYTES", "PS2_KEYS", "PS2_RELEASES", "PS2_TASK_IRQS", "PS2_IDLE", "SCHEDULER_DISPATCHES"]}
             if idle_rollover:
                 fired = number(log, "KERNEL_WATCHDOG_FIRED")
                 ticks = number(log, "KERNEL_WATCHDOG_TICKS")
@@ -322,6 +324,7 @@ def main():
     parser.add_argument("--stress", type=int, default=0, choices=range(201))
     parser.add_argument("--idle-race", action="store_true")
     parser.add_argument("--idle-rollover", action="store_true")
+    parser.add_argument("--idle-seconds", type=int, default=80, help="idle time of --idle-rollover; 240 passes the old 164 s session cap")
     parser.add_argument("--text", action="store_true")
     parser.add_argument("--line-stress", action="store_true")
     parser.add_argument("--shell", action="store_true")
@@ -329,6 +332,8 @@ def main():
     parser.add_argument("--console-shell", action="store_true")
     parser.add_argument("--video-absent", action="store_true")
     args = parser.parse_args()
+    global IDLE_SECONDS
+    IDLE_SECONDS = args.idle_seconds
     if args.pointer and not (args.mouse and args.console_shell): parser.error('--pointer requires --mouse --console-shell')
     if args.mouse and args.console_draw:
         parser.error("Mouse runtime excludes --console-draw diagnostic")

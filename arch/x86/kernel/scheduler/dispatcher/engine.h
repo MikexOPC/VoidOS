@@ -10,6 +10,9 @@
 #define X86_TASK_STOP 6U
 #define X86_TASK_STOP_QUERY 7U
 
+// step_limit/idle_limit value meaning "no cap": a continuous interactive session.
+#define X86_DISPATCH_UNLIMITED 0xFFFFFFFFU
+
 typedef struct {
     uint32_t  reason;
     uint32_t  target;
