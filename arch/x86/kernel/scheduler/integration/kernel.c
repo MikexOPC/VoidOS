@@ -23,7 +23,20 @@ static uint32_t irq_profile;
 static const X86_SCHEDULER_PROFILE *active_profile;
 static KERNEL_PHYSICAL_ALLOCATOR *saved_pool;
 static uint64_t saved_root;
+#ifdef KERNEL_TEST_SCHEDULER_PRESERVATION
+// Diagnostic profile: every switch goes through the register/XMM/x87 pattern probe.
 extern int x86_scheduler_probe(X86_TASK_CONTEXT *, const X86_TASK_CONTEXT *, uint64_t);
+#define switch_private(save, load, tag) x86_scheduler_probe((save), (load), (tag))
+#else
+// Production: the switch itself saves and restores RBX/RBP/RDI/RSI/R12-R15 and the whole FXSAVE
+// image (context.asm); callers re-check task/generation/event after the return.
+static int switch_private(X86_TASK_CONTEXT *save, const X86_TASK_CONTEXT *load, uint64_t tag)
+{
+    (void)tag;
+    x86_scheduler_context_switch(save, load);
+    return 1;
+}
+#endif
 
 // ====== x86_scheduler_index ======
 
@@ -147,7 +160,7 @@ void x86_scheduler_yield(void)
     uint64_t gen = generation;
     if (!x86_scheduler_task_valid() || event || !dispatcher_resume_private()) kernel_scheduler_fail_stop();
     event = 1;
-    if (!x86_scheduler_probe(&contexts[index], &dispatcher, UINT64_C(0x1001) + index))
+    if (!switch_private(&contexts[index], &dispatcher, UINT64_C(0x1001) + index))
         kernel_scheduler_fail_stop();
     if (!x86_scheduler_task_valid() || current != index || generation != gen || event)
         kernel_scheduler_fail_stop();
@@ -162,7 +175,7 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
     if (!x86_scheduler_task_valid() || event || reason < 3 || reason > 7 || id >= 8 ||
         !dispatcher_resume_private()) kernel_scheduler_fail_stop();
     requested_event = id; requested_epoch = token; event = reason;
-    if (!x86_scheduler_probe(&contexts[index], &dispatcher, UINT64_C(0x3001) + index) ||
+    if (!switch_private(&contexts[index], &dispatcher, UINT64_C(0x3001) + index) ||
         !x86_scheduler_task_valid() || current != index || generation != gen || event ||
         event_replies[index].reply.status != KERNEL_SCHEDULER_OK ||
         event_replies[index].reply.index != (reason >= 6 ? id : index) ||
@@ -194,7 +207,7 @@ static int native_dispatch_run_private(const KERNEL_SCHEDULER_REPLY *task, X86_D
         stacks[task->index].generation != task->generation || !resume_private(task->index)) return 0;
     current = task->index; generation = task->generation; event = 0;
     phase = 2;
-    if (!x86_scheduler_probe(&dispatcher,&contexts[current],UINT64_C(0x2003))) kernel_scheduler_fail_stop();
+    if (!switch_private(&dispatcher,&contexts[current],UINT64_C(0x2003))) kernel_scheduler_fail_stop();
     phase = 1;
     if (!kernel_scheduler_context_valid() || !x86_task_stack_validate(&stacks[current])) return 0;
     command->reason = event;
