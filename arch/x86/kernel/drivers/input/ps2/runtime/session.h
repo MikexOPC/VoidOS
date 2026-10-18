@@ -23,6 +23,14 @@ typedef struct {
     BOOT_U32 Rejected, Saturated, Streak;
     KERNEL_PS2_MOUSE_DECODER Decoder;
 } X86_PS2_MOUSE;
+/* Recoverable keyboard faults (B2): LOSS markers, decoder INVALID, i8042 parity/timeout,
+   bursts over the ISR budget. The consumer resets decoder, text state, modifiers and the
+   edit line and keeps going; the session fails only after this many consecutive faults
+   without a valid key event (hypothesis to measure, like the mouse limit). */
+#define X86_PS2_KEY_RESYNC_LIMIT 64U
+/* Extra data-port reads the ISR may spend discarding bytes after its 32-byte budget (the
+   i8042 output buffer holds one byte; a device streaming more than this is stuck). */
+#define X86_PS2_DRAIN_LIMIT 64U
 typedef struct {
     _Alignas(8) volatile BOOT_U32 Ready;
     volatile BOOT_U32 Error;
@@ -43,6 +51,9 @@ typedef struct {
     BOOT_U32 LineTruncated, ShellDone, ShellCommands;
     BOOT_U64 ConsumerGeneration;
     X86_PS2_MOUSE Mouse;
+    // DeviceErrors/Discarded: written by the ISR. DeviceSeen/Streak: consumer only.
+    volatile BOOT_U32 DeviceErrors;
+    BOOT_U32 Discarded, DeviceSeen, Streak, Resyncs;
 } X86_PS2_SESSION;
 _Static_assert(offsetof(X86_PS2_SESSION,Error) == 4, "Watchdog source count/error ABI");
 _Static_assert(offsetof(X86_PS2_SESSION,Token) % 8 == 0, "IRQ token alignment");
@@ -67,6 +78,10 @@ int x86_ps2_activate(void);
 int x86_ps2_after_dispatch(void);
 int x86_ps2_before_collect(void);
 int x86_ps2_complete(void);
+int x86_ps2_fault_poll(X86_PS2_SESSION *owner);
+int x86_ps2_fault_note(X86_PS2_SESSION *owner);
+void x86_ps2_fault_valid(X86_PS2_SESSION *owner);
+int x86_ps2_fault_resync(X86_PS2_SESSION *owner, int verdict);
 int x86_ps2_irq_record(BOOT_U64 vector, BOOT_U64 rip, BOOT_U64 rsp, BOOT_U64 flags);
 void x86_ps2_task(uint32_t index);
 int x86_ps2_idle(void);
