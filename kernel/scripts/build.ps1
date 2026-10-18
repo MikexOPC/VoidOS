@@ -2,7 +2,7 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
     [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell,
-    [switch]$TestWatchdogCleanupRecovery,
+    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
@@ -95,6 +95,7 @@ if ($TestSchedulerFault -ne 'none') {
     $mode = switch ($TestSchedulerFault) { 'guard-low' {1} 'guard-high' {2} 'nx' {3} 'retired' {4} 'rollback' {5} 'blocked' {6} 'irq-timeout' {7} 'idle-timeout' {8} 'idle-repeat-timeout' {9} }
     $flags += ('/DKERNEL_TEST_SCHEDULER_FAULT=' + $mode)
 }
+if ($TestSchedulerPreservation) { $flags += '/DKERNEL_TEST_SCHEDULER_PRESERVATION=1' }
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
 if ($EventLoop) { $flags += '/DKERNEL_EVENT_LOOP=1' }
 if ($TestWatchdogLostLapic) { $flags += '/DKERNEL_TEST_WATCHDOG_LOST_LAPIC=1' }
@@ -120,12 +121,17 @@ if ($TestCpuFault -ne 'none') {
     if ($TestCpuFault -eq 'nested') { $flags += '/DKERNEL_TEST_NESTED_FAULT=1' }
     if ($TestCpuFault -eq 'double') { $flags += '/DKERNEL_TEST_DOUBLE_FAULT=1' }
 }
-foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/scheduler/capabilities.c',
+# Test code is linked only into the diagnostic profiles that call it (B6); the production image
+# must not contain it. fault.c has code only for faults 1-4, drawing/probe.c only with the mapping probe.
+$diagnosticSources = @()
+if ($TestSchedulerFault -in @('guard-low','guard-high','nx','retired')) { $diagnosticSources += 'test/arch/x86/kernel/scheduler/fault/fault.c' }
+if ($TestFramebufferMapping) { $diagnosticSources += 'test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.c' }
+foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/scheduler/capabilities.c',
     'arch/x86/kernel/scheduler/stacks.c','arch/x86/kernel/scheduler/mapping/native.c',
     'arch/x86/kernel/scheduler/mapping/access.c',
     'arch/x86/kernel/scheduler/integration/kernel.c','arch/x86/kernel/scheduler/integration/workload.c',
     'arch/x86/kernel/scheduler/integration/report.c','arch/x86/kernel/scheduler/integration/validation.c','arch/x86/kernel/scheduler/idle/idle.c',
-    'test/arch/x86/kernel/scheduler/fault/fault.c','arch/x86/kernel/scheduler/persistent/workload.c',
+    'arch/x86/kernel/scheduler/persistent/workload.c',
     'arch/x86/kernel/scheduler/dispatcher/engine.c','arch/x86/kernel/scheduler/diagnostic/profiles.c',
     'arch/x86/kernel/scheduler/irq/bridge.c','arch/x86/kernel/scheduler/runtime/memory.c','arch/x86/kernel/scheduler/runtime/payload.c','arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
     'kernel/bootstrap/memory.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c','kernel/drivers/video/framebuffer/mapping.c',
@@ -146,7 +152,6 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c',
     'arch/x86/kernel/drivers/video/framebuffer/gateway/native.c',
     'arch/x86/kernel/drivers/video/framebuffer/font/font.c',
-    'test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.c',
     'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c',
     'lib/firmware/acpi/rsdp.c',
     'kernel/firmware/acpi/root.c',
@@ -170,7 +175,7 @@ foreach ($source in @('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sch
     'arch/x86/kernel/timer/hpet/watchdog/integration/kernel.c',
     'arch/x86/mm/devices/access.c','arch/x86/mm/devices/lapic.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
-    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c')) {
+    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c') + $diagnosticSources)) {
     $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
     $objects += $object
@@ -216,8 +221,9 @@ if ($TestWindowFault -ne 'none') {
         (Join-Path $project 'test/kernel/mm/window/assembly/fault/probe.asm'))
     $objects += ($output + '/fault.obj')
 }
-foreach ($source in @('assembly/irq/compute.asm','assembly/switch/context.asm','assembly/profile/capture.asm',
-    'assembly/profile/permissions.asm','../../../../test/arch/x86/kernel/scheduler/assembly/preservation/probe.asm')) {
+$schedulerAssembly = @('assembly/irq/compute.asm','assembly/switch/context.asm','assembly/profile/capture.asm','assembly/profile/permissions.asm')
+if ($TestSchedulerPreservation) { $schedulerAssembly += '../../../../test/arch/x86/kernel/scheduler/assembly/preservation/probe.asm' }
+foreach ($source in $schedulerAssembly) {
     $object = $output + '/scheduler-' + $source.Replace('/','-').Replace('.asm','.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo'+$object),
         (Join-Path $project ('arch/x86/kernel/scheduler/'+$source)))
@@ -388,7 +394,7 @@ if ($TestPs2Decoder -or $Ps2Input) {
 }
 Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') (@('/nologo','/machine:x64','/subsystem:native',
     '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed','/base:0x100000000',
-    ('/out:' + $output + '/kernel.exe'),($output + '/io.obj'),($output + '/validation.obj'),($output + '/window-layout.obj'),
+    ('/out:' + $output + '/kernel.exe'),('/map:' + $output + '/kernel.map'),($output + '/io.obj'),($output + '/validation.obj'),($output + '/window-layout.obj'),
     ($output + '/object-bounds.obj')) + $objects)
 & (Join-Path $PSScriptRoot 'convert-image.ps1') -Image ($output + '/kernel.exe') -Output ($output + '/kernel.elf')
 Write-BootStatus OK "Kernel ELF verificato e generato: $output/kernel.elf"

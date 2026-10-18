@@ -56,7 +56,7 @@ try {
         & "$bin/dumpbin.exe" /disasm $object | Out-File "$out/asm-$index.disasm" -Encoding utf8
         if ($LASTEXITCODE) { throw 'Disassembly failed' }
     }
-    foreach ($name in @('state','switch')) {
+    foreach ($name in @('state','switch','cost')) {
         $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',('/I' + $project),
             (Join-Path $module 'context.c'),(Join-Path $module 'capabilities.c'),
             (Join-Path $project "test/arch/x86/kernel/scheduler/context/${name}_test.c"),("/Fo$out/"),("/Fd$out/$name.pdb"),("/Fe$out/$name.exe"))
