@@ -51,14 +51,24 @@ static int dispatch_command_private(const X86_DISPATCH_CONFIG *config, X86_DISPA
     return 1;
 }
 
+// ====== limit_valid_private ======
+
+// A limit is a bounded diagnostic cap in [minimum, maximum] or X86_DISPATCH_UNLIMITED. Unlimited
+// is for continuous interactive sessions: every wait still has its own supervised timeout in
+// config->idle, so removing the session cap does not remove a hang detector.
+static int limit_valid_private(uint32_t limit, uint32_t minimum, uint32_t maximum)
+{
+    return limit == X86_DISPATCH_UNLIMITED || (limit >= minimum && limit <= maximum);
+}
+
 // ====== x86_scheduler_dispatch ======
 
 int x86_scheduler_dispatch(const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
 {
     if (entered || !config || !stats || !config->run || !config->collect || !config->reply || !config->release_actor ||
         !config->task_count || config->task_count > KERNEL_SCHEDULER_CAPACITY ||
-        config->step_limit < config->task_count || config->step_limit > 65536 ||
-        config->idle_limit > 32768 || config->drain_irq > 1 || (!config->idle && config->idle_limit) ||
+        !limit_valid_private(config->step_limit, config->task_count, 65536U) ||
+        !limit_valid_private(config->idle_limit, 0, 32768U) || config->drain_irq > 1 || (!config->idle && config->idle_limit) ||
         stats->steps || stats->completed || stats->waiting_count || stats->changed_count ||
         stats->signal_count || stats->stop_waits || stats->idle_calls || stats->failure) return 0;
     entered = 1;
@@ -67,19 +77,20 @@ int x86_scheduler_dispatch(const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS
         X86_DISPATCH_COMMAND command = {0};
         stats->failure = 1;
         if (!kernel_scheduler_context_valid()) goto failure;
-        if (stats->steps >= config->step_limit) { stats->failure = 3; goto failure; }
+        if (config->step_limit != X86_DISPATCH_UNLIMITED && stats->steps >= config->step_limit) { stats->failure = 3; goto failure; }
         task = kernel_scheduler_apply(KERNEL_SCHEDULER_SELECT,KERNEL_SCHEDULER_NONE,0);
         if (task.status == KERNEL_SCHEDULER_BLOCKED) {
             stats->failure = 2;
-            if (!config->idle || stats->idle_calls >= config->idle_limit) goto failure;
-            ++stats->idle_calls;
+            if (!config->idle || (config->idle_limit != X86_DISPATCH_UNLIMITED &&
+                stats->idle_calls >= config->idle_limit)) goto failure;
+            if (stats->idle_calls != UINT32_MAX) ++stats->idle_calls; // Saturates; never wraps to a small count.
             if (!config->idle() || !kernel_scheduler_context_valid()) goto failure;
             continue; // SELECT again; a provider return is not proof of a READY task.
         }
         stats->failure = 3;
         if (task.status != KERNEL_SCHEDULER_OK || task.index >= KERNEL_SCHEDULER_CAPACITY ||
             !task.generation || task.state != KERNEL_TASK_RUNNING) goto failure;
-        ++stats->steps;
+        if (stats->steps != UINT32_MAX) ++stats->steps;
         stats->failure = 4;
         if (!config->run(&task,&command) || !kernel_scheduler_context_valid()) goto failure;
         stats->failure = 5;

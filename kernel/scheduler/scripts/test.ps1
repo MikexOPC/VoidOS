@@ -79,7 +79,7 @@ try {
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/engine_test.c'),
         ("/Fo$out/"),("/Fd$out/engine.pdb"),("/Fe$out/engine.exe"),
         '/link','/incremental:no',"$out/scheduler.lib")
-    foreach ($mode in 0..8) { Invoke-Checked "$out/engine.exe" @("$mode") }
+    foreach ($mode in 0..9) { Invoke-Checked "$out/engine.exe" @("$mode") }
     # Production gateway: event-only posting is not exported in this library.
     Invoke-Checked $rustc @('--edition=2024','--crate-type=staticlib','--target','x86_64-pc-windows-msvc',
         '-C','panic=abort','-C','opt-level=2','-D','warnings',

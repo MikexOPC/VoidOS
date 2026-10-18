@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 static uint32_t checks, mode, context = 1, stage[8], collected, cycle;
+#define LONG_SESSION_STEPS 70000U // beyond the old 65536 step and 32768 idle caps
 static KERNEL_SCHEDULER_REPLY handles[8];
 static X86_DISPATCH_CONFIG config;
 
@@ -48,6 +49,10 @@ static int run_private(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_COMMAND 
         KERNEL_EVENT_REPLY stop = kernel_scheduler_stop_apply(1,index,task->generation);
         KERNEL_EVENT_REPLY observed = kernel_scheduler_event_apply(0,index,task->generation,cycle % 8,0);
         check_private(stop.reply.status == 0 && stop.outcome == 1 && observed.reply.status == 0);
+        command->reason = X86_TASK_WAIT; command->target = cycle % 8; command->token = observed.epoch;
+    } else if (mode == 9 && stage[index] < LONG_SESSION_STEPS) {
+        KERNEL_EVENT_REPLY observed = kernel_scheduler_event_apply(0,index,task->generation,cycle % 8,0);
+        check_private(observed.reply.status == 0);
         command->reason = X86_TASK_WAIT; command->target = cycle % 8; command->token = observed.epoch;
     } else { command->reason = X86_TASK_EXIT; }
     ++stage[index];
@@ -124,7 +129,7 @@ int main(int argc, char **argv)
     X86_DISPATCH_STATS stats = {0};
     check_private(argc == 2);
     mode = (uint32_t)strtoul(argv[1],NULL,10);
-    check_private(mode <= 8);
+    check_private(mode <= 9);
     check_private(apply_private(KERNEL_SCHEDULER_INIT,NULL).status == 0);
     if (mode <= 1) {
         for (cycle = 0; cycle < 1000; ++cycle) {
@@ -149,6 +154,13 @@ int main(int argc, char **argv)
             check_private(apply_private(KERNEL_SCHEDULER_SELECT,NULL).status == KERNEL_SCHEDULER_EMPTY);
             check_private(!x86_scheduler_dispatch(&config,&stats)); // Stats cannot silently reuse a finished run.
         }
+    } else if (mode == 9) {
+        // B1: an operational session has no fixed length; per-operation timeouts live in idle().
+        prepare_private(1);
+        config.step_limit = config.idle_limit = X86_DISPATCH_UNLIMITED;
+        check_private(x86_scheduler_dispatch(&config,&stats));
+        check_private(stats.completed == 1 && stats.failure == 0);
+        check_private(stats.steps == LONG_SESSION_STEPS + 1 && stats.idle_calls == LONG_SESSION_STEPS);
     } else {
         uint32_t expected_state;
         prepare_private(1);
