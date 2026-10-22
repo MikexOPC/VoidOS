@@ -34,6 +34,7 @@ int x86_console_flush(X86_PS2_SESSION *owner)
 // ====== unused_consumer_boundary ======
 
 static void unexpected(void) { volatile int called = 1; CHECK(!called); }
+void x86_ps2_consume(void) { unexpected(); }
 void kernel_ps2_line_clear(KERNEL_PS2_LINE *line) { (void)line; unexpected(); }
 uint32_t kernel_ps2_line_step(KERNEL_PS2_LINE *line, uint32_t input)
 { (void)line; (void)input; unexpected(); return 0; }

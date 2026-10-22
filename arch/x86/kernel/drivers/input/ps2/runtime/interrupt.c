@@ -6,10 +6,9 @@ extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_
 
 // ====== drain_private ======
 
-// Policy point for bytes the ISR cannot deliver (B2). Today they are read and dropped, bounded by
-// limit, so the one-byte i8042 output buffer is empty on return. Leaving them for the worker, or
-// stashing them, would replace this body only: callers use the returned count, the consumer sees the
-// discontinuity through DeviceErrors either way. Discarded measures whether that migration is needed.
+// QEMU v11.1.0 hw/input/pckbd.c: KBD_STAT_OBF bit0, kbd_read_data,
+// i8042_realizefn ports60h/64h. Consume only while OBF is set; a bounded
+// drain does not guarantee an empty device after the budget is exhausted.
 static BOOT_U32 drain_private(BOOT_U32 limit)
 {
     BOOT_U32 dropped = 0;
@@ -21,6 +20,7 @@ static BOOT_U32 drain_private(BOOT_U32 limit)
 
 static void fault_private(X86_PS2_SESSION *owner, BOOT_U32 dropped)
 {
+    owner->DevicePending = 1;
     if (owner->DeviceErrors != ~0U) ++owner->DeviceErrors;
     owner->Discarded = dropped > ~0U - owner->Discarded ? ~0U : owner->Discarded + dropped;
 }
@@ -92,45 +92,6 @@ int x86_ps2_quiet(void)
 {
     X86_PS2_SESSION *owner = x86_ps2_session();
     return owner->RouteOwned && x86_ps2_route_apply(owner,1);
-}
-
-// ====== keyboard fault policy ======
-
-// Consumer side. note: one fault (LOSS marker, decoder INVALID, observed ISR fault) -> 1 resync and
-// continue, 2 the streak passed the limit without a valid key event. poll: folds every ISR fault
-// since the last call into one discontinuity. valid: a decoded key event ends the streak.
-
-int x86_ps2_fault_note(X86_PS2_SESSION *owner)
-{
-    if (owner->Streak != UINT32_MAX) ++owner->Streak;
-    return owner->Streak > X86_PS2_KEY_RESYNC_LIMIT ? 2 : 1;
-}
-
-int x86_ps2_fault_poll(X86_PS2_SESSION *owner)
-{
-    BOOT_U32 seen = owner->DeviceErrors;
-    if (seen == owner->DeviceSeen) return 0;
-    owner->DeviceSeen = seen;
-    return x86_ps2_fault_note(owner);
-}
-
-void x86_ps2_fault_valid(X86_PS2_SESSION *owner) { owner->Streak = 0; }
-
-// ====== x86_ps2_fault_resync ======
-
-// A fault broke the byte stream: drop every partial state so no key stays held (modifiers live in
-// TextState) and no half-typed command can run. verdict 2 (streak over the limit) ends the session
-// through the existing Failed/Stop path. Returns 0 only for that verdict.
-int x86_ps2_fault_resync(X86_PS2_SESSION *owner, int verdict)
-{
-    owner->Decoder = owner->TextState = 0;
-    kernel_ps2_line_clear(&owner->Line);
-    owner->LineTruncated = 0;
-    if (owner->Resyncs != ~0U) ++owner->Resyncs;
-    if (verdict != 2) return 1;
-    if (owner->Losses != ~0U) ++owner->Losses;
-    owner->Failed = 1; owner->Stop = 1;
-    return 0;
 }
 
 // ====== x86_ps2_irq_record ======

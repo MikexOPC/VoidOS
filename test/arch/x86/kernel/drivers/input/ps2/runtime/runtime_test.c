@@ -12,6 +12,8 @@ static X86_APIC_PROFILE profile;
 static BOOT_U32 regs[256], selector, calls, fail, borrowed, checks;
 static unsigned char bytes[256];
 static BOOT_U32 head, size, port_reads, bad_status, pushed, push_result, eoi, eoi_result;
+static BOOT_U32 discard_left, discard_calls;
+static BOOT_U64 discard_tail = KERNEL_PAYLOAD_EMPTY;
 const unsigned char x86_scheduler_irq_compute_begin[1] = {0};
 const unsigned char x86_scheduler_irq_compute_end[1] = {0};
 #define CHECK(e) do { ++checks; assert(e); } while (0)
@@ -58,6 +60,17 @@ BOOT_U32 kernel_scheduler_payload_push(BOOT_U32 event, BOOT_U64 source, BOOT_U64
 int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *mapping, BOOT_U32 vector)
 { (void)mapping; CHECK(vector == 0x41 || vector == 0x42); ++eoi; return (int)eoi_result; }
 uint32_t x86_scheduler_index(void) { return 1; }
+uint64_t x86_scheduler_generation(void) { return 7; }
+uint64_t kernel_scheduler_payload_pop(uint32_t event, uint64_t source, uint64_t token,
+    uint32_t consumer, uint64_t generation)
+{
+    CHECK(event == 4 && source == (uint64_t)&owner && token == owner.Binding && !consumer && generation == 7);
+    ++discard_calls;
+    if (discard_left) { --discard_left; return KERNEL_PAYLOAD_DATA | 0x5a; }
+    BOOT_U64 value = discard_tail;
+    discard_tail = KERNEL_PAYLOAD_EMPTY;
+    return value;
+}
 int x86_scheduler_task_valid(void) { return 1; }
 uint64_t x86_task_stack_base(uint32_t index) { (void)index; return 0x700000150000; }
 int x86_scheduler_code_valid(uint64_t address) { (void)address; return 1; }
@@ -223,6 +236,22 @@ static void fault_policy_tests(void)
     owner.Streak = X86_PS2_KEY_RESYNC_LIMIT; owner.DeviceErrors = 6;
     CHECK(x86_ps2_fault_poll(&owner) == 2);
     owner.Streak = UINT32_MAX; CHECK(x86_ps2_fault_note(&owner) == 2 && owner.Streak == UINT32_MAX);
+    for (BOOT_U32 length = 0; length <= 256; ++length) {
+        discard_left = length; discard_calls = 0;
+        discard_tail = KERNEL_PAYLOAD_LOSS | (17ULL << 32);
+        CHECK(x86_ps2_fault_discard(&owner) && discard_calls == length + 2);
+    }
+    discard_tail = KERNEL_PAYLOAD_DENIED;
+    CHECK(!x86_ps2_fault_discard(&owner));
+    discard_tail = KERNEL_PAYLOAD_BUSY;
+    CHECK(!x86_ps2_fault_discard(&owner));
+    discard_left = 259; discard_calls = 0;
+    CHECK(!x86_ps2_fault_discard(&owner) && discard_calls == 258 && discard_left == 1);
+    discard_left = 0;
+    owner.DeviceErrors = owner.DeviceSeen = UINT32_MAX;
+    owner.DevicePending = 1;
+    CHECK(x86_ps2_fault_poll(&owner) == 2 && !owner.DevicePending);
+    CHECK(!x86_ps2_fault_poll(&owner));
 }
 
 // ====== mouse_route_tests ======
