@@ -1,14 +1,210 @@
-# Stato corrente — 14 ottobre 2026
+# Stato corrente — 22 ottobre 2026
 
 Questo e il riferimento breve dello stato reale. I checkpoint in
 `docs/review/` e i report di modulo restano evidenza del blocco in cui
 sono stati scritti; se una frase al presente li contraddice, vale questo
 file.
 
+Gli interventi rinviati e i relativi prerequisiti sono raccolti nel
+[registro degli interventi futuri](future-work.md). IOMMU e in sviluppo;
+la traduzione DMA non e ancora attiva e
+l'eccezione DMA riguarda soltanto il diagnostico QEMU fidato senza passthrough.
+
 I test sono centralizzati in `test/kernel/`, `test/arch/x86/` e `test/lib/`.
 Il runner `scripts/test/run.ps1` richiama le suite originali in processi
 separati; i gate QEMU restano distinti dai test host. Vedere
 [organizzazione ed esecuzione](../test/README.md).
+
+Priorita concordata il20 ottobre: IOMMU prima della console VirtIO ordinaria,
+backend iniziale Intel VT-d su QEMU. Discovery DMAR nel kernel verificata:
+parser C e policy Rust, span registri dichiarato, scope bounded, duplicati
+rifiutati e output immutato su errore. Passano8100 verifiche C/ASan,3 test
+Rust debug/release, Clippy e cppcheck senza diagnostiche bloccanti.
+Trenta boot finali:10 con DMAR e confronto guest/host,10 assente,10 console
+ordinaria; un negativo atteso verifica DMAR duplicata e budget invariato.
+Il checkpoint discovery precede il mapping MMIO VT-d ora verificato.
+Nessun dominio o traduzione DMA attivo; nessuna estensione dell'eccezione
+IOMMU alla console interattiva.
+[Report discovery e limiti](../arch/x86/kernel/drivers/memory/iommu/intel/discovery/documentation/validation.md).
+
+Mapping VT-d posseduto: fino a otto pagine registri UC supervisor RO/NX,
+guardie e tre tabelle pinned, con revoca e rollback. L'inventario paging
+attuale misura 3840 byte (3832 nel checkpoint RO). C gestisce lifetime e letture VER/CAP/ECAP/GSTS;
+Rust puro valida PTE e capacita. Passano 95.776 controlli lifecycle/ASan,
+696.320 controlli accessor, Rust debug/release, Clippy e regressioni host.
+Dieci boot con VT-d e dieci senza, piu dieci console ordinaria, verificano
+letture indipendenti QTest e cleanup; due negativi rifiutano DMAR duplicata
+e RAM indicata come registri. Altri dieci boot verificano scanout VirtIO
+con confronto integrale di venti screenshot: 40 positivi finali in totale.
+ECAP.C=0 richiede progettare la coerenza
+delle future tabelle: il candidato coerente resta non autorizzato.
+[Report mapping, immagini e limiti](../arch/x86/kernel/drivers/memory/iommu/intel/registers/documentation/validation.md).
+
+La preparazione privata del dominio GPU e ora implementata e verificata:
+root/context legacy, quattro livelli, IOVA distinti dai fisici, fino a
+16 intervalli e 4.100 pagine, R/RW espliciti e guardie. C gestisce lease,
+pinning e rollback; Rust puro prepara geometria ed entry. Passano 925.362
+controlli C/ASan, un walk indipendente, Rust debug/release, Clippy e le
+regressioni host del mapper registri. Quaranta boot finali: dieci dominio,
+dieci senza GPU, dieci senza IOMMU e dieci console ordinaria; due negativi
+rifiutano i metadati firmware prima del costruttore. Le tabelle vengono
+verificate e rilasciate senza pubblicarle all'hardware. ECAP.C=0 rimane
+un gate: nessuna protezione DMA attiva o console VirtIO persistente.
+[Report dominio privato e limiti](../arch/x86/kernel/drivers/memory/iommu/intel/domains/documentation/validation.md).
+
+Coerenza CPU e coda hardware di invalidazione sono ora implementate nel
+diagnostico Intel: CPUID, CLFLUSH/MFENCE sulle pagine possedute, una coda
+con completion separata e un batch in volo. Il mapping RW e autorizzato
+esplicitamente; il bind precedente resta RO. Timeout o stop incerti
+trattengono pagine e mapping. Passano176349 controlli C/ASan,3 test Rust
+debug/release, Clippy e regressioni host. Il report raccoglie le campagne
+QEMU:70 positivi (dieci per ciascun profilo) e due rifiuti attesi;1280
+completion QI,20 screenshot scanout. Documenta inoltre la particolarita
+del readback IQA e i limiti delle prove.
+Le note ECAP.C=0 nei checkpoint precedenti sono storiche: ora esiste cache
+maintenance, ma non pubblicazione del dominio. RTADDR e TE restano zero;
+isolamento DMA, fault DMA e console VirtIO persistente non sono attivi.
+[Report coerenza e invalidazioni](../arch/x86/kernel/drivers/memory/iommu/intel/invalidation/documentation/validation.md).
+
+Scelta successiva: topologia PCI con bridge e piu unita, tramite lettore
+nativo MCFG/ECAM nel kernel. Il primo modulo di accesso e implementato:
+32 finestre/8 segmenti bounded, calcolo con bus effettivo, letture DWORD
+standard e prestito temporaneo UC RO/NX della page window posseduta.
+Passano540760 controlli host C/ASan,3 test Rust debug/release, Clippy,
+cppcheck senza diagnostiche bloccanti e regressioni host. Cinquanta boot
+Q35 positivi, inclusi10 di assenza filtrata dichiarata, piu un duplicato
+rifiutato; GPU provata su bus0 e dietro root port su bus1. Lo smoke
+i440fx ha invece un panic timer dopo l'assenza MCFG: non e un PASS e
+la piattaforma non viene dichiarata supportata. Il lettore e il prerequisito
+del blocco snapshot descritto sotto; resolver e attivazione restano separati.
+[Report ECAM, immagini e limiti](../arch/x86/kernel/drivers/bus/pci/ecam/documentation/validation.md).
+
+Snapshot PCI bounded implementato: C acquisisce due scansioni concordanti,
+Rust puro verifica BDF, parent, profondita, intervalli e multifunction.
+Massimo512 funzioni/64 bridge/profondita8; output precedente invariato su
+errore, workspace posseduto e nessuna allocazione aggiuntiva. Passano255769
+controlli C/ASan,4 test Rust debug/release, Clippy e cppcheck senza errori
+bloccanti. Sessanta boot finali:10 GPU radice,10 dietro root port,10 dietro
+tre bridge, piu10 ECAM,10 QI e10 console ordinaria. Snapshot binari, grafo
+QMP, registri PCI, hash ESP, revoca e budget confrontati indipendentemente.
+Il profilo resta diagnostico: scansione esaustiva costosa, esclusa dal
+kernel ordinario. Segmenti distinti e piu radici sono prove host; QEMU
+certifica segmento0. Resolver multi-DRHD, requester alias, pubblicazione
+e isolamento DMA non sono impliciti in questo risultato.
+[Report snapshot, costi e limiti](../arch/x86/kernel/drivers/bus/pci/topology/documentation/validation.md).
+
+Direzione video concordata: framebuffer firmware per bootstrap/fallback e
+driver VirtIO GPU specifico per QEMU. Il primo blocco e il
+[parser della configurazione PCI](../kernel/drivers/video/virtio/discovery/documentation/design.md),
+con C per traversal e Rust per i limiti scalari. Ora e linkato nel loader e
+nel kernel: il [contratto v5 da536 byte](../arch/x86/boot/uefi/pci/documentation/design.md)
+trasporta snapshot PCI, posizione e dimensioni BAR raccolte tramite UEFI.
+Il kernel li copia e rivalida, senza conservare protocolli firmware.
+Il mapping MMIO posseduto e implementato: una GPU, massimo16 pagine UC,
+supervisor RW/NX, guardie e tre tabelle da lease pinned. L'inventario
+verifica GPU, framebuffer e LAPIC; il renderer include le nuove tabelle
+nel budget senza saltare la scansione. Rust costruisce il piano pagine
+senza unsafe o allocazioni, C gestisce pubblicazione e rollback.
+La lettura PCI e selettiva: non tocca la finestra indiretta PCI_CFG.
+Passano 477.762 verifiche del parser,230 del lettore selettivo,
+13.024 dell'acquisizione UEFI,12.315 del piano ABI C/Rust e793.400
+del mapper host. ASan C, accounting, Rust debug/release e Clippy passano.
+Passano30 boot finali:10 diagnostici con unbind/rebind,10 ordinari e10
+fallback VGA, con input mouse/tastiera, guardie/PTE e cleanup verificati.
+Tre tabelle GPU restano pinned durante l'uso ordinario; il budget restituito
+a exit riguarda le risorse temporanee delle task. Le campagne e i limiti sono nel
+[report mapping](../kernel/drivers/video/virtio/mapping/documentation/validation.md).
+Reset e feature negotiation sono ora implementati nel profilo diagnostico
+separato: selezione minima VERSION_1, conferma FEATURES_OK, poi reset e
+rilascio del mapping. Nessun DRIVER_OK o DMA. Rust puro valida registri e
+feature; C gestisce stati e attese finite sul clock PM esistente.
+Passano89300 controlli host del protocollo e61900 del trasporto, con
+ASan C, Rust debug/release, Clippy e cppcheck. Il runner passa anche con5.1.
+Passano10 boot diagnostici e10 senza GPU; un rifiuto intenzionale delle
+feature richiede FAILED/reset e conferma il cleanup. Passano anche10 boot
+ordinari con mouse e tastiera:30 positivi finali, piu un negativo intenzionale.
+Il MAP ordinario esclude il protocollo/probe di inizializzazione.
+[Prove, immagini e limiti](../kernel/drivers/video/virtio/initialization/documentation/validation.md).
+Code e buffer DMA sono ora verificati nel solo diagnostico QEMU fidato:
+due code da8 descrittori, una richiesta fenced in volo, quattro pagine pinned
+dalla finestra esistente; Rust valida completion e geometria, C gestisce
+ownership, MMIO e ordering. Passano789417 controlli C/ASan delle nuove suite,
+4 test Rust debug/release e le regressioni host inizializzazione.
+Trenta boot finali:10 diagnostici con2560 richieste reali totali e verifica
+esterna della RAM DMA,10 senza GPU e10 console ordinaria; piu un rifiuto
+intenzionale prima delle code. Reset confermato prima del rilascio, buffer
+trattenuti se incerto nei test mock; budget diagnostico ripristinato in QEMU.
+Il MAP ordinario esclude le nuove code; nessuna installazione nella ESP.
+[Prove, hash e limiti DMA](../kernel/drivers/video/virtio/queues/documentation/validation.md).
+Risorsa2D a risoluzione display ora verificata nel diagnostico: backing
+contiguo pinned fino a16MiB, mapping WB supervisor RW/NX con guardie,
+CREATE/ATTACH/TRANSFER/DETACH/UNREF fenced e reset prima del rilascio.
+Rust valida geometria, PTE e transizioni; C gestisce ownership e protocollo.
+L'inventario paging include una superficie RAM e passa da3600 a3720 byte;
+il contratto di boot v5 resta invariato. A1280x800:4096000 byte e4 tabelle.
+Passano8200 verifiche protocollo,6300 mapper,3 test Rust in debug e release,
+ASan, Clippy e cppcheck senza diagnostiche bloccanti; stile/info nel report.
+Quaranta boot positivi finali:10 risorse2D,10 GPU assente,10 code precedenti,
+10 console ordinaria con input e cleanup. Due negativi attesi confermano
+reset/rilascio su feature non supportata e trasferimento con ID errato.
+[Prove, hash e limiti delle risorse2D](../kernel/drivers/video/virtio/resources/documentation/validation.md).
+SET_SCANOUT e RESOURCE_FLUSH sono ora verificati nel diagnostico visivo:
+selezione del primo display attivo con indice esplicito, immagine intera,
+update parziale con offset/stride controllato da Rust, disassociazione
+prima di detach/unref. Stato incerto blocca altri comandi; reset confermato
+prima del rilascio. Il nuovo blocco passa19900 verifiche presentazione,
+le regressioni risorse/mapper e646122 verifiche protocollo code.
+Dieci boot visivi finali confrontano20 screenshot1280x800 integralmente;
+altri30 boot verificano GPU assente, risorse senza scanout e console
+ordinaria. Due negativi attesi coprono mancata conferma host e feature
+non supportata, con reset e budget ripristinato.
+[Prove visive, hash e limiti](../kernel/drivers/video/virtio/resources/documentation/presentation-validation.md).
+Cursore VirtIO e sessione video ordinaria persistente restano da fare.
+La console continua sul framebuffer firmware; nessuna nuova garanzia di fluidita.
+Le [prove dell'integrazione PCI](../arch/x86/boot/uefi/pci/documentation/validation.md)
+e del [primo parser](../kernel/drivers/video/virtio/discovery/documentation/validation.md)
+restano checkpoint delle rispettive immagini, precedenti al mapping.
+
+Ultimo blocco input completato: Esc annulla la riga UTF-8 e il flag di troncamento, senza
+modificare i modificatori o inviare il testo alla shell. Pressione ripetuta idempotente;
+rilascio senza nuova cancellazione. Il comando exit conserva lo stop con cleanup.
+[Comportamento del consumer](../arch/x86/kernel/drivers/input/ps2/documentation/runtime.md).
+Passano 277 scenari host per variante seriale/video e dieci boot consecutivi
+sull'immagine finale `92C5095EE3BB43B0DF8994B8520AA42F0374BB55BA11E7C0C0DD47D2B3E4EAA9`:
+130 scene corrette, inclusi mouse/video dopo Esc, help successivo e cleanup tramite exit.
+Passano anche i due smoke solo tastiera e l'ESP preparata dal launcher.
+Il renderer resta invariato: cinque catture parziali su 158 durante il movimento,
+nessuna assente; nessuna nuova garanzia di fluidita o aggiornamento atomico.
+
+
+Checkpoint del consolidamento precedente: B1 elimina il limite di durata della sessione input,
+conservando le deadline delle singole attese. B2 recupera i guasti tastiera isolati:
+un guasto ISR scarta i byte incerti prima di azzerare decoder, modificatori e riga;
+262 scenari host per variante seriale/video e dieci boot QEMU passano.
+[Politica, prove e limiti](../arch/x86/kernel/drivers/input/ps2/documentation/keyboard-recovery.md).
+B6 separa il probe di preservazione dei registri dal percorso ordinario;
+[audit e checkpoint](../arch/x86/kernel/scheduler/documentation/production-image.md).
+
+Lo scheduler resta cooperativo, BSP, con task kernel fidate nello stesso spazio
+indirizzi. Non ci sono ancora userspace, syscall, filesystem o un compositore GUI.
+Il launcher ora ricompila per default e verifica l'assenza di codice test nel MAP;
+`-Image` resta la scelta esplicita di un binario gia costruito.
+[Avvio e comportamento di Esc/exit](../kernel/console/video/documentation/pointer-manual.md).
+
+Verifica finale del consolidamento: dieci boot consecutivi della nuova immagine
+interattiva `758206602CEE9E5B7ABAA828CA195036810CD56496B200ADB05B4EA6C13A3507`,
+120 scene assestate corrette e cleanup/budget verificati; passa anche l'ESP del launcher.
+Audit delle catture durante il movimento: 188 complete, 5 parziali, nessuna assente.
+Le cinque catture parziali precedono scene corrette; il framebuffer visibile non viene
+aggiornato atomicamente. Fluidita SDL e presentazione senza artefatti non certificate.
+Evidenze: `kernel/build/pointer-interactive-check-a94ea60ef9a549d2b0ef8b1cb8f802f7/`
+e `kernel/build/consolidation-launcher-smoke.log`.
+
+Refactor verificato: integrazione scheduler 398 righe, build 358 righe, adattatore
+switch e validazione profili separati. Suite backend host, 17 combinazioni di build,
+audit dei simboli ordinario/diagnostico e controlli di struttura passano.
+Esc ora annulla la riga senza chiudere input e mouse; solo exit richiede lo stop.
+Il rendering transitorio resta un blocco dedicato prima di promettere una GUI fluida.
 
 Checkpoint 16 ottobre: console con cella 10x20 (102x38 a 1024x768) e puntatore 18x18
 nitido nero con contorno bianco, da immagine di riferimento. Mouse PS/2 tollerante a
@@ -20,7 +216,25 @@ un'ipotesi: [cella](../kernel/console/video/documentation/font-cell.md),
 [costo dei flush](../kernel/console/video/documentation/flush-cost.md),
 [mouse](../kernel/drivers/input/ps2/mouse/documentation/resync.md).
 
-Blocco corrente completato nei test: transazione save/restore del cursore approvata,
+Checkpoint grafico del 16 ottobre: presentazione cursore composta in RAM, copia delle sole
+sequenze cambiate e profilo interattivo senza tracce per movimento/frame.
+Sagoma SVG e testo antialias invariati. Passano dieci boot diagnostici e
+dieci interattivi finali;135 catture controllate, nessuna sagoma parziale o
+assente nel campione finale. Passano scroll/riga piena, fallback e launcher.
+Le catture non certificano ogni fotogramma o la fluidita SDL. Un precedente
+tentativo con scarto di un pixel resta documentato, senza attribuzione certa.
+[Design, tentativi, prove e limiti](../kernel/console/video/documentation/pointer-presentation.md).
+
+Checkpoint precedente: cursore 18×18 dal SVG utente, nero con bordo bianco e
+antialiasing; testo Cascadia Mono 9×18 con 16 livelli di copertura.
+Nessun parser font nel kernel o nuova allocazione; tabella fissa da15.696 byte.
+Dieci boot consecutivi verificano60 scene e6000 invii continui, senza perdite
+o panic e con budget20.411 ripristinato. Passano anche scroll/riga piena,
+fallback senza video e avvio dell'ESP interattiva; suite C/ASan, Rust e
+cppcheck passate. Nessuna garanzia di60FPS o prova su hardware fisico.
+[Design, hash e prove](../kernel/console/video/documentation/visual-quality.md).
+
+Checkpoint precedente: transazione save/restore del cursore approvata,
 backup fisso24x24, verifica completa e tre rettangoli autorizzati.
 Movimenti attivano una sola cella; il vecchio sfondo viene ripristinato
 dal backup e il nuovo salvato dopo il testo. Pacchetti senza spostamento
