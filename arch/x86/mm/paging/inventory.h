@@ -2,6 +2,9 @@
 #define OS_X86_PAGING_INVENTORY_H
 #include "kernel/mm/physical/allocator.h"
 #include "arch/x86/configs/boot_profile.h"
+#include "gpu/authority.h"
+#include "surface/authority.h"
+#include "iommu/authority.h"
 typedef struct { BOOT_U64 Physical, View; BOOT_U32 Level, Reserved; } X86_PAGING_RESOURCE;
 typedef struct { BOOT_U64 Virtual, Physical, Cache, Owner; } X86_PAGING_DEVICE;
 struct X86_LAPIC_MAPPING;
@@ -25,8 +28,11 @@ typedef struct {
     X86_PAGING_DEVICE Device;
     X86_PAGING_VIDEO_RECORD Video;
     BOOT_U64 VideoTableIds[X86_PAGING_VIDEO_TABLES];
+    X86_PAGING_GPU_AUTH Gpu;
+    X86_SURFACE_SNAPSHOT Surface;
+    X86_IOMMU_SNAPSHOT Iommu;
 } X86_PAGING_INVENTORY;
-_Static_assert(sizeof(X86_PAGING_INVENTORY) == 3296, "Registro RAM MMIO bounded");
+_Static_assert(sizeof(X86_PAGING_INVENTORY) == 3840, "Registro RAM MMIO bounded");
 _Static_assert(sizeof(X86_PAGING_VIDEO_AUTH) == 440, "Autorita video bounded");
 // ====== backend in sola lettura e matematica scalare verificata da Rust ===== //
 

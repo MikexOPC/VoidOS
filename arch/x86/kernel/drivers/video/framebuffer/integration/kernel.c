@@ -49,6 +49,17 @@ int x86_fb_kernel_group_caret(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *sca
 
 // ====== x86_fb_kernel_inventory_verify ======
 
+int x86_fb_kernel_inventory_capture(const KERNEL_BOOT_CONTEXT *context,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
+    X86_PAGING_INVENTORY *inventory)
+{
+    if (!context->Info.Framebuffer.Base) return x86_paging_inventory_capture_lapic(context,pool,lapic,inventory);
+    if (mapping.Ready != 2 || mapping.Context != context || !mapping.Window || mapping.Window->Pool != pool || mapping.Lapic != lapic) return 0;
+    return x86_paging_inventory_capture_video(context,pool,lapic,&mapping.Authority,x86_fb_authority,inventory);
+}
+
+// ====== x86_fb_kernel_inventory_verify ======
+
 int x86_fb_kernel_inventory_verify(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
     const X86_PAGING_INVENTORY *inventory)

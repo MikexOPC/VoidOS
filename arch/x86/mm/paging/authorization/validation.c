@@ -1,6 +1,7 @@
 #include "validation.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/mm/devices/lapic.h"
+#include "../gpu/validation.h"
 
 // ====== fotografia UEFI coerente con il totale conservato dall'allocatore ===== //
 
@@ -39,7 +40,7 @@ int x86_paging_buffers_valid(const KERNEL_BOOT_CONTEXT *context,
         os_address_ranges_overlap(target, sizeof(*output), (BOOT_U64)pool, sizeof(*pool)) ||
         os_address_ranges_overlap(target, sizeof(*output), X86_LAPIC_VIRTUAL-4096,12288) ||
         os_address_ranges_overlap(target, sizeof(*output), 128ULL << 39, 1ULL << 39)) return 0;
-    return kernel_physical_validate(pool) && map_consistent(context, pool);
+    return kernel_physical_validate(pool) && map_consistent(context, pool) && x86_paging_gpu_inputs(context,pool,output);
 }
 
 // ====== tabella ereditata interamente dentro EfiLoaderData ordinaria WB ===== //
@@ -73,13 +74,20 @@ BOOT_U32 x86_paging_table_source(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_PAGING_VIDEO_AUTH *video,
     BOOT_U64 physical)
 {
+    BOOT_U32 surface=x86_surface_source(pool,physical);
+    if (surface) return surface;
+    BOOT_U32 iommu=x86_iommu_source(pool,physical);
+    if (iommu) return iommu;
     BOOT_U32 index;
     if (video) for (index = 0; index < video->Region.TableCount; ++index) {
         const KERNEL_PHYSICAL_LEASE *lease = &video->Tables[index];
         if (lease->Base != physical) continue;
         return lease->Pages == 1 && kernel_physical_is_pinned(pool, lease) ? index + 2 : 0;
     }
-    return loader_table_reserved(context, pool, physical) ? 1U : 0U;
+    {
+        BOOT_U32 gpu=x86_paging_gpu_source(pool,physical);
+        return gpu ? gpu : loader_table_reserved(context,pool,physical) ? 1U : 0U;
+    }
 }
 
 // ====== video_aperture_reserved ======
@@ -169,7 +177,9 @@ int x86_paging_video_tables_complete(const X86_PAGING_VIDEO_AUTH *video,
                 record->Physical != video->Tables[record->Reserved - 1].Base ||
                 (seen & (1U << (record->Reserved - 1)))) return 0;
             seen |= 1U << (record->Reserved - 1);
-        } else if (record->Reserved) return 0;
+        } else if (record->Reserved && !x86_paging_gpu_record(inventory,record) &&
+            !x86_iommu_record(&inventory->Iommu,record->Physical,record->View,record->Level,record->Reserved) &&
+            !x86_surface_record(&inventory->Surface,record->Physical,record->View,record->Level,record->Reserved)) return 0;
     }
     return seen == (1U << video->Region.TableCount) - 1;
 }
