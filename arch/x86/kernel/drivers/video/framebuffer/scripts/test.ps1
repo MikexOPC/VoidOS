@@ -42,6 +42,7 @@ foreach ($source in @('arch/x86/kernel/drivers/video/framebuffer/rust/tables/con
     'arch/x86/kernel/interrupts/apic/rust/profile/validation.rs',
     'arch/x86/mm/paging/rust/validation/entries.rs',
     'kernel/mm/rust/regions/validation.rs','kernel/mm/physical/rust/alignment/placement.rs',
+    'kernel/drivers/video/virtio/discovery/rust/ffi/gateway.rs','kernel/drivers/video/virtio/mapping/rust/ffi/pages.rs',
     'kernel/drivers/video/framebuffer/rust/ffi/mode.rs')) {
     $object = "$out/" + ($source -replace '/', '-') + '.obj'
     Invoke-Checked 'rustc' @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
@@ -64,6 +65,9 @@ try {
         $sdk+'/Include/'+$version.Name+'/um;'+$sdk+'/Include/'+$version.Name+'/shared'
     $env:LIB=$vc.FullName+'/lib/x64;'+$sdk+'/Lib/'+$version.Name+'/ucrt/x64;'+$sdk+'/Lib/'+$version.Name+'/um/x64'
     foreach ($source in @('arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/authorization/validation.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+        'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
+        'kernel/drivers/video/virtio/mapping/plan.c',
         'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','lib/memory/address_ranges.c',
         'kernel/drivers/video/framebuffer/handoff.c','kernel/drivers/video/framebuffer/mapping.c',
         'arch/x86/kernel/drivers/video/framebuffer/authority.c',
@@ -87,26 +91,30 @@ try {
         $objects + @('/link','/incremental:no','/DEBUG','/WX'))
     Invoke-Checked "$out/host.exe" @()
     $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
-    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
-        ("-I$project") "$project/arch/x86/kernel/drivers/video/framebuffer/lifecycle.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/construction.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/preflight.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/authority.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/native/access.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `
-        "$project/test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/platform.c" `
-        "$project/test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/cases.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/write.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/transaction.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/drawing/cursor.c" `
-        "$project/kernel/console/video/pointer/shape.c" `
-        "$project/test/arch/x86/kernel/drivers/video/framebuffer/pixels/pointer_test.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/font/font.c" `
-        "$project/test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.c" `
-        "$project/arch/x86/kernel/drivers/video/framebuffer/pixels/native.c" `
-        "$project/test/arch/x86/kernel/drivers/video/framebuffer/pixels/write_test.c" 2> "$out/cppcheck.xml"
-    if ($LASTEXITCODE) { throw 'Cppcheck failed' }
+    $arguments = @('--enable=all','--check-level=exhaustive','--platform=win64','--std=c11','--xml','--xml-version=2',
+        ('"-I'+$project+'"')) + @(
+        'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
+        'arch/x86/kernel/drivers/video/framebuffer/construction.c',
+        'arch/x86/kernel/drivers/video/framebuffer/preflight.c',
+        'arch/x86/kernel/drivers/video/framebuffer/authority.c',
+        'arch/x86/kernel/drivers/video/framebuffer/native/access.c',
+        'arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c',
+        'test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/platform.c',
+        'test/arch/x86/kernel/drivers/video/framebuffer/lifecycle/cases.c',
+        'arch/x86/kernel/drivers/video/framebuffer/pixels/write.c',
+        'arch/x86/kernel/drivers/video/framebuffer/pixels/transaction.c',
+        'arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c',
+        'arch/x86/kernel/drivers/video/framebuffer/drawing/cursor.c',
+        'kernel/console/video/pointer/shape.c',
+        'test/arch/x86/kernel/drivers/video/framebuffer/pixels/pointer_test.c',
+        'arch/x86/kernel/drivers/video/framebuffer/font/font.c',
+        'test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.c',
+        'arch/x86/kernel/drivers/video/framebuffer/pixels/native.c',
+        'test/arch/x86/kernel/drivers/video/framebuffer/pixels/write_test.c' |
+        ForEach-Object {'"'+$project+'/'+$_+'"'})
+    $checked = Start-Process $cppcheck -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
+        -RedirectStandardError "$out/cppcheck.xml" -RedirectStandardOutput "$out/cppcheck.log"
+    if ($checked.ExitCode) { throw 'Cppcheck failed' }
     [xml]$xml = Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
         throw 'Blocking static diagnostics'

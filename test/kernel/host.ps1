@@ -16,6 +16,9 @@ $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory
     Sort-Object Name -Descending | Select-Object -First 1
 if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 foreach ($source in @('test/kernel/contract_test.c','test/kernel/platform_mock.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c',
+    'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
+    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+    'arch/x86/kernel/scheduler/runtime/memory.c',
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','test/kernel/mm/physical/allocator_test.c',
     'test/kernel/mm/physical/alignment_test.c',
     'arch/x86/mm/regions/mapping.c','test/kernel/mm/regions/mapping_test.c',
@@ -41,6 +44,12 @@ $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'kernel/drivers/video/framebuffer/rust/ffi/mode.rs') -o ($output + '/framebuffer-fields.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Framebuffer Rust compilation failed.' }
 $objects += ($output + '/framebuffer-fields.obj')
+& $rustc --edition=2024 --crate-type=lib --emit=obj -C panic=abort -C opt-level=2 -C overflow-checks=yes -D warnings "$project/kernel/drivers/video/virtio/discovery/rust/ffi/gateway.rs" -o "$output/vgpu-fields.obj"
+if ($LASTEXITCODE -ne 0) { throw 'VirtIO Rust compilation failed.' }
+$objects += "$output/vgpu-fields.obj"
+& $rustc --edition=2024 --crate-type=lib --emit=obj -C panic=abort -C opt-level=2 -C overflow-checks=yes -D warnings "$project/kernel/drivers/video/virtio/mapping/rust/ffi/pages.rs" -o "$output/vgpu-pages.obj"
+if ($LASTEXITCODE -ne 0) { throw 'VirtIO page plan Rust compilation failed.' }
+$objects += "$output/vgpu-pages.obj"
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'lib/firmware/acpi/rust/rsdp/validation.rs') -o ($output + '/acpi-rsdp-fields.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione campi ACPI fallita.' }
 $objects += ($output + '/acpi-rsdp-fields.obj')

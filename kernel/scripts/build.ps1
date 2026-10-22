@@ -1,63 +1,14 @@
 param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
-    [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell,
-    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation,
+    [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell, [switch]$InteractiveInput,
+    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
 $ErrorActionPreference = 'Stop'
-if ($Ps2Mouse -and ($TestConsoleActive -or $TestConsoleDraw -or $TestConsoleBatch)) { throw 'Mouse runtime excludes console diagnostic profiles.' }
-if ($Ps2Mouse) { $Ps2Input = $true }
-if ($ConsoleShell) {
-    if ($TestConsoleActive -or $TestConsoleDraw -or $TestConsoleBatch -or $TestFramebufferMapping) {
-        throw 'ConsoleShell is separate from console diagnostic profiles.'
-    }
-    $Ps2Input = $true
-}
-if ($TestConsoleBatch) {
-    if ($TestConsoleDraw) { throw 'Choose one draw diagnostic profile.' }
-    $TestConsoleDraw = $true
-}
-if ($TestConsoleDraw) {
-    if ($TestConsoleActive) { throw 'Choose one console diagnostic profile.' }
-    $TestConsoleActive = $true
-}
-if ($TestConsoleActive) {
-    if ($Install -or $Ps2Input -or $EventLoop -or $TestFramebufferMapping -or $TestBootstrapMemory -or
-        $TestPanic -or $TestPs2Decoder -or $TestPs2Controller -or $TestWatchdogLostLapic -or
-        $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery -or $TestSchedulerFault -ne 'none' -or
-        $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or
-        $TestRegionFault -ne 'none') { throw 'Active console resource diagnostic must stay isolated.' }
-    $Ps2Input = $true
-}
-if ($TestFramebufferMapping -and ($Install -or $Ps2Input -or $EventLoop -or $TestBootstrapMemory -or
-    $TestPanic -or $TestPs2Decoder -or $TestPs2Controller -or $TestWatchdogLostLapic -or
-    $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery -or $TestSchedulerFault -ne 'none' -or
-    $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or
-    $TestRegionFault -ne 'none')) { throw 'Framebuffer mapping diagnostic must stay isolated.' }
-if ($Ps2Input -and ($Install -or $EventLoop -or $TestPs2Decoder -or $TestPs2Controller -or $TestPanic -or $TestBootstrapMemory -or
-    $TestSchedulerFault -ne 'none' -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or
-    $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none' -or $TestWatchdogLostLapic -or
-    $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery)) { throw 'PS/2 input profile must stay isolated.' }
-if ($TestPs2Controller) { $TestPs2Decoder = $true }
-if ($TestPs2Decoder -and ($Install -or $EventLoop -or $TestPanic -or $TestBootstrapMemory -or
-    $TestSchedulerFault -ne 'none' -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or
-    $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none' -or $TestWatchdogLostLapic -or
-    $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery)) { throw 'PS/2 decoder diagnostic image must stay isolated.' }
-if ($TestSchedulerFault -ne 'none' -and ($Install -or $EventLoop -or $TestPanic -or $TestWatchdogLostLapic -or $TestWatchdogAlternate -or $TestWatchdogCleanupRecovery -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Scheduler fault image must stay isolated; choose one fault.' }
-if ($TestWatchdogCleanupRecovery -and ($EventLoop -or $TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Profilo cleanup recovery solo finito, incompatibile con altri fault.' }
-if ($Install -and $TestWatchdogCleanupRecovery) { throw 'Non installare la fault injection cleanup recovery.' }
-if ($TestWatchdogAlternate -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Profilo watchdog alternativo incompatibile con altri fault.' }
-if ($Install -and $TestWatchdogAlternate) { throw 'Non installare immagini con route watchdog riservate per test.' }
-if ($TestWatchdogLostLapic -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
-if ($Install -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'Non installare immagini con fault di test nella ESP ordinaria.' }
-if ($TestRegionFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or $TestMainFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
-if ($TestMainFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
-if ($TestCpuFault -ne 'none' -and ($TestPanic -or $TestWindowFault -ne 'none')) { throw 'Scegliere un solo fault di test.' }
-if ($Install -and $TestBootstrapMemory) { throw 'Bootstrap diagnostic image must stay isolated.' }
-$bootstrapDiagnostics = $TestBootstrapMemory -or $TestWindowFault -ne 'none' -or $TestRegionFault -ne 'none'
+. (Join-Path $PSScriptRoot 'build/profiles.ps1')
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
 if (!$ToolchainBin) {
@@ -83,10 +34,22 @@ $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' 
     ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')), '/DKERNEL_SCHEDULER_IRQ=1')
 if ($TestPs2Decoder) { $flags += '/DKERNEL_TEST_PS2_DECODER=1' }
 if ($TestFramebufferMapping) { $flags += '/DKERNEL_TEST_FRAMEBUFFER_MAPPING=1' }
+if ($TestVgpuMapping) { $flags += '/DKERNEL_TEST_VGPU_MAPPING=1' }
+if ($TestVgpuInitialization) { $flags += '/DKERNEL_TEST_VGPU_INITIALIZATION=1' }
+if ($TestVgpuQueues) { $flags += '/DKERNEL_TEST_VGPU_QUEUES=1' }
+if ($TestVgpuResources) { $flags += '/DKERNEL_TEST_VGPU_RESOURCES=1' }
+if ($TestVgpuResourceReject) { $flags += '/DKERNEL_TEST_VGPU_RESOURCE_REJECT=1' }
+if ($TestVgpuScanout) { $flags += '/DKERNEL_TEST_VGPU_SCANOUT=1' }
+if ($TestIommuDiscovery) { $flags += '/DKERNEL_TEST_IOMMU_DISCOVERY=1' }
+if ($TestIommuRegisters) { $flags += '/DKERNEL_TEST_IOMMU_REGISTERS=1' }
+if ($TestIommuDomain) { $flags += '/DKERNEL_TEST_IOMMU_DOMAIN=1' }
+if ($TestIommuQi) { $flags += '/DKERNEL_TEST_IOMMU_QI=1' }
+if ($TestPciEcam) { $flags += '/DKERNEL_TEST_PCI_ECAM=1'; if ($TestPciEcamAbsent) { $flags += '/DKERNEL_TEST_PCI_ECAM_ABSENT=1' }; if ($TestPciTopology) { $flags += '/DKERNEL_TEST_PCI_TOPOLOGY=1' }; if ($TestIommuRouting) { $flags += '/DKERNEL_TEST_IOMMU_ROUTING=1' }; if ($TestIommuActivation) { $flags += '/DKERNEL_TEST_IOMMU_ACTIVATION=1' } }
 if ($TestConsoleActive) { $flags += '/DKERNEL_TEST_CONSOLE_ACTIVE=1' }
 if ($TestConsoleDraw) { $flags += '/DKERNEL_TEST_CONSOLE_DRAW=1' }
 if ($TestConsoleBatch) { $flags += '/DKERNEL_TEST_CONSOLE_BATCH=1' }
 if ($ConsoleShell) { $flags += '/DKERNEL_CONSOLE_SHELL=1' }
+if ($InteractiveInput) { $flags += '/DKERNEL_INPUT_INTERACTIVE=1' }
 if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
 if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
 if ($Ps2Mouse) { $flags += '/DKERNEL_PS2_MOUSE=1' }
@@ -124,8 +87,18 @@ if ($TestCpuFault -ne 'none') {
 # Test code is linked only into the diagnostic profiles that call it (B6); the production image
 # must not contain it. fault.c has code only for faults 1-4, drawing/probe.c only with the mapping probe.
 $diagnosticSources = @()
+if ($TestIommuDiscovery) { $diagnosticSources+=@('arch/x86/kernel/drivers/memory/iommu/intel/discovery/table.c',
+    'arch/x86/kernel/drivers/memory/iommu/intel/discovery/find.c','test/arch/x86/kernel/drivers/memory/iommu/intel/discovery/probe.c') }
+if ($TestPciEcam) { $diagnosticSources+=@('arch/x86/kernel/drivers/bus/pci/ecam/table.c','arch/x86/kernel/drivers/bus/pci/ecam/find.c','arch/x86/kernel/drivers/bus/pci/ecam/reader.c','arch/x86/kernel/drivers/bus/pci/ecam/validation.c','arch/x86/kernel/drivers/bus/pci/ecam/backend/access.c','test/arch/x86/kernel/drivers/bus/pci/ecam/integration/probe.c') }
 if ($TestSchedulerFault -in @('guard-low','guard-high','nx','retired')) { $diagnosticSources += 'test/arch/x86/kernel/scheduler/fault/fault.c' }
 if ($TestFramebufferMapping) { $diagnosticSources += 'test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.c' }
+if ($TestVgpuMapping) { $diagnosticSources += 'test/arch/x86/kernel/drivers/video/virtio/mapping/probe.c' }
+if ($TestVgpuInitialization) {
+    $diagnosticSources += @('test/arch/x86/kernel/drivers/video/virtio/initialization/probe.c',
+        'arch/x86/kernel/drivers/video/virtio/initialization/transport.c',
+        'arch/x86/kernel/drivers/video/virtio/initialization/access.c',
+        'kernel/drivers/video/virtio/initialization/protocol.c')
+}
 foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/scheduler/capabilities.c',
     'arch/x86/kernel/scheduler/stacks.c','arch/x86/kernel/scheduler/mapping/native.c',
     'arch/x86/kernel/scheduler/mapping/access.c',
@@ -135,6 +108,12 @@ foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sc
     'arch/x86/kernel/scheduler/dispatcher/engine.c','arch/x86/kernel/scheduler/diagnostic/profiles.c',
     'arch/x86/kernel/scheduler/irq/bridge.c','arch/x86/kernel/scheduler/runtime/memory.c','arch/x86/kernel/scheduler/runtime/payload.c','arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c',
     'kernel/bootstrap/memory.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c','kernel/drivers/video/framebuffer/mapping.c',
+    'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
+    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+    'kernel/drivers/video/virtio/discovery/configuration/read.c',
+    'arch/x86/kernel/drivers/video/virtio/preflight.c','arch/x86/kernel/drivers/video/virtio/construction.c',
+    'arch/x86/kernel/drivers/video/virtio/lifecycle.c','arch/x86/kernel/drivers/video/virtio/pci/access.c',
+    'arch/x86/kernel/drivers/video/virtio/integration/kernel.c',
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
     'arch/x86/mm/regions/mapping.c','arch/x86/mm/regions/access.c',
     'arch/x86/mm/arena/objects.c',
@@ -350,6 +329,21 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
     (Join-Path $project 'arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs'),
     '-o',($output + '/framebuffer-tables.obj'))
 $objects += ($output + '/framebuffer-tables.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort',
+    '-C','opt-level=2','-C','overflow-checks=yes',"$project/kernel/drivers/video/virtio/discovery/rust/ffi/gateway.rs",'-o',"$output/vgpu-fields.obj")
+$objects += "$output/vgpu-fields.obj"
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort',
+    '-C','opt-level=2','-C','overflow-checks=yes',"$project/kernel/drivers/video/virtio/mapping/rust/ffi/pages.rs",'-o',"$output/vgpu-pages.obj")
+$objects += "$output/vgpu-pages.obj"
+if ($TestVgpuQueues) { . (Join-Path $PSScriptRoot 'build/vgpu-queues.ps1') }
+if ($TestVgpuResources) { . (Join-Path $PSScriptRoot 'build/vgpu-resources.ps1') }
+if ($TestIommuDiscovery -or $TestPciEcam) { . (Join-Path $PSScriptRoot 'build/iommu-discovery.ps1') }
+if ($TestIommuRegisters) { . (Join-Path $PSScriptRoot 'build/iommu-registers.ps1') }
+if ($TestVgpuInitialization) {
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort',
+        '-C','opt-level=2','-C','overflow-checks=yes',"$project/kernel/drivers/video/virtio/initialization/rust/ffi/policy.rs",'-o',"$output/vgpu-policy.obj")
+    $objects += "$output/vgpu-policy.obj"
+}
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',
     (Join-Path $project 'arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs'),

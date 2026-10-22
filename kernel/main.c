@@ -1,7 +1,26 @@
 #include "bootstrap/memory.h"
 #include "drivers/video/framebuffer/handoff.h"
+#ifdef KERNEL_TEST_IOMMU_DISCOVERY
+#include "test/arch/x86/kernel/drivers/memory/iommu/intel/discovery/probe.h"
+#endif
+#ifdef KERNEL_TEST_PCI_ECAM
+#include "test/arch/x86/kernel/drivers/bus/pci/ecam/integration/probe.h"
+#endif
+#ifdef KERNEL_TEST_IOMMU_REGISTERS
+#include "test/arch/x86/kernel/drivers/memory/iommu/intel/registers/integration/probe.h"
+#endif
+#ifdef KERNEL_TEST_IOMMU_DOMAIN
+#include "test/arch/x86/kernel/drivers/memory/iommu/intel/domains/integration/probe.h"
+#endif
+#ifdef KERNEL_TEST_IOMMU_QI
+#include "test/arch/x86/kernel/drivers/memory/iommu/intel/invalidation/integration/probe.h"
+#endif
 #include "drivers/video/framebuffer/mapping.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
+#include "arch/x86/kernel/drivers/video/virtio/integration/kernel.h"
+#ifdef KERNEL_TEST_VGPU_INITIALIZATION
+#include "test/arch/x86/kernel/drivers/video/virtio/initialization/probe.h"
+#endif
 #include "scheduler/kernel.h"
 #include "diagnostics/log.h"
 #include "arch/x86/kernel/platform.h"
@@ -64,6 +83,17 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
 {
     if (!kernel_capture_contract(info, root, entry, &memory.Context)) kernel_panic("BOOT_CONTRACT_INVALID");
     if (!kernel_log(0, "KERNEL_CONTRACT_OK")) kernel_panic("SERIAL_UNAVAILABLE");
+    if (!kernel_log(0,memory.Context.Info.Gpu.Present ? "KERNEL_VGPU_PCI_PRESENT" : "KERNEL_VGPU_PCI_ABSENT"))
+        kernel_panic("SERIAL_UNAVAILABLE");
+    if (memory.Context.Info.Gpu.Present) {
+        KERNEL_VGPU_PCI_LAYOUT layout;
+        const KERNEL_VGPU_BOOT *gpu = &memory.Context.Info.Gpu;
+        if (kernel_vgpu_pci_probe(gpu->Config,256,gpu->Sizes,6,52,&layout) != KERNEL_VGPU_PCI_READY)
+            kernel_panic("VGPU_METADATA_INVALID");
+        for (BOOT_U32 region = 0; region < 4; ++region)
+            if (!kernel_text("KERNEL_VGPU_REGION: ") || !kernel_number(layout.Regions[region].Address) ||
+                !kernel_text("\n")) kernel_panic("SERIAL_UNAVAILABLE");
+    }
     if (!kernel_section("IDT eccezioni kernel") || !x86_exception_initialize()) kernel_panic("KERNEL_IDT_FAILED");
     kernel_section("inventario memoria");
     if (!kernel_inventory_memory(memory.Context.MemoryMap, memory.Context.Info.MemoryMapBytes,
@@ -152,6 +182,13 @@ __declspec(noreturn) static void kernel_continue(void)
             !kernel_text("\n") || !kernel_log(0, "KERNEL_PAGING_INVENTORY_OK")) kernel_panic("SERIAL_UNAVAILABLE");
         if (!kernel_acpi_initialize(context, &memory.Window, &memory.Arena, &acpi_object) ||
             !x86_paging_inventory_verify(context, &memory.Physical, paging)) kernel_panic("ACPI_DIRECTORY_INVALID");
+#ifdef KERNEL_TEST_PCI_ECAM
+        if (!x86_ecam_probe(context,&memory.Window,paging,(const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory.Arena,&acpi_object))) kernel_panic("ECAM_INVALID");
+#endif
+#ifdef KERNEL_TEST_IOMMU_DISCOVERY
+        if (!x86_dmar_kernel_probe(context,&memory.Window,(const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory.Arena,&acpi_object)) ||
+            !x86_paging_inventory_verify(context,&memory.Physical,paging)) kernel_panic("DMAR_DISCOVERY_INVALID");
+#endif
 #ifdef KERNEL_TEST_PS2_CONTROLLER
         if (!x86_ps2_controller_probe(context, &memory.Window,
             (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory.Arena, &acpi_object)))
@@ -179,9 +216,27 @@ __declspec(noreturn) static void kernel_continue(void)
             !x86_uart_irq_run(context, &memory.Window, paging,
                 (const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&memory.Arena, &madt_object),
                 &apic_profile, &apic_capabilities)) kernel_panic("UART_IRQ_INVALID");
+#if defined(KERNEL_TEST_IOMMU_REGISTERS)
+        if (!x86_vtd_kernel_probe(context,&memory.Window,x86_uart_lapic_mapping(),x86_dmar_kernel_information(),paging))
+            kernel_panic("VTD_REGISTERS_INVALID");
+#ifdef KERNEL_TEST_IOMMU_QI
+        if (!x86_qi_probe(context,&memory.Window,x86_uart_lapic_mapping(),paging,x86_dmar_kernel_information(),
+            (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory.Arena,&acpi_object))) kernel_panic("QI_INVALID");
+#elif defined(KERNEL_TEST_IOMMU_DOMAIN)
+        if (!x86_vtd_domain_probe(context,&memory.Window,x86_uart_lapic_mapping(),paging,x86_dmar_kernel_information()))
+            kernel_panic("VTD_DOMAIN_INVALID");
+#endif
+#elif defined(KERNEL_TEST_VGPU_INITIALIZATION)
+        if (!context->Info.Acpi.Source || !x86_vgpu_initialization_probe(context,&memory.Window,
+            x86_uart_lapic_mapping(),paging,
+            (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory.Arena,&acpi_object)))
+            kernel_panic("VGPU_INITIALIZATION_FAILED");
+#else
 #if defined(KERNEL_TEST_CONSOLE_ACTIVE) || defined(KERNEL_CONSOLE_SHELL)
         if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &memory.Window,
             x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
+        if (context->Info.Acpi.Source && !x86_vgpu_kernel_start(context,&memory.Window,
+            x86_uart_lapic_mapping(),paging)) kernel_panic("VGPU_MAPPING_FAILED");
 #endif
         if (context->Info.Acpi.Source &&
             !x86_watchdog_kernel_start(context,&memory.Window,&memory.Arena,&acpi_object,&madt_object,
@@ -189,10 +244,13 @@ __declspec(noreturn) static void kernel_continue(void)
 #if !defined(KERNEL_TEST_CONSOLE_ACTIVE) && !defined(KERNEL_CONSOLE_SHELL)
         if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &memory.Window,
             x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
+        if (context->Info.Acpi.Source && !x86_vgpu_kernel_start(context,&memory.Window,
+            x86_uart_lapic_mapping(),paging)) kernel_panic("VGPU_MAPPING_FAILED");
 #else
         if (!x86_fb_kernel_inventory_verify(context, &memory.Physical,
             x86_uart_lapic_mapping(), paging)) kernel_panic("CONSOLE_ACTIVE_RESOURCES_FAILED");
         if (!kernel_log(0, "KERNEL_CONSOLE_ACTIVE_RESOURCES_OK")) kernel_panic("CONSOLE_ACTIVE_LOG_FAILED");
+#endif
 #endif
     }
 #ifdef KERNEL_TEST_REGION_FAULT
