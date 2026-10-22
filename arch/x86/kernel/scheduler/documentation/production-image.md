@@ -52,3 +52,23 @@ assoluto e piccolo; il beneficio principale e che la produzione non contiene ne 
 `-TestFramebufferMapping`. QEMU tutti exit 0 sulle immagini finali: ordinario 10 boot, preservazione
 10 boot, mouse+puntatore+shell 10 boot, stress da 200 tasti, preservazione+mouse 10 boot, idle da 240 s
 (`kernel/build/b6`).
+
+## Consolidamento del 19 ottobre
+
+L'adattatore produzione/diagnostica dello switch e ora in
+`integration/switch/bridge.h`; `integration/kernel.c` e di 398 righe.
+La politica resta quella del checkpoint precedente: chiamata diretta nella build
+ordinaria, probe solo con `TestSchedulerPreservation`.
+
+Suite host backend passata: `kernel/build/consolidation-scheduler-host.log`, evidenze
+`kernel/build/scheduler-context-851bcf5263a942bb841dd2828017140e`.
+Build diagnostica verificata tramite MAP: 1.608 simboli, probe richiesto presente,
+altri due probe vietati assenti (`kernel/build/consolidation-preservation-audit.log`).
+Per questa immagine diagnostica e stato verificato build/audit; non una nuova
+campagna QEMU dedicata alla preservazione.
+
+L'immagine interattiva finale ordinaria passa dieci boot QEMU consecutivi,
+confronto di 120 scene, input e cleanup; MAP con 2.117 simboli e nessun probe
+vietato/oggetto test. Hash ed evidenze nello [stato corrente](../../../../../docs/status.md).
+La validazione dei profili di build e separata in `kernel/scripts/build/profiles.ps1`:
+6 profili validi e 11 combinazioni rifiutate verificati, build principale 358 righe.
