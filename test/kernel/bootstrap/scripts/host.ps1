@@ -26,7 +26,7 @@ try {
     $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/kernel/bootstrap/memory.c" "$project/test/kernel/bootstrap/probes.c" `
-        "$project/test/kernel/bootstrap/ordinary_test.c" "$project/kernel/main.c" 2> "$out/cppcheck.xml"
+        "$project/test/kernel/bootstrap/ordinary_test.c" "$project/kernel/main.c" "$project/kernel/startup/early.c" "$project/kernel/startup/platform.c" "$project/kernel/startup/devices.c" "$project/kernel/startup/profile.c" 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml=Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
