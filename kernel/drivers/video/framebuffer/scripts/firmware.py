@@ -89,9 +89,9 @@ def boot(args, out, index):
             expected = 'ABSENT' if args.absent else 'PRESENT'
             if 'KERNEL_FRAMEBUFFER_' + expected not in log or 'FRAMEBUFFER_HANDOFF_' + expected not in log:
                 raise RuntimeError('Framebuffer presence contract disagrees with profile')
-            if number(log,'KERNEL_BOOT_VERSION') != 4 or number(log,'KERNEL_BOOT_SIZE') != 208:
+            if number(log,'KERNEL_BOOT_VERSION') != 5 or number(log,'KERNEL_BOOT_SIZE') != 536:
                 raise RuntimeError('Kernel did not receive v4 ABI')
-            record['Version'], record['Size'] = 4, 208
+            record['Version'], record['Size'] = 5, 536
             if args.mapping_plan:
                 if 'KERNEL_FRAMEBUFFER_PLAN_OK' not in log:
                     raise RuntimeError('Missing framebuffer preflight')

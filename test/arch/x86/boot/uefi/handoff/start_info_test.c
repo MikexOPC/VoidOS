@@ -7,7 +7,7 @@ __declspec(dllexport) int run_start_info_tests(void)
     BOOT_MAPPING_PLAN plan = {0};
     BOOT_PAGE_TABLES tables = {0};
     BOOT_PAGING_CAPABILITIES capabilities = {32, 1, 1};
-    BOOT_START_INFO info;
+    static BOOT_START_INFO info;
     BOOT_ENTRY_STACK stack;
     UINT32 scenario;
     UINTN byte;

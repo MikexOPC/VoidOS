@@ -42,6 +42,17 @@ static int check_contract(void)
     info.Version = 2;
     if (kernel_validate_contract(&info, 0x1000, info.KernelEntry)) return 8;
     info.Version = BOOT_START_VERSION;
+    info.Size = 208;
+    if (kernel_validate_contract(&info,0x1000,info.KernelEntry)) return 12;
+    info.Size = sizeof(info); info.Version = 4;
+    if (kernel_validate_contract(&info,0x1000,info.KernelEntry)) return 13;
+    info.Version = BOOT_START_VERSION;
+    for (byte = 0; byte < sizeof(info.Gpu); ++byte) {
+        ((unsigned char *)&info.Gpu)[byte] = 1;
+        if (kernel_capture_contract(&info,0x1000,info.KernelEntry,&output) ||
+            output.Info.Gpu.Present || output.Info.MemoryMapBytes != 144) return 14;
+        ((unsigned char *)&info.Gpu)[byte] = 0;
+    }
     for (byte = 0; byte < sizeof(info.Framebuffer); ++byte) {
         ((unsigned char *)&info.Framebuffer)[byte] = 1;
         if (kernel_capture_contract(&info,0x1000,info.KernelEntry,&output) ||

@@ -17,6 +17,7 @@
 #include "handoff/transition/activation.h"
 #include "acpi/discovery.h"
 #include "graphics/handoff.h"
+#include "pci/integration/handoff.h"
 
 // ====== verifica del piano senza aumentare lo stack di ingresso ====== //
 
@@ -69,6 +70,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     BOOT_IDT_DRAFT exception_draft;
     BOOT_DESCRIPTOR_STORAGE descriptor_storage = {0};
     static BOOT_GOP_OWNER graphics;
+    static BOOT_PCI_OWNER gpu;
     int had_kernel_pages;
 
     if (!system_table)
@@ -238,7 +240,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
         goto cleanup_kernel;
     }
     status = boot_log(system_table->ConOut, BOOT_OK,
-                      L"Mappa persistente R/NX e contratto v4 verificati; tutte le risorse coperte.");
+                      L"Mappa persistente R/NX e contratto v5 verificati; tutte le risorse coperte.");
     if (status != EFI_SUCCESS) goto cleanup_kernel;
     status = boot_log_hex(system_table->ConOut, L"Capacita buffer mappa persistente: ", final_map.Snapshot.Capacity);
     if (status != EFI_SUCCESS) goto cleanup_kernel;
@@ -278,6 +280,9 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
     status = boot_log(system_table->ConOut,graphics.Valid ? BOOT_OK : BOOT_WARN,
         graphics.Valid ? L"FRAMEBUFFER_HANDOFF_PRESENT" : L"FRAMEBUFFER_HANDOFF_ABSENT");
     if (status != EFI_SUCCESS) goto cleanup_kernel;
+    status = boot_prepare_vgpu(system_table,capabilities.PhysicalBits,
+        (BOOT_START_INFO *)(UINTN)start_page.PhysicalBase,&gpu);
+    if (status != EFI_SUCCESS) goto cleanup_kernel;
 #ifdef BOOT_RUN_KERNEL
     {
         BOOT_EXIT_HANDOFF handoff = {&loaded, &stack, &capabilities, &tables, &start_page, &final_map, &descriptor_storage};
@@ -303,6 +308,10 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
 #endif
 
 cleanup_kernel:
+    if ((gpu.Handles || gpu.Resources) && boot_vgpu_release(&gpu) != EFI_SUCCESS) {
+        (void)boot_log(system_table->ConOut,BOOT_FAIL,L"PCI_BUFFER_RELEASE_FAILED");
+        x86_stop_transition();
+    }
     if (graphics.Pending) {
         cleanup_status = boot_gop_release_pending(&graphics);
         if (cleanup_status != EFI_SUCCESS) {

@@ -1,6 +1,7 @@
 #include "memory/final/mapping.h"
 #include "paging/verification/contents.h"
 #include "handoff/firmware/terminal/handoff.h"
+#include "test/arch/x86/boot/uefi/pci/fixture.h"
 
 __declspec(align(4096)) static UINT64 arena[32][512];
 __declspec(align(4096)) static UINT8 contract[4096];
@@ -160,6 +161,8 @@ static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL
     BOOT_MEMORY_MAP snapshot = owner->Snapshot;
     UINT64 root_entry = arena[0][0];
     UINT32 test;
+    static KERNEL_VGPU_BOOT expected_gpu;
+    test_vgpu_fixture(&expected_gpu);
     terminal_memory = owner;
     services.Prefix = *base;
     services.Prefix.Hdr.HeaderSize = sizeof(services);
@@ -191,6 +194,7 @@ static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL
         if (test <= 2 || test == 14)
             ((BOOT_START_INFO *)contract)->Framebuffer =
                 (OS_FRAMEBUFFER){0x80000000,3145728,3145728,1024,768,1024,1};
+        if (test <= 2 || test == 14) ((BOOT_START_INFO *)contract)->Gpu = expected_gpu;
         if (acpi_mode) {
             attach_test_acpi((BOOT_START_INFO *)contract);
             ((BOOT_START_INFO *)contract)->MemoryMapBytes = owner->Snapshot.Size;
@@ -209,6 +213,9 @@ static int test_terminal(const EFI_BOOT_SERVICES_PREFIX *base, const BOOT_KERNEL
             forbidden || allocated != before_allocations || released != before_releases)
             return 1510 + (int)test;
         if (expected == EFI_SUCCESS) {
+            UINT32 byte;
+            for (byte = 0; byte < sizeof(expected_gpu); ++byte)
+                if (((UINT8 *)&((BOOT_START_INFO *)contract)->Gpu)[byte] != ((UINT8 *)&expected_gpu)[byte]) return 1538;
             UINT32 previous_queries = queries;
             const OS_FRAMEBUFFER *fb = &((BOOT_START_INFO *)contract)->Framebuffer;
             if (fb->Base != 0x80000000 || fb->Capacity != 3145728 || fb->Used != 3145728 ||

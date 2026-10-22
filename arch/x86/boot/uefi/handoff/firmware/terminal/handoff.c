@@ -130,7 +130,8 @@ EFI_STATUS boot_validate_exit_handoff(const BOOT_EXIT_HANDOFF *handoff)
         info->MemoryMapBytes != map->Size || info->MemoryDescriptorBytes != map->DescriptorSize ||
         info->MemoryDescriptorVersion != map->DescriptorVersion || info->MemoryReserved ||
         boot_validate_acpi_snapshot(info, map, handoff->Capabilities->PhysicalBits) != EFI_SUCCESS ||
-        boot_validate_framebuffer_snapshot(info, map, handoff->Capabilities->PhysicalBits) != EFI_SUCCESS)
+        boot_validate_framebuffer_snapshot(info, map, handoff->Capabilities->PhysicalBits) != EFI_SUCCESS ||
+        !kernel_vgpu_boot_valid(&info->Gpu,handoff->Capabilities->PhysicalBits))
         return EFI_INVALID_PARAMETER;
     return EFI_SUCCESS;
 }
@@ -144,6 +145,7 @@ static EFI_STATUS check_snapshot(const BOOT_MEMORY_MAP *map, void *context)
     BOOT_START_INFO *info = (BOOT_START_INFO *)(UINTN)handoff->Page->PhysicalBase;
     OS_ACPI_ROOT acpi = info->Acpi;
     OS_FRAMEBUFFER framebuffer = info->Framebuffer;
+    KERNEL_VGPU_BOOT gpu = info->Gpu;
     EFI_STATUS status;
     boot_invalidate_start_info(info);
     handoff->Page->Ready = 0;
@@ -157,6 +159,9 @@ static EFI_STATUS check_snapshot(const BOOT_MEMORY_MAP *map, void *context)
     }
     if (status == EFI_SUCCESS)
         status = boot_attach_framebuffer_snapshot(info,map,&framebuffer,handoff->Capabilities->PhysicalBits);
+    if (status == EFI_SUCCESS && !kernel_vgpu_boot_valid(&gpu,handoff->Capabilities->PhysicalBits))
+        status = EFI_INVALID_PARAMETER;
+    if (status == EFI_SUCCESS) info->Gpu = gpu;
     if (status == EFI_SUCCESS) handoff->Page->Ready = 1;
     else boot_invalidate_start_info(info);
     return status;
