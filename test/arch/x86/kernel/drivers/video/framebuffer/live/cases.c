@@ -76,6 +76,11 @@ int main(void)
         setup(count); CHECK(run() && calls == 1);
         fail = 1; CHECK(!run() && calls == 2);
         fail = 0; changed = 1; CHECK(!run() && calls == 3);
+        setup(count); inventory.Gpu.Ready = 1; pool.FreePages -= X86_GPU_TABLES;
+        CHECK(run() && calls == 1);
+        --pool.FreePages; CHECK(!run() && calls == 1);
+        setup(count); inventory.Gpu.Ready = 1; CHECK(!run() && !calls);
+        setup(count); inventory.Gpu.Ready = 2; CHECK(!run() && !calls);
     }
     setup(48); window.Pool = &foreign; CHECK(!run() && !calls);
     setup(48); owner.Authority.Root = 0x201000; CHECK(!run() && !calls);

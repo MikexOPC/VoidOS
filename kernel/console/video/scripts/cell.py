@@ -71,7 +71,7 @@ def verify(vm, scenario, log):
         words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((top + row) * stride + left) * 4, (font.WIDTH * size + 1) // 2)
         for column in range(font.WIDTH * size):
             bitmap = glyphs[column // font.WIDTH][row]
-            r, g, b = (255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - column % font.WIDTH)) else (8, 16, 24)
+            r, g, b = font.color(bitmap, column % font.WIDTH)
             expected = r | (g << 8) | (b << 16) if pixel_format == 0 else b | (g << 8) | (r << 16)
             if (words[column // 2] >> ((column % 2) * 32)) & 0xffffffff != expected:
                 raise RuntimeError('Measured physical cell pixel mismatch')
@@ -95,7 +95,7 @@ def verify(vm, scenario, log):
     for row in range(font.HEIGHT):
         for column in range(font.WIDTH * size):
             bitmap = glyphs[column // font.WIDTH][row]
-            expected = bytes((255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - column % font.WIDTH)) else (8, 16, 24))
+            expected = bytes(font.color(bitmap, column % font.WIDTH))
             offset = ((top + row) * width + left + column) * 3
             if pixels[offset:offset + 3] != expected:
                 raise RuntimeError('Measured visible cell pixel mismatch')

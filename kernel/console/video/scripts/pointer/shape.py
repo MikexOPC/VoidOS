@@ -2,39 +2,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[5]
 SIZE = 18
 
-# ============ sharp arrow after the user's reference image ============
-
-# Source: scripts/pointer/left_ptr.svg (user's cursor, 16 October 2026), rasterized to 18 rows by
-# scripts/pointer/svg_art.py (16x supersampling, stroke 17/256 of the height, 50% thresholds).
-# X = grey fill (the reference black is invisible on the dark console), o = white outline,
-# . = transparent. No antialiasing: every sample is
-# grey (6 << 5), fully white (16 << 5) or transparent (0). Hotspot: the tip at (1,0).
-ART = [
-    'oooo..............',
-    'oooooo............',
-    'ooXXooo...........',
-    'oXXXXooo..........',
-    'oXXXXXooo.........',
-    'oXXXXXXooo........',
-    'oXXXXXXXooo.......',
-    'oXXXXXXXXooo......',
-    'oXXXXXXXXXooo.....',
-    'oXXXXXXXXXXXoo....',
-    'oXXXXXXXXXXXXo....',
-    'oXXXXXXXXXXXXo....',
-    'oXXXXXXXXXXooo....',
-    'oXXXXXoooooooo....',
-    'oXXXXooo..........',
-    'ooXXooo...........',
-    'oooooo............',
-    '.oooo.............',
-]
-LEVEL = {'.': 0, 'X': 6 << 5, 'o': 16 << 5}
+# ============ SVG coverage at the current cursor size ============
 
 def raster():
-    if len(ART) != SIZE or any(len(row) != SIZE for row in ART):
-        raise SystemExit('Pointer art must be %dx%d' % (SIZE, SIZE))
-    return [[LEVEL[cell] for cell in row] for row in ART]
+    from svg_art import coverage
+    return coverage(SIZE)
 
 # ============ fixed production asset and independent test reference ============
 

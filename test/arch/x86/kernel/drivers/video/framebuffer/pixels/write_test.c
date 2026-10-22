@@ -289,8 +289,7 @@ static int caret_pixels(void)
         visits = 0;
         CHECK(x86_fb_text_caret(&owner, &text, font, 1) && visits == 2 * w * h);
         for (BOOT_U32 row = 0; row < h; ++row) for (BOOT_U32 col = 0; col < 2 * w; ++col) {
-            BOOT_U32 rgb = ((row >= h - 2 && col >= w) ||
-                (font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w)))) ? 0x112233 : 0x445566;
+            BOOT_U32 rgb = x86_fb_text_color(row >= h-2 && col >= w ? ~0ULL : x86_fb_font_row(font,65-32,row),col%w,0x112233,0x445566);
             BOOT_U32 color = format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16);
             CHECK(words[row * stride + col] == color);
             CHECK(words[row * stride + 2 * w] == 0xa5a5a5a5);
@@ -299,10 +298,29 @@ static int caret_pixels(void)
         CHECK(!x86_fb_text_caret(&owner, &text, font, 2) && !visits);
         CHECK(x86_fb_text_caret(&owner, &text, font, 0) && visits == 2 * w * h);
         for (BOOT_U32 row = h - 2; row < h; ++row) for (BOOT_U32 col = w; col < 2 * w; ++col) {
-            BOOT_U32 rgb = (font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w))) ? 0x112233 : 0x445566;
+            BOOT_U32 rgb = x86_fb_text_color(x86_fb_font_row(font,65-32,row),col%w,0x112233,0x445566);
             CHECK(words[row * stride + col] == (format ? rgb : ((rgb & 255) << 16) | (rgb & 0xff00) | (rgb >> 16)));
         }
         CHECK(x86_fb_unbind(&owner) && pool.FreePages == 128);
+    }
+    return 0;
+}
+
+// ====== grayscale_boundaries ======
+
+static int grayscale_boundaries(void)
+{
+    const X86_FB_FONT *font = x86_fb_console_font();
+    CHECK(!x86_fb_font_row(NULL,0,0) && !x86_fb_font_row(font,0,18));
+    CHECK(x86_fb_text_color(0,0,0xffffff,0x123456) == 0x123456);
+    CHECK(x86_fb_text_color(15,0,0xabcdef,0) == 0xabcdef);
+    CHECK(x86_fb_text_color(8,0,0xffffff,0) == 0x888888);
+    CHECK(x86_fb_text_color(7ULL << 32,8,0xffffff,0) == 0x777777);
+    CHECK(x86_fb_text_color(~0ULL,9,0,0x123456) == 0x123456);
+    for (BOOT_U32 a = 0; a < 16; ++a) {
+        BOOT_U32 expected = ((17*a+68*(15-a)+7)/15) << 16 |
+            ((34*a+85*(15-a)+7)/15) << 8 | (51*a+102*(15-a)+7)/15;
+        CHECK(x86_fb_text_color(a,0,0x112233,0x445566) == expected);
     }
     return 0;
 }
@@ -324,17 +342,16 @@ static int console_font(void)
     CHECK(draw_setup(cells * w, h, cells * w, 1)); memset(sample, 'A', sizeof(sample));
     CHECK(x86_fb_text(&owner, &text, font) && visits == cells * w * h);
     for (row = 0; row < h; ++row) for (col = 0; col < cells * w; ++col)
-        CHECK(words[row * cells * w + col] == ((font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w))) ? 0xffffffU : 0));
+        CHECK(words[row * cells * w + col] == x86_fb_text_color(x86_fb_font_row(font,65-32,row),col%w,0xffffff,0));
     visits = 0;
     CHECK(x86_fb_text_caret(&owner, &text, font, cells - 1) && visits == cells * w * h);
     for (row = 0; row < h; ++row) for (col = 0; col < cells * w; ++col)
-        CHECK(words[row * cells * w + col] == ((row >= h - 2 && col >= (cells - 1) * w) ||
-            (font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w))) ? 0xffffffU : 0));
+        CHECK(words[row * cells * w + col] == x86_fb_text_color(row >= h-2 && col >= (cells-1)*w ? ~0ULL : x86_fb_font_row(font,65-32,row),col%w,0xffffff,0));
     visits = 0;
     CHECK(!x86_fb_text_caret(&owner, &text, font, cells) && !visits);
     CHECK(x86_fb_text(&owner, &text, font) && visits == cells * w * h);
     for (row = h - 2; row < h; ++row) for (col = (cells - 1) * w; col < cells * w; ++col)
-        CHECK(words[row * cells * w + col] == ((font->Glyphs[65 - 32].Rows[row] & (1U << (w - 1 - col % w))) ? 0xffffffU : 0));
+        CHECK(words[row * cells * w + col] == x86_fb_text_color(x86_fb_font_row(font,65-32,row),col%w,0xffffff,0));
     text.Bytes = cells + 1; visits = 0; CHECK(!x86_fb_text(&owner, &text, font) && !visits);
     {
         X86_FB_FONT bad = *font;
@@ -359,7 +376,8 @@ int run_drawing_tests(void)
 {
     BOOT_U32 iteration;
     for (iteration = 0; iteration < 100; ++iteration) {
-        int result = rectangles();
+        int result = grayscale_boundaries();
+        if (!result) result = rectangles();
         if (!result) result = text_utf8();
         if (!result) result = drawing_rejections();
         if (!result) result = console_font();

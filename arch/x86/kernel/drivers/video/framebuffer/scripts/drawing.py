@@ -37,7 +37,7 @@ def cases(console=False):
             for row, mask in enumerate(bitmap[ord(char)]):
                 for col in range(width):
                     pixels[16 + cell * width + col, y + row] = (
-                        (255, 255, 255) if mask & (1 << (width - 1 - col)) else (8, 16, 24))
+                        converter.color(mask, col))
     if console:
         # The guest draws the console probe at grid cell (2, 10).
         for line, text in enumerate(['ciao è €', 'prova AC', 'Tutto OK🙂']):
@@ -45,7 +45,7 @@ def cases(console=False):
                 for row, mask in enumerate(bitmap.get(ord(char), bitmap[65533])):
                     for col in range(width):
                         pixels[2 * width + cell * width + col, 10 * height + line * height + row] = (
-                            (255, 255, 255) if mask & (1 << (width - 1 - col)) else (8, 16, 24))
+                            converter.color(mask, col))
     return pixels
 
 # ============ physical color and reserved byte ============

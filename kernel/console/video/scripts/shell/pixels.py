@@ -85,9 +85,9 @@ def verify(vm, scenario, log):
         for row, bitmap in enumerate(raster.get(cells[index], raster[65533])):
             words = framebuffer.physical(vm, scenario / 'monitor.log', base + ((y + row) * stride + x) * 4, (font.WIDTH + 1) // 2)
             if index == caret and row >= font.HEIGHT - 2:
-                bitmap = (1 << font.WIDTH) - 1
+                bitmap = (1 << (4*font.WIDTH)) - 1
             for col in range(font.WIDTH):
-                r, g, b = (255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - col)) else (8, 16, 24)
+                r, g, b = font.color(bitmap, col)
                 color = r | g << 8 | b << 16 if pixel_format == 0 else b | g << 8 | r << 16
                 if words[col // 2] >> ((col % 2) * 32) & 0xffffffff != color:
                     raise RuntimeError(f'Shell physical pixel mismatch: cell {index}, pixel {col},{row}')
@@ -111,9 +111,9 @@ def verify(vm, scenario, log):
         x, y = index % columns * font.WIDTH, index // columns * font.HEIGHT
         for row, bitmap in enumerate(raster.get(scalar, raster[65533])):
             if index == caret and row >= font.HEIGHT - 2:
-                bitmap = (1 << font.WIDTH) - 1
+                bitmap = (1 << (4*font.WIDTH)) - 1
             for col in range(font.WIDTH):
-                color = bytes((255, 255, 255) if bitmap & (1 << (font.WIDTH - 1 - col)) else (8, 16, 24))
+                color = bytes(font.color(bitmap, col))
                 offset = ((y + row) * width + x + col) * 3
                 if pixels[offset:offset + 3] != color:
                     raise RuntimeError(f'Shell visible pixel mismatch: cell {index}, pixel {col},{row}')
