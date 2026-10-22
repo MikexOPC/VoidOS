@@ -1,0 +1,40 @@
+# Stile del progetto (richiesta utente, 22 ottobre 2026, esempi in test.txt).
+# clang-format fa spazi, rientri, graffe ed else; le condizioni con || e && (una per riga,
+# tonda di chiusura da sola) e le righe vuote dopo i blocchi le fa scripts/format/conditions.py.
+# Usare scripts/format/format.ps1: clang-format da solo annullerebbe il secondo passaggio.
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 130
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: false
+  AfterStruct: false
+  AfterEnum: false
+  AfterUnion: false
+  AfterControlStatement: Never
+  BeforeElse: true
+  BeforeWhile: false
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterFunctionDefinitionName: true
+  AfterFunctionDeclarationName: false
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Empty
+AlignAfterOpenBracket: Align
+AlignConsecutiveMacros: true
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+IndentPPDirectives: None
+PointerAlignment: Right
+SortIncludes: Never
+ReflowComments: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
