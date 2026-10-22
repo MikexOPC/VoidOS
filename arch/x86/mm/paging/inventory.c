@@ -1,5 +1,6 @@
 #include "inventory.h"
 #include "authorization/validation.h"
+#include "gpu/validation.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/mm/devices/lapic.h"
 #define PAGING_ADDRESS 0x000ffffffffff000ULL
@@ -51,8 +52,16 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     X86_PAGING_INVENTORY *draft)
 {
     BOOT_U32 index, slot;
+    BOOT_U32 surface_seen=0;
+    BOOT_U64 surface_leaves=0;
+    BOOT_U32 iommu_seen=0, iommu_leaves=0;
+    const X86_PAGING_GPU_AUTH *gpu=x86_paging_gpu_owner();
     for (index = 0; index < sizeof(*draft); ++index) ((volatile unsigned char *)draft)[index] = 0;
     draft->Root = context->Info.PageTableRoot;
+    if (!x86_paging_gpu_inputs(context,pool,draft)) return 0;
+    if (!x86_surface_inputs(pool,draft->Root,(BOOT_U64)draft,sizeof(*draft),&draft->Surface)) return 0;
+    if (!x86_iommu_inputs(context,pool,(BOOT_U64)draft,sizeof(*draft),&draft->Iommu)) return 0;
+    if (gpu) draft->Gpu=*gpu;
     if (video) {
         draft->Video = video->Region;
         for (index = 0; index < video->Region.TableCount; ++index)
@@ -65,6 +74,15 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     if ((draft->Root & 4095) || !append_table(context, pool, video, draft, draft->Root, PAGING_ROOT_VIEW, 0)) return 0;
     for (index = 0; index < draft->Count; ++index) {
         const X86_PAGING_RESOURCE *record = &draft->Tables[index];
+        if (record->Reserved>=32) {
+            if (!x86_iommu_record(&draft->Iommu,record->Physical,record->View,record->Level,record->Reserved) ||
+                (iommu_seen&(1U<<(record->Reserved-32)))) return 0;
+            iommu_seen|=1U<<(record->Reserved-32);
+        } else if (record->Reserved>=20) {
+            if (!x86_surface_record(&draft->Surface,record->Physical,record->View,record->Level,record->Reserved) ||
+                (surface_seen&(1U<<(record->Reserved-20)))) return 0;
+            surface_seen|=1U<<(record->Reserved-20);
+        }
         const volatile BOOT_U64 *entries = x86_paging_view(record->View);
         if (!entries) return 0;
         for (slot = 0; slot < 512; ++slot) {
@@ -77,13 +95,18 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
                 BOOT_U32 kind;
                 if (!entry) continue;
                 BOOT_U64 address = x86_paging_leaf_virtual(record->View,slot);
-                kind = video ? x86_paging_video_leaf(entry, address, video->Region.Physical,
+                kind = x86_iommu_leaf(entry,address);
+                if (kind==7) { ++draft->MmioPages; ++draft->LeafPages; ++iommu_leaves; continue; }
+                if (kind==1) kind = x86_surface_leaf(entry,address);
+                if (kind==6) { ++draft->RamPages; ++draft->LeafPages; ++surface_leaves; continue; }
+                if (kind==1) kind = x86_paging_gpu_leaf(entry,address);
+                if (kind == 1) kind = video ? x86_paging_video_leaf(entry, address, video->Region.Physical,
                     video->Region.Virtual, video->Region.Pages, video->Region.AperturePages,
                     video->Region.Cache, pool->PhysicalBits) : 1;
                 if (kind == 1) kind = x86_paging_leaf_kind(entry,address,
                     draft->Device.Physical,draft->Device.Cache,pool->PhysicalBits);
                 if (!kind) return 0;
-                if (kind == 2 || kind == 3) ++draft->MmioPages; else ++draft->RamPages;
+                if (kind >= 2) ++draft->MmioPages; else ++draft->RamPages;
                 ++draft->LeafPages;
                 continue;
             }
@@ -93,8 +116,11 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
                                 x86_paging_child_view(record->View, record->Level, slot), record->Level + 1)) return 0;
         }
     }
-    if (!leaf_aliases_absent(draft) || draft->MmioPages != (owner ? 1U : 0U) + (video ? video->Region.Pages : 0)) return 0;
-    if (video && !x86_paging_video_tables_complete(video, draft)) return 0;
+    if (!leaf_aliases_absent(draft) || draft->MmioPages != (owner ? 1U : 0U) +
+        (video ? video->Region.Pages : 0) + (gpu ? gpu->Plan.Count : 0) + draft->Iommu.Count || !x86_paging_gpu_complete(draft)) return 0;
+    if (!x86_iommu_complete(&draft->Iommu,iommu_seen,iommu_leaves)) return 0;
+    if (!x86_surface_complete(&draft->Surface,surface_seen,surface_leaves) ||
+        (video && !x86_paging_video_tables_complete(video, draft))) return 0;
     draft->Ready = 1;
     return 1;
 }
@@ -133,7 +159,7 @@ static int snapshot_valid(const X86_PAGING_INVENTORY *inventory, BOOT_U32 bits)
     BOOT_U32 index, other;
     if (inventory->Ready != 1 || !inventory->Count || inventory->Count > X86_BOOT_TABLE_LIMIT ||
         inventory->LeafPages > (BOOT_U64)inventory->Count * 512 ||
-        inventory->MmioPages > 4322 || inventory->MmioPages > inventory->LeafPages ||
+        inventory->MmioPages > 4346 || inventory->MmioPages > inventory->LeafPages ||
         inventory->RamPages > inventory->LeafPages ||
         inventory->RamPages != inventory->LeafPages-inventory->MmioPages ||
         inventory->Tables[0].Physical != inventory->Root ||
@@ -144,7 +170,10 @@ static int snapshot_valid(const X86_PAGING_INVENTORY *inventory, BOOT_U32 bits)
             if (record->Physical || record->View || record->Level || record->Reserved) return 0;
             continue;
         }
-        if (record->Reserved > inventory->Video.TableCount || record->Level > 3 || (index && !record->Level) ||
+        if ((record->Reserved > inventory->Video.TableCount && !x86_paging_gpu_record(inventory,record) &&
+            !x86_iommu_record(&inventory->Iommu,record->Physical,record->View,record->Level,record->Reserved) &&
+            !x86_surface_record(&inventory->Surface,record->Physical,record->View,record->Level,record->Reserved)) ||
+            record->Level > 3 || (index && !record->Level) ||
             (record->Physical & 4095) || !x86_paging_entry_valid(record->Physical | 3, 0, bits) ||
             (record->View & 4095) || record->View >> 39 != X86_BOOT_RECURSIVE_SLOT) return 0;
         if (index && !record_linked(inventory, index)) return 0;

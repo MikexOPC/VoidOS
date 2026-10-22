@@ -1,5 +1,15 @@
 # Inventario video e tabelle kernel — 10 ottobre 2026
 
+Questo documento conserva il checkpoint video del10 ottobre. Dal19 ottobre
+lo snapshot corrente misura3600 byte e comprende l'autorita di una sola
+GPU VirtIO: massimo16 pagine UC e tre tabelle con lease pinned, oltre a
+framebuffer e LAPIC. Sorgenti GPU17..19, record Reserved16..18; il callback
+privato rivalida CPU/root/PAT durante le scansioni correnti. Nessuna
+autorizzazione viene conservata fra le verifiche. Vedere
+[contratto GPU](../../../../../kernel/drivers/video/virtio/mapping/documentation/design.md)
+e [prove GPU](../../../../../kernel/drivers/video/virtio/mapping/documentation/validation.md).
+Le dimensioni e le campagne sotto si riferiscono al checkpoint originario.
+
 Scelta concordata: un framebuffer e LAPIC, BSP e lease pinned.
 Modulo in sola lettura; non alloca tabelle, non modifica PTE, PAT o TLB
 e non scrive pixel. Le API precedenti restano disponibili e non autorizzano

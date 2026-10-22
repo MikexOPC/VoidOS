@@ -16,4 +16,7 @@ int x86_fb_kernel_group(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
 int x86_fb_kernel_inventory_verify(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
     const X86_PAGING_INVENTORY *inventory);
+int x86_fb_kernel_inventory_capture(const KERNEL_BOOT_CONTEXT *context,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
+    X86_PAGING_INVENTORY *inventory);
 #endif
