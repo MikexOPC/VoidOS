@@ -8,7 +8,8 @@ int kernel_validate_contract(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U6
 {
     if (!info || info->Signature != BOOT_START_SIGNATURE || info->Version != BOOT_START_VERSION ||
         info->Size != sizeof(*info) || info->Reserved || info->MemoryReserved ||
-        !os_acpi_root_valid(&info->Acpi, 52) || !fb_handoff_valid(&info->Framebuffer,52)
+        !os_acpi_root_valid(&info->Acpi, 52) || !fb_handoff_valid(&info->Framebuffer,52) ||
+        !kernel_vgpu_boot_valid(&info->Gpu,52)
     ) return 0;
 
     if (info->RequiredFeatures != BOOT_START_FEATURES || info->EnabledFeatures != BOOT_START_FEATURES ||
