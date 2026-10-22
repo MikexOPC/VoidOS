@@ -1,3 +1,10 @@
+# Aggiornamento corrente — 16 ottobre 2026
+
+Il font corrente è Cascadia Mono 9×18 con antialiasing a16 livelli,
+convertito offline. Design e prove nel
+[report della qualità visiva](../../../../../../../kernel/console/video/documentation/visual-quality.md).
+Le sezioni seguenti descrivono i checkpoint precedenti del font bitmap.
+
 # Font console 9x18 (storico 8x16 e 10x20) — aggiornato il 16 ottobre 2026
 
 Dal 16 ottobre la cella e 9x18 (prima 10x20): parametri del generatore, contratto e prove in

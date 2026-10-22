@@ -194,12 +194,16 @@ static int pointer_settled(void)
     int pending = kernel_console_service_pending(&service);
     if (pending < 0) return 0;
     if (pending) return 1;
+#ifndef KERNEL_INPUT_INTERACTIVE
     if (!kernel_text("KERNEL_POINTER_FRAME_X: ") || !kernel_number(pointer.Image.X) ||
         !kernel_text("\nKERNEL_POINTER_FRAME_Y: ") || !kernel_number(pointer.Image.Y) ||
         !kernel_text("\nKERNEL_POINTER_FRAME_VISIBLE: ") || !kernel_number(pointer.Image.Visible) ||
         !kernel_text("\nKERNEL_POINTER_FRAME_MOVES: ") || !kernel_number(pointer.Moves) ||
         !kernel_text("\nKERNEL_POINTER_FRAME_CELLS: ") || !kernel_number(render.CellsDone) ||
         !kernel_text("\n") || !kernel_log(0, "KERNEL_POINTER_FRAME")) return 0;
+#else
+    if (pointer_frame == UINT64_MAX && !kernel_log(0,"KERNEL_POINTER_READY")) return 0;
+#endif
     pointer_frame = pointer.Moves; pointer_visibility = pointer.Image.Visible;
     pointer_cells = render.CellsDone;
     return 1;

@@ -42,7 +42,7 @@ def main():
         ROOT / 'arch/x86/kernel/drivers/video/framebuffer/pixels/transaction.c',
         ROOT / 'arch/x86/kernel/drivers/video/framebuffer/pixels/session.h']
     for path in dict.fromkeys(candidates):
-        if not path.is_file() or '__pycache__' in path.parts:
+        if not path.is_file() or '__pycache__' in path.parts or path.suffix.lower() in {'.png', '.ttf'}:
             continue
         data = path.read_bytes()
         text = data.decode('utf-8-sig')

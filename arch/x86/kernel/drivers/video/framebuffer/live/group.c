@@ -9,9 +9,11 @@ static int prepare(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected, BOOT_U
     if (!owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 || owner->Published != 1 ||
         !owner->Context || !owner->Window || !owner->Window->Pool || !(original = owner->Inventory) ||
         owner->Allocated < 3 || owner->Allocated > X86_PAGING_VIDEO_TABLES) return 0;
+    BOOT_U64 device = original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0;
     *pages = x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root);
-    if (!*pages || *pages > 128 || *pages % 16 || owner->Budget < owner->Allocated + *pages ||
-        owner->Window->Pool->FreePages != owner->Budget - owner->Allocated - *pages ||
+    if (original->Gpu.Ready > 1 || !*pages || *pages > 128 || *pages % 16 ||
+        owner->Budget < owner->Allocated + *pages + device ||
+        owner->Window->Pool->FreePages != owner->Budget - owner->Allocated - *pages - device ||
         original->LeafPages > UINT64_MAX - *pages || original->RamPages > UINT64_MAX - *pages) return 0;
     *expected = *original;
     expected->LeafPages += *pages;
@@ -35,7 +37,8 @@ int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 r
         x86_fb_group_caret(owner, column, row, scalars, count, foreground, background, ticks, caret);
     owner->Inventory = original;
     return result && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
-        owner->Window->Pool->FreePages == owner->Budget - owner->Allocated - pages;
+        owner->Window->Pool->FreePages == owner->Budget - owner->Allocated - pages -
+            (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0);
 }
 
 // ====== x86_fb_live_group_caret ======

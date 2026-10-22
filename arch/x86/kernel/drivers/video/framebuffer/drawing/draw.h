@@ -36,6 +36,8 @@ BOOT_U64 x86_fb_utf8_scalar(BOOT_U32 bytes, BOOT_U32 remaining);
 BOOT_U32 x86_fb_font_scalar(BOOT_U32 scalar);
 BOOT_U32 x86_fb_font_height(BOOT_U32 height);
 int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
-    const unsigned short rows[X86_FB_TEXT_CELLS][X86_FB_CELL_HEIGHT], BOOT_U32 count,
+    const X86_FB_FONT *font, const BOOT_U32 glyphs[X86_FB_TEXT_CELLS], BOOT_U32 count, BOOT_U32 caret,
     const KERNEL_POINTER_IMAGE *pointer);
+BOOT_U64 x86_fb_font_row(const X86_FB_FONT *font, BOOT_U32 glyph, BOOT_U32 row);
+BOOT_U32 x86_fb_text_color(BOOT_U64 row, BOOT_U32 x, BOOT_U32 foreground, BOOT_U32 background);
 #endif

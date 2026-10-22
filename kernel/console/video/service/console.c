@@ -30,8 +30,7 @@ static int valid(const KERNEL_CONSOLE_SERVICE *owner)
 
 // ====== enter ======
 
-static int enter(KERNEL_CONSOLE_SERVICE *owner)
-{
+static int enter(KERNEL_CONSOLE_SERVICE *owner) {
     if (!valid(owner) || owner->Busy || owner->Closed || owner->Failed) return 0;
     owner->Busy = 1;
     return 1;

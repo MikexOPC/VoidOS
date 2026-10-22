@@ -26,6 +26,11 @@ int x86_fb_transaction_begin(X86_FB_MAPPING *owner, const X86_FB_PIXEL_RECT *rec
     BOOT_U32 count, X86_FB_PIXEL_TRANSACTION *transaction);
 int x86_fb_transaction_pixel(X86_FB_PIXEL_TRANSACTION *transaction,
     BOOT_U32 x, BOOT_U32 y, BOOT_U32 *word, int write);
+int x86_fb_transaction_row(X86_FB_PIXEL_TRANSACTION *transaction,
+    BOOT_U32 rect, BOOT_U32 row, const BOOT_U32 *words, BOOT_U32 capacity);
+int x86_fb_transaction_span(X86_FB_PIXEL_TRANSACTION *transaction,
+    BOOT_U32 rect, BOOT_U32 row, BOOT_U32 column, BOOT_U32 width,
+    const BOOT_U32 *words, BOOT_U32 capacity);
 int x86_fb_transaction_end(X86_FB_PIXEL_TRANSACTION *transaction);
 int x86_fb_transaction_abort(X86_FB_PIXEL_TRANSACTION *transaction);
 #endif

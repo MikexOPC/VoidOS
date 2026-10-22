@@ -49,27 +49,25 @@ static int font_valid(const X86_FB_FONT *font)
 // ====== text_plan ======
 
 static BOOT_U32 text_plan(const X86_FB_TEXT *text, const X86_FB_FONT *font,
-    unsigned short rows[X86_FB_TEXT_CELLS][X86_FB_CELL_HEIGHT])
+    BOOT_U32 glyphs[X86_FB_TEXT_CELLS])
 {
-    BOOT_U32 offset = 0, count = 0, byte, glyph, row;
+    BOOT_U32 offset = 0, count = 0, byte, glyph;
     if (!text->Text || !text->Bytes || text->Bytes > X86_FB_TEXT_BYTES ||
         text->Capacity < text->Bytes || (BOOT_U64)text->Text > ~0ULL - text->Bytes ||
         !font_valid(font)) return 0;
     while (offset < text->Bytes) {
         BOOT_U32 packed = 0;
         BOOT_U64 decoded;
-        const unsigned short *bitmap;
         if (count == X86_FB_TEXT_CELLS) return 0;
         for (byte = 0; byte < 4 && byte < text->Bytes - offset; ++byte)
             packed |= (BOOT_U32)text->Text[offset + byte] << (byte * 8);
         decoded = x86_fb_utf8_scalar(packed, text->Bytes - offset);
         if (decoded == ~0ULL) return 0;
-        bitmap = font->Missing;
         for (glyph = 0; glyph < font->Count; ++glyph)
             if (font->Glyphs[glyph].Scalar == (BOOT_U32)decoded) {
-                bitmap = font->Glyphs[glyph].Rows; break;
+                break;
             }
-        for (row = 0; row < font->Height; ++row) rows[count][row] = bitmap[row];
+        glyphs[count] = glyph;
         offset += (BOOT_U32)(decoded >> 32); ++count;
     }
     return count;
@@ -84,7 +82,7 @@ int x86_fb_text_pointer(X86_FB_MAPPING *owner, const X86_FB_TEXT *input,
     X86_FB_TEXT text;
     X86_FB_FONT font;
     X86_FB_PIXEL_SESSION session;
-    unsigned short rows[X86_FB_TEXT_CELLS][X86_FB_CELL_HEIGHT];
+    BOOT_U32 glyphs[X86_FB_TEXT_CELLS];
     BOOT_U32 count, cell, row, column, foreground, background;
     if (!input || !input_font || ((BOOT_U64)input & 7) || ((BOOT_U64)input_font & 7) ||
         !x86_exception_environment()) return 0;
@@ -99,15 +97,13 @@ int x86_fb_text_pointer(X86_FB_MAPPING *owner, const X86_FB_TEXT *input,
     }
     if ((text.Foreground | text.Background) & 0xff000000U) return 0;
     DRAW_MARK(1);
-    count = text_plan(&text, &font, rows);
+    count = text_plan(&text, &font, glyphs);
     DRAW_MARK(2);
     if (!count || (caret != ~0U && (caret >= count || font.Height != X86_FB_CELL_HEIGHT ||
         font.Width != X86_FB_CELL_WIDTH))) return 0;
-    if (caret != ~0U)
-        rows[caret][X86_FB_CELL_HEIGHT - 2] = rows[caret][X86_FB_CELL_HEIGHT - 1] = (1U << X86_FB_CELL_WIDTH) - 1;
     if (input_pointer) {
         if (font.Height != X86_FB_CELL_HEIGHT || font.Width != X86_FB_CELL_WIDTH) return 0;
-        return x86_fb_cursor_text(owner, &text, rows, count, &pointer);
+        return x86_fb_cursor_text(owner, &text, &font, glyphs, count, caret, &pointer);
     }
     if (!x86_fb_pixels_begin(owner, text.X, text.Y, count * font.Width, font.Height, &session)) return 0;
     DRAW_MARK(3);
@@ -118,7 +114,8 @@ int x86_fb_text_pointer(X86_FB_MAPPING *owner, const X86_FB_TEXT *input,
             BOOT_U32 x = text.X + cell * font.Width + column, y = text.Y + row;
             BOOT_U32 sample = pointer.Visible && x >= pointer.X && y >= pointer.Y ?
                 kernel_pointer_sample(x - pointer.X, y - pointer.Y) : 0;
-            BOOT_U32 color = (rows[cell][row] & (1U << (font.Width - 1 - column))) ? foreground : background;
+            BOOT_U32 color = x86_fb_text_color(cell == caret && row >= font.Height - 2 ?
+                ~0ULL : x86_fb_font_row(&font, glyphs[cell], row), column, foreground, background);
             if (sample) color = kernel_pointer_blend(sample, color);
             if (!x86_fb_pixels_store(&session, x, y, color)) return 0;
         }

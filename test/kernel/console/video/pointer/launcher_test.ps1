@@ -4,9 +4,12 @@ $launcher = "$project/kernel/console/video/scripts/pointer/run.ps1"
 
 # ============ preparation uses the tested image and isolated resources ============
 
+$image = "$project/kernel/build/pointer-interactive-image/kernel.elf"
+$loader = "$project/arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI"
 $prepared = & $launcher -PrepareOnly
-if (!$prepared -or $prepared.ImageHash -ne 'C7B4C4896421D1D3905E97A300135BFEC54AE46402165E58311B3BA287F19100' -or
-    $prepared.LoaderHash -ne '2D87ABD8C7CAD8D0C2214259C0FA9479ED75D8A259AFFD28A9AF1738765C2A02') {
+if (!$prepared -or $prepared.ImageHash -ne (Get-FileHash $image).Hash -or
+    $prepared.LoaderHash -ne (Get-FileHash $loader).Hash -or
+    $prepared.ImagePath -ne $image) {
     throw 'Launcher does not use the tested image/loader.'
 }
 if ($prepared.Arguments -notcontains 'sdl,show-cursor=off' -or
@@ -20,7 +23,7 @@ if (!(Test-Path "$($prepared.Directory)/esp/EFI/BOOT/kernel.elf") -or
     (Get-FileHash 'C:/Program Files/qemu/share/edk2-i386-vars.fd').Hash) {
     throw 'Isolated ESP/firmware preparation failed.'
 }
-$second = & $launcher -PrepareOnly
+$second = & $launcher -Image $image -PrepareOnly
 if ($prepared.Directory -eq $second.Directory) { throw 'Firmware state reused between sessions.' }
 
 # ============ missing or wrong images are rejected before starting QEMU ============

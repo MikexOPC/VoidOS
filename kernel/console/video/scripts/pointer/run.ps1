@@ -2,11 +2,11 @@ param([string]$QemuDirectory = 'C:/Program Files/qemu', [string]$Image,
     [switch]$Rebuild, [switch]$PrepareOnly)
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path "$PSScriptRoot/../../../../..").Path
-if (!$Image) { $Image = "$project/kernel/build/cursor-transaction-final/kernel.elf" }
-if ($Rebuild) {
+if (!$Image -or $Rebuild) {
     $Image = "$project/kernel/build/pointer-interactive-image/kernel.elf"
-    & "$project/kernel/scripts/build.ps1" -Ps2Mouse -ConsoleShell -OutputDirectory (Split-Path -Parent $Image)
+    & "$project/kernel/scripts/build.ps1" -Ps2Mouse -ConsoleShell -InteractiveInput -OutputDirectory (Split-Path -Parent $Image) | Out-Host
     if (!$?) { throw 'Compilazione puntatore fallita.' }
+    & "$project/kernel/scripts/audit-symbols.ps1" -Map ((Split-Path -Parent $Image) + '/kernel.map') | Out-Host
 }
 $qemu = Join-Path $QemuDirectory 'qemu-system-x86_64.exe'
 $code = Join-Path $QemuDirectory 'share/edk2-x86_64-code.fd'
@@ -60,7 +60,7 @@ $arguments = @('-name','MikeSW OS - cursore PS/2','-machine','q35','-cpu','max',
     '-drive',"if=pflash,format=raw,readonly=on,file=$codePath",
     '-drive',"if=pflash,format=raw,file=$varsPath",
     '-drive',"format=raw,file=fat:rw:$espPath")
-$prepared = [pscustomobject]@{Qemu=$qemu; Arguments=$arguments; Directory=$session;
+$prepared = [pscustomobject]@{Qemu=$qemu; Arguments=$arguments; Directory=$session; ImagePath=$Image;
     ImageHash=$imageHash; LoaderHash=$loaderHash; Serial="$session/serial.log"}
 $prepared | ConvertTo-Json -Depth 4 | Set-Content "$session/session.json" -Encoding UTF8
 if ($PrepareOnly) { return $prepared }
@@ -69,7 +69,7 @@ if ($PrepareOnly) { return $prepared }
 
 Write-Host '[ INFO ] Attendi il prompt e il puntatore; clicca nella finestra per catturare il mouse.'
 Write-Host '[ INFO ] Ctrl+Alt+G rilascia mouse e tastiera. Prova help, echo ciao, status.'
-Write-Host '[ INFO ] Prova breve: profilo diagnostico limitato. exit oppure Esc termina la sessione input.'
+Write-Host '[ INFO ] Esc annulla la riga. Il comando exit termina la sessione input.'
 Write-Host "[ INFO ] Log e immagine della sessione: $session"
 & $qemu @arguments
 if ($LASTEXITCODE) { throw "QEMU terminato con errore $LASTEXITCODE; vedere $session" }
