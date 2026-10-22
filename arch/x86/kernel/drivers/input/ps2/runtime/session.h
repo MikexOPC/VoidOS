@@ -53,6 +53,7 @@ typedef struct {
     X86_PS2_MOUSE Mouse;
     // DeviceErrors/Discarded: written by the ISR. DeviceSeen/Streak: consumer only.
     volatile BOOT_U32 DeviceErrors;
+    volatile BOOT_U32 DevicePending;
     BOOT_U32 Discarded, DeviceSeen, Streak, Resyncs;
 } X86_PS2_SESSION;
 _Static_assert(offsetof(X86_PS2_SESSION,Error) == 4, "Watchdog source count/error ABI");
@@ -79,11 +80,13 @@ int x86_ps2_after_dispatch(void);
 int x86_ps2_before_collect(void);
 int x86_ps2_complete(void);
 int x86_ps2_fault_poll(X86_PS2_SESSION *owner);
+int x86_ps2_fault_discard(X86_PS2_SESSION *owner);
 int x86_ps2_fault_note(X86_PS2_SESSION *owner);
 void x86_ps2_fault_valid(X86_PS2_SESSION *owner);
 int x86_ps2_fault_resync(X86_PS2_SESSION *owner, int verdict);
 int x86_ps2_irq_record(BOOT_U64 vector, BOOT_U64 rip, BOOT_U64 rsp, BOOT_U64 flags);
 void x86_ps2_task(uint32_t index);
+void x86_ps2_consume(void);
 int x86_ps2_idle(void);
 int x86_scheduler_run_input(void);
 #endif

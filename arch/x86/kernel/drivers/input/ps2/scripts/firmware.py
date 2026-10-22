@@ -14,49 +14,15 @@ IDLE_SECONDS = 80  # set by --idle-seconds
 sys.dont_write_bytecode = True
 
 
-# ====== read_serial ======
+# ====== shared monitor protocol ======
 
-def read_serial(path):
-    raw = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
-    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", raw)
-
-
-# ====== wait_marker ======
-
-def wait_marker(vm, serial, marker, timeout=40, min_keys=0):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        log = read_serial(serial)
-        if re.search(r"KERNEL_EXCEPTION_HALTED|\bPANIC\b|DISPATCH_FAILED|PS2_INPUT_FAILED|KERNEL_CONSOLE_DRAW_REJECTED_PM", log):
-            raise RuntimeError("Kernel failure: " + str(serial))
-        if marker in log and log.count("PS2_KEY: ") >= min_keys:
-            return log
-        if vm.poll() is not None:
-            raise RuntimeError("Owned VM exited before marker")
-        time.sleep(0.001)
-    raise TimeoutError("Missing " + marker + ": " + str(serial))
-
-
-# ====== command ======
-
-def command(vm, text):
-    vm.stdin.write(text + "\n")
-    vm.stdin.flush()
-
-
-# ====== image_hash ======
-
-def image_hash(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
-
-
-# ====== number ======
-
-def number(log, field):
-    match = re.search(re.escape(field) + r": 0x([0-9a-fA-F]{16})", log)
-    if not match:
-        raise RuntimeError("Missing numeric evidence: " + field)
-    return int(match[1], 16)
+import importlib.util
+_protocol_spec = importlib.util.spec_from_file_location("ps2_firmware_protocol",Path(__file__).with_name("protocol.py"))
+_protocol = importlib.util.module_from_spec(_protocol_spec)
+_protocol_spec.loader.exec_module(_protocol)
+read_serial, wait_marker, command = _protocol.read_serial, _protocol.wait_marker, _protocol.command
+image_hash, number = _protocol.image_hash, _protocol.number
+cancel_input, exit_input = _protocol.cancel_input, _protocol.exit_input
 
 
 # ====== run_boot ======
@@ -194,7 +160,11 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                             pointer_frames.append(pointer_firmware.verify(vm,scenario,serial,mouse_expected,read_serial,wait_marker,command,line.replace(' ','-')))
             time.sleep(0.05)
             if not shell:
-                command(vm, "sendkey esc 30")
+                exit_input(vm,serial)
+                extra_keys += 5
+                if text_profile:
+                    expected_text.extend(map(ord,"exit"))
+                    expected_lines.append("exit")
             log = wait_marker(vm, serial, "KERNEL_READY", 10)
             for marker in ["KERNEL_PS2_INPUT_READY", "KERNEL_INPUT_TASKS_COLLECTED",
                            "KERNEL_PS2_INPUT_CLEANUP_OK", "KERNEL_SCHEDULER_CLEANUP_OK",
@@ -222,7 +192,7 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                 raise RuntimeError("Input session physical budget mismatch")
             expected_keys = 5 + int(not shell) + stress + extra_keys
             # Pause has no break; stopping may disable scanning before the
-            # final Esc/Enter break. All other injected releases are required.
+            # final Enter break. All other injected releases are required.
             if counters["PS2_KEYS"] != expected_keys or counters["PS2_RELEASES"] < expected_keys - 2 or (not video_absent and not counters["PS2_TASK_IRQS"]) or counters["PS2_IDLE"] < 2:
                 raise RuntimeError("Input/IRQ/idle evidence insufficient: " + str(counters))
             if text_profile:

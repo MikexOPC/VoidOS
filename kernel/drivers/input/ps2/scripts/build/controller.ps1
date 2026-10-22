@@ -13,7 +13,9 @@ if ($TestPs2Controller -or $Ps2Input) {
     $sources = if ($Ps2Input) { @('route','interrupt','session','task') | ForEach-Object { 'arch/x86/kernel/drivers/input/ps2/runtime/' + $_ + '.c' } }
         else { @('arch/x86/kernel/drivers/input/ps2/integration/native.c') }
     if ($Ps2Input) { $sources += @('kernel/console/line/line.c','kernel/shell/shell.c',
-        'kernel/shell/queue.c','arch/x86/kernel/drivers/input/ps2/shell/task.c') }
+        'kernel/shell/queue.c','arch/x86/kernel/drivers/input/ps2/shell/task.c',
+        'arch/x86/kernel/drivers/input/ps2/runtime/consumer/stream.c',
+        'arch/x86/kernel/drivers/input/ps2/runtime/consumer/recovery.c') }
     if ($Ps2Mouse) { $sources += @('kernel/drivers/input/ps2/mouse/decoder.c','kernel/drivers/input/ps2/mouse/stream/control.c',
         'arch/x86/kernel/drivers/input/ps2/mouse/session.c','arch/x86/kernel/drivers/input/ps2/mouse/task.c') }
     foreach ($source in $sources) {

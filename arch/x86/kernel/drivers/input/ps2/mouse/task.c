@@ -15,11 +15,13 @@ static BOOT_U64 pop_private(X86_PS2_MOUSE *mouse)
 
 // ====== delta_private ======
 
+#ifndef KERNEL_INPUT_INTERACTIVE
 static int delta_private(int32_t value)
 {
     if (value < -256 || value > 255) return 0;
     return (value >= 0 || kernel_text("-")) && kernel_number((BOOT_U64)(value < 0 ? -value : value));
 }
+#endif
 
 // ====== framing_error_private ======
 
@@ -80,9 +82,12 @@ void x86_ps2_mouse_task(void)
             if (mouse->Saturated != UINT32_MAX) ++mouse->Saturated;
         } else if (result == KERNEL_PS2_MOUSE_EVENT_READY) {
             mouse->Streak = 0;
-            if (mouse->Events == UINT32_MAX || !kernel_text("MOUSE_EVENT: ") ||
+            if (mouse->Events == UINT32_MAX) kernel_scheduler_fail_stop();
+#ifndef KERNEL_INPUT_INTERACTIVE
+            if (!kernel_text("MOUSE_EVENT: ") ||
                 !delta_private(event.DeltaX) || !kernel_text(" ") || !delta_private(event.DeltaY) ||
                 !kernel_text(" ") || !kernel_number(event.Buttons) || !kernel_text("\n")) kernel_scheduler_fail_stop();
+#endif
             ++mouse->Events;
             mouse->Buttons = event.Buttons;
 #ifdef KERNEL_CONSOLE_SHELL

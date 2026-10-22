@@ -3,7 +3,8 @@
 Scelta gia approvata: tastiera PS/2 QEMU, decoder Rust, una sorgente per
 evento e un consumer. Il profilo esplicito `-Ps2Input` implementa IRQ1 →
 coda Rust → task → decoder Rust → layout italiano → UTF-8 sul log seriale.
-Esc richiede lo stop. Enter consegna ora la riga UTF-8 completa alla task;
+Esc annulla la riga e il flag di troncamento, senza chiudere la sessione o
+modificare Shift/Ctrl/Alt/Caps Lock. Enter consegna la riga UTF-8 completa alla task;
 Backspace cancella uno scalar e Tab resta evento. Il buffer contiene al
 massimo256 byte, con rifiuto del nuovo carattere se pieno. La task shell2
 riceve copie delle righe tramite FIFO4: help, echo, status ed exit.
@@ -36,17 +37,18 @@ IRQ -> OBF/read limitato -> push DATA o LOSS -> EOI
 task0 -> pop -> decoder -> modificatori/layout/UTF-8 -> editor -> FIFO righe; EMPTY -> observe/recheck/wait
 task1 -> observe -> Assembly IF=1 con verifica GPR/SIMD -> wait/yield
 task2 -> observe dati -> pop copia -> signal spazio -> builtin -> clear/yield
-stop Esc/exit -> mask -> F5/close -> ack IRR/HPET -> unbind handler/restore route
+stop exit -> mask -> F5/close -> ack IRR/HPET -> unbind handler/restore route
  -> sveglia worker e producer -> drena byte -> chiudi FIFO/EOF -> termina prestito -> collect tre stack
  -> close coda/unbind evento -> budget ripristinato -> close HPET
 ```
 
 Il consumer cede la CPU fra eventi. DATA/LOSS/EMPTY e generazioni sono
 gestiti dalla coda gia verificata; ISR senza decoder, log o allocazioni.
-Una perdita o un byte non valido azzera parser e modificatori e richiede stop; non
-si dichiara ripresa riuscita. Errori hardware, cleanup non confermato o
-contesto invalido terminano conservando gli owner, senza liberare mapping
-o stack ancora potenzialmente usati. La v0 non riavvia una sessione chiusa.
+Guasti isolati e LOSS azzerano parser, modificatori e riga secondo il
+[contratto di recupero B2](keyboard-recovery.md); un guasto ISR scarta prima i byte
+incerti. Superare il limite di guasti consecutivi resta terminale. Cleanup non
+confermato, ownership o contesto invalido conservano gli owner, senza liberare
+mapping o stack ancora potenzialmente usati. La v0 non riavvia una sessione chiusa.
 
 Il consumer azzera anche la riga parziale su LOSS, input malformato e stop.
 Enter conserva il buffer fino alla consegna sincrona riuscita; il log
@@ -61,8 +63,47 @@ Il poll Assembly restituisce0 per rifiuto/corruzione,1 per dati,2 per
 attesa vuota con registri e SIMD integri. Il vecchio ingresso timer
 conserva la semantica0/1. Poll massimo100ms e limite20milioni iterazioni;
 sono budget di bring-up, non benchmark o timeout universali hardware.
-Il dispatcher conserva guardie65536 dispatch/1024 idle: questa sessione
-non e un servizio illimitato. Superarle e terminale; Esc e lo stop normale.
+B1 elimina il limite globale di dispatch/idle per la sessione input: restano
+finite e sorvegliate le singole attese. Esc svuota l'editor e pubblica
+PS2_EDIT_CANCEL sia alla pressione sia al repeat; il rilascio non annulla di nuovo.
+Non invia righe alla shell, non incrementa il contatore dei recuperi da guasto e
+aggiorna la console tramite la normale API serializzata. Exit richiede lo stop.
+
+## Esc come annullamento — verifica del 19 ottobre 2026
+
+Il consumer svuota l'editor tramite `kernel_ps2_line_clear`, azzera solo
+`LineTruncated` e aggiorna la console con `x86_console_edit` prima di pubblicare
+PS2_EDIT_CANCEL. Restano invariati stato dei modificatori, contatori di guasto,
+code mouse/shell e ownership. Fallimenti della console o del log restano terminali.
+I test usano ora exit per richiedere il cleanup; gli helper monitor/seriale condivisi
+sono in `scripts/protocol.py`, senza cambiare la creazione delle VM possedute.
+
+- Host: 277 scenari consumer per variante seriale/video, MSVC /W4 /WX e ASan;
+  riga vuota, UTF-8 e piena/troncata, repeat/rilascio Esc, modificatori conservati,
+  nuovo comando dopo annullamento e regressioni del recupero B2.
+  Suite C/Rust e cppcheck passati: `kernel/build/escape-cancel-host-final.log`,
+  evidenze `kernel/build/ps2-decoder-40e6f26b4d334027a6826fed5134f189`.
+- Immagine finale `92C5095EE3BB43B0DF8994B8520AA42F0374BB55BA11E7C0C0DD47D2B3E4EAA9`:
+  dieci boot consecutivi, 120 scene di movimento e dieci scene dopo Esc corrette,
+  testo exit annullato, help successivo, mouse attivo e cleanup tramite exit.
+  Budget fisico ripristinato. Directory
+  `kernel/build/pointer-interactive-check-94a65626bbe44847b168e0d62cf9e236`.
+- Due smoke del profilo solo tastiera, senza/con testo italiano, passati:
+  `kernel/build/escape-cancel-keyboard-qemu.log` e
+  `kernel/build/escape-cancel-keyboard-text.log`.
+- ESP del launcher verificata con annullamento Esc e cleanup tramite exit:
+  `kernel/build/escape-cancel-launcher-smoke.log`.
+
+Prima della ricompilazione del launcher erano gia passati dieci boot sull'immagine
+`8563774DBBC5A1C8D56376219D6467B7AB851B7AA0D586F69A3EA19F84D98667`.
+Il confronto rileva soltanto due byte di timestamp nella directory debug, segmenti
+eseguibili identici (`kernel/build/escape-cancel-rebuild-comparison.json`). La campagna
+finale e comunque associata all'hash esatto del binario rigenerato.
+
+Non e una correzione del renderer: audit finale delle catture durante il movimento,
+153 complete, cinque parziali, nessuna assente; le scene assestate passano.
+ASan e accounting QEMU sono prove distinte; Valgrind non eseguito, coverage non misurata,
+nessuna nuova prova su hardware fisico.
 
 ## Registri e fonti hardware
 
