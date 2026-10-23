@@ -199,3 +199,14 @@ int x86_vgpu_iommu_disable(void)
     owner = 0;
     return kernel_log(0, "KERNEL_VGPU_IOMMU_RELEASED");
 }
+
+// ====== x86_vgpu_iommu_clock ======
+
+int x86_vgpu_iommu_clock(BOOT_U32 *port, BOOT_U32 *mask)
+{
+    if (!port || !mask || !qi.Self || qi.Clock.Ready != 1 || !qi.Clock.Port || qi.Clock.Port > 65535) return 0;
+
+    *port = qi.Clock.Port;
+    *mask = qi.Clock.Mask;
+    return 1;
+}
