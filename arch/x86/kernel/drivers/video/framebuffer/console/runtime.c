@@ -6,6 +6,7 @@
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
 #include "../drawing/draw.h"
+#include "profile.h"
 #ifdef KERNEL_VGPU_IOMMU
 #include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
 #endif
@@ -116,12 +117,16 @@ static int draw_group(void *context, uint32_t column, uint32_t row,
     pointer_x = pointer.Image.X; pointer_y = pointer.Image.Y; pointer_seen = 1;
 #endif
 #endif
+    X86_PROFILE_BEGIN(group_start);
+    int drawn;
 #ifdef KERNEL_PS2_MOUSE
     if (!kernel_pointer_valid(&pointer)) return 0;
-    return x86_fb_kernel_group_pointer(column, row, scalars, count, 0xffffff, 0x081018, ticks, caret, &pointer.Image);
+    drawn = x86_fb_kernel_group_pointer(column, row, scalars, count, 0xffffff, 0x081018, ticks, caret, &pointer.Image);
 #else
-    return x86_fb_kernel_group_caret(column, row, scalars, count, 0xffffff, 0x081018, ticks, caret);
+    drawn = x86_fb_kernel_group_caret(column, row, scalars, count, 0xffffff, 0x081018, ticks, caret);
 #endif
+    X86_PROFILE_END(X86_PROFILE_GROUP, group_start);
+    return drawn;
 }
 
 // ====== draw_cell ======
@@ -140,6 +145,9 @@ int x86_console_open(X86_PS2_SESSION *session)
         !session->Clock.Ready || !session->Clock.Port || session->Clock.Port > 65535 ||
         (session->Clock.Mask != 0xffffff && session->Clock.Mask != UINT32_MAX)) return 0;
     source = session;
+#ifdef KERNEL_PROFILE_VGPU_FLUSH
+    x86_profile_start(session->Clock.Port, session->Clock.Mask);
+#endif
     fb = &session->Env.Context->Info.Framebuffer;
     if (!fb->Base) { absent = 1; return kernel_log(1, "KERNEL_CONSOLE_SHELL_ABSENT"); }
     if (!kernel_console_service_init(&service, &view, fb->Width / KERNEL_CONSOLE_CELL_WIDTH, fb->Height / KERNEL_CONSOLE_CELL_HEIGHT)) return 0;
@@ -254,9 +262,12 @@ int x86_console_flush(X86_PS2_SESSION *session)
     uint32_t result, begin, spent;
     uint64_t overruns = measured.Overruns;
     if (!task_valid(session, 1)) return flush_failure(1);
+    X86_PROFILE_BEGIN(flush_start);
 #ifdef KERNEL_VGPU_IOMMU
     // V2b Y3-A: the GPU fault scan rides on every console flush (registers only).
+    X86_PROFILE_BEGIN(poll_start);
     if (!x86_vgpu_session_poll()) return flush_failure(1);
+    X86_PROFILE_END(X86_PROFILE_POLL, poll_start);
 #endif
     if (absent) return 1;
 #ifdef KERNEL_VGPU_IOMMU
@@ -276,7 +287,9 @@ int x86_console_flush(X86_PS2_SESSION *session)
     }
 #endif
     if (!kernel_console_service_render_begin(&service)) return flush_failure(2);
+    X86_PROFILE_BEGIN(render_start);
     result = kernel_console_measure_batch_step_live(&measured, &batch);
+    X86_PROFILE_END(X86_PROFILE_RENDER, render_start);
     if (!kernel_console_service_render_end(&service, result != 0)) return flush_failure(3);
     if (!result || measured.Failed || batch.Failed || render.Busy) return flush_failure(4);
 #ifdef KERNEL_PS2_MOUSE
@@ -292,7 +305,9 @@ int x86_console_flush(X86_PS2_SESSION *session)
     if (damage_right != damage_x) {
         uint32_t x = damage_x, y = damage_y, w = damage_right - damage_x, h = damage_bottom - damage_y;
         damage_x = damage_y = damage_right = damage_bottom = 0;
+        X86_PROFILE_BEGIN(present_start);
         if (!x86_vgpu_present_rect(x, y, w, h)) return flush_failure(7);
+        X86_PROFILE_END(X86_PROFILE_PRESENT, present_start);
         if (x86_vgpu_present_redraw()) {
             for (uint32_t index = 0; index < view.Columns * view.Rows; ++index) view.Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
             render.Next = 0;
@@ -300,6 +315,7 @@ int x86_console_flush(X86_PS2_SESSION *session)
         }
     }
 #endif
+    X86_PROFILE_END(X86_PROFILE_FLUSH, flush_start);
     spent = elapsed(begin);
     ++flush_count; flush_total += spent;
     if (result == KERNEL_CONSOLE_RENDER_IDLE) { ++idle_count; idle_total += spent; }
@@ -342,5 +358,9 @@ int x86_console_finish(X86_PS2_SESSION *session)
         kernel_text("\nKERNEL_CONSOLE_IDLE_FLUSHES: ") && kernel_number(idle_count) &&
         kernel_text("\nKERNEL_CONSOLE_IDLE_TOTAL_PM: ") && kernel_number(idle_total) &&
         kernel_text("\nKERNEL_CONSOLE_SETTLE_TOTAL_PM: ") && kernel_number(settle_total) &&
-        kernel_text("\n") && kernel_log(0, "KERNEL_CONSOLE_SHELL_CLEAN");
+        kernel_text("\n") &&
+#ifdef KERNEL_PROFILE_VGPU_FLUSH
+        x86_profile_report() &&
+#endif
+        kernel_log(0, "KERNEL_CONSOLE_SHELL_CLEAN");
 }

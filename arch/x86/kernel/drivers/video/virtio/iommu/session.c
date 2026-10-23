@@ -111,7 +111,12 @@ int x86_vgpu_session_start(const KERNEL_ACPI_DIRECTORY *directory)
     if (!x86_vgpu_iommu_clock(&clock_port, &clock_mask)) clock_port = 0;
 
     // V2c: the console moves to the GPU; a refused bring-up keeps GOP, an unconfirmed reset retains.
+#ifndef KERNEL_PROFILE_VGPU_NO_PRESENT
     if (!x86_vgpu_present_open(gpu, directory, &arena, &surface)) state = X86_VGPU_SESSION_RETAINED;
+#else
+    // Profile image B: translation, arena and surface as in V2c, but the console stays on GOP.
+    (void)directory;
+#endif
 
     held = budget - gpu->Window->Pool->FreePages;
     quiet_end(flags, since);

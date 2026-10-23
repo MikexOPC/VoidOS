@@ -58,7 +58,21 @@ def expected(scene, x, y):
 # V2b: the GPU domain translates from before the session to after exit (QEMU v11.1.0 trace).
 VTD_EVENTS = ('vtd_dmar_enable','vtd_switch_address_space','vtd_frr_new','vtd_reg_dmar_root')
 
-def translation_check(log, trace_text, fallbacks=0):
+# ====== profile_check ======
+
+PROFILE = ('FLUSH','RENDER','GROUP','VERIFY','TARGET','PREPARE','PRESENT','POLL')
+
+# Profile images (-ProfileVgpuFlush): every phase report coherent, one FLUSH sample per flush, and
+# the timed phases inside a flush never exceed the flush total.
+def profile_check(log):
+    if 'KERNEL_PROFILE_FLUSH_COUNT' not in log: return None
+    phases = {name: latency_check(log,'KERNEL_PROFILE_'+name) for name in PROFILE}
+    if phases['FLUSH']['Count'] != provider.number(log,'KERNEL_CONSOLE_FLUSHES'): raise RuntimeError('Profile flush count')
+    inside = phases['RENDER']['Total'] + phases['PRESENT']['Total'] + phases['POLL']['Total']
+    if inside > phases['FLUSH']['Total']: raise RuntimeError('Profile phases exceed the flush')
+    return phases
+
+def translation_check(log, trace_text, fallbacks=0, presenting=True):
     for marker in ('KERNEL_VGPU_SESSION_TRANSLATING','KERNEL_VGPU_IOMMU_TRANSLATING','KERNEL_VGPU_SESSION_RELEASED',
             'KERNEL_VGPU_IOMMU_RELEASED'):
         if marker not in log: raise RuntimeError('V2b marker missing: '+marker)
@@ -81,6 +95,11 @@ def translation_check(log, trace_text, fallbacks=0):
         match = re.fullmatch(r'vtd_frr_new index \d+ high (0x[0-9a-f]+) low (0x[0-9a-f]+)', line)
         if match and int(match[1],16) & 0xffff == source: raise RuntimeError('GPU fault record during the session')
     if not polls: raise RuntimeError('No fault scan during the session')
+    if not presenting:
+        # Profile image B: translated GPU domain, console kept on GOP.
+        if 'KERNEL_VGPU_PRESENTING' in log: raise RuntimeError('Image B presented')
+        return dict(Source=hex(source),Polls=polls,Translated=True,Presents=0,
+            Latency=dict(Poll=latency_check(log,'KERNEL_VGPU_POLL_PM',polls)))
     # V2c: the screenshots above come from the VirtIO scanout; the console presented through it.
     presents = provider.number(log,'KERNEL_VGPU_PRESENTS')
     if 'KERNEL_VGPU_PRESENTING' not in log or not presents or provider.number(log,'KERNEL_VGPU_PRESENT_FAILURES') != fallbacks:
@@ -116,7 +135,7 @@ def untranslated_check(log):
         raise RuntimeError('Translation claimed without a DMAR')
     return dict(Untranslated=True)
 
-def boot(image, out, index, iommu=False, absent=False, fallbacks=0):
+def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=True):
     directory = out / f'boot-{index}'
     esp = directory / 'esp/EFI/BOOT'
     esp.mkdir(parents=True)
@@ -251,9 +270,9 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0):
             provider.command(vm,'quit')
             vm.wait(timeout=5)
             if vm.returncode: raise RuntimeError('QEMU exit failure')
-            translation = (translation_check(log,mouse_trace.read_text(errors='replace'),fallbacks) if iommu else
+            translation = (translation_check(log,mouse_trace.read_text(errors='replace'),fallbacks,presenting) if iommu else
                 untranslated_check(log) if absent else None)
-            return dict(Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
+            return dict(Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
                 EscCancelled=True,EscMouseProgress=True,CancelScenes=1,
                 DrainSeconds=latencies,BudgetBefore=before,BudgetAfter=before,
                 Flushes=provider.number(log,'KERNEL_CONSOLE_FLUSHES'),
@@ -298,7 +317,7 @@ def main():
     parser.add_argument('--audit',type=Path)
     parser.add_argument('--boots',type=int,choices=range(1,21),default=10)
     parser.add_argument('--iommu',action='store_true'); parser.add_argument('--iommu-absent',action='store_true')
-    parser.add_argument('--present-fallback',action='store_true')
+    parser.add_argument('--present-fallback',action='store_true'); parser.add_argument('--iommu-nopresent',action='store_true')
     args = parser.parse_args()
     if args.audit:
         audit(args.audit)
@@ -313,8 +332,8 @@ def main():
         ROOT/'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'),Results=results)
     try:
         for index in range(1,args.boots+1):
-            results.append(boot(args.image,out,index,args.iommu or args.present_fallback,args.iommu_absent,
-                1 if args.present_fallback else 0))
+            results.append(boot(args.image,out,index,args.iommu or args.present_fallback or args.iommu_nopresent,
+                args.iommu_absent,1 if args.present_fallback else 0,not args.iommu_nopresent))
             (out/'results.json').write_text(json.dumps(report,indent=2))
             print(f'PASS: interactive cursor {index}/{args.boots}; pixels, movement, cleanup',flush=True)
     except Exception as failure:
