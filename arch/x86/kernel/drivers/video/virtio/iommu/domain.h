@@ -1,14 +1,19 @@
-#ifndef X86_VGPU_IOMMU_PROBE_H
-#define X86_VGPU_IOMMU_PROBE_H
+#ifndef X86_VGPU_IOMMU_DOMAIN_H
+#define X86_VGPU_IOMMU_DOMAIN_H
 #include "arch/x86/kernel/drivers/video/virtio/mapping.h"
 #include "arch/x86/kernel/drivers/memory/iommu/intel/activation/activation.h"
 
-// Diagnostic V1: the VirtIO GPU under VT-d translation (VIRTIO_F_ACCESS_PLATFORM). Domain
-// buffers: 0 the four queue pages (read/write), 1 the surface backing (read only).
+// The VirtIO GPU under VT-d translation (VIRTIO_F_ACCESS_PLATFORM): V1 diagnostic and the V2
+// persistent session share this owner. Domain buffers: 0 the four queue pages (read/write),
+// 1 the surface backing (read only). One GPU domain at a time.
 #define X86_VGPU_IOMMU_QUEUE   0U
 #define X86_VGPU_IOMMU_SURFACE 1U
 
 // Reads only (ECAM, topology, DMAR, GPU route): no allocation, before any lease exists.
+// X86_VGPU_IOMMU_ABSENT: no DMAR or a DMAR with RMRR (firmware-owned DMA would break, Y2-A).
+#define X86_VGPU_IOMMU_FAILED 0
+#define X86_VGPU_IOMMU_READY  1
+#define X86_VGPU_IOMMU_ABSENT 2
 int x86_vgpu_iommu_route(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory);
 // Needs an idle page window: the queue lease is parked by the caller.
 int x86_vgpu_iommu_enable(const KERNEL_PHYSICAL_LEASE *queue, const KERNEL_PHYSICAL_LEASE *surface);

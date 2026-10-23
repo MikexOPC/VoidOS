@@ -50,7 +50,7 @@ try {
         Invoke-Checked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort','-C','opt-level=2',"$project/$($entry[0])",'-o',"$out/$($entry[1]).obj")
     }
     $native=@('arch/x86/kernel/drivers/video/virtio/resources/mapping.c','arch/x86/kernel/drivers/video/virtio/resources/construction.c',
-        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
         'test/arch/x86/kernel/drivers/video/virtio/resources/mock.c','test/arch/x86/kernel/drivers/video/virtio/resources/cases.c',
         'lib/memory/address_ranges.c')
     $nativePaths=@($native | ForEach-Object {"$project/$_"})

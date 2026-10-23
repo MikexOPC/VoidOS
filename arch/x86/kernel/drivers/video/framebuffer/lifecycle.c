@@ -30,6 +30,7 @@ int x86_fb_unbind(X86_FB_MAPPING *owner)
     BOOT_U32 index;
     volatile BOOT_U64 *root;
     if (!stable_owner(owner)) return 0;
+    if (x86_paging_video_owner() == &owner->Authority && !x86_paging_video_register(&owner->Authority, 0, 0)) return 0;
     owner->Ready = 3;
     root = x86_fb_root();
     if (!root) return 0;
@@ -114,5 +115,9 @@ int x86_fb_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
         return 0;
     }
     owner->Ready = 2;
+    if (!x86_paging_video_register(0, &owner->Authority, x86_fb_authority)) {
+        (void)x86_fb_unbind(owner);
+        return 0;
+    }
     return 1;
 }

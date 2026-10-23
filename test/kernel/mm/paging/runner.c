@@ -13,6 +13,6 @@ int main(void)
             return 1;
         }
     }
-    puts("PASS: 9 paging groups repeated 100 times; pinned lease cleanup checked");
+    puts("PASS: 10 paging groups repeated 100 times; pinned lease cleanup checked");
     return 0;
 }

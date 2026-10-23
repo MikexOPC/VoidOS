@@ -433,6 +433,52 @@ static int dma_arena(void)
     return pool.FreePages == 128 ? 0 : 13;
 }
 
+// ====== video_arena ======
+
+// Framebuffer authority and DMA arena together (V2b ordinary session): the video variant knows the
+// arena tags, and with the framebuffer registered the LAPIC variants delegate to the video rule.
+static int video_arena(void)
+{
+    static X86_DMA_AUTH arena;
+    BOOT_U32 index;
+    if (!video_fixture()) return 1;
+    clear(&arena, sizeof(arena));
+    if (!kernel_physical_allocate(&pool, 1, &arena.Data) || !kernel_physical_pin(&pool, &arena.Data, 1)) return 2;
+    for (index = 0; index < 3; ++index)
+        if (!kernel_physical_allocate(&pool, 1, &arena.Tables[index]) || !kernel_physical_pin(&pool, &arena.Tables[index], 1)) return 3;
+    arena.Self = (BOOT_U64)&arena; arena.Root = 4096; arena.Pat = 6; arena.PhysicalBits = 32; arena.Ready = 1;
+    tables[0][X86_DMA_SLOT] = arena.Tables[0].Base | 3;
+    views[8] = x86_paging_child_view(views[0], 0, X86_DMA_SLOT);
+    tables[8][0] = arena.Tables[1].Base | 3;
+    views[9] = x86_paging_child_view(views[8], 1, 0);
+    tables[9][0] = arena.Tables[2].Base | 3;
+    views[10] = x86_paging_child_view(views[9], 2, 0);
+    tables[10][1] = arena.Data.Base | 0x8000000000000003ULL;
+    table_count = 11;
+    if (!x86_dma_register(0, &arena, dma_check) ||
+        !x86_paging_inventory_capture_video(&context, &pool, &mapping, &video, video_authority, &ledger) ||
+        !x86_paging_inventory_verify_video(&context, &pool, &mapping, &video, video_authority, &ledger) ||
+        ledger.Count != 11 || ledger.Dma.Pages != 1) return 4;
+    // Without the registration the LAPIC variant does not know the framebuffer leaves.
+    if (x86_paging_inventory_verify_lapic(&context, &pool, &mapping, &ledger)) return 5;
+    if (!x86_paging_video_register(0, &video, video_authority) || x86_paging_video_owner() != &video ||
+        x86_paging_video_register(0, &video, video_authority) ||
+        !x86_paging_inventory_verify_lapic(&context, &pool, &mapping, &ledger)) return 6;
+    save_ledger();
+    if (!x86_paging_inventory_capture_lapic(&context, &pool, &mapping, &ledger)) return 7;
+    for (index = 0; index < sizeof(ledger); ++index)
+        if (((unsigned char *)&ledger)[index] != ((unsigned char *)&saved)[index]) return 8;
+    if (!x86_paging_video_register(&video, 0, 0) || x86_paging_video_owner() ||
+        x86_paging_inventory_verify_lapic(&context, &pool, &mapping, &ledger)) return 9;
+    if (!x86_dma_register(&arena, 0, 0)) return 10;
+    tables[0][X86_DMA_SLOT] = 0; tables[0][225] = 0;
+    for (index = 0; index < 3; ++index)
+        if (!kernel_physical_pin(&pool, &arena.Tables[index], 0) || !kernel_physical_release(&pool, &arena.Tables[index]) ||
+            !kernel_physical_pin(&pool, &video.Tables[index], 0) || !kernel_physical_release(&pool, &video.Tables[index])) return 11;
+    if (!kernel_physical_pin(&pool, &arena.Data, 0) || !kernel_physical_release(&pool, &arena.Data)) return 12;
+    return pool.FreePages == 128 ? 0 : 13;
+}
+
 // ====== esecuzione di gruppi con codici di errore identificabili ===== //
 
 __declspec(dllexport) int run_paging_inventory_tests(void)
@@ -447,5 +493,6 @@ __declspec(dllexport) int run_paging_inventory_tests(void)
     result = video_owned(); if (result) return 700 + result;
     result = video_corruption(); if (result) return 800 + result;
     result = dma_arena(); if (result) return 900 + result;
+    result = video_arena(); if (result) return 1000 + result;
     return 0;
 }

@@ -12,7 +12,10 @@ $iommuSources=@("$bus/ecam/table.c","$bus/ecam/find.c","$bus/ecam/reader.c","$bu
     "$intel/domains/verification.c","$intel/invalidation/lifecycle.c","$intel/invalidation/validation.c","$intel/invalidation/queue.c",
     "$intel/invalidation/memory.c","$intel/invalidation/backend/cpu.c","$intel/invalidation/backend/mmio.c",
     "$intel/activation/sequence.c","$intel/activation/faults.c","$intel/activation/backend/mmio.c",
-    'test/arch/x86/kernel/drivers/video/virtio/iommu/probe.c')
+    'arch/x86/kernel/drivers/video/virtio/iommu/domain.c')
+# V2b: the persistent session also needs the arena, the surface mapper and its geometry policy.
+if ($VgpuIommu) { $iommuSources+=@('arch/x86/kernel/drivers/video/virtio/iommu/session.c','arch/x86/mm/dma/arena.c',
+    'arch/x86/kernel/drivers/video/virtio/resources/mapping.c','arch/x86/kernel/drivers/video/virtio/resources/construction.c') }
 foreach ($source in $iommuSources) {
     $object=Join-Path $output ($source.Replace('/','-').Replace('.c','.obj'))
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags+@(('/Fo'+$object),(Join-Path $project $source)))
@@ -25,4 +28,9 @@ foreach ($policy in @(@("$bus/ecam/rust/ffi/address.rs",'v1-ecam'),@("$bus/topol
     Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort',
         '-C','opt-level=2','-C','overflow-checks=yes',"$project/$($policy[0])",'-o',"$output/$($policy[1]).obj")
     $objects+="$output/$($policy[1]).obj"
+}
+if ($VgpuIommu) {
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort',
+        '-C','opt-level=2','-C','overflow-checks=yes',"$project/kernel/drivers/video/virtio/resources/rust/ffi/geometry.rs",'-o',"$output/v2b-geometry.obj")
+    $objects+="$output/v2b-geometry.obj"
 }

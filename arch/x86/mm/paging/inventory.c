@@ -6,6 +6,9 @@
 #define PAGING_ADDRESS 0x000ffffffffff000ULL
 #define PAGING_NX (1ULL << 63)
 #define PAGING_ROOT_VIEW ((128ULL << 39) | (128ULL << 30) | (128ULL << 21) | (128ULL << 12))
+// Framebuffer authority registered by its owner (x86_paging_video_register).
+static const X86_PAGING_VIDEO_AUTH *video_registered;
+static X86_PAGING_VIDEO_CHECK video_check;
 
 // ====== registrazione bounded prima di ogni accesso al figlio ===== //
 
@@ -245,7 +248,7 @@ static int mixed_inputs(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICA
 
 // ====== fotografia mista pubblicata dopo verifica hardware iniziale e finale ===== //
 
-int x86_paging_inventory_capture_lapic(const KERNEL_BOOT_CONTEXT *context,
+static __declspec(noinline) int capture_lapic_private(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *owner, X86_PAGING_INVENTORY *output)
 {
     X86_PAGING_INVENTORY draft;
@@ -257,9 +260,33 @@ int x86_paging_inventory_capture_lapic(const KERNEL_BOOT_CONTEXT *context,
     return 1;
 }
 
+// ====== x86_paging_inventory_capture_lapic ======
+
+int x86_paging_inventory_capture_lapic(const KERNEL_BOOT_CONTEXT *context,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *owner, X86_PAGING_INVENTORY *output)
+{
+    if (video_registered) return x86_paging_inventory_capture_video(context, pool, owner, video_registered, video_check, output);
+    return capture_lapic_private(context, pool, owner, output);
+}
+
+// ====== x86_paging_video_register ======
+
+int x86_paging_video_register(const X86_PAGING_VIDEO_AUTH *expected, const X86_PAGING_VIDEO_AUTH *next,
+    X86_PAGING_VIDEO_CHECK check)
+{
+    if (video_registered != expected || (!next && check) ||
+        (next && (expected || !check || next->Self != (BOOT_U64)next || !check(next)))) return 0;
+    video_registered = next; video_check = check;
+    return 1;
+}
+
+// ====== x86_paging_video_owner ======
+
+const X86_PAGING_VIDEO_AUTH *x86_paging_video_owner(void) { return video_registered; }
+
 // ====== confronto RAM MMIO owner e grafo corrente senza mutazioni PTE ===== //
 
-int x86_paging_inventory_verify_lapic(const KERNEL_BOOT_CONTEXT *context,
+static __declspec(noinline) int verify_lapic_private(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *owner,
     const X86_PAGING_INVENTORY *inventory)
 {
@@ -270,6 +297,16 @@ int x86_paging_inventory_verify_lapic(const KERNEL_BOOT_CONTEXT *context,
     for (byte = 0; byte < sizeof(draft); ++byte)
         if (((const unsigned char *)inventory)[byte] != ((const unsigned char *)&draft)[byte]) return 0;
     return 1;
+}
+
+// ====== x86_paging_inventory_verify_lapic ======
+
+int x86_paging_inventory_verify_lapic(const KERNEL_BOOT_CONTEXT *context,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *owner,
+    const X86_PAGING_INVENTORY *inventory)
+{
+    if (video_registered) return x86_paging_inventory_verify_video(context, pool, owner, video_registered, video_check, inventory);
+    return verify_lapic_private(context, pool, owner, inventory);
 }
 
 // ====== video_inputs ======
@@ -287,7 +324,7 @@ static int video_inputs(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICA
 
 // ====== x86_paging_inventory_capture_video ======
 
-int x86_paging_inventory_capture_video(const KERNEL_BOOT_CONTEXT *context,
+__declspec(noinline) int x86_paging_inventory_capture_video(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
     const X86_PAGING_VIDEO_AUTH *video, X86_PAGING_VIDEO_CHECK check, X86_PAGING_INVENTORY *output)
 {
@@ -304,7 +341,7 @@ int x86_paging_inventory_capture_video(const KERNEL_BOOT_CONTEXT *context,
 
 // ====== x86_paging_inventory_verify_video ======
 
-int x86_paging_inventory_verify_video(const KERNEL_BOOT_CONTEXT *context,
+__declspec(noinline) int x86_paging_inventory_verify_video(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
     const X86_PAGING_VIDEO_AUTH *video, X86_PAGING_VIDEO_CHECK check,
     const X86_PAGING_INVENTORY *inventory)

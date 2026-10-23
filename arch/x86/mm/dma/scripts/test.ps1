@@ -29,7 +29,7 @@ try {
         Invoke-Checked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort','-C','opt-level=2',
             "$project/$($entry[0])",'-o',"$out/$($entry[1]).obj")
     }
-    $sources=@('arch/x86/mm/dma/arena.c','arch/x86/mm/paging/dma/registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
+    $sources=@('arch/x86/mm/dma/arena.c','arch/x86/mm/paging/dma/dma_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
         'lib/memory/address_ranges.c','test/arch/x86/mm/dma/mock.c','test/arch/x86/mm/dma/cases.c')
     $paths=@($sources | ForEach-Object {"$project/$_"})
     $flags=@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',"/I$project")

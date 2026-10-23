@@ -33,7 +33,7 @@ try {
     $sources = @('kernel/drivers/video/virtio/mapping/plan.c',
         'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
         'lib/memory/address_ranges.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
-        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
         'arch/x86/kernel/drivers/video/virtio/preflight.c','arch/x86/kernel/drivers/video/virtio/construction.c',
         'arch/x86/kernel/drivers/video/virtio/lifecycle.c','test/arch/x86/kernel/drivers/video/virtio/mapping/mock.c')
     $paths = @($sources | ForEach-Object {"$project/$_"})

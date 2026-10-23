@@ -1,4 +1,4 @@
-#include "probe.h"
+#include "domain.h"
 #include "arch/x86/kernel/drivers/memory/iommu/intel/discovery/find.h"
 #include "arch/x86/kernel/drivers/bus/pci/topology/topology.h"
 #include "kernel/diagnostics/log.h"
@@ -59,11 +59,19 @@ int x86_vgpu_iommu_route(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *dir
 
     captured = x86_pci_topology_native(&reader, &work, &topology);
 
-    if (!x86_ecam_close(&reader) || !captured ||
-        x86_dmar_find(directory, gpu->Window->Pool->PhysicalBits, acpi_private, gpu, scratch, sizeof(scratch), &info) != X86_DMAR_FOUND ||
-        info.Units != 1
-    )
-    return 0;
+    if (!x86_ecam_close(&reader) || !captured) return X86_VGPU_IOMMU_FAILED;
+
+    int found = x86_dmar_find(directory, gpu->Window->Pool->PhysicalBits, acpi_private, gpu, scratch, sizeof(scratch), &info);
+
+    if (found == X86_DMAR_ABSENT) return kernel_log(1, "KERNEL_VGPU_IOMMU_DMAR_ABSENT") ? X86_VGPU_IOMMU_ABSENT : 0;
+
+    if (found != X86_DMAR_FOUND || info.Units != 1) return X86_VGPU_IOMMU_FAILED;
+
+    // Y2-A: with an RMRR the firmware expects identity DMA for some device; deny-by-default
+    // translation would break it, so persistent translation is refused.
+    if (info.Rmrr)
+        return number_private("KERNEL_VGPU_IOMMU_RMRR: ", info.Rmrr) && kernel_log(2, "KERNEL_VGPU_IOMMU_RMRR_REFUSED") ?
+            X86_VGPU_IOMMU_ABSENT : X86_VGPU_IOMMU_FAILED;
 
     request = (X86_VTD_ROUTE_REQUEST){boot->Segment, boot->Bus, boot->Device, boot->Function,
         (BOOT_U32)boot->Config[0] | (BOOT_U32)boot->Config[1] << 8 | (BOOT_U32)boot->Config[2] << 16 | (BOOT_U32)boot->Config[3] << 24};
@@ -73,7 +81,7 @@ int x86_vgpu_iommu_route(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *dir
     owner = gpu;
     tables = directory;
     return number_private("KERNEL_VGPU_IOMMU_SOURCE: ", route.Requester) &&
-        number_private("KERNEL_VGPU_IOMMU_UNIT: ", route.Base);
+        number_private("KERNEL_VGPU_IOMMU_UNIT: ", route.Base) ? X86_VGPU_IOMMU_READY : X86_VGPU_IOMMU_FAILED;
 }
 
 // ====== x86_vgpu_iommu_enable ======

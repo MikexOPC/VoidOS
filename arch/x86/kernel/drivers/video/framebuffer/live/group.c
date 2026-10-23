@@ -1,5 +1,11 @@
 #include "group.h"
 #include "arch/x86/kernel/scheduler/mapping/native.h"
+#ifdef KERNEL_VGPU_IOMMU
+#include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
+#define HELD_PAGES x86_vgpu_session_pages()
+#else
+#define HELD_PAGES 0
+#endif
 
 // ====== prepare ======
 
@@ -9,7 +15,8 @@ static int prepare(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected, BOOT_U
     if (!owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 || owner->Published != 1 ||
         !owner->Context || !owner->Window || !owner->Window->Pool || !(original = owner->Inventory) ||
         owner->Allocated < 3 || owner->Allocated > X86_PAGING_VIDEO_TABLES) return 0;
-    BOOT_U64 device = original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0;
+    // GPU register tables and, with V2b, the pages of the persistent translated GPU session.
+    BOOT_U64 device = (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0) + HELD_PAGES;
     *pages = x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root);
     if (original->Gpu.Ready > 1 || !*pages || *pages > 128 || *pages % 16 ||
         owner->Budget < owner->Allocated + *pages + device ||
@@ -38,7 +45,7 @@ int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 r
     owner->Inventory = original;
     return result && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
         owner->Window->Pool->FreePages == owner->Budget - owner->Allocated - pages -
-            (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0);
+            (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0) - HELD_PAGES;
 }
 
 // ====== x86_fb_live_group_caret ======

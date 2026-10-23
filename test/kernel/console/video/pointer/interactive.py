@@ -53,7 +53,47 @@ def expected(scene, x, y):
 
 # ============ owned interactive image and cleanup ============
 
-def boot(image, out, index):
+# ====== translation_check ======
+
+# V2b: the GPU domain translates from before the session to after exit (QEMU v11.1.0 trace).
+VTD_EVENTS = ('vtd_dmar_enable','vtd_switch_address_space','vtd_frr_new','vtd_reg_dmar_root')
+
+def translation_check(log, trace_text):
+    for marker in ('KERNEL_VGPU_SESSION_TRANSLATING','KERNEL_VGPU_IOMMU_TRANSLATING','KERNEL_VGPU_SESSION_RELEASED',
+            'KERNEL_VGPU_IOMMU_RELEASED'):
+        if marker not in log: raise RuntimeError('V2b marker missing: '+marker)
+    if 'KERNEL_VGPU_SESSION_GPU_FAULT' in log or 'RETAINED' in log: raise RuntimeError('V2b GPU fault or retention')
+    if log.index('KERNEL_VGPU_SESSION_TRANSLATING') > log.index('KERNEL_POINTER_OPEN'):
+        raise RuntimeError('Translation started after the console')
+    if log.index('KERNEL_VGPU_SESSION_RELEASED') < log.index('KERNEL_INPUT_TASKS_COLLECTED'):  # stop runs after the watchdog closes
+        raise RuntimeError('Translation ended before the session tasks')
+    if provider.number(log,'KERNEL_VGPU_SESSION_BUDGET') != provider.number(log,'KERNEL_VGPU_SESSION_BUDGET_AFTER'):
+        raise RuntimeError('V2b budget')
+    polls = provider.number(log,'KERNEL_VGPU_SESSION_POLLS')
+    source = provider.number(log,'KERNEL_VGPU_IOMMU_SOURCE')
+    lines = trace_text.splitlines()
+    enables = [line for line in lines if line.startswith('vtd_dmar_enable')]
+    if enables != ['vtd_dmar_enable enable 1','vtd_dmar_enable enable 0']: raise RuntimeError('V2b enable trace')
+    bdf = f'{source>>8:02x}:{(source>>3)&31:02x}.{source&7}'
+    if f'vtd_switch_address_space Device {bdf} switching address space (iommu enabled=1)' not in lines:
+        raise RuntimeError('GPU never translated')
+    for line in lines:
+        match = re.fullmatch(r'vtd_frr_new index \d+ high (0x[0-9a-f]+) low (0x[0-9a-f]+)', line)
+        if match and int(match[1],16) & 0xffff == source: raise RuntimeError('GPU fault record during the session')
+    if not polls: raise RuntimeError('No fault scan during the session')
+    return dict(Source=hex(source),Polls=polls,Translated=True)
+
+# ====== untranslated_check ======
+
+# V2b without a DMAR: the session runs untranslated and allocates nothing for the GPU domain.
+def untranslated_check(log):
+    if 'KERNEL_VGPU_SESSION_UNTRANSLATED' not in log or 'KERNEL_VGPU_IOMMU_DMAR_ABSENT' not in log:
+        raise RuntimeError('Untranslated fallback not reported')
+    if 'KERNEL_VGPU_SESSION_TRANSLATING' in log or 'KERNEL_VGPU_SESSION_POLLS' in log:
+        raise RuntimeError('Translation claimed without a DMAR')
+    return dict(Untranslated=True)
+
+def boot(image, out, index, iommu=False, absent=False):
     directory = out / f'boot-{index}'
     esp = directory / 'esp/EFI/BOOT'
     esp.mkdir(parents=True)
@@ -68,8 +108,12 @@ def boot(image, out, index):
     serial = directory/'serial.log'
     trace = directory/'qemu.log'
     mouse_trace = directory/'mouse-trace.log'
+    # V2b: intel-iommu before the VirtIO GPU it translates; one trace file for both event sets.
+    video = (['-vga','none','-device','intel-iommu,intremap=off,caching-mode=on,device-iotlb=off',
+        '-device','virtio-vga,iommu_platform=on']+[item for event in VTD_EVENTS for item in ('-trace','enable='+event)]
+        if iommu else ['-vga','none','-device','virtio-vga'] if absent else ['-vga','std'])
     arguments = [str(QEMU/'qemu-system-x86_64.exe'),'-machine','q35','-cpu','max',
-        '-accel','tcg','-m','128','-smp','1','-net','none','-vga','std',
+        '-accel','tcg','-m','128','-smp','1','-net','none']+video+[
         '-display','none','-monitor','stdio','-no-reboot','-serial','file:'+serial.as_posix(),
         '-d','int,cpu_reset','-D',trace.as_posix(),
         '-trace','enable=ps2_mouse_send_packet,file='+mouse_trace.as_posix(),
@@ -81,7 +125,7 @@ def boot(image, out, index):
         try:
             vm = subprocess.Popen(arguments,stdin=subprocess.PIPE,stdout=monitor,stderr=error,
                 text=True,creationflags=subprocess.CREATE_NO_WINDOW)
-            log = provider.wait_marker(vm,serial,'KERNEL_POINTER_READY',80)
+            log = provider.wait_marker(vm,serial,'KERNEL_POINTER_READY',240 if iommu or absent else 80)  # V2b scans the PCI graph first
             packet_pattern = r'ps2_mouse_send_packet .*? x (-?\d+) y (-?\d+) z'
             def delivered():
                 packets = re.findall(packet_pattern,mouse_trace.read_text(errors='replace'))
@@ -182,7 +226,9 @@ def boot(image, out, index):
             provider.command(vm,'quit')
             vm.wait(timeout=5)
             if vm.returncode: raise RuntimeError('QEMU exit failure')
-            return dict(Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
+            translation = (translation_check(log,mouse_trace.read_text(errors='replace')) if iommu else
+                untranslated_check(log) if absent else None)
+            return dict(Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
                 EscCancelled=True,EscMouseProgress=True,CancelScenes=1,
                 DrainSeconds=latencies,BudgetBefore=before,BudgetAfter=before,
                 Flushes=provider.number(log,'KERNEL_CONSOLE_FLUSHES'),
@@ -226,6 +272,7 @@ def main():
     parser.add_argument('--image',type=Path)
     parser.add_argument('--audit',type=Path)
     parser.add_argument('--boots',type=int,choices=range(1,21),default=10)
+    parser.add_argument('--iommu',action='store_true'); parser.add_argument('--iommu-absent',action='store_true')
     args = parser.parse_args()
     if args.audit:
         audit(args.audit)
@@ -240,7 +287,7 @@ def main():
         ROOT/'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'),Results=results)
     try:
         for index in range(1,args.boots+1):
-            results.append(boot(args.image,out,index))
+            results.append(boot(args.image,out,index,args.iommu,args.iommu_absent))
             (out/'results.json').write_text(json.dumps(report,indent=2))
             print(f'PASS: interactive cursor {index}/{args.boots}; pixels, movement, cleanup',flush=True)
     except Exception as failure:
