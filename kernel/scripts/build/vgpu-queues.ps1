@@ -4,7 +4,7 @@ $queueSources=@('kernel/drivers/video/virtio/queues/setup.c',
     'kernel/drivers/video/virtio/queues/exchange.c','kernel/drivers/video/virtio/queues/response.c',
     'arch/x86/kernel/drivers/video/virtio/queues/native.c','arch/x86/kernel/drivers/video/virtio/queues/pci.c',
     'arch/x86/kernel/drivers/video/virtio/queues/access.c',
-    'test/arch/x86/kernel/drivers/video/virtio/queues/probe.c')
+    'test/arch/x86/kernel/drivers/video/virtio/queues/probe.c','arch/x86/mm/dma/arena.c')
 foreach ($source in $queueSources) {
     $object=Join-Path $output ($source.Replace('/','-').Replace('.c','.obj'))
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags+@(('/Fo'+$object),(Join-Path $project $source)))

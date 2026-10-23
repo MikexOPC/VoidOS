@@ -17,7 +17,7 @@ $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory
 if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 foreach ($source in @('test/kernel/contract_test.c','test/kernel/platform_mock.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c',
     'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
-    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
     'arch/x86/kernel/scheduler/runtime/memory.c',
     'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','test/kernel/mm/physical/allocator_test.c',
     'test/kernel/mm/physical/alignment_test.c',

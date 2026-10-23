@@ -78,6 +78,8 @@ BOOT_U32 x86_paging_table_source(const KERNEL_BOOT_CONTEXT *context,
     if (surface) return surface;
     BOOT_U32 iommu=x86_iommu_source(pool,physical);
     if (iommu) return iommu;
+    BOOT_U32 dma=x86_dma_source(pool,physical);
+    if (dma) return dma;
     BOOT_U32 index;
     if (video) for (index = 0; index < video->Region.TableCount; ++index) {
         const KERNEL_PHYSICAL_LEASE *lease = &video->Tables[index];

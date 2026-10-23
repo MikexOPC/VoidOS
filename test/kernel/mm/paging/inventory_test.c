@@ -378,6 +378,61 @@ static int video_corruption(void)
     return 0;
 }
 
+// ====== dma_arena ======
+
+static int dma_check(const X86_DMA_AUTH *owner) { return owner && (tables[0][X86_DMA_SLOT] & ~0x60ULL) == (owner->Tables[0].Base | 3); }
+
+// Slot 229 arena: three owned tables, two WB/RW/XD leaves; scan, verify, corruption, alias, removal.
+static int dma_arena(void)
+{
+    static X86_DMA_AUTH arena;
+    BOOT_U32 index;
+    if (!fixture()) return 1;
+    // The fixture leaf maps 0x100000, the first free page the arena receives: drop it, then check
+    // below that a leaf naming arena RAM outside the slot is refused as an alias.
+    tables[3][1] = 0;
+    clear(&arena, sizeof(arena));
+    if (!kernel_physical_allocate(&pool, 2, &arena.Data) || !kernel_physical_pin(&pool, &arena.Data, 1)) return 2;
+    for (index = 0; index < 3; ++index)
+        if (!kernel_physical_allocate(&pool, 1, &arena.Tables[index]) || !kernel_physical_pin(&pool, &arena.Tables[index], 1)) return 3;
+    arena.Self = (BOOT_U64)&arena; arena.Root = 4096; arena.Pat = 6; arena.PhysicalBits = 32; arena.Ready = 1;
+    tables[0][X86_DMA_SLOT] = arena.Tables[0].Base | 3;
+    views[5] = x86_paging_child_view(views[0], 0, X86_DMA_SLOT);
+    tables[5][0] = arena.Tables[1].Base | 3;
+    views[6] = x86_paging_child_view(views[5], 1, 0);
+    tables[6][0] = arena.Tables[2].Base | 3;
+    views[7] = x86_paging_child_view(views[6], 2, 0);
+    tables[7][1] = arena.Data.Base | 0x8000000000000003ULL;
+    tables[7][2] = (arena.Data.Base + 4096) | 0x8000000000000003ULL;
+    table_count = 8;
+    // Unregistered tables are not trusted: the scan refuses them.
+    if (x86_paging_inventory_capture(&context, &pool, &ledger)) return 4;
+    if (!x86_dma_register(0, &arena, dma_check) || !x86_paging_inventory_capture(&context, &pool, &ledger) ||
+        ledger.Count != 8 || ledger.LeafPages != 3 || ledger.Dma.Pages != 2 || ledger.Dma.Owner != arena.Self ||
+        !x86_paging_inventory_verify(&context, &pool, &ledger)) return 5;
+    {
+        BOOT_U32 tags = 0;
+        for (index = 0; index < ledger.Count; ++index)
+            if (ledger.Tables[index].Reserved >= 40) tags |= 1U << (ledger.Tables[index].Reserved - 40);
+        if (tags != 7) return 14;
+    }
+    tables[7][2] |= 0x10;
+    if (x86_paging_inventory_verify(&context, &pool, &ledger)) return 6;
+    tables[7][2] &= ~0x10ULL; tables[7][3] = (arena.Data.Base + 8192) | 0x8000000000000003ULL;
+    if (x86_paging_inventory_verify(&context, &pool, &ledger)) return 7;
+    tables[7][3] = 0; tables[3][2] = arena.Data.Base | 0x8000000000000003ULL;
+    if (x86_paging_inventory_capture(&context, &pool, &ledger) || x86_paging_inventory_verify(&context, &pool, &ledger)) return 8;
+    tables[3][2] = 0;
+    if (!x86_paging_inventory_capture(&context, &pool, &ledger) || !x86_dma_register(&arena, 0, 0) ||
+        x86_paging_inventory_verify(&context, &pool, &ledger)) return 9;
+    tables[0][X86_DMA_SLOT] = 0; table_count = 5;
+    if (!x86_paging_inventory_capture(&context, &pool, &ledger) || ledger.Dma.Owner) return 10;
+    for (index = 0; index < 3; ++index)
+        if (!kernel_physical_pin(&pool, &arena.Tables[index], 0) || !kernel_physical_release(&pool, &arena.Tables[index])) return 11;
+    if (!kernel_physical_pin(&pool, &arena.Data, 0) || !kernel_physical_release(&pool, &arena.Data)) return 12;
+    return pool.FreePages == 128 ? 0 : 13;
+}
+
 // ====== esecuzione di gruppi con codici di errore identificabili ===== //
 
 __declspec(dllexport) int run_paging_inventory_tests(void)
@@ -391,5 +446,6 @@ __declspec(dllexport) int run_paging_inventory_tests(void)
     result = mixed(); if (result) return 600 + result;
     result = video_owned(); if (result) return 700 + result;
     result = video_corruption(); if (result) return 800 + result;
+    result = dma_arena(); if (result) return 900 + result;
     return 0;
 }
