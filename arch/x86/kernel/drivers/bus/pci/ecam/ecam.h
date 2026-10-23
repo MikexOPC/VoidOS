@@ -29,4 +29,8 @@ int x86_ecam_close(X86_ECAM *owner);
 int x86_ecam_current(const X86_ECAM *owner);
 int x86_ecam_safe(const X86_ECAM *owner,BOOT_U64 base,BOOT_U64 bytes);
 int x86_ecam_load(BOOT_U32 offset,BOOT_U32 *value);
+// Owned-device diagnostics only: changes Command bits 1 (Memory Space) and/or 2 (Bus Master).
+BOOT_U32 x86_ecam_command_value(BOOT_U32 old,BOOT_U32 mask,BOOT_U32 value);
+int x86_ecam_command(X86_ECAM *owner,BOOT_U32 segment,BOOT_U32 bus,BOOT_U32 device,BOOT_U32 function,BOOT_U32 mask,BOOT_U32 value);
+int x86_ecam_store_command(BOOT_U32 value);
 #endif

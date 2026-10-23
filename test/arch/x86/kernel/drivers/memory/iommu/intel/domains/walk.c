@@ -37,7 +37,7 @@ void domain_walk_check(void)
     for (BOOT_U64 address=X86_VTD_DMA_BASE; address<X86_VTD_DMA_BASE+X86_VTD_DMA_BYTES; address+=4096) {
         BOOT_U64 expected=0; unsigned rights=0,actual=0;
         for (unsigned index=0; index<request.Count; ++index)
-            if (address>=domain.Iova[index] && address-domain.Iova[index]<request.Buffers[index].Lease.Pages*4096) {
+            if (!((domain.Revoked>>index)&1) && address>=domain.Iova[index] && address-domain.Iova[index]<request.Buffers[index].Lease.Pages*4096) {
                 expected=request.Buffers[index].Lease.Base+address-domain.Iova[index]; rights=request.Buffers[index].Access;
             }
         CHECK(walk_private(address,&actual)==expected && actual==rights);

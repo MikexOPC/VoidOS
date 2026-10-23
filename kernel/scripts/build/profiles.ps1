@@ -1,5 +1,6 @@
 # ============ profile validation and derived options ============
 
+if ($TestIommuDma) { $TestIommuActivation=$true }
 if ($TestIommuActivation) { $TestIommuRouting=$true }
 if ($TestIommuRouting) { $TestPciTopology=$true }
 if ($TestPciEcamAbsent) { $TestPciEcam=$true }

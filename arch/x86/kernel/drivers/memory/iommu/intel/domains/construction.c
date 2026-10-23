@@ -20,7 +20,7 @@ BOOT_U64 x86_vtd_domain_expected(const X86_VTD_DOMAIN *owner,BOOT_U32 table,BOOT
         BOOT_U64 iova=X86_VTD_DMA_BASE+(table-5)*0x200000ULL+slot*4096ULL;
         for (BOOT_U32 index=0; index<owner->Request.Count; ++index) {
             const X86_VTD_BUFFER *buffer=&owner->Request.Buffers[index];
-            if (iova>=owner->Iova[index] && iova-owner->Iova[index]<buffer->Lease.Pages*4096) {
+            if (((owner->Revoked>>index)&1)==0 && iova>=owner->Iova[index] && iova-owner->Iova[index]<buffer->Lease.Pages*4096) {
                 physical=buffer->Lease.Base+iova-owner->Iova[index]; access=buffer->Access;
             }
         }

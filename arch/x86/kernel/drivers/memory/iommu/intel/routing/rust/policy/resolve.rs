@@ -54,7 +54,8 @@ pub fn resolve(info:&Info,nodes:&[Node],request:&Request,bits:u32)->u64 {
     let Some(target)=nodes.iter().position(|n|u32::from(n.segment)==request.segment && u32::from(n.bus)==request.bus &&
         u32::from(n.device)==request.device && u32::from(n.function)==request.function) else { return 0; };
     let Some(gpu)=nodes.get(target) else { return 0; };
-    if gpu.id!=request.id || (gpu.header>>16)&127!=0 || gpu.class>>24!=3 { return 0; }
+    // Any type-0 endpoint (block 3 routes the edu requester, class FFh); bridges, base class 06h, never request DMA here.
+    if gpu.id!=request.id || (gpu.header>>16)&127!=0 || gpu.class>>24==6 { return 0; }
     let mut terms=[graph::NONE;32];
     for index in 0..info.scopes.min(32) as usize {
         let Some(scope)=info.scope.get(index) else { return 0; };

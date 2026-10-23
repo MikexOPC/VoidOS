@@ -92,7 +92,7 @@ def verify(stream,directory,log,absent,negative):
 
 # ====== boot ======
 
-def boot(image,directory,bridge,absent,negative,topology=False,nested=False,routing=False,routing_absent=False,activation=False):
+def boot(image,directory,bridge,absent,negative,topology=False,nested=False,routing=False,routing_absent=False,activation=False,dma=False):
     esp=directory/'esp/EFI/BOOT'; esp.mkdir(parents=True)
     loader=ROOT/'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
     for source,name in ((image,'kernel.elf'),(loader,'BOOTX64.EFI')):
@@ -117,6 +117,8 @@ def boot(image,directory,bridge,absent,negative,topology=False,nested=False,rout
             (directory/'routing-events.txt').write_text(ACTIVATION_EVENTS if activation else 'vtd_reg_write\n')
             args+=['-trace','events=routing-events.txt,file=routing.trace']
             if not routing_absent: args+=['-device','intel-iommu,intremap=off,caching-mode=on,device-iotlb=off']
+            # Block 3: QEMU edu (hw/misc/edu.c) as the owned DMA requester at 00:05.0.
+            if dma: args+=['-device','edu,addr=05.0']
         if negative:
             raw=bytearray(60); raw[:4]=b'MCFG'; struct.pack_into('<I',raw,4,60); raw[8]=1
             struct.pack_into('<QHBBI',raw,44,0x200000,0,0,0,0); raw[9]=(-sum(raw))&255
@@ -143,10 +145,12 @@ def boot(image,directory,bridge,absent,negative,topology=False,nested=False,rout
                             route_spec=importlib.util.spec_from_file_location('routing_verifier',target)
                             route=importlib.util.module_from_spec(route_spec); route_spec.loader.exec_module(route)
                             result['Routing']=route.verify(backend,ts,directory,log,topo,routing_absent)
-                            if activation: result['Activation']=activation_module().verify(log,result['Routing'])
+                            if dma: result['Dma']=dma_module().verify(log,result['Routing'])
+                            elif activation: result['Activation']=activation_module().verify(log,result['Routing'])
                     backend.qmp(cs,'quit'); vm.wait(timeout=10)
                     if vm.returncode: raise RuntimeError('QEMU exit failure')
-                    if activation: result['ActivationTrace']=activation_module().verify_trace(directory,log)
+                    if dma: result['DmaTrace']=dma_module().verify_trace(directory,log)
+                    elif activation: result['ActivationTrace']=activation_module().verify_trace(directory,log)
                     elif routing: result['RoutingTrace']=route.verify_trace(directory)
                     return dict(KernelSHA256=backend.protocol.image_hash(image),LoaderSHA256=backend.protocol.image_hash(loader),Result=result)
         finally:
@@ -167,6 +171,14 @@ def activation_module():
     module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
     return module
 
+# ====== dma_module ======
+
+def dma_module():
+    target=ROOT/'test/arch/x86/kernel/drivers/memory/iommu/intel/dma/scripts/firmware.py'
+    spec=importlib.util.spec_from_file_location('dma_verifier',target)
+    module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    return module
+
 # ====== main ======
 
 def main():
@@ -177,9 +189,10 @@ def main():
     parser.add_argument('--duplicate',action='store_true')
     parser.add_argument('--topology',action='store_true'); parser.add_argument('--nested',action='store_true')
     parser.add_argument('--routing',action='store_true'); parser.add_argument('--routing-absent',action='store_true')
-    parser.add_argument('--activation',action='store_true')
+    parser.add_argument('--activation',action='store_true'); parser.add_argument('--dma',action='store_true')
     options=parser.parse_args()
     if options.activation and options.routing_absent: raise SystemExit('Activation requires a DMAR unit')
+    if options.dma: options.activation=True
     if options.activation: options.routing=True
     if options.routing_absent: options.routing=True
     if options.routing: options.topology=True
@@ -188,7 +201,7 @@ def main():
     out=ROOT/'kernel/build'/('ecam-firmware-'+uuid.uuid4().hex); out.mkdir()
     print('Evidence: '+str(out),flush=True); records=[]
     for index in range(options.boots):
-        records.append(boot(options.image.resolve(),out/f'boot-{index+1}',options.bridge,options.absent,options.duplicate,options.topology,options.nested,options.routing,options.routing_absent,options.activation))
+        records.append(boot(options.image.resolve(),out/f'boot-{index+1}',options.bridge,options.absent,options.duplicate,options.topology,options.nested,options.routing,options.routing_absent,options.activation,options.dma))
         (out/'results.json').write_text(json.dumps(records,indent=2))
         print(f'PASS boot {index+1}: native ECAM result and budget verified',flush=True)
 

@@ -66,7 +66,7 @@ int x86_ecam_probe(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WINDOW *window,co
         if (!x86_ecam_read(&owner,segment,bus,device,function,offsets[at],&value) || !number_private("KERNEL_ECAM_VALUE: ",value)) goto cleanup;
     }
     BOOT_U32 value=0x12345678;
-    if (x86_ecam_read(&owner,segment,bus,device,function,4,&value) || value!=0x12345678) goto cleanup;
+    if (x86_ecam_read(&owner,segment,bus,device,function,0x14,&value) || value!=0x12345678) goto cleanup;
 #ifdef KERNEL_TEST_PCI_TOPOLOGY
     if (!x86_pci_topology_probe(&owner,directory)) goto cleanup;
 #endif

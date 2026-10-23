@@ -26,7 +26,7 @@ typedef struct {
     X86_VTD_DOMAIN_REQUEST  Request;
     BOOT_U64  Iova[X86_VTD_DMA_RANGES];
     KERNEL_PHYSICAL_LEASE  Tables[X86_VTD_DOMAIN_TABLES];
-    BOOT_U32  TableCount, Allocated, Pins, State;
+    BOOT_U32  TableCount, Allocated, Pins, State, Revoked;
 } X86_VTD_DOMAIN;
 BOOT_U64 x86_vtd_domain_next(BOOT_U64 cursor,BOOT_U64 pages,BOOT_U64 total);
 BOOT_U64 x86_vtd_domain_word(BOOT_U32 kind,BOOT_U32 slot,BOOT_U32 selector,BOOT_U64 child,
@@ -40,4 +40,6 @@ int x86_vtd_domain_pages(X86_VTD_DOMAIN *owner,int write);
 BOOT_U64 x86_vtd_domain_expected(const X86_VTD_DOMAIN *owner,BOOT_U32 table,BOOT_U32 slot);
 int x86_vtd_domain_verify(X86_VTD_DOMAIN *owner);
 int x86_vtd_domain_release(X86_VTD_DOMAIN *owner);
+// Clears the second-stage leaves of one buffer (bit index); the caller flushes CPU caches and the IOTLB.
+int x86_vtd_domain_revoke(X86_VTD_DOMAIN *owner,BOOT_U32 index);
 #endif

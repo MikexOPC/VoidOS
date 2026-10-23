@@ -10,6 +10,8 @@ static unsigned char memory_map[96];
 static __declspec(align(4096)) unsigned char arena[128*4096];
 static __declspec(align(4096)) BOOT_U32 config[1024];
 static unsigned borrowed;
+unsigned writes;
+BOOT_U32 command_word=0x00100007;
 
 // ====== sample ======
 
@@ -58,10 +60,12 @@ volatile unsigned char *x86_window_bytes(void) { ++loads; return borrowed && fai
 void restore_borrow(void) { borrowed=0; fail_mode=0; }
 int x86_apic_borrow(X86_PAGE_WINDOW *loan,BOOT_U64 physical,BOOT_U64 cache,int writable,int (*callback)(void *),void *state)
 {
-    CHECK(loan==&window && !borrowed && !writable && cache==8 && !(physical&4095) && callback && state);
-    if (fail_mode==3) return 0;
-    last_page=physical; config[0]=0x10501af4; config[2]=0x03000001; config[3]=0; config[6]=0x00020201;
+    CHECK(loan==&window && !borrowed && (writable==0 || writable==1) && cache==8 && !(physical&4095) && callback && state);
+    if (fail_mode==3 || (writable && fail_mode==7)) return 0;
+    last_page=physical; config[0]=0x10501af4; config[1]=command_word; config[2]=0x03000001; config[3]=0;
+    config[4]=0xfe000000; config[6]=0x00020201;
     borrowed=1; int result=callback(state);
+    if (writable) { ++writes; if (fail_mode!=8) command_word=config[1]; }
     if (fail_mode==4) return 0;
     borrowed=0;
     if (fail_mode==5) { ++pool.FreePages; return 0; }

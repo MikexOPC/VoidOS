@@ -2,7 +2,7 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
     [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell, [switch]$InteractiveInput,
-    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
+    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestIommuDma, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
@@ -44,7 +44,7 @@ if ($TestIommuDiscovery) { $flags += '/DKERNEL_TEST_IOMMU_DISCOVERY=1' }
 if ($TestIommuRegisters) { $flags += '/DKERNEL_TEST_IOMMU_REGISTERS=1' }
 if ($TestIommuDomain) { $flags += '/DKERNEL_TEST_IOMMU_DOMAIN=1' }
 if ($TestIommuQi) { $flags += '/DKERNEL_TEST_IOMMU_QI=1' }
-if ($TestPciEcam) { $flags += '/DKERNEL_TEST_PCI_ECAM=1'; if ($TestPciEcamAbsent) { $flags += '/DKERNEL_TEST_PCI_ECAM_ABSENT=1' }; if ($TestPciTopology) { $flags += '/DKERNEL_TEST_PCI_TOPOLOGY=1' }; if ($TestIommuRouting) { $flags += '/DKERNEL_TEST_IOMMU_ROUTING=1' }; if ($TestIommuActivation) { $flags += '/DKERNEL_TEST_IOMMU_ACTIVATION=1' } }
+if ($TestPciEcam) { $flags += '/DKERNEL_TEST_PCI_ECAM=1'; if ($TestPciEcamAbsent) { $flags += '/DKERNEL_TEST_PCI_ECAM_ABSENT=1' }; if ($TestPciTopology) { $flags += '/DKERNEL_TEST_PCI_TOPOLOGY=1' }; if ($TestIommuRouting) { $flags += '/DKERNEL_TEST_IOMMU_ROUTING=1' }; if ($TestIommuActivation) { $flags += '/DKERNEL_TEST_IOMMU_ACTIVATION=1' }; if ($TestIommuDma) { $flags += '/DKERNEL_TEST_IOMMU_DMA=1' } }
 if ($TestConsoleActive) { $flags += '/DKERNEL_TEST_CONSOLE_ACTIVE=1' }
 if ($TestConsoleDraw) { $flags += '/DKERNEL_TEST_CONSOLE_DRAW=1' }
 if ($TestConsoleBatch) { $flags += '/DKERNEL_TEST_CONSOLE_BATCH=1' }

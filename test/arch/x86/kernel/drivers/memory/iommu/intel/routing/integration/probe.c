@@ -1,7 +1,9 @@
 #include "probe.h"
 #include "arch/x86/kernel/drivers/memory/iommu/intel/discovery/find.h"
 #include "kernel/diagnostics/log.h"
-#ifdef KERNEL_TEST_IOMMU_ACTIVATION
+#if defined(KERNEL_TEST_IOMMU_DMA)
+#include "test/arch/x86/kernel/drivers/memory/iommu/intel/dma/integration/probe.h"
+#elif defined(KERNEL_TEST_IOMMU_ACTIVATION)
 #include "test/arch/x86/kernel/drivers/memory/iommu/intel/activation/integration/probe.h"
 #endif
 static unsigned char scratch[X86_DMAR_MAX_BYTES];
@@ -38,7 +40,10 @@ int x86_vtd_routing_probe(X86_ECAM *reader,const KERNEL_ACPI_DIRECTORY *director
         !number_private("KERNEL_ROUTING_INFO: ",(BOOT_U64)&info) || !number_private("KERNEL_ROUTING_REQUEST: ",(BOOT_U64)&request) ||
         !number_private("KERNEL_ROUTING_RESULT: ",(BOOT_U64)&route) || !kernel_log(0,"KERNEL_ROUTING_NATIVE_OK")) return 0;
     if (!x86_vtd_routing_matrix(topology,&request) || !x86_ecam_current(reader) || !kernel_log(0,"KERNEL_ROUTING_OK")) return 0;
-#ifdef KERNEL_TEST_IOMMU_ACTIVATION
+#if defined(KERNEL_TEST_IOMMU_DMA)
+    // Block 3: the DMA probe owns the edu requester instead of the GPU route.
+    return x86_vtd_dma_probe(reader,directory,&info,topology) && x86_ecam_current(reader);
+#elif defined(KERNEL_TEST_IOMMU_ACTIVATION)
     return x86_vtd_activation_probe(reader,directory,&info,&route,&request) && x86_ecam_current(reader);
 #else
     return 1;

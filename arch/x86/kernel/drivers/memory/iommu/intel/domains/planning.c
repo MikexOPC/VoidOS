@@ -35,7 +35,7 @@ int x86_vtd_domain_inputs(const X86_VTD_DOMAIN *owner)
 {
     if (!owner || owner->Self!=(BOOT_U64)owner || !owner->Context || !owner->Window || !owner->Window->Pool ||
         !owner->Inventory || owner->Inventory->Count>X86_BOOT_TABLE_LIMIT || owner->State<1 || owner->State>3 || owner->TableCount<6 || owner->TableCount>X86_VTD_DOMAIN_TABLES ||
-        owner->Allocated>owner->TableCount || (owner->Pins>>owner->Allocated) ||
+        owner->Allocated>owner->TableCount || (owner->Pins>>owner->Allocated) || (owner->Revoked>>owner->Request.Count) ||
         owner->Root!=owner->Context->Info.PageTableRoot || owner->Root!=owner->Window->Root ||
         !x86_page_window_idle_valid(owner->Window) || !request_valid_private(&owner->Request,owner->Window->Pool)) return 0;
     for (BOOT_U32 table=0; table<owner->Allocated; ++table) {
