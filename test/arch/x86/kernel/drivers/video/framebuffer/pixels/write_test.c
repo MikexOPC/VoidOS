@@ -6,6 +6,9 @@
 #include <string.h>
 #include "pointer_test.h"
 static BOOT_U32 words[4100], visits, fail_view;
+// V2c redirected target: a second pixel store at its own virtual base.
+#define TARGET_BASE 0x0000720000000000ULL
+static BOOT_U32 target_words[4100], target_valid = 1;
 static BOOT_U32 fail_after, corrupt_after;
 #define CHECK(expression) do { if (!(expression)) return __LINE__; } while (0)
 
@@ -17,7 +20,9 @@ volatile BOOT_U32 *x86_fb_pixel_view(BOOT_U64 address)
     ++visits;
     if (corrupt_after && visits == corrupt_after) cpu.Pat ^= 1;
     if (fail_after && visits == fail_after) return 0;
-    if (fail_view || address < X86_FB_VIRTUAL || (address & 3)) return 0;
+    if (fail_view || (address & 3)) return 0;
+    if (address >= TARGET_BASE && address - TARGET_BASE < sizeof(target_words)) return &target_words[(address - TARGET_BASE) / 4];
+    if (address < X86_FB_VIRTUAL) return 0;
     offset = (address - X86_FB_VIRTUAL) / 4;
     return offset < 4100 ? &words[offset] : 0;
 }
@@ -117,6 +122,38 @@ static int pixel_rejection(void)
     return 0;
 }
 
+// ====== pixel_target ======
+
+static int target_check(const X86_FB_TARGET *target) { return target && target_valid; }
+
+// Z1-A: while a target is registered the same GOP geometry is written at the target base; the
+// GOP aperture stays untouched; refusals and the invalidated target leave nothing written.
+static int pixel_target(void)
+{
+    X86_FB_TARGET target = {0, TARGET_BASE, sizeof(target_words), target_check}, other = target;
+    CHECK(setup());
+    memset(target_words, 0x5a, sizeof(target_words)); target_valid = 1;
+    target.Self = (BOOT_U64)&target; other.Self = (BOOT_U64)&other;
+    X86_FB_TARGET bad = target; bad.Base += 4; bad.Self = (BOOT_U64)&bad;
+    CHECK(!x86_fb_target_redirect(0, &bad));
+    bad = target; bad.Self = 0; CHECK(!x86_fb_target_redirect(0, &bad));
+    bad = target; bad.Self = (BOOT_U64)&bad; bad.Bytes = 0; CHECK(!x86_fb_target_redirect(0, &bad));
+    bad.Bytes = target.Bytes; bad.Valid = 0; CHECK(!x86_fb_target_redirect(0, &bad));
+    target_valid = 0; CHECK(!x86_fb_target_redirect(0, &target)); target_valid = 1;
+    CHECK(x86_fb_target_redirect(0, &target) && x86_fb_target() == &target);
+    CHECK(!x86_fb_target_redirect(0, &other) && !x86_fb_target_redirect(&other, 0));
+    CHECK(x86_fb_pixel(&owner, 5, 1, 1, 2, 3) && target_words[1024 + 5] != 0x5a5a5a5a && words[1024 + 5] == 0xa5a5a5a5);
+    target_valid = 0;
+    CHECK(!x86_fb_pixel(&owner, 6, 1, 1, 2, 3) && target_words[1024 + 6] == 0x5a5a5a5a && words[1024 + 6] == 0xa5a5a5a5);
+    target_valid = 1; target.Bytes = 64; // smaller than the GOP layout: refused at begin
+    CHECK(!x86_fb_pixel(&owner, 7, 1, 1, 2, 3) && target_words[1024 + 7] == 0x5a5a5a5a);
+    target.Bytes = sizeof(target_words);
+    CHECK(x86_fb_target_redirect(&target, 0) && !x86_fb_target());
+    CHECK(x86_fb_pixel(&owner, 8, 1, 1, 2, 3) && words[1024 + 8] != 0xa5a5a5a5 && target_words[1024 + 8] == 0x5a5a5a5a);
+    CHECK(x86_fb_unbind(&owner));
+    return 0;
+}
+
 // ====== run_pixel_tests ======
 
 int run_pixel_tests(void)
@@ -124,6 +161,8 @@ int run_pixel_tests(void)
     int result = pixel_colors();
     if (result) return result;
     result = pixel_offsets();
+    if (result) return result;
+    result = pixel_target();
     return result ? result : pixel_rejection();
 }
 

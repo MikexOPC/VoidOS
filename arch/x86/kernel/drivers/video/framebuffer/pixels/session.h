@@ -1,6 +1,15 @@
 #ifndef OS_X86_FB_PIXEL_SESSION_H
 #define OS_X86_FB_PIXEL_SESSION_H
 #include "write.h"
+// Z1-A: an alternative drawing target with the GOP geometry (width, height, stride and pixel
+// format identical) but another mapping, e.g. the VirtIO surface. While one is registered every
+// pixel session writes there instead of the GOP aperture; the GOP owner keeps all its checks.
+typedef struct X86_FB_TARGET {
+    BOOT_U64  Self, Base, Bytes;
+    int  (*Valid)(const struct X86_FB_TARGET *target);
+} X86_FB_TARGET;
+int x86_fb_target_redirect(const X86_FB_TARGET *expected, const X86_FB_TARGET *next);
+const X86_FB_TARGET *x86_fb_target(void);
 typedef struct {
     X86_FB_MAPPING  *Owner;
     OS_FRAMEBUFFER  Surface;

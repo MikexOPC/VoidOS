@@ -145,7 +145,7 @@ int main(void)
         int result = run_pixel_tests();
         if (result) { printf("FAIL: pixel line %d\n", result); return 1; }
     }
-    puts("PASS: 3 pixel groups; RGB/BGR, all pixels, offset/padding, no-write rejections");
+    puts("PASS: 4 pixel groups; RGB/BGR, all pixels, offset/padding, redirected target, no-write rejections");
     {
         int result = run_drawing_tests();
         if (result) { printf("FAIL: drawing line %d\n", result); return 1; }

@@ -1,6 +1,8 @@
 #ifndef X86_VGPU_IOMMU_SESSION_H
 #define X86_VGPU_IOMMU_SESSION_H
 #include "domain.h"
+#include "arch/x86/kernel/drivers/video/virtio/resources/mapping.h"
+#include "arch/x86/mm/dma/arena.h"
 
 // V2b: persistent VT-d translation of the VirtIO GPU for the interactive session (Y1-A..Y4-A).
 // States: OFF (no GPU, no DMAR or RMRR present: the session runs as before), TRANSLATING,
@@ -20,4 +22,13 @@ int x86_vgpu_session_stop(void);
 BOOT_U32 x86_vgpu_session_state(void);
 // Pages the session holds (arena, surface, VT-d tables, queue, mapping) for the console accounting.
 BOOT_U64 x86_vgpu_session_pages(void);
+
+// V2c (present.c): the console drawn through the translated GPU, GOP fallback (Z1-A..Z5-A).
+int x86_vgpu_present_open(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory,
+    X86_DMA_ARENA *arena, X86_SURFACE_MAPPING *surface);
+int x86_vgpu_present_rect(BOOT_U32 x, BOOT_U32 y, BOOT_U32 width, BOOT_U32 height);
+// 1 once after the target changed (bring-up or fallback): the console must redraw every cell.
+int x86_vgpu_present_redraw(void);
+int x86_vgpu_present_abandon(void);
+int x86_vgpu_present_close(void);
 #endif
