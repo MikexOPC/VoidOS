@@ -62,6 +62,7 @@ static int wait_private(VGPU_QUEUE *queue,uint32_t start)
         if (!kernel_vgpu_queue_access(queue,0,20,1,0,&status)) return 0;
         if (status!=15) { queue->Fault=VGPU_QUEUE_STATE; return 0; }
         if (current!=queue->Used && now!=start) {
+            queue->LastWait=(now-start)&queue->Io.Mask;
             if (complete_private(queue,current)) return 1;
             queue->Fault=VGPU_QUEUE_RESPONSE; return 0;
         }

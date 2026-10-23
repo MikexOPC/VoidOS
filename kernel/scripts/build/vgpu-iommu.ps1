@@ -22,7 +22,7 @@ if ($VgpuIommu) { $iommuSources+=@('arch/x86/kernel/drivers/video/virtio/iommu/s
     'kernel/drivers/video/virtio/queues/setup.c','kernel/drivers/video/virtio/queues/exchange.c','kernel/drivers/video/virtio/queues/response.c',
     'arch/x86/kernel/drivers/video/virtio/queues/native.c','arch/x86/kernel/drivers/video/virtio/queues/pci.c',
     'arch/x86/kernel/drivers/video/virtio/queues/access.c','kernel/drivers/video/virtio/resources/resource.c',
-    'kernel/drivers/video/virtio/resources/scanout.c') }
+    'kernel/drivers/video/virtio/resources/scanout.c','kernel/diagnostics/latency.c') }
 foreach ($source in $iommuSources) {
     $object=Join-Path $output ($source.Replace('/','-').Replace('.c','.obj'))
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags+@(('/Fo'+$object),(Join-Path $project $source)))

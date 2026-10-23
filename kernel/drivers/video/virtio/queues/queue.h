@@ -39,6 +39,8 @@ typedef struct {
     uint32_t  Notify[2], Fault, State, Width, Height;
     uint16_t  Available, Used;
     uint32_t  Expected, Scanout;
+    // V2d: clock ticks from notify to the observed completion of the last command.
+    uint32_t  LastWait, Reserved;
 } VGPU_QUEUE;
 uint32_t kernel_vgpu_queue_register(uint32_t offset,uint32_t width,uint32_t write);
 uint32_t kernel_vgpu_queue_size(uint32_t maximum);

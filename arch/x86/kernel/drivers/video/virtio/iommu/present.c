@@ -3,6 +3,7 @@
 #include "arch/x86/kernel/drivers/video/framebuffer/pixels/session.h"
 #include "kernel/drivers/video/virtio/resources/scanout.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/diagnostics/latency.h"
 static X86_VGPU_TRANSPORT transport;
 static KERNEL_VGPU_IO io;
 static X86_VGPU_QUEUE_TRANSPORT native;
@@ -12,6 +13,9 @@ static X86_FB_TARGET target;
 static const X86_SURFACE_MAPPING *bound;
 static BOOT_U64 presents;
 static BOOT_U32 presenting, redraw, failures, reset_done;
+// V2d M1-A: whole present (TRANSFER + FLUSH, fenced), the FLUSH completion wait alone, and the
+// presented area in pixels. PM ticks at 3.579545 MHz.
+static KERNEL_LATENCY present_ticks, flush_ticks, present_area;
 
 // ====== target_private ======
 
@@ -129,7 +133,18 @@ int x86_vgpu_present_rect(BOOT_U32 x, BOOT_U32 y, BOOT_U32 width, BOOT_U32 heigh
     if (presents == KERNEL_TEST_VGPU_PRESENT_FAULT) return fallback_private("KERNEL_VGPU_PRESENT_FALLBACK");
 #endif
 
-    if (kernel_vgpu_scanout_update(&queue, &resource, x, y, width, height)) return 1;
+    uint32_t start = 0, end = 0;
+    int clocked = io.Clock(io.Context, &start);
+
+    if (kernel_vgpu_scanout_update(&queue, &resource, x, y, width, height)) {
+        if (clocked && io.Clock(io.Context, &end)) {
+            kernel_latency_add(&present_ticks, (end - start) & io.Mask);
+            kernel_latency_add(&flush_ticks, queue.LastWait);
+        }
+
+        kernel_latency_add(&present_area, (BOOT_U64)width * height);
+        return 1;
+    }
 
     (void)(kernel_text("KERNEL_VGPU_PRESENT_RECT: ") && kernel_number(((BOOT_U64)x << 48) | ((BOOT_U64)y << 32) | ((BOOT_U64)width << 16) | height) &&
         kernel_text("\nKERNEL_VGPU_PRESENT_QUEUE_FAULT: ") && kernel_number(queue.Fault) && kernel_text("\n"));
@@ -161,7 +176,10 @@ int x86_vgpu_present_close(void)
     int closed = 1;
 
     if (!kernel_text("KERNEL_VGPU_PRESENTS: ") || !kernel_number(presents) || !kernel_text("\nKERNEL_VGPU_PRESENT_FAILURES: ") ||
-        !kernel_number(failures) || !kernel_text("\n")
+        !kernel_number(failures) || !kernel_text("\n") ||
+        !kernel_latency_report("KERNEL_VGPU_PRESENT_PM", &present_ticks) ||
+        !kernel_latency_report("KERNEL_VGPU_FLUSH_WAIT_PM", &flush_ticks) ||
+        !kernel_latency_report("KERNEL_VGPU_PRESENT_AREA", &present_area)
     )
     return 0;
 

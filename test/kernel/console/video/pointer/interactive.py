@@ -87,7 +87,24 @@ def translation_check(log, trace_text, fallbacks=0):
         raise RuntimeError('Console not presented through the GPU')
     if fallbacks and 'KERNEL_VGPU_PRESENT_FALLBACK' not in log: raise RuntimeError('Fallback not reported')
     if not fallbacks and 'KERNEL_VGPU_PRESENT_FALLBACK' in log: raise RuntimeError('Unexpected fallback')
-    return dict(Source=hex(source),Polls=polls,Translated=True,Presents=presents,Fallbacks=fallbacks)
+    latency = dict(Present=latency_check(log,'KERNEL_VGPU_PRESENT_PM',presents-fallbacks),
+        FlushWait=latency_check(log,'KERNEL_VGPU_FLUSH_WAIT_PM',presents-fallbacks),
+        Area=latency_check(log,'KERNEL_VGPU_PRESENT_AREA',presents-fallbacks),
+        Poll=latency_check(log,'KERNEL_VGPU_POLL_PM',polls),Quiet=latency_check(log,'KERNEL_VGPU_QUIET_PM',1))
+    return dict(Source=hex(source),Polls=polls,Translated=True,Presents=presents,Fallbacks=fallbacks,Latency=latency)
+
+# ====== latency_check ======
+
+# V2d: an accumulator report is coherent (buckets sum to the count, min <= mean <= max).
+def latency_check(log, name, count=None):
+    value = lambda field: provider.number(log, f'{name}_{field}')
+    total, samples = value('TOTAL'), value('COUNT')
+    buckets = [value(f'B{index}') for index in range(8)]
+    if sum(buckets) != samples or (count is not None and samples != count) or value('SATURATED'):
+        raise RuntimeError('Latency report counts: '+name)
+    if samples and not value('MIN') <= total // samples <= value('MAX'):
+        raise RuntimeError('Latency report bounds: '+name)
+    return dict(Count=samples, Min=value('MIN'), Max=value('MAX'), Total=total, Buckets=buckets)
 
 # ====== untranslated_check ======
 

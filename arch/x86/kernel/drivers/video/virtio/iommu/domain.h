@@ -21,6 +21,8 @@ BOOT_U64 x86_vgpu_iommu_device(BOOT_U64 physical, BOOT_U64 bytes, BOOT_U32 acces
 int x86_vgpu_iommu_revoke(BOOT_U32 index);
 int x86_vgpu_iommu_expect(BOOT_U32 reason, BOOT_U32 read, BOOT_U64 address);
 int x86_vgpu_iommu_quiet(void);
+// V2d: the ACPI PM timer captured for VT-d (port and counter mask); 0 before the capture.
+int x86_vgpu_iommu_clock(BOOT_U32 *port, BOOT_U32 *mask);
 // After the device reset is confirmed and with an idle window: TE off, flush, release.
 int x86_vgpu_iommu_disable(void);
 #endif
