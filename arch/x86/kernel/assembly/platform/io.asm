@@ -1,4 +1,6 @@
 option casemap:none
+; H1-A/H2: paging generation, defined in arch/x86/mm/paging/inventory.c.
+EXTERN x86_paging_generation_counter:QWORD
 .code
 
 ; ====== accessi byte a porte I O del profilo diagnostico ====== ;
@@ -58,6 +60,8 @@ x86_physical_bits ENDP
 PUBLIC x86_invalidate_page
 x86_invalidate_page PROC
     invlpg BYTE PTR [rcx]
+    ; Every PTE change ends here: one more paging generation (single CPU, no lock needed).
+    inc QWORD PTR [x86_paging_generation_counter]
     ret
 x86_invalidate_page ENDP
 END

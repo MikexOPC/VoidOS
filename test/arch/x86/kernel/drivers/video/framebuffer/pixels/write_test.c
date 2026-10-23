@@ -34,6 +34,7 @@ static int setup(void)
     visits = fail_view = 0;
     fail_after = corrupt_after = 0;
     memset(words, 0xa5, sizeof(words));
+    x86_fb_verify_reset();
     return fixture() && x86_fb_bind(&context, &window, &lapic, &inventory, &owner);
 }
 
@@ -94,18 +95,22 @@ static int pixel_rejection(void)
     BOOT_U32 index;
     BOOT_U64 entry;
     CHECK(setup()); copy = owner;
+    x86_fb_verify_reset();
     CHECK(!x86_fb_pixel(&copy, 0, 0, 1, 2, 3) && !visits);
     owner.Ready = 3; CHECK(!x86_fb_pixel(&owner, 0, 0, 1, 2, 3)); owner.Ready = 2;
     bad_cpu = 1; CHECK(!x86_fb_pixel(&owner, 0, 0, 1, 2, 3)); bad_cpu = 0;
     cpu.Pat ^= 1; CHECK(!x86_fb_pixel(&owner, 0, 0, 1, 2, 3)); cpu.Pat ^= 1;
     window.Active = 2; CHECK(!x86_fb_pixel(&owner, 0, 0, 1, 2, 3)); window.Active = 0;
+    // H1-A: these writes bypass the kernel APIs; the full scan (forced here) must still reject them.
     frame(owner.Authority.Tables[2].Base)[1] |= 4;
+    x86_fb_verify_reset();
     CHECK(!x86_fb_pixel(&owner, 0, 0, 1, 2, 3));
     frame(owner.Authority.Tables[2].Base)[1] &= ~4ULL;
     entry = frame(owner.Authority.Tables[2].Base)[1];
     for (index = 0; index < 3; ++index) {
         frame(owner.Authority.Tables[2].Base)[1] = entry ^
             (index == 0 ? 2ULL : index == 1 ? (1ULL << 63) : 0x18ULL);
+        x86_fb_verify_reset();
         CHECK(!x86_fb_pixel(&owner, 0, 0, 1, 2, 3));
     }
     frame(owner.Authority.Tables[2].Base)[1] = entry;
@@ -154,6 +159,46 @@ static int pixel_target(void)
     return 0;
 }
 
+// ====== pixel_generation ======
+
+// H1-A: the full paging scan runs on the first session, after a generation change, after a changed
+// snapshot and every 64 skipped sessions. The price (H3) is tested too: a page-table write that
+// bypasses the kernel APIs is noticed only by the next full scan, at most 64 sessions later.
+static int pixel_generation(void)
+{
+    BOOT_U64 full, skipped, full0, skipped0;
+    CHECK(setup());
+    x86_fb_verify_reset();
+    x86_fb_verify_counts(&full0, &skipped0);
+    CHECK(x86_fb_pixel(&owner, 0, 0, 1, 2, 3));
+    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 1 && skipped == skipped0);
+    CHECK(x86_fb_pixel(&owner, 1, 0, 1, 2, 3));
+    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 1 && skipped == skipped0 + 1);
+    x86_paging_generation_bump();
+    CHECK(x86_fb_pixel(&owner, 2, 0, 1, 2, 3));
+    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 2);
+    for (BOOT_U32 index = 0; index < 64; ++index) CHECK(x86_fb_pixel(&owner, index, 1, 1, 2, 3));
+    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 2 && skipped == skipped0 + 65);
+    CHECK(x86_fb_pixel(&owner, 0, 2, 1, 2, 3));
+    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 3);
+    // A different snapshot is never accepted from the cache: the full scan rejects it at once.
+    ++inventory.LeafPages;
+    CHECK(!x86_fb_pixel(&owner, 1, 2, 1, 2, 3));
+    --inventory.LeafPages;
+    CHECK(x86_fb_pixel(&owner, 1, 2, 1, 2, 3));
+    // Bypassing write (no invlpg, no CR3 reload): accepted until the periodic full scan.
+    BOOT_U64 *root = frame(4096), saved = root[300];
+    BOOT_U32 accepted = 0;
+    root[300] = 0x2003;
+    while (accepted < 100 && x86_fb_pixel(&owner, accepted % 1024, 2, 1, 2, 3)) ++accepted;
+    CHECK(accepted >= 1 && accepted <= 64);
+    root[300] = saved;
+    x86_fb_verify_reset();
+    CHECK(x86_fb_pixel(&owner, 3, 2, 1, 2, 3));
+    CHECK(x86_fb_unbind(&owner));
+    return 0;
+}
+
 // ====== run_pixel_tests ======
 
 int run_pixel_tests(void)
@@ -163,6 +208,8 @@ int run_pixel_tests(void)
     result = pixel_offsets();
     if (result) return result;
     result = pixel_target();
+    if (result) return result;
+    result = pixel_generation();
     return result ? result : pixel_rejection();
 }
 
@@ -186,7 +233,7 @@ static int rectangles(void)
         CHECK(draw_setup(64, 64, 64, format));
         table_views = 0;
         CHECK(x86_fb_pixel(&owner, 0, 0, 1, 2, 3)); single_scan = table_views;
-        table_views = visits = 0;
+        table_views = visits = 0; x86_fb_verify_reset(); // one full scan per drawing when nothing is cached (H1-A)
         CHECK(x86_fb_rectangle(&owner, 0, 0, 64, 64, 0x010203));
         CHECK(visits == 4096 && table_views == single_scan);
         for (index = 0; index < 4096; ++index)
@@ -222,7 +269,7 @@ static int text_utf8(void)
     for (format = 0; format < 2; ++format) {
         CHECK(draw_setup(80, 12, 84, format));
         table_views = 0; CHECK(x86_fb_pixel(&owner, 0, 0, 0, 0, 0)); scan = table_views;
-        table_views = visits = 0;
+        table_views = visits = 0; x86_fb_verify_reset();
         CHECK(x86_fb_text(&owner, &text, &font));
         CHECK(visits == 512 && table_views == scan);
         for (cell = 0; cell < 8; ++cell) for (row = 0; row < 8; ++row) for (col = 0; col < 8; ++col) {
@@ -285,9 +332,9 @@ static int drawing_rejections(void)
     CHECK(!x86_fb_rectangle(&owner, ~0U, 0, 1, 1, 0));
     CHECK(!x86_fb_rectangle(&owner, 0, 0, 1, 1, 0xffffffff));
     bad_cpu = 1; CHECK(!x86_fb_text(&owner, &text, &font)); bad_cpu = 0;
-    frame(owner.Authority.Tables[2].Base)[1] |= 4;
-    CHECK(!x86_fb_rectangle(&owner, 0, 0, 1, 1, 0));
-    CHECK(!x86_fb_text(&owner, &text, &font));
+    frame(owner.Authority.Tables[2].Base)[1] |= 4; // bypassing write: the forced full scan rejects it (H1-A)
+    x86_fb_verify_reset(); CHECK(!x86_fb_rectangle(&owner, 0, 0, 1, 1, 0));
+    x86_fb_verify_reset(); CHECK(!x86_fb_text(&owner, &text, &font));
     frame(owner.Authority.Tables[2].Base)[1] &= ~4ULL;
     CHECK(!visits);
     for (index = 0; index < 4100; ++index) CHECK(words[index] == 0xa5a5a5a5);

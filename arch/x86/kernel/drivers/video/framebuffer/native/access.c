@@ -56,5 +56,7 @@ int x86_fb_flush(BOOT_U64 root)
     X86_FB_CPU cpu;
     if (!x86_fb_cpu(&cpu) || cpu.Root != root) return 0;
     __writecr3(root);
+    // H2: a CR3 reload publishes PML4 changes; it starts a new paging generation as well.
+    x86_paging_generation_bump();
     return __readcr3() == root;
 }

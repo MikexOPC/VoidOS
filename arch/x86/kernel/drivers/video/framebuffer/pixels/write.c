@@ -1,8 +1,73 @@
 #include "session.h"
+#include <string.h>
 #include "../console/profile.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 
 static const X86_FB_TARGET *redirect;
+
+// H1-A: the last fully verified paging snapshot. A pixel session repeats the full scan only when
+// the paging generation moved, the snapshot or the allocator differ, the owner changed, after 64 skipped sessions
+// (periodic net, H3) or after a reset at the session boundaries.
+#define VERIFY_PERIOD 64U
+static X86_PAGING_INVENTORY verified;
+// The allocator is part of what the full scan checks (pinned table leases): a changed pool also
+// forces the scan, so only page-table writes outside the APIs wait for the periodic net.
+static KERNEL_PHYSICAL_ALLOCATOR verified_pool;
+// CPU paging state (CR3, PAT, physical bits) is not a PTE write either: it is compared as well.
+static X86_FB_CPU verified_cpu;
+static BOOT_U64 verified_generation;
+static const X86_FB_MAPPING *verified_owner;
+static BOOT_U32 verified_ready, verified_skips;
+static BOOT_U64 verify_full, verify_skipped;
+
+// ====== x86_fb_verify_reset ======
+
+void x86_fb_verify_reset(void) { verified_ready = 0; }
+
+// ====== x86_fb_verify_counts ======
+
+void x86_fb_verify_counts(BOOT_U64 *full, BOOT_U64 *skipped)
+{
+    if (full) *full = verify_full;
+    if (skipped) *skipped = verify_skipped;
+}
+
+// ====== verify_private ======
+
+static int verify_private(X86_FB_MAPPING *owner)
+{
+    BOOT_U64 generation = x86_paging_generation();
+    X86_FB_CPU cpu;
+
+    if (!x86_fb_cpu(&cpu)) return 0;
+
+    if (verified_ready && verified_owner == owner && cpu.Root == verified_cpu.Root && cpu.Pat == verified_cpu.Pat &&
+        cpu.PhysicalBits == verified_cpu.PhysicalBits && verified_generation == generation && verified_skips < VERIFY_PERIOD &&
+        !memcmp(&verified, owner->Inventory, sizeof(verified)) &&
+        !memcmp(&verified_pool, owner->Window->Pool, sizeof(verified_pool))
+    ) {
+        ++verified_skips;
+        ++verify_skipped;
+        return 1;
+    }
+
+    verified_ready = 0;
+
+    if (!x86_paging_inventory_verify_video(owner->Context, owner->Window->Pool, owner->Lapic, &owner->Authority,
+        x86_fb_authority, owner->Inventory)
+    )
+    return 0;
+
+    ++verify_full;
+    verified = *owner->Inventory;
+    verified_pool = *owner->Window->Pool;
+    verified_cpu = cpu;
+    verified_owner = owner;
+    verified_generation = x86_paging_generation();
+    verified_skips = 0;
+    verified_ready = 1;
+    return 1;
+}
 
 // ====== x86_fb_target_redirect ======
 
@@ -65,11 +130,10 @@ int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
     if (base & 3) return 0;
 
     X86_PROFILE_BEGIN(verify_start);
-    int verified = x86_paging_inventory_verify_video(owner->Context, owner->Window->Pool,
-        owner->Lapic, &owner->Authority, x86_fb_authority, owner->Inventory);
+    int checked = verify_private(owner);
     X86_PROFILE_END(X86_PROFILE_VERIFY, verify_start);
 
-    if (!verified) return 0;
+    if (!checked) return 0;
     session->Owner = owner; session->Surface = *fb; session->Base = base;
     session->X = x; session->Y = y; session->Width = width; session->Height = height;
     return 1;

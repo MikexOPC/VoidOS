@@ -6,6 +6,16 @@
 #define PAGING_ADDRESS 0x000ffffffffff000ULL
 #define PAGING_NX (1ULL << 63)
 #define PAGING_ROOT_VIEW ((128ULL << 39) | (128ULL << 30) | (128ULL << 21) | (128ULL << 12))
+volatile BOOT_U64 x86_paging_generation_counter;
+
+// ====== x86_paging_generation ======
+
+BOOT_U64 x86_paging_generation(void) { return x86_paging_generation_counter; }
+
+// ====== x86_paging_generation_bump ======
+
+void x86_paging_generation_bump(void) { ++x86_paging_generation_counter; }
+
 // Framebuffer authority registered by its owner (x86_paging_video_register).
 static const X86_PAGING_VIDEO_AUTH *video_registered;
 static X86_PAGING_VIDEO_CHECK video_check;

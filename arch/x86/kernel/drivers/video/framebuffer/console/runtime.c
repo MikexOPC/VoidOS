@@ -7,6 +7,7 @@
 #include "kernel/diagnostics/log.h"
 #include "../drawing/draw.h"
 #include "profile.h"
+#include "../pixels/session.h"
 #ifdef KERNEL_VGPU_IOMMU
 #include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
 #endif
@@ -145,6 +146,7 @@ int x86_console_open(X86_PS2_SESSION *session)
         !session->Clock.Ready || !session->Clock.Port || session->Clock.Port > 65535 ||
         (session->Clock.Mask != 0xffffff && session->Clock.Mask != UINT32_MAX)) return 0;
     source = session;
+    x86_fb_verify_reset();
 #ifdef KERNEL_PROFILE_VGPU_FLUSH
     x86_profile_start(session->Clock.Port, session->Clock.Mask);
 #endif
@@ -339,6 +341,8 @@ int x86_console_finish(X86_PS2_SESSION *session)
         !session->WorkerDone || !session->ConsumerDone || !session->ShellDone || session->Error || session->Losses)
         return 0;
     if (absent) return kernel_log(0, "KERNEL_CONSOLE_SHELL_SERIAL_CLEAN");
+    BOOT_U64 verify_full = 0, verify_skipped = 0;
+    x86_fb_verify_counts(&verify_full, &verify_skipped);
 #ifdef KERNEL_PS2_MOUSE
     if (!kernel_pointer_close(&pointer) || !kernel_text("KERNEL_POINTER_X: ") ||
         !kernel_number(pointer.Image.X) || !kernel_text("\nKERNEL_POINTER_Y: ") ||
@@ -358,6 +362,8 @@ int x86_console_finish(X86_PS2_SESSION *session)
         kernel_text("\nKERNEL_CONSOLE_IDLE_FLUSHES: ") && kernel_number(idle_count) &&
         kernel_text("\nKERNEL_CONSOLE_IDLE_TOTAL_PM: ") && kernel_number(idle_total) &&
         kernel_text("\nKERNEL_CONSOLE_SETTLE_TOTAL_PM: ") && kernel_number(settle_total) &&
+        kernel_text("\nKERNEL_FB_VERIFY_FULL: ") && kernel_number(verify_full) &&
+        kernel_text("\nKERNEL_FB_VERIFY_SKIPPED: ") && kernel_number(verify_skipped) &&
         kernel_text("\n") &&
 #ifdef KERNEL_PROFILE_VGPU_FLUSH
         x86_profile_report() &&

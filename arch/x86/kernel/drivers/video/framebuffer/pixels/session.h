@@ -9,6 +9,9 @@ typedef struct X86_FB_TARGET {
     int  (*Valid)(const struct X86_FB_TARGET *target);
 } X86_FB_TARGET;
 int x86_fb_target_redirect(const X86_FB_TARGET *expected, const X86_FB_TARGET *next);
+// H1-A: forget the verified snapshot (console session boundaries); counters of full and skipped scans.
+void x86_fb_verify_reset(void);
+void x86_fb_verify_counts(BOOT_U64 *full, BOOT_U64 *skipped);
 const X86_FB_TARGET *x86_fb_target(void);
 typedef struct {
     X86_FB_MAPPING  *Owner;
