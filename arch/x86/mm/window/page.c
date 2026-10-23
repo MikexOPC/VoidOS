@@ -209,6 +209,69 @@ int x86_page_window_release(X86_PAGE_WINDOW *window)
     return 1;
 }
 
+// ====== parcheggio: PTE tolte, lease pinned consegnato al chiamante ===== //
+
+int x86_page_window_park(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_LEASE *parked)
+{
+    BOOT_U64 index, pages, address = (BOOT_U64)parked;
+    volatile BOOT_U64 *entries;
+
+    if (!parked || !window_valid(window) || window->Active != 1 || !leaves_match(window) ||
+        address > ~0ULL - sizeof(*parked) ||
+        os_address_ranges_overlap(address, sizeof(*parked), (BOOT_U64)window, sizeof(*window)) ||
+        os_address_ranges_overlap(address, sizeof(*parked), X86_KERNEL_PAGE_WINDOW, X86_KERNEL_WINDOW_BYTES) ||
+        parked->Base || parked->Pages || parked->Id || parked->Owner
+    )
+    return 0;
+
+    pages = window->Lease.Pages;
+    entries = x86_window_entries(3);
+
+    if (!entries) return 0;
+
+    for (index = 0; index < pages; ++index) entries[WINDOW_LEAF + index] = 0;
+
+    invalidate_span(pages);
+    *parked = window->Lease;
+    window->Lease = (KERNEL_PHYSICAL_LEASE){0};
+    window->Active = 0;
+    return x86_page_window_idle_valid(window) && kernel_physical_is_pinned(window->Pool, parked);
+}
+
+// ====== ripresa dello stesso lease, contenuto conservato ===== //
+
+int x86_page_window_resume(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_LEASE *parked)
+{
+    BOOT_U64 index, address = (BOOT_U64)parked;
+    volatile BOOT_U64 *entries;
+
+    if (!parked || address > ~0ULL - sizeof(*parked) || !x86_page_window_idle_valid(window) ||
+        os_address_ranges_overlap(address, sizeof(*parked), (BOOT_U64)window, sizeof(*window)) ||
+        !parked->Pages || parked->Pages > X86_KERNEL_WINDOW_PAGES ||
+        x86_window_frame(parked->Base, parked->Pages, window->Pool->PhysicalBits) != x86_window_span(parked->Pages) ||
+        !kernel_physical_is_pinned(window->Pool, parked)
+    )
+    return 0;
+
+    entries = x86_window_entries(3);
+
+    if (!entries) return 0;
+
+    window->Lease = *parked;
+
+    for (index = 0; index < parked->Pages; ++index) {
+        entries[WINDOW_LEAF + index] = (window->Lease.Base + index * 4096) | 3 | PAGE_NX;
+    }
+
+    invalidate_span(parked->Pages);
+    window->Active = 1;
+
+    if (!leaves_match(window)) return 0;
+
+    *parked = (KERNEL_PHYSICAL_LEASE){0};
+    return 1;
+}
+
 // ====== copertura di tutte le pagine esposte dal prestito ACPI ===== //
 
 static int acpi_range(const KERNEL_BOOT_CONTEXT *context, BOOT_U64 base, BOOT_U64 span)

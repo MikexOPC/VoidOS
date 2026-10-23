@@ -33,14 +33,15 @@ static int valid_private(VGPU_QUEUE *queue,const VGPU_QUEUE_IO_CONTEXT *io,const
         os_address_ranges_overlap((uintptr_t)queue,sizeof(*queue),(uintptr_t)buffers,sizeof(*buffers))) return 0;
     for (uint32_t byte=0; byte<sizeof(*queue); ++byte) if (((const unsigned char *)queue)[byte]) return 0;
     for (uint32_t page=0; page<4; ++page) {
-        uint64_t address=(uintptr_t)buffers->Views[page], physical=buffers->Physical[page];
+        uint64_t address=(uintptr_t)buffers->Views[page], physical=buffers->Physical[page], device=buffers->Device[page];
         if (!address || (address&4095) || address>UINT64_MAX-4096 || physical<4096 || (physical&4095) ||
-            physical>(1ULL<<buffers->Bits)-4096 ||
+            physical>(1ULL<<buffers->Bits)-4096 || device<4096 || (device&4095) || device>(1ULL<<buffers->Bits)-4096 ||
             os_address_ranges_overlap(address,4096,(uintptr_t)queue,sizeof(*queue)) ||
             os_address_ranges_overlap(address,4096,(uintptr_t)io,sizeof(*io)) ||
             os_address_ranges_overlap(address,4096,(uintptr_t)buffers,sizeof(*buffers))) return 0;
         for (uint32_t other=0; other<page; ++other)
-            if (physical==buffers->Physical[other] || address==(uintptr_t)buffers->Views[other]) return 0;
+            if (physical==buffers->Physical[other] || device==buffers->Device[other] ||
+                address==(uintptr_t)buffers->Views[other]) return 0;
     }
     return 1;
 }
@@ -58,7 +59,7 @@ static int configure_private(VGPU_QUEUE *queue,uint32_t index)
         !kernel_vgpu_queue_access(queue,0,0x1e,2,0,&queue->Notify[index])) return 0;
     const uint32_t offsets[3]={0,128,160};
     for (uint32_t item=0; item<3; ++item) {
-        uint64_t address=queue->Buffers.Physical[index]+offsets[item];
+        uint64_t address=queue->Buffers.Device[index]+offsets[item];
         if (!set_private(queue,0x20+item*8,4,(uint32_t)address) ||
             !set_private(queue,0x24+item*8,4,(uint32_t)(address>>32))) return 0;
     }

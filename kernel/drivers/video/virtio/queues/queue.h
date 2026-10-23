@@ -24,9 +24,12 @@ typedef struct {
     int  (*Barrier)(void *);
     uint32_t  Mask, Deadline, Samples;
 } VGPU_QUEUE_IO_CONTEXT;
+// Physical: CPU-side frames. Device: addresses published to the device; equal to Physical
+// without an IOMMU, IOVAs of the owned domain with VIRTIO_F_ACCESS_PLATFORM (VirtIO 1.2 6).
 typedef struct {
     volatile unsigned char  *Views[4];
     uint64_t  Physical[4];
+    uint64_t  Device[4];
     uint32_t  Bits, Reserved;
 } VGPU_BUFFERS;
 typedef struct {

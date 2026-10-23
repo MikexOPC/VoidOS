@@ -36,6 +36,18 @@ int main(void)
     CHECK(!leaves[slots[1]] && !leaves[slots[1]+1] && leaves[slots[0]] && leaves[slots[2]] && leaves[slots[2]+1]);
     CHECK(!x86_vtd_domain_revoke(&domain,1) && domain.Revoked==2);
     domain_walk_check();
+    // Translation: only live buffers, whole range inside one lease, access granted by the buffer.
+    {
+        const X86_VTD_BUFFER *buffers=request.Buffers;
+        CHECK(x86_vtd_domain_translate(&domain,buffers[0].Lease.Base,8192,buffers[0].Access)==domain.Iova[0]);
+        CHECK(x86_vtd_domain_translate(&domain,buffers[2].Lease.Base+4100,4,1)==domain.Iova[2]+4100);
+        CHECK(!x86_vtd_domain_translate(&domain,buffers[1].Lease.Base,4096,1)); // revoked
+        CHECK(!x86_vtd_domain_translate(&domain,buffers[0].Lease.Base+4096,8192,1)); // crosses the lease end
+        CHECK(!x86_vtd_domain_translate(&domain,buffers[0].Lease.Base,0,1) && !x86_vtd_domain_translate(&domain,buffers[0].Lease.Base,1,2));
+        CHECK(!x86_vtd_domain_translate(&domain,buffers[0].Lease.Base-1,2,1) && !x86_vtd_domain_translate(0,buffers[0].Lease.Base,1,1));
+        CHECK(!x86_vtd_domain_translate(&domain,~0ULL,2,1));
+        if (buffers[0].Access==1) CHECK(!x86_vtd_domain_translate(&domain,buffers[0].Lease.Base,4096,3));
+    }
     leaves[slots[1]]=leaves[slots[0]]; CHECK(!x86_vtd_domain_verify(&domain) && !x86_vtd_domain_revoke(&domain,0)); leaves[slots[1]]=0;
     domain.Revoked=8; CHECK(!x86_vtd_domain_verify(&domain)); domain.Revoked=2;
     borrow_count=0; borrow_fail=domain.TableCount+1;

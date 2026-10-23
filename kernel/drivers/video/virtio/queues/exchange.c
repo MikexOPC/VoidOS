@@ -90,8 +90,8 @@ static int exchange_private(VGPU_QUEUE *queue,uint32_t command,const unsigned ch
     queue->State=2;
     queue->Expected=command==0x100?408:24;
     request_private(queue,command,body,bytes);
-    ring->Descriptors[0]=(VGPU_DESCRIPTOR){queue->Buffers.Physical[2],24+bytes,1,1};
-    ring->Descriptors[1]=(VGPU_DESCRIPTOR){queue->Buffers.Physical[3],queue->Expected,2,0};
+    ring->Descriptors[0]=(VGPU_DESCRIPTOR){queue->Buffers.Device[2],24+bytes,1,1};
+    ring->Descriptors[1]=(VGPU_DESCRIPTOR){queue->Buffers.Device[3],queue->Expected,2,0};
     ring->Heads[queue->Available%8]=0;
     if (!barrier_private(queue)) return 0;
     queue->Available=(uint16_t)(queue->Available+1U); ring->Available=queue->Available;

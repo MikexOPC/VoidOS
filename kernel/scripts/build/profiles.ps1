@@ -16,6 +16,8 @@ if (($TestIommuDiscovery -or $TestPciEcam) -and ($Install -or $Ps2Input -or $Ps2
     $TestSchedulerPreservation -or $TestSchedulerFault -ne 'none' -or $TestWindowFault -ne 'none' -or $TestCpuFault -ne 'none' -or
     $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'IOMMU discovery diagnostic must stay isolated.' }
 if ($TestVgpuScanout -and $TestVgpuResourceReject) { throw 'Choose resource rejection or visual presentation.' }
+if ($TestVgpuIommuFault) { if ($TestVgpuScanout) { throw 'The V1 revocation runs on the resource path, not the visual one.' }; $TestVgpuIommu=$true }
+if ($TestVgpuIommu) { if ($TestVgpuResourceReject) { throw 'Choose V1 translation or resource rejection.' }; $TestVgpuResources=$true }
 if ($TestVgpuResourceReject -or $TestVgpuScanout) { $TestVgpuResources=$true }
 if ($TestVgpuResources) { $TestVgpuQueues=$true }
 if ($TestVgpuQueues) { $TestVgpuInitialization=$true }

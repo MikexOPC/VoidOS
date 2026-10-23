@@ -7,7 +7,7 @@ static int valid_private(const KERNEL_VGPU_IO *io,const KERNEL_VGPU_NEGOTIATION 
 {
     return io && result && io->Context && io->Register && io->Clock &&
         (io->Mask==0xffffff || io->Mask==UINT32_MAX) && io->Deadline &&
-        io->Deadline<io->Mask/2 && io->Samples && io->Samples<=1000000 &&
+        io->Deadline<io->Mask/2 && io->Samples && io->Samples<=1000000 && io->Platform<=1 &&
         !os_address_ranges_overlap((uintptr_t)io,sizeof(*io),(uintptr_t)result,sizeof(*result));
 }
 
@@ -78,7 +78,7 @@ int kernel_vgpu_negotiate(const KERNEL_VGPU_IO *io,KERNEL_VGPU_NEGOTIATION *resu
         if (!access_private(io,0,4,1,&value,result) || !access_private(io,4,4,0,&value,result)) return 0;
         result->Offered |= (uint64_t)value<<(select*32);
     }
-    result->Accepted=kernel_vgpu_features(result->Offered);
+    result->Accepted=kernel_vgpu_features(result->Offered,io->Platform);
     if (!result->Accepted) { result->Fault=KERNEL_VGPU_INIT_FEATURE; return 0; }
     for (uint32_t select=0; select<2; ++select) {
         value=select;

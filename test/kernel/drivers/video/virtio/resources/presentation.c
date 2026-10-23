@@ -39,8 +39,8 @@ int main(void)
     for (unsigned cycle=0; cycle<100; ++cycle) for (fail_at=0; fail_at<=10; ++fail_at) {
         VGPU_QUEUE queue={0}; VGPU_RESOURCE resource={0}; calls=0;
         queue.Self=(uintptr_t)&queue; queue.State=1; queue.Buffers.Bits=52; queue.Scanout=7; queue.Width=1280; queue.Height=800;
-        for (unsigned index=0; index<4; ++index) queue.Buffers.Physical[index]=0x100000+4096*index;
-        if (!kernel_vgpu_resource_open(&queue,&resource,0x200000,1280,800)) { CHECK(fail_at<=3 && resource.State==UINT32_MAX); continue; }
+        for (unsigned index=0; index<4; ++index) { queue.Buffers.Physical[index]=0x100000+4096*index; queue.Buffers.Device[index]=0x1001000+8192*index; }
+        if (!kernel_vgpu_resource_open(&queue,&resource,0x200000,0x1100000,1280,800)) { CHECK(fail_at<=3 && resource.State==UINT32_MAX); continue; }
         CHECK(resource.State==3 && !resource.Bound);
         VGPU_RESOURCE copy=resource;
         CHECK(!kernel_vgpu_scanout_bind(&queue,&copy));
