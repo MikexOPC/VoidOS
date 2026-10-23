@@ -1,4 +1,5 @@
 #include "session.h"
+#include "../console/profile.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 
 static const X86_FB_TARGET *redirect;
@@ -52,13 +53,23 @@ int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
     // Redirected target: same geometry by contract, so only the base changes; it must still hold
     // every byte the GOP layout addresses.
     if (redirect) {
-        if (!redirect->Valid(redirect) || fb->Used > redirect->Bytes || last > redirect->Bytes - 4) return 0;
+        X86_PROFILE_BEGIN(target_start);
+        int valid = redirect->Valid(redirect);
+        X86_PROFILE_END(X86_PROFILE_TARGET, target_start);
+
+        if (!valid || fb->Used > redirect->Bytes || last > redirect->Bytes - 4) return 0;
 
         base = redirect->Base;
     }
 
-    if (base & 3 || !x86_paging_inventory_verify_video(owner->Context, owner->Window->Pool,
-        owner->Lapic, &owner->Authority, x86_fb_authority, owner->Inventory)) return 0;
+    if (base & 3) return 0;
+
+    X86_PROFILE_BEGIN(verify_start);
+    int verified = x86_paging_inventory_verify_video(owner->Context, owner->Window->Pool,
+        owner->Lapic, &owner->Authority, x86_fb_authority, owner->Inventory);
+    X86_PROFILE_END(X86_PROFILE_VERIFY, verify_start);
+
+    if (!verified) return 0;
     session->Owner = owner; session->Surface = *fb; session->Base = base;
     session->X = x; session->Y = y; session->Width = width; session->Height = height;
     return 1;
@@ -87,8 +98,14 @@ int x86_fb_pixels_store(const X86_FB_PIXEL_SESSION *session,
 
 int x86_fb_pixels_end(const X86_FB_PIXEL_SESSION *session)
 {
-    return session && x86_fb_authority(&session->Owner->Authority) &&
-        (!redirect || redirect->Valid(redirect));
+    if (!session || !x86_fb_authority(&session->Owner->Authority)) return 0;
+
+    if (!redirect) return 1;
+
+    X86_PROFILE_BEGIN(target_start);
+    int valid = redirect->Valid(redirect);
+    X86_PROFILE_END(X86_PROFILE_TARGET, target_start);
+    return valid;
 }
 
 // ====== x86_fb_pixel ======

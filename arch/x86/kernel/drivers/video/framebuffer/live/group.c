@@ -1,5 +1,6 @@
 #include "group.h"
 #include "arch/x86/kernel/scheduler/mapping/native.h"
+#include "../console/profile.h"
 #ifdef KERNEL_VGPU_IOMMU
 #include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
 #define HELD_PAGES x86_vgpu_session_pages()
@@ -37,7 +38,13 @@ int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 r
     X86_PAGING_INVENTORY expected, *original;
     BOOT_U64 pages;
     int result;
-    if (!ticks || !scalars || !count || count > 8 || !prepare(owner, &expected, &pages)) return 0;
+    if (!ticks || !scalars || !count || count > 8) return 0;
+
+    X86_PROFILE_BEGIN(prepare_start);
+    int prepared = prepare(owner, &expected, &pages);
+    X86_PROFILE_END(X86_PROFILE_PREPARE, prepare_start);
+
+    if (!prepared) return 0;
     original = owner->Inventory;
     owner->Inventory = &expected;
     result = pointer ? x86_fb_group_pointer(owner, column, row, scalars, count, foreground, background, ticks, caret, pointer) :
