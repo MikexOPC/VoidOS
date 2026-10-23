@@ -1,6 +1,6 @@
 # Registro degli interventi futuri
 
-Aggiornato il 22 ottobre 2026.
+Aggiornato il 24 ottobre 2026.
 
 Questo file raccoglie limiti accettati temporaneamente e sviluppi rinviati.
 Non certifica funzionalita implementate e non sostituisce le review dei
@@ -25,9 +25,14 @@ perche inseriti qui. Nessuna scadenza di calendario e ancora concordata.
 
 ## FW-001 — Isolamento DMA tramite IOMMU
 
-**Stato:** avviato il20 ottobre2026 per decisione utente, prima della console
-VirtIO ordinaria. Primo backend Intel VT-d su QEMU; discovery DMAR verificata,
-isolamento DMA non ancora implementato.
+**Stato (24 ottobre 2026):** isolamento DMA verificato su QEMU con una unita
+Intel VT-d. Blocco 3: DMA reali di `edu` permessi, vietati, non mappati e revocati
+([prove](../arch/x86/kernel/drivers/memory/iommu/intel/activation/documentation/dma.md)).
+V1: GPU VirtIO sotto traduzione con ACCESS_PLATFORM. V2b: traduzione persistente per
+tutta la sessione interattiva con `-VgpuIommu`
+([sessione](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/session.md)).
+Restano aperti i punti elencati in FW-011 (RMRR, invalidazione per pagina, interrupt
+di fault, hardware reale). Il testo sotto descrive l'avvio della voce.
 **Priorita:** requisito prima di dichiarare isolamento da DMA ostile o
 ampliare il profilo DMA a dispositivi non fidati/passthrough.
 
@@ -79,7 +84,11 @@ Riferimento: [progetto code e DMA VirtIO](../kernel/drivers/video/virtio/queues/
 
 ## FW-002 — Completare il percorso video VirtIO
 
-**Stato:** reset/negoziazione, code/DMA, risorse2D e scanout/flush diagnostici verificati; sviluppo parziale.
+**Stato (24 ottobre 2026):** console ordinaria presentata dalla GPU VirtIO tradotta,
+con ritorno al GOP a ogni errore (V2c,
+[report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/present.md)).
+Restano: recupero delle righe dopo il clip, cursore VirtIO, backing oltre
+16 MiB; elenco completo in FW-011. Il testo sotto descrive lo stato precedente.
 **Priorita:** percorso attuale verso video e cursore gestiti dal driver.
 
 Code, buffer DMA e richieste/risposte sono verificati nel diagnostico:
@@ -103,7 +112,12 @@ di accelerazione3D, Vulkan o compatibilita con GPU fisiche.
 
 ## FW-003 — Prestazioni e presentazione video
 
-**Stato:** fluidita e presentazione atomica non certificate.
+**Stato (24 ottobre 2026):** misure V2d e profilo dei flush eseguiti
+([latenze](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/latency.md),
+[profilo](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/profile.md),
+[verifica condizionata](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/verification.md)).
+Il flush V2c e sceso da circa 43.600 a circa 8.700 tick PM, ma costa ancora circa 3,4
+volte il GOP; fluidita e atomicita restano non certificate.
 **Quando:** durante l'integrazione VirtIO, prima di dichiarare fluida la GUI.
 
 Misurare separatamente input, scheduling, composizione, trasferimento e
@@ -218,6 +232,62 @@ dai report di validazione non si eliminano senza archiviarle o aggiornare il
 report. `reuse/` resta escluso. Pulizia degli artefatti con uno script che
 conserva le ultime campagne citate; regole `.gitignore` per cache Python e
 build. Chiusura: build e suite host invariate, link dei report verificati.
+
+## FW-011 — Miglioramenti del percorso video e IOMMU (dopo V2)
+
+**Stato:** elenco aperto il 24 ottobre 2026 dai limiti dichiarati nei report V1-V2d e H1-A.
+**Priorita:** prima di dichiarare il video pronto per la GUI
+o per hardware reale, nell'ordine che le misure e la GUI renderanno necessario.
+
+Geometria e presentazione:
+- **Geometria della GPU**: prima versione fatta (politica A, griglia 142x44 a 1280x800, clip a
+  113x42 al fallback; [report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/geometry.md)).
+  Restano: recupero delle righe perse nel clip, cambio di risoluzione a sessione avviata.
+- **Timeout della present sotto carico dell'host**: un boot con build in parallelo ha avuto
+  `QUEUE_FAULT 3` e un fallback reale; rivedere la scadenza della coda.
+- **Present con piu rettangoli**: oggi un solo inviluppo unisce celle e riquadri del puntatore
+  lontani (area media circa 50.000 pixel per un gruppo da 1.296).
+- **Costo residuo del flush V2c** (circa 3,4 volte il GOP): present, `prepare` e disegno nella
+  superficie da analizzare con il profilo (`-ProfileVgpuFlush`).
+- **Cursore VirtIO hardware** (`cursorq`) al posto del puntatore software.
+- **Backing scatter/gather** oltre 16 MiB e cambio di risoluzione a sessione avviata.
+- **Interrupt di completamento** al posto del polling, se le attese fenced diventano il collo di
+  bottiglia (oggi circa 0,05-0,13 ms di media).
+- **Fallback da errore reale**: oggi provato con un errore iniettato (`-TestVgpuPresentFault`).
+- **Host test di `present.c`** con una coda simulata (oggi coperto da test delle code/risorse e
+  da QEMU).
+
+IOMMU:
+- **RMRR**: oggi la traduzione persistente viene rifiutata; servirebbe la mappatura in identita
+  per il device proprietario. Il rifiuto e provato solo nel decoder host, non in QEMU.
+- **Invalidazione per pagina** (page-selective, CAP.PSI) al posto di quella globale.
+- **Interrupt di fault** (FEDATA/FEADDR) al posto del polling.
+- **Sezioni IF=0**: l'avvio non e misurato (comincia prima del clock); l'arresto dura circa
+  66-89 ms in TCG.
+- **Hardware reale** e piu unita VT-d; interrupt remapping.
+
+Misure e verifica:
+- **Timer in TCG**: senza `icount` il timer PM segue il tempo dell'host, quindi le misure
+  includono la velocita dell'emulazione. Valutare `-icount` per confronti assoluti.
+- **H1-A**: periodo di 64 sessioni come ipotesi; misurare costo e tempo di scoperta.
+- **Varianti di inventario**: una sola regola per tutti i moduli grazie al registro video;
+  restano piu catene di tag (inventario, GPU, video) da unificare quando si aggiunge
+  un'authority.
+
+**Chiusura per voce:** implementazione, test host e prove QEMU dedicate, report aggiornato.
+
+## FW-012 — Suite di test automatiche complete
+
+**Stato:** aperto il 24 ottobre 2026. La suite host delle code VirtIO non linkava piu dal
+commit V2a e nessuna suite automatica se n'e accorta: `scripts/test/run.ps1` non comprende le
+suite IOMMU, VirtIO, arena DMA, latenza e paging.
+**Priorita:** prima del prossimo blocco grande.
+
+Aggiungere a `scripts/test/run.ps1` tutte le suite host per modulo (o una scoperta automatica
+degli script `scripts/test.ps1`), con esecuzione completa anche dopo il primo errore e un
+riepilogo finale. Valutare uno smoke QEMU per profilo.
+
+**Chiusura:** un comando esegue tutte le suite host e fallisce su una qualsiasi.
 
 ## Voci chiuse
 

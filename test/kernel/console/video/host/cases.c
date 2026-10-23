@@ -183,6 +183,44 @@ static void peek_matches_reference(void)
     }
 }
 
+// ====== clip_keeps_prompt ======
+
+// Geometry A: 142x44 (1280x800) clipped to 113x42 (GOP 1024x768) keeps the left columns and the
+// rows ending at the cursor row; everything left is dirty; refusals leave the grid unchanged.
+static void clip_keeps_prompt(void)
+{
+    KERNEL_VIDEO_CONSOLE *console = &fixture.Console;
+    CHECK(kernel_console_init(console, 142, 44));
+    for (uint32_t row = 0; row < 44; ++row)
+        for (uint32_t column = 0; column < 142; ++column)
+            console->Cells[row * 142 + column] = 0x10000 + row * 256 + column;
+    console->X = 130; console->Y = 43;
+    CHECK(kernel_console_caret(console, 1));
+    (void)drain();
+    snapshot = *console;
+    CHECK(!kernel_console_clip(console, 143, 42) && !kernel_console_clip(console, 113, 45));
+    CHECK(!kernel_console_clip(console, 0, 42) && !kernel_console_clip(console, 113, 0));
+    CHECK(!memcmp(&snapshot, console, sizeof(snapshot)));
+    CHECK(kernel_console_clip(console, 142, 44) && !memcmp(&snapshot, console, sizeof(snapshot)));
+
+    CHECK(kernel_console_clip(console, 113, 42));
+    CHECK(console->Columns == 113 && console->Rows == 42 && console->X == 113 && console->Y == 41);
+    for (uint32_t row = 0; row < 42; ++row)
+        for (uint32_t column = 0; column < 113; ++column)
+            CHECK(console->Cells[row * 113 + column] == 0x10000 + (row + 2) * 256 + column);
+    CHECK(console->Cells[113 * 42] == 0 && console->Caret != UINT32_MAX && console->Caret < 113 * 42);
+    CHECK(drain() == 113 * 42);
+    CHECK(kernel_console_step(console, 'Z') && kernel_console_step(console, 10));
+
+    // Cursor near the top: no row is dropped; X inside the new width is kept.
+    CHECK(kernel_console_init(console, 142, 44));
+    console->X = 5; console->Y = 3; console->Cells[3 * 142 + 4] = 'p';
+    CHECK(kernel_console_clip(console, 113, 42));
+    CHECK(console->X == 5 && console->Y == 3 && console->Cells[3 * 113 + 4] == 'p' && console->Caret == UINT32_MAX);
+    CHECK(drain() == 113 * 42);
+    CHECK(fixture.Before == 0xabcdef1234567890ULL && fixture.After == fixture.Before);
+}
+
 // ====== main ======
 
 int main(void)
@@ -191,6 +229,7 @@ int main(void)
     editing_and_scroll();
     maximum_and_stress();
     peek_matches_reference();
+    clip_keeps_prompt();
     kernel_console_render_test();
     kernel_console_measure_test();
     printf("PASS console grid: %u checks; size %zu; no allocations\n", checks, sizeof(fixture.Console));

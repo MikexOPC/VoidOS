@@ -1,11 +1,13 @@
 #ifndef OS_X86_FB_PIXEL_SESSION_H
 #define OS_X86_FB_PIXEL_SESSION_H
 #include "write.h"
-// Z1-A: an alternative drawing target with the GOP geometry (width, height, stride and pixel
-// format identical) but another mapping, e.g. the VirtIO surface. While one is registered every
-// pixel session writes there instead of the GOP aperture; the GOP owner keeps all its checks.
+// Z1-A: an alternative drawing target with its own mapping and geometry (width, height and
+// stride in pixels; pixel format 1, UEFI PixelBlueGreenRedReserved8BitPerColor), e.g. the VirtIO
+// surface. While one is registered every pixel session draws there with that geometry; the GOP
+// owner keeps all its checks.
 typedef struct X86_FB_TARGET {
     BOOT_U64  Self, Base, Bytes;
+    BOOT_U32  Width, Height, Stride, Reserved;
     int  (*Valid)(const struct X86_FB_TARGET *target);
 } X86_FB_TARGET;
 int x86_fb_target_redirect(const X86_FB_TARGET *expected, const X86_FB_TARGET *next);
@@ -13,6 +15,9 @@ int x86_fb_target_redirect(const X86_FB_TARGET *expected, const X86_FB_TARGET *n
 void x86_fb_verify_reset(void);
 void x86_fb_verify_counts(BOOT_U64 *full, BOOT_U64 *skipped);
 const X86_FB_TARGET *x86_fb_target(void);
+// Geometry the console draws with: the GOP descriptor, or one built from the registered target
+// (format 1, Used = Stride * Height * 4) in scratch.
+const OS_FRAMEBUFFER *x86_fb_surface_geometry(const X86_FB_MAPPING *owner, OS_FRAMEBUFFER *scratch);
 typedef struct {
     X86_FB_MAPPING  *Owner;
     OS_FRAMEBUFFER  Surface;

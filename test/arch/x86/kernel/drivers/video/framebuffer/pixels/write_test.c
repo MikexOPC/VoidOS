@@ -131,11 +131,12 @@ static int pixel_rejection(void)
 
 static int target_check(const X86_FB_TARGET *target) { return target && target_valid; }
 
-// Z1-A: while a target is registered the same GOP geometry is written at the target base; the
-// GOP aperture stays untouched; refusals and the invalidated target leave nothing written.
+// Z1-A: while a target is registered pixels land at the target base with the target geometry
+// (here 40x8, stride 48); the GOP aperture stays untouched; refusals and the invalidated target
+// leave nothing written.
 static int pixel_target(void)
 {
-    X86_FB_TARGET target = {0, TARGET_BASE, sizeof(target_words), target_check}, other = target;
+    X86_FB_TARGET target = {0, TARGET_BASE, sizeof(target_words), 40, 8, 48, 0, target_check}, other = target;
     CHECK(setup());
     memset(target_words, 0x5a, sizeof(target_words)); target_valid = 1;
     target.Self = (BOOT_U64)&target; other.Self = (BOOT_U64)&other;
@@ -144,17 +145,30 @@ static int pixel_target(void)
     bad = target; bad.Self = 0; CHECK(!x86_fb_target_redirect(0, &bad));
     bad = target; bad.Self = (BOOT_U64)&bad; bad.Bytes = 0; CHECK(!x86_fb_target_redirect(0, &bad));
     bad.Bytes = target.Bytes; bad.Valid = 0; CHECK(!x86_fb_target_redirect(0, &bad));
+    bad = target; bad.Self = (BOOT_U64)&bad; bad.Width = 0; CHECK(!x86_fb_target_redirect(0, &bad));
+    bad.Width = 40; bad.Height = 0; CHECK(!x86_fb_target_redirect(0, &bad));
+    bad.Height = 8; bad.Stride = 39; CHECK(!x86_fb_target_redirect(0, &bad));
+    bad.Stride = 48; bad.Reserved = 1; CHECK(!x86_fb_target_redirect(0, &bad));
+    bad.Reserved = 0; bad.Bytes = 48 * 8 * 4 - 4; CHECK(!x86_fb_target_redirect(0, &bad));
     target_valid = 0; CHECK(!x86_fb_target_redirect(0, &target)); target_valid = 1;
     CHECK(x86_fb_target_redirect(0, &target) && x86_fb_target() == &target);
     CHECK(!x86_fb_target_redirect(0, &other) && !x86_fb_target_redirect(&other, 0));
-    CHECK(x86_fb_pixel(&owner, 5, 1, 1, 2, 3) && target_words[1024 + 5] != 0x5a5a5a5a && words[1024 + 5] == 0xa5a5a5a5);
+    CHECK(x86_fb_pixel(&owner, 5, 1, 1, 2, 3) && target_words[48 + 5] != 0x5a5a5a5a && words[1024 + 5] == 0xa5a5a5a5);
+    OS_FRAMEBUFFER scratch;
+    const OS_FRAMEBUFFER *geometry = x86_fb_surface_geometry(&owner, &scratch);
+    CHECK(geometry == &scratch && scratch.Width == 40 && scratch.Height == 8 && scratch.Stride == 48 &&
+        scratch.Format == 1 && scratch.Used == 48 * 8 * 4 && scratch.Base == TARGET_BASE);
+    // Outside the target geometry although inside the GOP one: refused.
+    CHECK(!x86_fb_pixel(&owner, 40, 1, 1, 2, 3) && !x86_fb_pixel(&owner, 1, 8, 1, 2, 3));
+    CHECK(target_words[48 + 40] == 0x5a5a5a5a && target_words[8 * 48 + 1] == 0x5a5a5a5a);
     target_valid = 0;
-    CHECK(!x86_fb_pixel(&owner, 6, 1, 1, 2, 3) && target_words[1024 + 6] == 0x5a5a5a5a && words[1024 + 6] == 0xa5a5a5a5);
+    CHECK(!x86_fb_pixel(&owner, 6, 1, 1, 2, 3) && target_words[48 + 6] == 0x5a5a5a5a && words[1024 + 6] == 0xa5a5a5a5);
     target_valid = 1; target.Bytes = 64; // smaller than the GOP layout: refused at begin
-    CHECK(!x86_fb_pixel(&owner, 7, 1, 1, 2, 3) && target_words[1024 + 7] == 0x5a5a5a5a);
+    CHECK(!x86_fb_pixel(&owner, 7, 1, 1, 2, 3) && target_words[48 + 7] == 0x5a5a5a5a);
     target.Bytes = sizeof(target_words);
     CHECK(x86_fb_target_redirect(&target, 0) && !x86_fb_target());
-    CHECK(x86_fb_pixel(&owner, 8, 1, 1, 2, 3) && words[1024 + 8] != 0xa5a5a5a5 && target_words[1024 + 8] == 0x5a5a5a5a);
+    CHECK(x86_fb_pixel(&owner, 8, 1, 1, 2, 3) && words[1024 + 8] != 0xa5a5a5a5 && target_words[48 + 8] == 0x5a5a5a5a);
+    CHECK(x86_fb_surface_geometry(&owner, &scratch) == &context.Info.Framebuffer);
     CHECK(x86_fb_unbind(&owner));
     return 0;
 }

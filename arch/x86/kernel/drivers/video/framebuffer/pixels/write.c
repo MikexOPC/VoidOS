@@ -75,7 +75,9 @@ int x86_fb_target_redirect(const X86_FB_TARGET *expected, const X86_FB_TARGET *n
 {
     if (redirect != expected ||
         (next && (expected || next->Self != (BOOT_U64)next || !next->Valid || !next->Base || (next->Base & 4095) ||
-            !next->Bytes || next->Base > ~0ULL - next->Bytes || !next->Valid(next)))
+            !next->Bytes || next->Base > ~0ULL - next->Bytes || next->Reserved ||
+            !next->Width || !next->Height || next->Stride < next->Width ||
+            (BOOT_U64)next->Stride * next->Height * 4 > next->Bytes || !next->Valid(next)))
     )
     return 0;
 
@@ -87,12 +89,32 @@ int x86_fb_target_redirect(const X86_FB_TARGET *expected, const X86_FB_TARGET *n
 
 const X86_FB_TARGET *x86_fb_target(void) { return redirect; }
 
+// ====== x86_fb_surface_geometry ======
+
+const OS_FRAMEBUFFER *x86_fb_surface_geometry(const X86_FB_MAPPING *owner, OS_FRAMEBUFFER *scratch)
+{
+    if (!owner || !owner->Context || !scratch) return 0;
+
+    if (!redirect) return &owner->Context->Info.Framebuffer;
+
+    *scratch = owner->Context->Info.Framebuffer;
+    scratch->Base = redirect->Base;
+    scratch->Width = redirect->Width;
+    scratch->Height = redirect->Height;
+    scratch->Stride = redirect->Stride;
+    scratch->Format = 1;
+    scratch->Used = (BOOT_U64)redirect->Stride * redirect->Height * 4;
+    scratch->Capacity = redirect->Bytes;
+    return scratch;
+}
+
 // ====== x86_fb_pixels_begin ======
 
 int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
     BOOT_U32 width, BOOT_U32 height, X86_FB_PIXEL_SESSION *session)
 {
     const OS_FRAMEBUFFER *fb;
+    OS_FRAMEBUFFER geometry;
     BOOT_U64 first, last, mapped, start, base;
     if (!session || !owner || ((BOOT_U64)owner & 7) || owner->Self != (BOOT_U64)owner ||
         owner->Ready != 2 || owner->Published != 1 || !owner->Context || !owner->Window ||
@@ -101,23 +123,16 @@ int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
         owner->Allocated != owner->Authority.Region.TableCount ||
         owner->Pinned != (1U << owner->Allocated) - 1 || !x86_exception_environment() ||
         !x86_page_window_idle_valid(owner->Window)) return 0;
-    fb = &owner->Context->Info.Framebuffer;
-    if (!x86_fb_rect_valid(((BOOT_U64)fb->Height << 32) | fb->Width,
+    fb = x86_fb_surface_geometry(owner, &geometry);
+    if (!fb || !x86_fb_rect_valid(((BOOT_U64)fb->Height << 32) | fb->Width,
         ((BOOT_U64)y << 32) | x, ((BOOT_U64)height << 32) | width)) return 0;
     first = fb_pixel_offset(fb->Width, fb->Height, fb->Stride, fb->Format, fb->Used, x, y);
     last = fb_pixel_offset(fb->Width, fb->Height, fb->Stride, fb->Format, fb->Used,
         x + width - 1, y + height - 1);
     if (first == ~0ULL || last == ~0ULL || !owner->Authority.Region.Pages ||
         owner->Authority.Region.Pages > 4321) return 0;
-    mapped = owner->Authority.Region.Pages * 4096;
-    start = fb->Base & 4095;
-    if (last > mapped - 4 || start > mapped - 4 - last ||
-        owner->Authority.Region.Virtual > ~0ULL - start - last) return 0;
-    base = owner->Authority.Region.Virtual + start;
-
-    // Redirected target: same geometry by contract, so only the base changes; it must still hold
-    // every byte the GOP layout addresses.
     if (redirect) {
+        // Redirected target: its own geometry; every addressed byte lies inside its mapping.
         X86_PROFILE_BEGIN(target_start);
         int valid = redirect->Valid(redirect);
         X86_PROFILE_END(X86_PROFILE_TARGET, target_start);
@@ -125,6 +140,13 @@ int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
         if (!valid || fb->Used > redirect->Bytes || last > redirect->Bytes - 4) return 0;
 
         base = redirect->Base;
+    }
+    else {
+        mapped = owner->Authority.Region.Pages * 4096;
+        start = fb->Base & 4095;
+        if (last > mapped - 4 || start > mapped - 4 - last ||
+            owner->Authority.Region.Virtual > ~0ULL - start - last) return 0;
+        base = owner->Authority.Region.Virtual + start;
     }
 
     if (base & 3) return 0;

@@ -95,7 +95,8 @@ int x86_vgpu_session_start(const KERNEL_ACPI_DIRECTORY *directory)
 
     if (!fb->Width || !fb->Height ||
         !x86_dma_arena_bind(gpu->Context, gpu->Window, gpu->Lapic, gpu->Inventory, gpu->Capture, 4, &arena) ||
-        (step = 2, !x86_vgpu_surface_bind(gpu, fb->Width, fb->Height, &surface)) ||
+        (step = 2, !x86_vgpu_surface_bind(gpu, fb->Width > X86_VGPU_SURFACE_WIDTH ? fb->Width : X86_VGPU_SURFACE_WIDTH,
+            fb->Height > X86_VGPU_SURFACE_HEIGHT ? fb->Height : X86_VGPU_SURFACE_HEIGHT, &surface)) ||
         (step = 3, !x86_vgpu_iommu_enable(&arena.Authority.Data, &surface.Authority.Data))
     ) {
         (void)number_private("KERNEL_VGPU_SESSION_FAILED_STEP: ", step);

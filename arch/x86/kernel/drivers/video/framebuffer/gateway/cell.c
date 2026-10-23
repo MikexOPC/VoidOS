@@ -1,5 +1,6 @@
 #include "cell.h"
 #include "../font/font.h"
+#include "../pixels/session.h"
 
 // ====== encode ======
 
@@ -34,10 +35,12 @@ int x86_fb_cell(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row, BOOT_U32 s
     X86_FB_TEXT text;
     BOOT_U64 start, end, flags;
     int drawn, restored;
+    OS_FRAMEBUFFER geometry;
+    const OS_FRAMEBUFFER *surface = owner ? x86_fb_surface_geometry(owner, &geometry) : 0;
     if (!ticks || !owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 ||
-        !owner->Context || !owner->Context->Info.Framebuffer.Base ||
-        column >= 240 || row >= 67 || column >= owner->Context->Info.Framebuffer.Width / font->Width ||
-        row >= owner->Context->Info.Framebuffer.Height / font->Height ||
+        !owner->Context || !owner->Context->Info.Framebuffer.Base || !surface ||
+        column >= 240 || row >= 67 || column >= surface->Width / font->Width ||
+        row >= surface->Height / font->Height ||
         (foreground | background) & 0xff000000U || !x86_fb_font_scalar(scalar) ||
         !x86_fb_cell_clock_available()) return 0;
     text.Text = bytes;
@@ -67,13 +70,15 @@ int x86_fb_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
     BOOT_U32 index, length = 0, columns;
     BOOT_U64 start, end, flags;
     int drawn, restored;
+    OS_FRAMEBUFFER geometry;
+    const OS_FRAMEBUFFER *surface = owner ? x86_fb_surface_geometry(owner, &geometry) : 0;
     if (!ticks || !scalars || ((BOOT_U64)scalars & 3) || !count || count > 8 || (caret != ~0U && caret >= count) ||
         (BOOT_U64)scalars > ~0ULL - count * sizeof(*scalars) ||
         !owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 || !owner->Context ||
-        !owner->Context->Info.Framebuffer.Base || row >= 67 ||
-        row >= owner->Context->Info.Framebuffer.Height / font->Height ||
+        !owner->Context->Info.Framebuffer.Base || !surface || row >= 67 ||
+        row >= surface->Height / font->Height ||
         (foreground | background) & 0xff000000U || !x86_fb_cell_clock_available()) return 0;
-    columns = owner->Context->Info.Framebuffer.Width / font->Width;
+    columns = surface->Width / font->Width;
     if (column >= 240 || count > 240 - column || column >= columns || count > columns - column) return 0;
     for (index = 0; index < count; ++index) {
         if (!x86_fb_font_scalar(scalars[index])) return 0;

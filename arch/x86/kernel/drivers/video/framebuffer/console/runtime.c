@@ -55,6 +55,36 @@ static uint32_t pointer_visibility = 2;
 static uint32_t pointer_pending;
 #endif
 
+#ifdef KERNEL_VGPU_IOMMU
+// ====== retarget_private ======
+
+// After a target change every cell is drawn again; when the new target is smaller (GOP fallback,
+// geometry A) the view is clipped first, keeping the prompt row, and the pointer is clamped.
+static int retarget_private(void)
+{
+    const OS_FRAMEBUFFER *fb = &source->Env.Context->Info.Framebuffer;
+    const X86_FB_TARGET *target = x86_fb_target();
+    uint32_t columns = (target ? target->Width : fb->Width) / KERNEL_CONSOLE_CELL_WIDTH;
+    uint32_t rows = (target ? target->Height : fb->Height) / KERNEL_CONSOLE_CELL_HEIGHT;
+
+    if (columns < view.Columns || rows < view.Rows) {
+        if (columns > view.Columns) columns = view.Columns;
+        if (rows > view.Rows) rows = view.Rows;
+        if (!kernel_console_service_clip(&service, columns, rows)) return 0;
+#ifdef KERNEL_PS2_MOUSE
+        if (!kernel_pointer_clamp(&pointer)) return 0;
+#endif
+        if (!kernel_text("KERNEL_CONSOLE_GRID: ") || !kernel_number(view.Columns) || !kernel_text("x") ||
+            !kernel_number(view.Rows) || !kernel_text("\n")) return 0;
+    }
+
+    for (uint32_t index = 0; index < view.Columns * view.Rows; ++index) view.Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
+    damage_x = damage_y = damage_right = damage_bottom = 0;
+    render.Next = 0;
+    return 1;
+}
+#endif
+
 // ====== task_valid ======
 
 static int task_valid(X86_PS2_SESSION *session, uint32_t index)
@@ -152,7 +182,15 @@ int x86_console_open(X86_PS2_SESSION *session)
 #endif
     fb = &session->Env.Context->Info.Framebuffer;
     if (!fb->Base) { absent = 1; return kernel_log(1, "KERNEL_CONSOLE_SHELL_ABSENT"); }
-    if (!kernel_console_service_init(&service, &view, fb->Width / KERNEL_CONSOLE_CELL_WIDTH, fb->Height / KERNEL_CONSOLE_CELL_HEIGHT)) return 0;
+    // Geometry A: the grid follows the active drawing target (the VirtIO surface when presenting).
+    const X86_FB_TARGET *target = x86_fb_target();
+    uint32_t columns = (target ? target->Width : fb->Width) / KERNEL_CONSOLE_CELL_WIDTH;
+    uint32_t rows = (target ? target->Height : fb->Height) / KERNEL_CONSOLE_CELL_HEIGHT;
+    if (columns > KERNEL_CONSOLE_COLUMNS) columns = KERNEL_CONSOLE_COLUMNS;
+    if (rows > KERNEL_CONSOLE_ROWS) rows = KERNEL_CONSOLE_ROWS;
+    if (!kernel_console_service_init(&service, &view, columns, rows) ||
+        !kernel_text("KERNEL_CONSOLE_GRID: ") || !kernel_number(columns) || !kernel_text("x") ||
+        !kernel_number(rows) || !kernel_text("\n")) return 0;
 #ifdef KERNEL_PS2_MOUSE
     if (!kernel_pointer_init(&pointer, &view) || !kernel_log(0, "KERNEL_POINTER_OPEN")) return 0;
 #endif
@@ -274,10 +312,7 @@ int x86_console_flush(X86_PS2_SESSION *session)
     if (absent) return 1;
 #ifdef KERNEL_VGPU_IOMMU
     // After a target change (bring-up or GOP fallback) every cell is drawn again on the new target.
-    if (x86_vgpu_present_redraw()) {
-        for (uint32_t index = 0; index < view.Columns * view.Rows; ++index) view.Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
-        render.Next = 0;
-    }
+    if (x86_vgpu_present_redraw() && !retarget_private()) return flush_failure(7);
 #endif
     begin = clock_read(source);
 #ifdef KERNEL_PS2_MOUSE
@@ -310,11 +345,7 @@ int x86_console_flush(X86_PS2_SESSION *session)
         X86_PROFILE_BEGIN(present_start);
         if (!x86_vgpu_present_rect(x, y, w, h)) return flush_failure(7);
         X86_PROFILE_END(X86_PROFILE_PRESENT, present_start);
-        if (x86_vgpu_present_redraw()) {
-            for (uint32_t index = 0; index < view.Columns * view.Rows; ++index) view.Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
-            render.Next = 0;
-            if (!wake()) return flush_failure(7);
-        }
+        if (x86_vgpu_present_redraw() && (!retarget_private() || !wake())) return flush_failure(7);
     }
 #endif
     X86_PROFILE_END(X86_PROFILE_FLUSH, flush_start);

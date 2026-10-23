@@ -90,10 +90,11 @@ int x86_fb_text_pointer(X86_FB_MAPPING *owner, const X86_FB_TEXT *input,
     if (input_pointer) {
         if ((BOOT_U64)input_pointer & 3) return 0;
         pointer = *input_pointer;
-        if (pointer.Visible > 1 || (pointer.Visible && (!owner || !owner->Context ||
-            owner->Context->Info.Framebuffer.Width < 18 || owner->Context->Info.Framebuffer.Height < 18 ||
-            pointer.X > owner->Context->Info.Framebuffer.Width - 18 ||
-            pointer.Y > owner->Context->Info.Framebuffer.Height - 18))) return 0;
+        OS_FRAMEBUFFER geometry;
+        const OS_FRAMEBUFFER *surface = owner ? x86_fb_surface_geometry(owner, &geometry) : 0;
+        if (pointer.Visible > 1 || (pointer.Visible && (!surface ||
+            surface->Width < 18 || surface->Height < 18 ||
+            pointer.X > surface->Width - 18 || pointer.Y > surface->Height - 18))) return 0;
     }
     if ((text.Foreground | text.Background) & 0xff000000U) return 0;
     DRAW_MARK(1);

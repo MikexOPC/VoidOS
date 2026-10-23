@@ -108,6 +108,17 @@ int kernel_console_service_init(KERNEL_CONSOLE_SERVICE *owner, KERNEL_VIDEO_CONS
     return finish(owner, compose(owner));
 }
 
+// ====== kernel_console_service_clip ======
+
+// Geometry A: transcript and view shrink together (kernel_console_clip keeps the rows ending at
+// the cursor row); the view is then composed again from the clipped transcript and the line.
+int kernel_console_service_clip(KERNEL_CONSOLE_SERVICE *owner, uint32_t columns, uint32_t rows)
+{
+    if (!valid(owner) || owner->Busy || owner->Closed || owner->Failed || !enter(owner)) return 0;
+    return finish(owner, kernel_console_clip(&owner->Transcript, columns, rows) &&
+        kernel_console_clip(owner->View, columns, rows) && compose(owner));
+}
+
 // ====== kernel_console_service_edit ======
 
 int kernel_console_service_edit(KERNEL_CONSOLE_SERVICE *owner,

@@ -152,7 +152,7 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
     mouse_trace = directory/'mouse-trace.log'
     # V2b: intel-iommu before the VirtIO GPU it translates; one trace file for both event sets.
     video = (['-vga','none','-device','intel-iommu,intremap=off,caching-mode=on,device-iotlb=off',
-        '-device','virtio-vga,iommu_platform=on,xres=1024,yres=768']+[item for event in VTD_EVENTS for item in ('-trace','enable='+event)]
+        '-device','virtio-vga,iommu_platform=on']+[item for event in VTD_EVENTS for item in ('-trace','enable='+event)]
         if iommu else ['-vga','none','-device','virtio-vga'] if absent else ['-vga','std'])
     arguments = [str(QEMU/'qemu-system-x86_64.exe'),'-machine','q35','-cpu','max',
         '-accel','tcg','-m','128','-smp','1','-net','none']+video+[
@@ -174,10 +174,25 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
                 return sum(int(dx) for dx,dy in packets),sum(int(dy) for dx,dy in packets)
             baseline_x,baseline_y = delivered()
             width,height,stride,base,fmt = pointer.geometry(log)
+            gop = (width,height,stride,fmt)
+            presented = re.search(r'KERNEL_VGPU_PRESENT_GEOMETRY: 0x([0-9a-f]{16})x0x([0-9a-f]{16})',log)
+            if presented:
+                # Geometry A: while presenting, the screen and the console grid follow the GPU display.
+                width,height = int(presented[1],16),int(presented[2],16)
+                stride,fmt = width,1
+            elif iommu and presenting and not absent: raise RuntimeError('Present geometry not reported')
             columns,rows = width//9,height//18
+            grid = re.search(r'KERNEL_CONSOLE_GRID: 0x([0-9a-f]{16})x0x([0-9a-f]{16})',log)
+            if not grid or (int(grid[1],16),int(grid[2],16)) != (min(columns,240),min(rows,67)):
+                raise RuntimeError('Console grid does not follow the drawing target')
             x,y = (columns*9-18)//2,(rows*18-18)//2
             initial_x,initial_y = x,y
             first = screenshot(vm,directory,'initial')
+            if fallbacks and presented and first.size == gop[:2]:
+                # The injected fault can fire before the first capture: the view is already clipped
+                # to the GOP grid; the pointer, centred in the GPU grid, fits it unchanged.
+                width,height,stride,fmt = gop
+                columns,rows = min(columns,width//9),min(rows,height//18)
             if first.size != (width,height): raise RuntimeError('Screenshot geometry')
             scene = first.copy()
             for row in range(18):
@@ -187,6 +202,20 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
             latencies = []
             captures = 0
             syncs = 0
+            def fit(actual):
+                # GOP fallback: the screen shrinks to the GOP; the view was clipped to its grid and the
+                # pointer clamped. The expected background is the old scene inside the new grid.
+                nonlocal scene,columns,rows,x,y,width,height,stride,fmt
+                if actual.size == scene.size: return
+                if not fallbacks or actual.size != gop[:2]: raise RuntimeError('Unexpected screen geometry')
+                width,height,stride,fmt = gop
+                columns,rows = min(columns,width//9),min(rows,height//18)
+                if x > columns*9-18 or y > rows*18-18: raise RuntimeError('Pointer clamp not modelled')
+                rebuilt = actual.copy()
+                rebuilt.paste(scene.crop((0,0,columns*9,rows*18)),(0,0))
+                for row in range(18):
+                    for col in range(18): rebuilt.putpixel((x+col,y+row),(8,16,24))
+                scene = rebuilt
             for segment in range(12):
                 dx,dy = [(1,1),(-1,1),(-1,-1),(1,-1)][segment%4]
                 for step in range(50):
@@ -200,6 +229,9 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
                 while time.monotonic() < deadline:
                     actual = screenshot(vm,directory,f'move-{segment}-{captures}')
                     captures += 1
+                    if actual.size != scene.size:
+                        fit(actual)
+                        target = expected(scene,x,y).tobytes()
                     dx_sent,dy_sent = delivered()
                     arrived = (dx_sent-baseline_x,dy_sent-baseline_y) == (x-initial_x,initial_y-y)
                     if actual.tobytes() == target and arrived: break
@@ -240,7 +272,11 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
             deadline = time.monotonic()+5
             attempt = 0
             while time.monotonic() < deadline:
-                if screenshot(vm,directory,f'after-cancel-{attempt}').tobytes() == target: break
+                actual = screenshot(vm,directory,f'after-cancel-{attempt}')
+                if actual.size != scene.size:
+                    fit(actual)
+                    target = expected(scene,x,y).tobytes()
+                if actual.tobytes() == target: break
                 attempt += 1
                 time.sleep(0.005)
             else: raise RuntimeError('Mouse/video did not recover after Esc')

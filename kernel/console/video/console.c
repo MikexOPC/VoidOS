@@ -119,6 +119,43 @@ int kernel_console_ack(KERNEL_VIDEO_CONSOLE *console, uint32_t index, uint32_t s
     return 1;
 }
 
+// ====== kernel_console_clip ======
+
+// Geometry A (24 ottobre 2026): the drawing target shrank (VirtIO surface -> GOP fallback). The
+// view keeps its left columns and the rows ending at the cursor row, so the prompt stays visible;
+// the rows above are dropped. Every remaining cell is marked dirty for the redraw.
+int kernel_console_clip(KERNEL_VIDEO_CONSOLE *console, uint32_t columns, uint32_t rows)
+{
+    uint32_t top, caret;
+    if (!valid(console) || !columns || !rows || columns > console->Columns || rows > console->Rows ||
+        kernel_console_plan(columns, rows, 0, 0, 13) == KERNEL_CONSOLE_INVALID) return 0;
+    if (columns == console->Columns && rows == console->Rows) return 1;
+
+    top = console->Y >= rows ? console->Y - rows + 1 : 0;
+    caret = console->Caret;
+
+    // Row-major in both layouts and the new stride is not larger: copying forward never
+    // overwrites a source cell before it is read.
+    for (uint32_t row = 0; row < rows; ++row)
+        for (uint32_t column = 0; column < columns; ++column)
+            console->Cells[row * columns + column] = console->Cells[(row + top) * console->Columns + column];
+
+    for (uint32_t index = columns * rows; index < KERNEL_CONSOLE_CELLS; ++index) console->Cells[index] = 0;
+    for (uint32_t index = 0; index < KERNEL_CONSOLE_DIRTY; ++index) console->Dirty[index] = 0;
+
+    console->Columns = columns;
+    console->Rows = rows;
+    console->Y -= top;
+    if (console->X > columns) console->X = columns;
+    console->Caret = UINT32_MAX;
+
+    for (uint32_t index = 0; index < columns * rows; ++index) mark(console, index);
+
+    if (caret != UINT32_MAX && !kernel_console_caret(console, 1)) return 0;
+
+    return valid(console);
+}
+
 // ====== kernel_console_caret ======
 
 int kernel_console_caret(KERNEL_VIDEO_CONSOLE *console, uint32_t enabled)

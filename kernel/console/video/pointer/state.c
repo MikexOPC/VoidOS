@@ -52,6 +52,24 @@ int kernel_pointer_init(KERNEL_CONSOLE_POINTER *owner, KERNEL_VIDEO_CONSOLE *vie
     return 1;
 }
 
+// ====== kernel_pointer_clamp ======
+
+// After kernel_console_clip: the pointer is moved inside the smaller view. No invalidation is
+// needed, the clip already marked every cell dirty.
+int kernel_pointer_clamp(KERNEL_CONSOLE_POINTER *owner)
+{
+    uint32_t width, height;
+    if (!owner || owner->Self != (uintptr_t)owner || !owner->View || owner->Closed) return 0;
+
+    width = owner->View->Columns * KERNEL_CONSOLE_CELL_WIDTH;
+    height = owner->View->Rows * KERNEL_CONSOLE_CELL_HEIGHT;
+    if (width < KERNEL_POINTER_SIZE || height < KERNEL_POINTER_SIZE) return 0;
+
+    if (owner->Image.X > width - KERNEL_POINTER_SIZE) owner->Image.X = width - KERNEL_POINTER_SIZE;
+    if (owner->Image.Y > height - KERNEL_POINTER_SIZE) owner->Image.Y = height - KERNEL_POINTER_SIZE;
+    return kernel_pointer_valid(owner);
+}
+
 // ====== kernel_pointer_move ======
 
 static int move_private(KERNEL_CONSOLE_POINTER *owner, int32_t dx, int32_t dy, uint32_t buttons, int dirty)

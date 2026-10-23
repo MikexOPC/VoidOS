@@ -69,16 +69,11 @@ static int fallback_private(const char *reason)
 int x86_vgpu_present_open(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory,
     X86_DMA_ARENA *arena, X86_SURFACE_MAPPING *surface)
 {
-    const OS_FRAMEBUFFER *fb = &gpu->Context->Info.Framebuffer;
     VGPU_QUEUE_IO_CONTEXT access = {0};
     VGPU_BUFFERS buffers = {0};
     KERNEL_VGPU_NEGOTIATION result = {0};
 
     if (presenting || transport.Self) return 0;
-
-    // Z3-A: the surface is packed B8G8R8A8 with the alpha byte unused; only a GOP with the same
-    // layout (stride = width, UEFI 2.10 PixelBlueGreenRedReserved8BitPerColor = 1) can be redirected.
-    if (fb->Stride != fb->Width || fb->Format != 1) return kernel_log(2, "KERNEL_VGPU_PRESENT_GEOMETRY");
 
     volatile unsigned char *bytes = x86_dma_arena_bytes(arena);
 
@@ -101,22 +96,29 @@ int x86_vgpu_present_open(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *di
     )
     return fallback_private("KERNEL_VGPU_PRESENT_START_FAILED");
 
-    if (queue.Width != fb->Width || queue.Height != fb->Height) return fallback_private("KERNEL_VGPU_PRESENT_GEOMETRY");
+    // Geometry A: the resource takes the scanout size from GET_DISPLAY_INFO (VirtIO 1.2 5.7.6.8),
+    // packed B8G8R8X8 (stride = width, the pixel layer's format 1); it must fit the surface, which
+    // the session sized for X86_VGPU_SURFACE_WIDTH x HEIGHT before the display was known.
+    BOOT_U64 needed = kernel_vgpu_surface_bytes(queue.Width, queue.Height);
 
-    if (!kernel_vgpu_resource_open(&queue, &resource, surface->Authority.Data.Base, backing, fb->Width, fb->Height) ||
+    if (!needed || needed > surface->Authority.Bytes) return fallback_private("KERNEL_VGPU_PRESENT_GEOMETRY");
+
+    if (!kernel_vgpu_resource_open(&queue, &resource, surface->Authority.Data.Base, backing, queue.Width, queue.Height) ||
         !kernel_vgpu_scanout_bind(&queue, &resource)
     )
     return fallback_private("KERNEL_VGPU_PRESENT_SCANOUT_FAILED");
 
     bound = surface;
-    target = (X86_FB_TARGET){(BOOT_U64)&target, X86_SURFACE_VIRTUAL, surface->Authority.Bytes, target_private};
+    target = (X86_FB_TARGET){(BOOT_U64)&target, X86_SURFACE_VIRTUAL, surface->Authority.Bytes,
+        queue.Width, queue.Height, queue.Width, 0, target_private};
 
     if (!x86_fb_target_redirect(0, &target)) return fallback_private("KERNEL_VGPU_PRESENT_TARGET_FAILED");
 
     presenting = 1;
     redraw = 1;
     return kernel_text("KERNEL_VGPU_PRESENT_SURFACE: ") && kernel_number(surface->Authority.Data.Base) && kernel_text("\n") &&
-        kernel_log(0, "KERNEL_VGPU_PRESENTING");
+        kernel_text("KERNEL_VGPU_PRESENT_GEOMETRY: ") && kernel_number(queue.Width) && kernel_text("x") &&
+        kernel_number(queue.Height) && kernel_text("\n") && kernel_log(0, "KERNEL_VGPU_PRESENTING");
 }
 
 // ====== x86_vgpu_present_rect ======
