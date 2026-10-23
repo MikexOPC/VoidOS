@@ -28,3 +28,10 @@ int x86_vgpu_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *w
         if (!kernel_text("KERNEL_VGPU_MAPPING_PHYSICAL: ") || !kernel_number(mapping.Authority.Plan.Physical[index]) || !kernel_text("\n")) return 0;
     return kernel_log(0,"KERNEL_VGPU_MAPPING_LIVE");
 }
+
+// ====== x86_vgpu_kernel_mapping ======
+
+X86_VGPU_MAPPING *x86_vgpu_kernel_mapping(void)
+{
+    return mapping.Self == (BOOT_U64)&mapping ? &mapping : 0;
+}

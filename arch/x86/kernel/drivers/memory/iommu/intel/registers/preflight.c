@@ -7,7 +7,7 @@ int x86_vtd_mapping_preflight(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WINDOW
     X86_PAGING_INVENTORY *inventory,X86_VTD_MAPPING *owner,X86_FB_CPU *cpu)
 {
     if (!context || !window || !window->Pool || !description || !inventory || !owner || !cpu ||
-        ((BOOT_U64)owner&7) || x86_iommu_owner() || description->Reserved || !description->Units || description->Units>8 ||
+        ((BOOT_U64)owner&7) || x86_iommu_owner() || description->Rmrr>description->OtherRecords || !description->Units || description->Units>8 ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)context,sizeof(*context)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)window,sizeof(*window)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)window->Pool,sizeof(*window->Pool)) ||

@@ -80,7 +80,10 @@ int x86_dmar_decode(const unsigned char *data,size_t length,uint32_t physical_bi
         uint32_t type=(uint32_t)number_private(data+at,2), size=(uint32_t)number_private(data+at+2,2);
         if (size<4 || size>length-at || type<previous) return 0;
         if (!type) { if (!unit_private(data+at,size,physical_bits,&draft)) return 0; }
-        else ++draft.OtherRecords;
+        else {
+            ++draft.OtherRecords;
+            if (type == 1) ++draft.Rmrr;
+        }
         previous=type; at+=size;
     }
     if (!draft.Units) return 0;

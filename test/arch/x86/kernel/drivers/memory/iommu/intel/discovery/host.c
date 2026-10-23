@@ -104,7 +104,9 @@ int main(int argc,char **argv)
         prepare_private(); rejected_private(47); rejected_private(79); rejected_private(65537);
         prepare_private(); fixture[64]=1; checksum_private(80); rejected_private(80);
         prepare_private(); word_private(fixture,80,7,2); word_private(fixture,82,4,2); checksum_private(84);
-        CHECK(x86_dmar_decode(fixture,84,40,&output) && output.OtherRecords==1);
+        CHECK(x86_dmar_decode(fixture,84,40,&output) && output.OtherRecords==1 && !output.Rmrr);
+        prepare_private(); word_private(fixture,80,1,2); word_private(fixture,82,4,2); checksum_private(84);
+        CHECK(x86_dmar_decode(fixture,84,40,&output) && output.OtherRecords==1 && output.Rmrr==1);
         for (unsigned units=1; units<=9; ++units) {
             prepare_private(); memset(fixture+48,0,sizeof(fixture)-48);
             for (unsigned index=0; index<units; ++index) {

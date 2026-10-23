@@ -57,6 +57,11 @@ int x86_paging_inventory_verify_video(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const struct X86_LAPIC_MAPPING *lapic,
     const X86_PAGING_VIDEO_AUTH *video, X86_PAGING_VIDEO_CHECK check,
     const X86_PAGING_INVENTORY *inventory);
+// The published framebuffer registers its authority: from then on the LAPIC variants scan and
+// verify with it, so every module (ECAM, VT-d, domains, VirtIO) checks the same snapshot rule.
+int x86_paging_video_register(const X86_PAGING_VIDEO_AUTH *expected, const X86_PAGING_VIDEO_AUTH *next,
+    X86_PAGING_VIDEO_CHECK check);
+const X86_PAGING_VIDEO_AUTH *x86_paging_video_owner(void);
 int x86_paging_inventory_capture_lapic(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const struct X86_LAPIC_MAPPING *owner,
     X86_PAGING_INVENTORY *output);

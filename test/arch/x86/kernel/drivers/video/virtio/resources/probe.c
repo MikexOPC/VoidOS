@@ -5,7 +5,7 @@
 #include "presentation/visual.h"
 #endif
 #ifdef KERNEL_TEST_VGPU_IOMMU
-#include "test/arch/x86/kernel/drivers/video/virtio/iommu/probe.h"
+#include "arch/x86/kernel/drivers/video/virtio/iommu/domain.h"
 #endif
 static X86_SURFACE_MAPPING surface;
 static X86_VGPU_QUEUE_TRANSPORT native;
@@ -95,7 +95,7 @@ int x86_vgpu_resource_probe(X86_VGPU_MAPPING *owner,X86_VGPU_TRANSPORT *transpor
     for (uint32_t index=0; index<surface.Authority.Count; ++index)
         if (!report_private("KERNEL_VGPU_RESOURCE_TABLE: ",surface.Authority.Tables[index].Base)) goto cleanup;
 #ifdef KERNEL_TEST_VGPU_IOMMU
-    if (!x86_vgpu_iommu_route(owner,directory)) goto cleanup;
+    if (x86_vgpu_iommu_route(owner,directory)!=X86_VGPU_IOMMU_READY) goto cleanup;
     translated=1;
 #endif
     if (!x86_vgpu_queue_open(transport,&native,&access) || !kernel_vgpu_negotiate(&negotiation,&result) ||

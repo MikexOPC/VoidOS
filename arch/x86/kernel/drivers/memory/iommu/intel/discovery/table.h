@@ -14,7 +14,8 @@ typedef struct {
 typedef struct { uint8_t Unit, Type, Enumeration, Bus, Depth, Reserved[3], Path[16]; } X86_DMAR_SCOPE;
 typedef struct {
     uint64_t  Physical;
-    uint32_t  HostBits, Flags, Units, Scopes, OtherRecords, Reserved;
+    // Rmrr: reserved memory region reports (type 1, VT-d 5.0 8.4), firmware-owned DMA targets.
+    uint32_t  HostBits, Flags, Units, Scopes, OtherRecords, Rmrr;
     X86_DMAR_UNIT   Unit[8];
     X86_DMAR_SCOPE  Scope[32];
 } X86_DMAR_INFO;

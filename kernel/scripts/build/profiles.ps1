@@ -17,6 +17,7 @@ if (($TestIommuDiscovery -or $TestPciEcam) -and ($Install -or $Ps2Input -or $Ps2
     $TestMainFault -ne 'none' -or $TestRegionFault -ne 'none')) { throw 'IOMMU discovery diagnostic must stay isolated.' }
 if ($TestVgpuScanout -and $TestVgpuResourceReject) { throw 'Choose resource rejection or visual presentation.' }
 if ($TestVgpuIommuFault) { if ($TestVgpuScanout) { throw 'The V1 revocation runs on the resource path, not the visual one.' }; $TestVgpuIommu=$true }
+if ($VgpuIommu) { if (!$ConsoleShell) { throw 'Persistent GPU translation (V2b) belongs to the console session.' }; if ($TestVgpuIommu -or $TestVgpuInitialization) { throw 'Choose the V2b session or the VirtIO diagnostics.' } }
 if ($TestVgpuIommu) { if ($TestVgpuResourceReject) { throw 'Choose V1 translation or resource rejection.' }; $TestVgpuResources=$true }
 if ($TestVgpuResourceReject -or $TestVgpuScanout) { $TestVgpuResources=$true }
 if ($TestVgpuResources) { $TestVgpuQueues=$true }

@@ -6,6 +6,9 @@
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
 #include "../drawing/draw.h"
+#ifdef KERNEL_VGPU_IOMMU
+#include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
+#endif
 _Static_assert(X86_FB_CELL_WIDTH == KERNEL_CONSOLE_CELL_WIDTH && X86_FB_CELL_HEIGHT == KERNEL_CONSOLE_CELL_HEIGHT,
     "Console cell size must match the framebuffer font cell");
 static KERNEL_CONSOLE_SERVICE service;
@@ -217,6 +220,10 @@ int x86_console_flush(X86_PS2_SESSION *session)
     uint32_t result, begin, spent;
     uint64_t overruns = measured.Overruns;
     if (!task_valid(session, 1)) return flush_failure(1);
+#ifdef KERNEL_VGPU_IOMMU
+    // V2b Y3-A: the GPU fault scan rides on every console flush (registers only).
+    if (!x86_vgpu_session_poll()) return flush_failure(1);
+#endif
     if (absent) return 1;
     begin = clock_read(source);
 #ifdef KERNEL_PS2_MOUSE
