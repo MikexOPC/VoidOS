@@ -50,3 +50,29 @@ rollback:
     (void)x86_vtd_domain_release(owner);
     return 0;
 }
+
+// ====== x86_vtd_domain_revoke ======
+
+// Intel VT-d5.0 9.8: a second-stage leaf with R0=W1=0 blocks the page. Only the verified domain
+// may revoke; the leaf pages are rewritten from x86_vtd_domain_expected and verified again.
+// On failure the domain stays in state 1 and the caller must retain it: hardware may still read it.
+int x86_vtd_domain_revoke(X86_VTD_DOMAIN *owner, BOOT_U32 index)
+{
+    if (!x86_vtd_domain_verify(owner) || owner->State != 3 ||
+        index >= owner->Request.Count ||
+        ((owner->Revoked >> index) & 1)
+    )
+    return 0;
+
+    owner->State = 1;
+    owner->Revoked |= 1U << index;
+
+    if (!x86_vtd_domain_pages(owner, 1)) return 0;
+
+    owner->State = 2;
+
+    if (!x86_vtd_domain_verify(owner)) return 0;
+
+    owner->State = 3;
+    return 1;
+}

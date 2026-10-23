@@ -18,7 +18,18 @@ pub fn page(base:u64,bus:u32,device:u32,function:u32)->u64 {
 
 // ====== offset ======
 
-pub fn offset(at:u32)->u32 { u32::from(matches!(at,0|8|12|24)) }
+// PCI Local Bus 3.0 6.1 Figure 6-1: ID00, Command/Status04, class08, header0C, BAR0 10h, buses18h.
+pub fn offset(at:u32)->u32 { u32::from(matches!(at,0|4|8|12|16|24)) }
+
+// ====== command ======
+
+// PCI Local Bus 3.0 6.2.2 Command register: Memory Space bit1, Bus Master bit2 (Linux v6.18
+// pci_regs.h PCI_COMMAND_MEMORY 0x2, PCI_COMMAND_MASTER 0x4). Only those bits may change; the
+// result is the 16-bit Command value, so the RW1C Status half is never written back.
+pub fn command(old:u32,mask:u32,value:u32)->u32 {
+    if mask==0 || mask&!6!=0 || value&!mask!=0 { return u32::MAX; }
+    (old&0xffff&!mask)|value
+}
 
 #[cfg(test)]
 #[path="../../../../../../../../../test/arch/x86/kernel/drivers/bus/pci/ecam/rust/policy/address_test.rs"]

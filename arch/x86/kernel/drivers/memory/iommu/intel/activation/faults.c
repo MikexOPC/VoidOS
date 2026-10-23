@@ -45,3 +45,40 @@ int x86_vtd_activation_faults(X86_VTD_ACTIVATION *owner)
     }
     return 0; // Still pending after four passes: a requester keeps faulting.
 }
+
+// ====== x86_vtd_activation_expect ======
+
+// A provoked fault is proven only when the scan consumed every record, FSTS is clear again and
+// exactly one new owned record matches; blocked faults of other requesters may arrive beside it.
+int x86_vtd_activation_expect(X86_VTD_ACTIVATION *owner, BOOT_U32 reason, BOOT_U32 read, BOOT_U64 address)
+{
+    if (!x86_vtd_activation_valid(owner) || owner->State != X86_VTD_ACT_TRANSLATING ||
+        owner->Owned || owner->Acknowledged == ~0U || reason > 255 || read > 1 ||
+        (address & 4095)
+    )
+    return 0;
+
+    BOOT_U32 first = owner->Logged, matched = 0;
+
+    if (x86_vtd_activation_faults(owner) || owner->Owned != 1) return 0;
+
+    BOOT_U64 status = x86_vtd_activation_read(owner, 0x34, 4);
+
+    if (status == ~0ULL || (status & 3)) return 0;
+
+    for (BOOT_U32 index = first; index < owner->Logged; ++index) {
+        const X86_VTD_FAULT *entry = &owner->Log[index];
+
+        if (entry->Source != owner->Source) continue;
+
+        if (entry->Reason != reason || entry->Read != read || entry->Address != address) return 0;
+
+        ++matched;
+    }
+
+    if (matched != 1) return 0;
+
+    owner->Owned = 0;
+    ++owner->Acknowledged;
+    return 1;
+}

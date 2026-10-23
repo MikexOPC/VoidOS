@@ -28,10 +28,10 @@ typedef struct {
     BOOT_U64  Self, Root;
     X86_QI  *Qi;
     X86_VTD_DOMAIN  *Domain;
-    BOOT_U32  State, Source, FaultOffset, FaultCount, Failure, Owned, Blocked, Overflows, Logged, Scans;
+    BOOT_U32  State, Source, FaultOffset, FaultCount, Failure, Owned, Blocked, Overflows, Logged, Scans, Acknowledged, Spare;
     X86_VTD_FAULT  Log[X86_VTD_FAULT_LOG];
 } X86_VTD_ACTIVATION;
-_Static_assert(sizeof(X86_VTD_FAULT)==24 && sizeof(X86_VTD_ACTIVATION)==456,"VT-d activation ABI");
+_Static_assert(sizeof(X86_VTD_FAULT)==24 && sizeof(X86_VTD_ACTIVATION)==464,"VT-d activation ABI");
 
 BOOT_U64 x86_vtd_activation_command(BOOT_U32 status,BOOT_U32 bit,BOOT_U32 set);
 BOOT_U32 x86_vtd_activation_allowed(BOOT_U32 offset,BOOT_U32 width,BOOT_U32 write,BOOT_U64 value,BOOT_U64 root,BOOT_U32 fro,BOOT_U32 nfr);
@@ -49,6 +49,9 @@ int x86_vtd_activation_valid(const X86_VTD_ACTIVATION *owner);
 int x86_vtd_activation_begin(X86_QI *qi,X86_VTD_DOMAIN *domain,const X86_VTD_ROUTE *route,X86_VTD_ACTIVATION *owner);
 int x86_vtd_activation_enable(X86_VTD_ACTIVATION *owner);
 int x86_vtd_activation_faults(X86_VTD_ACTIVATION *owner);
+// Diagnostic DMA tests only: accepts exactly one new fault of the owned requester with this reason,
+// request type (1=read) and page address, then clears the owned count. Anything else fails.
+int x86_vtd_activation_expect(X86_VTD_ACTIVATION *owner,BOOT_U32 reason,BOOT_U32 read,BOOT_U64 address);
 int x86_vtd_activation_disable(X86_VTD_ACTIVATION *owner);
 int x86_vtd_activation_end(X86_VTD_ACTIVATION *owner);
 #endif

@@ -34,6 +34,21 @@ fn ranges() {
 
 #[test]
 fn whitelist() {
-    for at in 0..8192 { assert_eq!(offset(at),u32::from([0,8,12,24].contains(&at))); }
+    for at in 0..8192 { assert_eq!(offset(at),u32::from([0,4,8,12,16,24].contains(&at))); }
     assert_eq!(offset(u32::MAX),0);
+}
+
+// ====== command_bits ======
+
+#[test]
+fn command_bits() {
+    assert_eq!(command(0xffff_0000,6,6),6);
+    assert_eq!(command(0x0010_0407,4,0),0x0403);
+    assert_eq!(command(0x0000_0001,2,2),3);
+    for mask in 0..64 { for value in 0..64 {
+        let valid=mask!=0 && mask&!6==0 && value&!mask==0;
+        let result=command(0xabcd_1234,mask,value);
+        assert_eq!(result==u32::MAX,!valid);
+        if valid { assert!(result<=0xffff && result&!mask==0x1234&!mask && result&mask==value); }
+    } }
 }

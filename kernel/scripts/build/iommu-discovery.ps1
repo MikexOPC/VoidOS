@@ -51,6 +51,14 @@ if ($TestIommuActivation) {
         Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags+@(('/Fo'+$object),(Join-Path $project $source)))
         $objects+=$object
     }
+    if ($TestIommuDma) {
+        # Block 3: test-only edu requester and the P1-P5 DMA phases.
+        foreach ($source in @("test/$intel/dma/edu.c","test/$intel/dma/integration/probe.c","test/$intel/dma/integration/phases.c")) {
+            $object=Join-Path $output ($source.Replace('/','-').Replace('.c','.obj'))
+            Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags+@(('/Fo'+$object),(Join-Path $project $source)))
+            $objects+=$object
+        }
+    }
     foreach ($policy in @('registers','domains','invalidation','activation')) {
         Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort',
             '-C','opt-level=2','-C','overflow-checks=yes',"$project/$intel/$policy/rust/ffi/policy.rs",'-o',"$output/activation-$policy.obj")

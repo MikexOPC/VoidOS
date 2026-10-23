@@ -145,3 +145,15 @@ fn nonzero_segment_and_root() {
     info.unit[1].segment=0;
     assert_eq!(resolve(&info,&nodes,&request,48),1);
 }
+
+// ====== endpoint_classes ======
+
+#[test]
+fn endpoint_classes() {
+    let (info,mut nodes,request)=fixture();
+    assert_eq!(resolve(&info,&nodes,&request,48),encode(0,1,0,1));
+    if let Some(node)=nodes.get_mut(1) { node.class=0xff000001; }
+    assert_eq!(resolve(&info,&nodes,&request,48),encode(0,1,0,1));
+    if let Some(node)=nodes.get_mut(1) { node.class=0x06800001; }
+    assert_eq!(resolve(&info,&nodes,&request,48),0);
+}

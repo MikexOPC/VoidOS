@@ -106,6 +106,37 @@ static void fault_cases(void)
     CHECK(x86_vtd_activation_disable(&act) && x86_vtd_activation_end(&act)); close_private();
 }
 
+// ====== expect_cases ======
+
+// Provoked DMA faults of the owned requester: exactly one matching record is acknowledged.
+static void expect_cases(void)
+{
+    open_private();
+    CHECK(!x86_vtd_activation_expect(&act,5,0,0x1001000));
+    CHECK(x86_vtd_activation_begin(&qi,&domain,&route,&act));
+    CHECK(!x86_vtd_activation_expect(&act,5,0,0x1001000)); // not translating yet
+    CHECK(x86_vtd_activation_enable(&act));
+    CHECK(!x86_vtd_activation_expect(&act,5,0,0x1001000) && !act.Owned); // nothing recorded
+    act_inject(0,0x08,5,0,0x1001000);
+    CHECK(x86_vtd_activation_expect(&act,5,0,0x1001000) && !act.Owned && act.Acknowledged==1 && !(fsts&3));
+    act_inject(1,0xfa,2,0,0x7000); act_inject(2,0x08,5,0,0x1000000);
+    CHECK(x86_vtd_activation_expect(&act,5,0,0x1000000) && act.Acknowledged==2 && act.Blocked==1 && !act.Owned);
+    CHECK(x86_vtd_activation_faults(&act));
+    CHECK(!x86_vtd_activation_expect(&act,5,0,0x1003000) && !x86_vtd_activation_expect(&act,256,0,0) &&
+        !x86_vtd_activation_expect(&act,5,2,0) && !x86_vtd_activation_expect(&act,5,0,0x1003001) && act.Acknowledged==2);
+    act_inject(3,0x08,6,0,0x1002000); CHECK(!x86_vtd_activation_expect(&act,5,0,0x1002000) && act.Owned==1); act.Owned=0;
+    act_inject(0,0x08,5,1,0x1002000); CHECK(!x86_vtd_activation_expect(&act,5,0,0x1002000)); act.Owned=0;
+    act_inject(1,0x08,5,0,0x1004000); CHECK(!x86_vtd_activation_expect(&act,5,0,0x1005000)); act.Owned=0;
+    act_inject(2,0x08,5,0,0x1006000); act_inject(3,0x08,5,0,0x1006000);
+    CHECK(!x86_vtd_activation_expect(&act,5,0,0x1006000) && act.Owned==2); act.Owned=0; // two owned faults
+    act.Owned=1; CHECK(!x86_vtd_activation_expect(&act,5,0,0x1006000)); act.Owned=0;
+    act.Acknowledged=~0U; act_inject(0,0x08,5,0,0x1001000); CHECK(!x86_vtd_activation_expect(&act,5,0,0x1001000));
+    CHECK(!x86_vtd_activation_faults(&act) && act.Owned==1); act.Owned=0; act.Acknowledged=2;
+    CHECK(x86_vtd_activation_faults(&act) && !(fsts&3));
+    CHECK(x86_vtd_activation_disable(&act) && !x86_vtd_activation_expect(&act,5,0,0x1001000) && x86_vtd_activation_end(&act));
+    close_private();
+}
+
 // ====== refusal_cases ======
 
 static void refusal_cases(void)
@@ -165,7 +196,7 @@ static void retention_cases(void)
 int main(void)
 {
     for (unsigned cycle=0; cycle<64; ++cycle) happy_private(cycle);
-    fault_cases(); refusal_cases(); retention_cases();
-    printf("PASS %u VT-d activation checks; 64 SRTP/TE cycles, blocked/owned faults, overflow, refill, refusals and retention\n",checks);
+    fault_cases(); expect_cases(); refusal_cases(); retention_cases();
+    printf("PASS %u VT-d activation checks; 64 SRTP/TE cycles, blocked/owned/expected faults, overflow, refill, refusals and retention\n",checks);
     return 0;
 }

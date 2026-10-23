@@ -25,6 +25,23 @@ int main(void)
         CHECK(x86_vtd_domain_release(&domain) && pool.FreePages==budget && !domain.Self);
         domain_buffers_release();
     }
+    // Revocation: only the revoked buffer's leaves become zero, the rest stays mapped and verified.
+    domain_fixture(3,2); BOOT_U64 revoke_budget=pool.FreePages;
+    CHECK(x86_vtd_domain_prepare(&context,&window,0,&inventory,&request,&domain) && !domain.Revoked);
+    BOOT_U64 *leaves=(BOOT_U64 *)domain.Tables[5].Base;
+    BOOT_U32 slots[3]; for (unsigned index=0; index<3; ++index) slots[index]=(BOOT_U32)((domain.Iova[index]-X86_VTD_DMA_BASE)/4096);
+    CHECK(leaves[slots[1]] && leaves[slots[1]+1]);
+    CHECK(!x86_vtd_domain_revoke(&domain,3) && !x86_vtd_domain_revoke(&domain,16) && domain.State==3);
+    CHECK(x86_vtd_domain_revoke(&domain,1) && domain.Revoked==2 && domain.State==3 && x86_vtd_domain_verify(&domain));
+    CHECK(!leaves[slots[1]] && !leaves[slots[1]+1] && leaves[slots[0]] && leaves[slots[2]] && leaves[slots[2]+1]);
+    CHECK(!x86_vtd_domain_revoke(&domain,1) && domain.Revoked==2);
+    domain_walk_check();
+    leaves[slots[1]]=leaves[slots[0]]; CHECK(!x86_vtd_domain_verify(&domain) && !x86_vtd_domain_revoke(&domain,0)); leaves[slots[1]]=0;
+    domain.Revoked=8; CHECK(!x86_vtd_domain_verify(&domain)); domain.Revoked=2;
+    borrow_count=0; borrow_fail=domain.TableCount+1;
+    CHECK(!x86_vtd_domain_revoke(&domain,0) && domain.State==1 && domain.Revoked==3); borrow_fail=0;
+    domain.State=3; domain.Revoked=2; CHECK(x86_vtd_domain_verify(&domain));
+    CHECK(x86_vtd_domain_release(&domain) && pool.FreePages==revoke_budget); domain_buffers_release();
     domain_fixture(1,4100);
     CHECK(x86_vtd_domain_prepare(&context,&window,0,&inventory,&request,&domain) && domain.TableCount==14);
     domain_walk_check(); CHECK(x86_vtd_domain_release(&domain)); domain_buffers_release();

@@ -16,3 +16,8 @@ pub extern "C" fn x86_ecam_page(base:u64,bus:u32,device:u32,function:u32)->u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_ecam_offset(at:u32)->u32 { policy::offset(at) }
+
+// ====== x86_ecam_command_value ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_ecam_command_value(old:u32,mask:u32,value:u32)->u32 { policy::command(old,mask,value) }

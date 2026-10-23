@@ -50,7 +50,7 @@ int main(void)
             CHECK(x86_ecam_read(&owner,0,bus,31,fn,0,&value) && value==0x10501af4);
             CHECK(last_page==0xe0000000ULL+((BOOT_U64)bus<<20)+(31ULL<<15)+((BOOT_U64)fn<<12));
         }
-        for (unsigned offset=0; offset<4097; ++offset) if (offset!=0 && offset!=8 && offset!=12 && offset!=24) {
+        for (unsigned offset=0; offset<4097; ++offset) if (offset!=0 && offset!=4 && offset!=8 && offset!=12 && offset!=16 && offset!=24) {
             BOOT_U32 value=0xaabbccdd; CHECK(!x86_ecam_read(&owner,0,0,0,0,offset,&value) && value==0xaabbccdd);
         }
         CHECK(!x86_ecam_read(&owner,1,0,0,0,0,&owner.Ready));
@@ -73,6 +73,18 @@ int main(void)
     --pool.FreePages; fail_mode=0; CHECK(x86_ecam_close(&owner));
     fixture(); info=sample(); CHECK(x86_ecam_open(&context,&window,0,&inventory,&info,&owner)); fail_mode=6;
     CHECK(!x86_ecam_read(&owner,0,0,0,0,0,&value) && value==7); fail_mode=0; CHECK(x86_ecam_close(&owner));
+    fixture(); info=sample(); CHECK(x86_ecam_open(&context,&window,0,&inventory,&info,&owner));
+    // Command 04h: only Memory Space bit1 and Bus Master bit2 change; the Status half is never written.
+    command_word=0xffff0001; writes=0;
+    CHECK(x86_ecam_command(&owner,0,0,5,0,6,6) && writes==1 && command_word==0xffff0007);
+    CHECK(x86_ecam_read(&owner,0,0,5,0,4,&value) && value==0xffff0007);
+    CHECK(x86_ecam_read(&owner,0,0,5,0,16,&value) && value==0xfe000000);
+    CHECK(x86_ecam_command(&owner,0,0,5,0,4,0) && writes==2 && command_word==0xffff0003);
+    CHECK(!x86_ecam_command(&owner,0,0,5,0,1,1) && !x86_ecam_command(&owner,0,0,5,0,4,6) &&
+        !x86_ecam_command(&owner,0,0,5,0,0,0) && !x86_ecam_command(&owner,0,0,32,0,4,4) && writes==2);
+    fail_mode=7; CHECK(!x86_ecam_command(&owner,0,0,5,0,4,4) && writes==2 && owner.Ready==1); fail_mode=0;
+    fail_mode=8; CHECK(!x86_ecam_command(&owner,0,0,5,0,4,4) && writes==3 && command_word==0xffff0003); fail_mode=0;
+    CHECK(x86_ecam_close(&owner));
     printf("PASS %u ECAM checks; 100 sessions, native load backend, malformed tables, immutable failures, alias rejection and failed-revoke retention\n",checks);
     return 0;
 }

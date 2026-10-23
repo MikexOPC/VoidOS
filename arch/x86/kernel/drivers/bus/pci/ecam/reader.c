@@ -35,6 +35,18 @@ int x86_ecam_open(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WINDOW *window,con
     return valid;
 }
 
+// ====== page_private ======
+
+static BOOT_U64 page_private(const X86_ECAM *owner,BOOT_U32 segment,BOOT_U32 bus,BOOT_U32 device,BOOT_U32 function)
+{
+    BOOT_U64 page=0;
+    for (BOOT_U32 index=0; index<owner->Info.Count; ++index) {
+        const X86_ECAM_RANGE *range=&owner->Info.Ranges[index];
+        if (range->Segment==segment && bus>=range->First && bus<=range->Last) page=x86_ecam_page(range->Base,bus,device,function);
+    }
+    return page && x86_ecam_safe(owner,page,4096) ? page : 0;
+}
+
 // ====== read_private ======
 
 static int read_private(void *state)
@@ -59,12 +71,8 @@ int x86_ecam_read(X86_ECAM *owner,BOOT_U32 segment,BOOT_U32 bus,BOOT_U32 device,
         os_address_ranges_overlap((BOOT_U64)value,4,128ULL<<39,1ULL<<39) ||
         os_address_ranges_overlap((BOOT_U64)value,4,225ULL<<39,4ULL<<39) ||
         os_address_ranges_overlap((BOOT_U64)value,4,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES)) return 0;
-    BOOT_U64 page=0;
-    for (BOOT_U32 index=0; index<owner->Info.Count; ++index) {
-        const X86_ECAM_RANGE *range=&owner->Info.Ranges[index];
-        if (range->Segment==segment && bus>=range->First && bus<=range->Last) page=x86_ecam_page(range->Base,bus,device,function);
-    }
-    if (!page || !x86_ecam_safe(owner,page,4096)) return 0;
+    BOOT_U64 page=page_private(owner,segment,bus,device,function);
+    if (!page) return 0;
     ECAM_REQUEST request={offset,0};
     owner->Busy=1;
     int valid=x86_apic_borrow(owner->Window,page,owner->Cache,0,read_private,&request);
@@ -86,4 +94,45 @@ int x86_ecam_close(X86_ECAM *owner)
     if (!x86_ecam_current(owner)) {owner->Ready=ready;return 0;}
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte]=0;
     return 1;
+}
+
+// ====== store_private ======
+
+static int store_private(void *state)
+{
+    ECAM_REQUEST *request = state;
+    return x86_ecam_store_command(request->Value);
+}
+
+// ====== x86_ecam_command ======
+
+// Read Command, change only the allowed bits, write the 16-bit register through a writable UC
+// borrow and read it back. The caller owns the function (diagnostic DMA tests).
+int x86_ecam_command(X86_ECAM *owner, BOOT_U32 segment, BOOT_U32 bus, BOOT_U32 device, BOOT_U32 function,
+    BOOT_U32 mask, BOOT_U32 value)
+{
+    BOOT_U32 old = 0;
+
+    if (!x86_ecam_read(owner, segment, bus, device, function, 4, &old)) return 0;
+
+    ECAM_REQUEST request = {4, x86_ecam_command_value(old, mask, value)};
+    BOOT_U64 page = page_private(owner, segment, bus, device, function);
+
+    if (request.Value == ~0U || !page) return 0;
+
+    owner->Busy = 1;
+    int valid = x86_apic_borrow(owner->Window, page, owner->Cache, 1, store_private, &request);
+    owner->Busy = 0;
+
+    if (!x86_page_window_idle_valid(owner->Window)) {
+        owner->Ready = 2;
+        return 0;
+    }
+
+    if (!valid || !x86_ecam_current(owner) || owner->Budget != owner->Window->Pool->FreePages ||
+        !x86_ecam_read(owner, segment, bus, device, function, 4, &old)
+    )
+    return 0;
+
+    return (old & mask) == value;
 }
