@@ -13,6 +13,12 @@
 #define X86_VGPU_SESSION_COMPROMISED 2U
 #define X86_VGPU_SESSION_RETAINED    3U
 
+// Geometry A: the surface is bound before GET_DISPLAY_INFO (the GPU domain maps it), so it is
+// sized for the larger of the GOP and this capacity; a display that does not fit keeps GOP.
+// 1920x1080x4 = 7.9 MiB, inside the 16 MiB single-entry backing limit.
+#define X86_VGPU_SURFACE_WIDTH  1920U
+#define X86_VGPU_SURFACE_HEIGHT 1080U
+
 // Before the session tasks run. A failure before translation releases everything and leaves OFF.
 int x86_vgpu_session_start(const KERNEL_ACPI_DIRECTORY *directory);
 // Console task, at every flush: register-only fault scan, no window borrow (Y3-A).

@@ -12,17 +12,22 @@ int x86_fb_transaction_begin(X86_FB_MAPPING *owner, const X86_FB_PIXEL_RECT *rec
         !owner || ((BOOT_U64)owner & 7) || owner->Self != (BOOT_U64)owner || !owner->Context) return 0;
     if (os_address_ranges_overlap((BOOT_U64)transaction,sizeof(*transaction),(BOOT_U64)owner,sizeof(*owner)) ||
         os_address_ranges_overlap((BOOT_U64)transaction,sizeof(*transaction),(BOOT_U64)owner->Context,sizeof(*owner->Context))) return 0;
+    OS_FRAMEBUFFER geometry;
+    const OS_FRAMEBUFFER *fb = x86_fb_surface_geometry(owner, &geometry);
+    const X86_FB_TARGET *target = x86_fb_target();
+    if (!fb) return 0;
     for (BOOT_U32 index = 0; index < count; ++index) {
-        const OS_FRAMEBUFFER *fb = &owner->Context->Info.Framebuffer;
-        BOOT_U64 last, pages = owner->Authority.Region.Pages, start = fb->Base & 4095;
+        // GOP: the mapped aperture pages; redirected target: its own byte span (offset 0).
+        BOOT_U64 last, pages = target ? (target->Bytes + 4095) / 4096 : owner->Authority.Region.Pages;
+        BOOT_U64 start = target ? 0 : fb->Base & 4095;
         captured[index] = rects[index];
         if (!x86_fb_rect_valid(((BOOT_U64)fb->Height << 32) | fb->Width,
             ((BOOT_U64)captured[index].Y << 32) | captured[index].X,
             ((BOOT_U64)captured[index].Height << 32) | captured[index].Width)) return 0;
         last = fb_pixel_offset(fb->Width,fb->Height,fb->Stride,fb->Format,fb->Used,
             captured[index].X + captured[index].Width - 1,captured[index].Y + captured[index].Height - 1);
-        if (!pages || pages > 4321 || last == ~0ULL || last > pages * 4096 - 4 ||
-            start > pages * 4096 - 4 - last) return 0;
+        if (!pages || (!target && pages > 4321) || last == ~0ULL || last > pages * 4096 - 4 ||
+            start > pages * 4096 - 4 - last || (target && last > target->Bytes - 4)) return 0;
         area += (BOOT_U64)captured[index].Width * captured[index].Height;
     }
     if (area > 1944 || !x86_fb_pixels_begin(owner, captured[0].X, captured[0].Y,

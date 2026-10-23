@@ -12,6 +12,7 @@ typedef struct {
 uint64_t kernel_console_utf8(uint32_t packed, uint32_t available, uint32_t controls);
 int kernel_console_service_init(KERNEL_CONSOLE_SERVICE *owner, KERNEL_VIDEO_CONSOLE *view,
     uint32_t columns, uint32_t rows);
+int kernel_console_service_clip(KERNEL_CONSOLE_SERVICE *owner, uint32_t columns, uint32_t rows);
 int kernel_console_service_edit(KERNEL_CONSOLE_SERVICE *owner,
     const char *data, uint32_t length, uint32_t capacity);
 int kernel_console_service_write(KERNEL_CONSOLE_SERVICE *owner,

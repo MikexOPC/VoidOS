@@ -78,6 +78,17 @@ int main(void)
     clean_dirty();
     CHECK(kernel_pointer_close(&owner));
     CHECK(!kernel_pointer_valid(&owner) && !kernel_pointer_hide(&owner));
+    // Geometry A: after a clip to the GOP grid the pointer is clamped inside the smaller view.
+    static KERNEL_VIDEO_CONSOLE wide;
+    static KERNEL_CONSOLE_POINTER clamped;
+    CHECK(kernel_console_init(&wide, 142, 44) && kernel_pointer_init(&clamped, &wide));
+    for (uint32_t step = 0; step < 4; ++step) CHECK(kernel_pointer_move(&clamped, 255, -255, 0));
+    CHECK(clamped.Image.X == 142 * 9 - 18 && clamped.Image.Y == 44 * 18 - 18);
+    CHECK(kernel_console_clip(&wide, 113, 42) && kernel_pointer_clamp(&clamped));
+    CHECK(clamped.Image.X == 113 * 9 - 18 && clamped.Image.Y == 42 * 18 - 18 && kernel_pointer_valid(&clamped));
+    CHECK(kernel_pointer_move(&clamped, -10, 10, 0) && kernel_pointer_clamp(&clamped));
+    CHECK(clamped.Image.X == 113 * 9 - 28 && clamped.Image.Y == 42 * 18 - 28);
+    CHECK(!kernel_pointer_clamp(0));
     printf("PASS pointer: %u checks; fixed storage, bitmap and dirty rollback\n", checks);
     return 0;
 }

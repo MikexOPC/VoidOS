@@ -171,9 +171,33 @@ static void caret_updates(void)
 
 // ====== main ======
 
+// ====== clip_transcript ======
+
+// Geometry A: after 50 lines on a 142x44 grid the clip to 113x42 keeps the prompt row, the
+// transcript and the view agree, and the service keeps accepting edits and output.
+static void clip_transcript(void)
+{
+    setup(142, 44);
+    for (uint32_t line = 0; line < 50; ++line) CHECK(WRITE("riga\n"));
+    CHECK(EDIT("help"));
+    uint32_t y = view.Y;
+    // A refused clip (wider than the grid) fails the service, as every refused service operation.
+    CHECK(!kernel_console_service_clip(&fixture.Service, 143, 42) && fixture.Service.Failed);
+    setup(142, 44);
+    for (uint32_t line = 0; line < 50; ++line) CHECK(WRITE("riga\n"));
+    CHECK(EDIT("help"));
+    CHECK(kernel_console_service_clip(&fixture.Service, 113, 42));
+    CHECK(view.Columns == 113 && view.Rows == 42 && fixture.Service.Transcript.Columns == 113);
+    CHECK(fixture.Service.Transcript.Rows == 42 && view.Y == y - 2 && view.Caret != UINT32_MAX);
+    CHECK(view.Cells[view.Y * 113] == '>' && view.Cells[view.Y * 113 + 2] == 'h');
+    CHECK(kernel_console_service_pending(&fixture.Service) == 1);
+    CHECK(EDIT("helpx") && WRITE("ok\n") && kernel_console_service_pending(&fixture.Service) == 1);
+    CHECK(fixture.Before == fixture.After);
+}
+
 int main(void)
 {
-    ownership_and_bounds(); interleaved_response(); limits_and_scroll(); caret_updates();
+    ownership_and_bounds(); interleaved_response(); limits_and_scroll(); caret_updates(); clip_transcript();
     printf("PASS console service: %u checks; owner %zu bytes; fixed storage, no allocations\n",
         checks, sizeof(fixture.Service));
     return 0;

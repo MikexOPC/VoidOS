@@ -23,6 +23,7 @@ int kernel_console_peek(const KERNEL_VIDEO_CONSOLE *console, uint32_t start,
 int kernel_console_ack(KERNEL_VIDEO_CONSOLE *console, uint32_t index, uint32_t scalar);
 uint32_t kernel_console_caret_index(uint32_t columns, uint32_t rows, uint32_t x, uint32_t y);
 int kernel_console_caret(KERNEL_VIDEO_CONSOLE *console, uint32_t enabled);
+int kernel_console_clip(KERNEL_VIDEO_CONSOLE *console, uint32_t columns, uint32_t rows);
 int kernel_console_clear(KERNEL_VIDEO_CONSOLE *console);
 uint64_t kernel_console_plan(uint32_t columns, uint32_t rows,
     uint32_t x, uint32_t y, uint32_t scalar);

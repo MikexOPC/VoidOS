@@ -18,7 +18,7 @@ static CURSOR_BACKUP backup;
 
 static int same_surface(const OS_FRAMEBUFFER *first, const OS_FRAMEBUFFER *second)
 {
-    return first->Base == second->Base && first->Width == second->Width &&
+    return second && first->Base == second->Base && first->Width == second->Width &&
         first->Height == second->Height && first->Stride == second->Stride &&
         first->Format == second->Format && first->Used == second->Used && first->Capacity == second->Capacity;
 }
@@ -60,13 +60,14 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
     BOOT_U32 next[324], used = 0;
     X86_FB_PIXEL_RECT text_rect;
     BOOT_U32 rectangles = 0, foreground, background;
+    OS_FRAMEBUFFER geometry;
     // V2c: the background under the cursor belongs to the target it was read from; after a target
     // change (GPU bring-up or GOP fallback) it is dropped and the full redraw repaints the old box.
     if (backup.Valid && backup.Target != x86_fb_target()) backup.Valid = 0;
     if (backup.Failed || !owner || !owner->Context || !text || !font || !glyphs || !pointer || pointer->Visible > 1 ||
         !count || count > 8 || (backup.Valid && (backup.Self != (BOOT_U64)&backup ||
         backup.Owner != owner || backup.Root != owner->Authority.Root ||
-        !same_surface(&backup.Surface, &owner->Context->Info.Framebuffer)))) return 0;
+        !same_surface(&backup.Surface, x86_fb_surface_geometry(owner, &geometry))))) return 0;
     current = cursor_rectangle(pointer);
     text_rect = (X86_FB_PIXEL_RECT){text->X, text->Y, count * X86_FB_CELL_WIDTH, X86_FB_CELL_HEIGHT};
     if (backup.Valid) rects[rectangles++] = old;
@@ -127,7 +128,7 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
     }
     if (!x86_fb_transaction_end(&transaction)) goto failed;
     backup.Self = (BOOT_U64)&backup; backup.Owner = owner; backup.Root = owner->Authority.Root;
-    backup.Surface = owner->Context->Info.Framebuffer; backup.Image = *pointer; backup.Target = x86_fb_target();
+    backup.Surface = *x86_fb_surface_geometry(owner, &geometry); backup.Image = *pointer; backup.Target = x86_fb_target();
     backup.Valid = pointer->Visible;
     if (pointer->Visible) for (BOOT_U32 index = 0; index < 324; ++index) backup.Pixels[index] = next[index];
     return 1;
