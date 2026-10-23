@@ -25,6 +25,15 @@ int main(void)
         test_fixture(&device,&io); device.Offered=~(1ULL<<32);
         CHECK(!kernel_vgpu_negotiate(&io,&result) && result.Fault==KERNEL_VGPU_INIT_FEATURE);
         CHECK(!device.Accepted && kernel_vgpu_reset(&io,&result));
+        // ACCESS_PLATFORM: accepted and required only while the IOMMU translates the device.
+        test_fixture(&device,&io); io.Platform=1;
+        CHECK(kernel_vgpu_negotiate(&io,&result) && result.Accepted==(3ULL<<32) && device.Accepted==(3ULL<<32));
+        CHECK(kernel_vgpu_reset(&io,&result));
+        test_fixture(&device,&io); io.Platform=1; device.Offered=~(1ULL<<33);
+        CHECK(!kernel_vgpu_negotiate(&io,&result) && result.Fault==KERNEL_VGPU_INIT_FEATURE && !device.Accepted);
+        CHECK(kernel_vgpu_reset(&io,&result));
+        test_fixture(&device,&io); io.Platform=2; device.Count=0;
+        CHECK(!kernel_vgpu_negotiate(&io,&result) && !device.Count);
         test_fixture(&device,&io); device.Reject=1;
         CHECK(!kernel_vgpu_negotiate(&io,&result) && result.Fault==KERNEL_VGPU_INIT_STATUS);
         CHECK(!result.Reset && kernel_vgpu_reset(&io,&result));
@@ -52,7 +61,8 @@ int main(void)
         memset(&result,0xa5,sizeof(result)); KERNEL_VGPU_NEGOTIATION before=result;
         CHECK(!kernel_vgpu_negotiate(&io,&result) && !memcmp(&before,&result,sizeof(result)) && !device.Count);
         CHECK(!kernel_vgpu_negotiate(0,&result) && !kernel_vgpu_negotiate(&io,0));
-        CHECK(kernel_vgpu_features(1ULL<<32)==(1ULL<<32) && !kernel_vgpu_features(0));
+        CHECK(kernel_vgpu_features(1ULL<<32,0)==(1ULL<<32) && !kernel_vgpu_features(0,0));
+        CHECK(kernel_vgpu_features(3ULL<<32,1)==(3ULL<<32) && !kernel_vgpu_features(1ULL<<32,1) && !kernel_vgpu_features(3ULL<<32,2));
     }
     printf("PASS: VirtIO initialization %u checks, 100 cycles, all IO failure positions, bounded reset and retry\n",checks);
     return 0;

@@ -6,8 +6,8 @@ mod features;
 // ====== kernel_vgpu_features ======
 
 #[unsafe(no_mangle)]
-pub extern "C" fn kernel_vgpu_features(offered: u64) -> u64 {
-    features::features(offered)
+pub extern "C" fn kernel_vgpu_features(offered: u64, platform: u32) -> u64 {
+    features::features(offered,platform)
 }
 
 // ====== kernel_vgpu_register_valid ======

@@ -2,7 +2,7 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
     [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell, [switch]$InteractiveInput,
-    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestIommuDma, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
+    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestIommuDma, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestVgpuIommu, [switch]$TestVgpuIommuFault, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
@@ -40,6 +40,8 @@ if ($TestVgpuQueues) { $flags += '/DKERNEL_TEST_VGPU_QUEUES=1' }
 if ($TestVgpuResources) { $flags += '/DKERNEL_TEST_VGPU_RESOURCES=1' }
 if ($TestVgpuResourceReject) { $flags += '/DKERNEL_TEST_VGPU_RESOURCE_REJECT=1' }
 if ($TestVgpuScanout) { $flags += '/DKERNEL_TEST_VGPU_SCANOUT=1' }
+if ($TestVgpuIommu) { $flags += '/DKERNEL_TEST_VGPU_IOMMU=1' }
+if ($TestVgpuIommuFault) { $flags += '/DKERNEL_TEST_VGPU_IOMMU_FAULT=1' }
 if ($TestIommuDiscovery) { $flags += '/DKERNEL_TEST_IOMMU_DISCOVERY=1' }
 if ($TestIommuRegisters) { $flags += '/DKERNEL_TEST_IOMMU_REGISTERS=1' }
 if ($TestIommuDomain) { $flags += '/DKERNEL_TEST_IOMMU_DOMAIN=1' }
@@ -337,6 +339,7 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','
 $objects += "$output/vgpu-pages.obj"
 if ($TestVgpuQueues) { . (Join-Path $PSScriptRoot 'build/vgpu-queues.ps1') }
 if ($TestVgpuResources) { . (Join-Path $PSScriptRoot 'build/vgpu-resources.ps1') }
+if ($TestVgpuIommu) { . (Join-Path $PSScriptRoot 'build/vgpu-iommu.ps1') }
 if ($TestIommuDiscovery -or $TestPciEcam) { . (Join-Path $PSScriptRoot 'build/iommu-discovery.ps1') }
 if ($TestIommuRegisters) { . (Join-Path $PSScriptRoot 'build/iommu-registers.ps1') }
 if ($TestVgpuInitialization) {

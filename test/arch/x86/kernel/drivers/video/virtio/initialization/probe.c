@@ -35,12 +35,17 @@ int x86_vgpu_initialization_probe(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WI
         !kernel_text("\nKERNEL_VGPU_INIT_PHYSICAL: ") ||
         !kernel_number((owner.Authority.Plan.Physical[owner.Authority.Plan.Offset[0]/4096])+
             (owner.Authority.Plan.Offset[0]&4095)) || !kernel_text("\n")) return 0;
+#ifdef KERNEL_TEST_VGPU_IOMMU
+    // V1: ACCESS_PLATFORM is accepted from the first negotiation; no DMA exists before the queues,
+    // which start only after the GPU domain translates.
+    io.Platform=1;
+#endif
     negotiated=kernel_vgpu_negotiate(&io,&result);
 #ifdef KERNEL_TEST_VGPU_QUEUES
     if (negotiated && !x86_vgpu_queue_probe(&owner,&transport,&io)) negotiated=0;
 #endif
 #ifdef KERNEL_TEST_VGPU_RESOURCES
-    if (negotiated && !x86_vgpu_resource_probe(&owner,&transport,&io)) negotiated=0;
+    if (negotiated && !x86_vgpu_resource_probe(&owner,&transport,&io,directory)) negotiated=0;
 #endif
     if (!negotiated && !result.Reset) {
         uint32_t failed=0;

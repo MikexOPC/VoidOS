@@ -42,4 +42,7 @@ int x86_vtd_domain_verify(X86_VTD_DOMAIN *owner);
 int x86_vtd_domain_release(X86_VTD_DOMAIN *owner);
 // Clears the second-stage leaves of one buffer (bit index); the caller flushes CPU caches and the IOTLB.
 int x86_vtd_domain_revoke(X86_VTD_DOMAIN *owner,BOOT_U32 index);
+// IOVA of [physical, physical+bytes) inside one live (not revoked) buffer that grants access
+// (1 read, 3 read/write); 0 when the range is not entirely covered. Pure lookup, no table access.
+BOOT_U64 x86_vtd_domain_translate(const X86_VTD_DOMAIN *owner,BOOT_U64 physical,BOOT_U64 bytes,BOOT_U32 access);
 #endif

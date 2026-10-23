@@ -68,3 +68,28 @@ int x86_vtd_domain_pages(X86_VTD_DOMAIN *owner,int write)
     }
     return x86_vtd_domain_inputs(owner);
 }
+
+// ====== x86_vtd_domain_translate ======
+
+BOOT_U64 x86_vtd_domain_translate(const X86_VTD_DOMAIN *owner, BOOT_U64 physical, BOOT_U64 bytes, BOOT_U32 access)
+{
+    if (!owner || owner->Self != (BOOT_U64)owner || owner->State != 3 || !bytes ||
+        (access != 1 && access != 3) || owner->Request.Count > X86_VTD_DMA_RANGES ||
+        physical > ~0ULL - bytes
+    )
+    return 0;
+
+    for (BOOT_U32 index = 0; index < owner->Request.Count; ++index) {
+        const X86_VTD_BUFFER *buffer = &owner->Request.Buffers[index];
+        BOOT_U64 base = buffer->Lease.Base, size = buffer->Lease.Pages * 4096;
+
+        if (((owner->Revoked >> index) & 1) || (buffer->Access & access) != access ||
+            physical < base || physical - base > size || bytes > size - (physical - base)
+        )
+        continue;
+
+        return owner->Iova[index] + (physical - base);
+    }
+
+    return 0;
+}

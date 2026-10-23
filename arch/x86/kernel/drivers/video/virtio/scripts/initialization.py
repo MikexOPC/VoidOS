@@ -17,11 +17,14 @@ spec.loader.exec_module(backend)
 visual_spec=importlib.util.spec_from_file_location('vgpu_presentation',Path(__file__).with_name('presentation.py'))
 visual=importlib.util.module_from_spec(visual_spec)
 visual_spec.loader.exec_module(visual)
+iommu_spec=importlib.util.spec_from_file_location('vgpu_iommu',Path(__file__).with_name('iommu.py'))
+iommu=importlib.util.module_from_spec(iommu_spec)
+iommu_spec.loader.exec_module(iommu)
 
 # ====== boot ======
 
-def ready(vm,serial,reject,display=None,withhold=False):
-    deadline=time.monotonic()+80
+def ready(vm,serial,reject,display=None,withhold=False,limit=80):
+    deadline=time.monotonic()+limit
     phase=0
     while time.monotonic()<deadline:
         log=backend.protocol.read_serial(serial)
@@ -39,7 +42,8 @@ def ready(vm,serial,reject,display=None,withhold=False):
 
 # ====== boot ======
 
-def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_reject=False,scanout=False,visual_timeout=False):
+def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_reject=False,scanout=False,visual_timeout=False,
+        translated=False,revoked=False):
     esp=directory/'esp/EFI/BOOT'
     esp.mkdir(parents=True)
     loader=ROOT/'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'
@@ -54,8 +58,11 @@ def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_
     with backend.listener() as qm,backend.listener() as qt,(directory/'monitor.log').open('w') as monitor, \
             (directory/'stderr.log').open('w') as error:
         arguments=[str(backend.QEMU/'qemu-system-x86_64.exe'),'-machine','q35','-cpu','max',
-            '-accel','tcg','-m','128','-smp','1','-net','none','-vga','none',
-            '-device',('virtio-vga,id=vgpu'+(',iommu_platform=on' if reject else '')) if gpu=='virtio' else 'VGA','-display','none',
+            '-accel','tcg','-m','128','-smp','1','-net','none','-vga','none']
+        # V1: intel-iommu is created before the GPU it translates.
+        if translated: arguments+=iommu.DEVICE+[item for event in iommu.EVENTS for item in ('-trace','enable='+event)]
+        arguments+=[
+            '-device',('virtio-vga,id=vgpu'+(',iommu_platform=on' if reject or translated else '')) if gpu=='virtio' else 'VGA','-display','none',
             '-monitor','stdio','-no-reboot','-serial','file:'+serial.as_posix(),
             '-qmp',f'tcp:127.0.0.1:{qm.getsockname()[1]}',
             '-qtest',f'tcp:127.0.0.1:{qt.getsockname()[1]}',
@@ -73,7 +80,8 @@ def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_
                     if 'QMP' not in json.loads(cs.readline(65536)): raise RuntimeError('QMP greeting')
                     backend.qmp(cs,'qmp_capabilities')
                     log=ready(vm,serial,reject or resource_reject or visual_timeout,
-                        (cs,ts,directory) if scanout and gpu=='virtio' and not reject else None,visual_timeout)
+                        (cs,ts,directory) if scanout and gpu=='virtio' and not reject else None,visual_timeout,
+                        240 if translated else 80)  # V1 also scans the PCI graph, as the ECAM campaign does
                     backend.qmp(cs,'stop')
                     number=backend.protocol.number
                     root=number(log,'KERNEL_VGPU_INIT_ROOT')
@@ -100,7 +108,7 @@ def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_
                         expected_status,expected_fault=(3,5) if reject else (11,0)
                         if number(log,'KERNEL_VGPU_INIT_STATUS')!=expected_status or number(log,'KERNEL_VGPU_INIT_FAULT')!=expected_fault:
                             raise RuntimeError('Feature negotiation failed')
-                        if number(log,'KERNEL_VGPU_INIT_ACCEPTED')!=1<<32: raise RuntimeError('Wrong accepted features')
+                        if number(log,'KERNEL_VGPU_INIT_ACCEPTED')!=(iommu.ACCEPTED if translated else 1<<32): raise RuntimeError('Wrong accepted features')
                         if queues and not reject and not resources:
                             if 'KERNEL_VGPU_QUEUE_OK' not in log or number(log,'KERNEL_VGPU_QUEUE_COUNT')!=256 or number(log,'KERNEL_VGPU_QUEUE_FAULT'):
                                 raise RuntimeError('Missing real queue completions')
@@ -124,6 +132,7 @@ def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_
                         if resources and not reject:
                             resource_marker='KERNEL_VGPU_RESOURCE_FAILED' if resource_reject or visual_timeout else 'KERNEL_VGPU_RESOURCE_OK'
                             expected_state,expected_count,expected_fault=(3,6,0) if visual_timeout else (0xffffffff,3,4) if resource_reject else (5,11 if scanout else 6,0)
+                            if revoked: expected_count,expected_fault=7,4  # 6 of the first run, CREATE of the second; ATTACH refused
                             if resource_marker not in log or number(log,'KERNEL_VGPU_RESOURCE_STATE')!=expected_state or number(log,'KERNEL_VGPU_RESOURCE_COUNT')!=expected_count or number(log,'KERNEL_VGPU_RESOURCE_FAULT')!=expected_fault:
                                 raise RuntimeError('Resource lifecycle failure')
                             width=number(log,'KERNEL_VGPU_RESOURCE_WIDTH'); height=number(log,'KERNEL_VGPU_RESOURCE_HEIGHT')
@@ -183,7 +192,8 @@ def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_
                         transitions=[value for index,value in enumerate(statuses) if not index or value!=statuses[index-1]]
                         expected=[0,1,3,11,131,0] if reject else ([0,1,3,11,15,0] if queues else [0,1,3,11,0])
                         if transitions[-len(expected):]!=expected: raise RuntimeError('Independent status trace mismatch')
-                        if resources and not reject and not resource_reject and not visual_timeout:
+                        if translated: result_iommu=iommu.verify(backend.protocol.read_serial(serial),trace,revoked)
+                        if resources and not reject and not resource_reject and not visual_timeout and not revoked:
                             names=['virtio_gpu_cmd_res_create_2d','virtio_gpu_cmd_res_back_attach',
                                 'virtio_gpu_cmd_res_xfer_toh_2d','virtio_gpu_cmd_res_back_detach','virtio_gpu_cmd_res_unref']
                             expected_names=list(names)
@@ -192,7 +202,7 @@ def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_
                                 expected_names=[names[0],names[1],names[2],names[5],names[6],names[2],names[6],names[5],names[3],names[4]]
                             observed=[name for line in trace.splitlines() for name in names if name in line]
                             if observed[-len(expected_names):]!=expected_names: raise RuntimeError('Device resource command trace mismatch')
-                    return dict(KernelSHA256=backend.protocol.image_hash(image),LoaderSHA256=backend.protocol.image_hash(loader),
+                    return dict(Iommu=result_iommu if translated else None,KernelSHA256=backend.protocol.image_hash(image),LoaderSHA256=backend.protocol.image_hash(loader),
                         GPU=gpu,Ready=not(reject or resource_reject or visual_timeout),ExpectedRejection=reject or resource_reject or visual_timeout,Unmapped=True,ResetObserved=gpu=='virtio',
                         QueueCompletions=(262 if visual_timeout else 259 if resource_reject else 267 if scanout else 262 if resources else 256) if queues and gpu=='virtio' and not reject else 0,
                         Resources=resources and gpu=='virtio' and not reject,ResourceRejected=resource_reject,WindowRevoked=True,
@@ -216,6 +226,7 @@ def main():
     parser.add_argument('--resource-reject',action='store_true')
     parser.add_argument('--scanout',action='store_true')
     parser.add_argument('--scanout-timeout',action='store_true')
+    parser.add_argument('--iommu',action='store_true'); parser.add_argument('--iommu-revoke',action='store_true')
     options=parser.parse_args()
     if options.scanout_timeout:
         if options.gpu!='virtio' or options.require_access_platform: raise SystemExit('Visual timeout requires GPU presentation')
@@ -226,6 +237,13 @@ def main():
     if options.resource_reject:
         if options.require_access_platform or options.gpu!='virtio': raise SystemExit('Resource rejection requires a separate GPU test')
         options.resources=True
+    if options.iommu_revoke:
+        if options.scanout: raise SystemExit('Revocation runs on the resource path')
+        options.iommu=True
+    if options.iommu:
+        if options.require_access_platform or options.resource_reject or options.scanout_timeout or options.gpu!='virtio':
+            raise SystemExit('V1 needs the positive GPU profile')
+        options.resources=True
     if options.resources: options.queues=True
     if not 1<=options.boots<=100: raise SystemExit('Invalid boot count')
     if options.require_access_platform and options.gpu!='virtio': raise SystemExit('GPU required for negative test')
@@ -233,7 +251,8 @@ def main():
     out.mkdir(); print('Evidence: '+str(out),flush=True)
     records=[]
     for index in range(options.boots):
-        records.append(boot(options.image.resolve(),out/f'boot-{index+1}',options.gpu,options.require_access_platform,options.queues,options.resources,options.resource_reject,options.scanout,options.scanout_timeout))
+        records.append(boot(options.image.resolve(),out/f'boot-{index+1}',options.gpu,options.require_access_platform,options.queues,options.resources,options.resource_reject,options.scanout,options.scanout_timeout,
+            options.iommu,options.iommu_revoke))
         (out/'results.json').write_text(json.dumps(records,indent=2))
         print(f'PASS boot {index+1}: negotiation/reset or absent GPU, branch revoked',flush=True)
 

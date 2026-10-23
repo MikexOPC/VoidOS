@@ -170,6 +170,57 @@ static int borrowed_reads(void)
     return 0;
 }
 
+// ====== parcheggio e ripresa con contenuto conservato ===== //
+
+static int parked_cycle(void)
+{
+    KERNEL_PHYSICAL_LEASE parked, held;
+    BOOT_U64 base;
+
+    if (!fixture() || !x86_page_window_initialize(&window, &pool, 0x1000) || !x86_page_window_acquire(&window, 3)) return 110;
+
+    clear(&parked, sizeof(parked));
+    base = window.Lease.Base;
+    bytes[0] = 0x11; bytes[3 * 4096 - 1] = 0x22;
+
+    if (x86_page_window_resume(&window, &parked)) return 111;
+
+    parked.Pages = 1;
+    if (x86_page_window_park(&window, &parked) || !window.Active) return 112;
+
+    parked.Pages = 0;
+    if (x86_page_window_park(&window, (KERNEL_PHYSICAL_LEASE *)&window.Lease) || !window.Active) return 113;
+
+    if (!x86_page_window_park(&window, &parked) || window.Active || window.Lease.Id || tables[3][32] || tables[3][34] ||
+        parked.Base != base || parked.Pages != 3 || !kernel_physical_is_pinned(&pool, &parked) ||
+        pool.FreePages != initial_free - 3 || !x86_page_window_idle_valid(&window) || ordering_error) return 114;
+
+    held = parked;
+    if (x86_page_window_park(&window, &held) || x86_page_window_release(&window)) return 115;
+
+    held.Pages = 17;
+    if (x86_page_window_resume(&window, &held)) return 116;
+
+    held = parked; ++held.Id;
+    if (x86_page_window_resume(&window, &held) || window.Active) return 117;
+
+    if (!kernel_physical_pin(&pool, &parked, 0)) return 118;
+    if (x86_page_window_resume(&window, &parked) || window.Active) return 119;
+    if (!kernel_physical_pin(&pool, &parked, 1)) return 120;
+
+    // The parked span keeps its bytes: resume never zeroes, unlike acquire.
+    if (!x86_page_window_resume(&window, &parked) || !window.Active || window.Lease.Base != base ||
+        parked.Base || parked.Pages || parked.Id || bytes[0] != 0x11 || bytes[3 * 4096 - 1] != 0x22 ||
+        tables[3][32] != (base | 3 | (1ULL << 63)) || tables[3][34] != ((base + 8192) | 3 | (1ULL << 63))) return 121;
+
+    if (x86_page_window_resume(&window, &held) || x86_page_window_acquire(&window, 1)) return 122;
+
+    if (!x86_page_window_park(&window, &parked) || !x86_page_window_resume(&window, &parked) ||
+        !x86_page_window_release(&window) || pool.FreePages != initial_free || ordering_error) return 123;
+
+    return 0;
+}
+
 // ====== suite pagina posseduta e prestito ACPI senza trasferimenti ownership ===== //
 
 __declspec(dllexport) int run_window_tests(void)
@@ -271,5 +322,9 @@ __declspec(dllexport) int run_window_tests(void)
         int result = rejects_every_occupied_slot();
         if (result) return result;
     }
-    return borrowed_reads();
+    {
+        int result = borrowed_reads();
+        if (result) return result;
+    }
+    return parked_cycle();
 }

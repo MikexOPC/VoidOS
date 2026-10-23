@@ -31,9 +31,9 @@ static int access_private(void *opaque,uint32_t region,uint32_t offset,uint32_t 
         volatile VGPU_RING *ring=(volatile VGPU_RING *)pages[0];
         uint32_t command=*(uint32_t *)pages[2];
         uint32_t expected=command==0x100?408:24;
-        CHECK(ring->Descriptors[0].Address==0x102000 && kernel_vgpu_queue_message(command,ring->Descriptors[0].Length-24) &&
+        CHECK(ring->Descriptors[0].Address==0x1005000 && kernel_vgpu_queue_message(command,ring->Descriptors[0].Length-24) &&
             ring->Descriptors[0].Flags==1 && ring->Descriptors[0].Next==1);
-        CHECK(ring->Descriptors[1].Address==0x103000 && ring->Descriptors[1].Length==expected && ring->Descriptors[1].Flags==2);
+        CHECK(ring->Descriptors[1].Address==0x1007000 && ring->Descriptors[1].Length==expected && ring->Descriptors[1].Flags==2);
         CHECK(ring->Heads[(ring->Available-1U)%8]==0 && ring->Available==(uint16_t)(ring->Used+1U));
         if (state->Stall) return 1;
         word_private(pages[3],0,command==0x100?0x1101:0x1100); word_private(pages[3],4,1);
@@ -86,7 +86,10 @@ static int prepare_private(void)
     memset(&queue,0,sizeof(queue)); memset(&mock,0,sizeof(mock)); memset(pages,0,sizeof(pages));
     mock.Status=11; mock.Size[0]=mock.Size[1]=256;
     buffers.Bits=32;
-    for (uint32_t index=0; index<4; ++index) { buffers.Views[index]=pages[index]; buffers.Physical[index]=0x100000+index*4096; }
+    // Device addresses differ from the frames, as with an IOMMU: only Device may reach the device.
+    for (uint32_t index=0; index<4; ++index) {
+        buffers.Views[index]=pages[index]; buffers.Physical[index]=0x100000+index*4096; buffers.Device[index]=0x1001000+index*8192;
+    }
     return kernel_vgpu_queue_start(&queue,&io,&buffers);
 }
 
@@ -136,6 +139,12 @@ int main(void)
     CHECK(prepare_private()); VGPU_BUFFERS buffers=queue.Buffers; VGPU_QUEUE_IO_CONTEXT io=queue.Io;
     memset(&queue,0,sizeof(queue)); buffers.Physical[3]=buffers.Physical[0];
     CHECK(!kernel_vgpu_queue_start(&queue,&io,&buffers));
+    for (uint32_t bad=0; bad<4; ++bad) {
+        CHECK(prepare_private()); buffers=queue.Buffers; memset(&queue,0,sizeof(queue));
+        const uint64_t values[4]={0,0x1001001,buffers.Device[0],1ULL<<32};
+        buffers.Device[3]=values[bad];
+        CHECK(!kernel_vgpu_queue_start(&queue,&io,&buffers));
+    }
     CHECK(prepare_private()); unsigned char response[408]; uint32_t width=77,height=88;
     CHECK(kernel_vgpu_queue_exchange(&queue)); memcpy(response,pages[3],408);
     CHECK(!kernel_vgpu_queue_response(response,407,1,&width,&height) && width==77 && height==88);

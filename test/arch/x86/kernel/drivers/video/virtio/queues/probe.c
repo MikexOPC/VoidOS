@@ -32,6 +32,7 @@ int x86_vgpu_queue_probe(X86_VGPU_MAPPING *owner,X86_VGPU_TRANSPORT *transport,c
     for (uint32_t index=0; index<4; ++index) {
         buffers.Views[index]=bytes+4096ULL*index;
         buffers.Physical[index]=owner->Window->Lease.Base+4096ULL*index;
+        buffers.Device[index]=buffers.Physical[index]; // no IOMMU: identity
     }
     if (!owner->Capture(owner->Context,owner->Window->Pool,owner->Lapic,owner->Inventory)) goto cleanup;
     if (!kernel_text("KERNEL_VGPU_QUEUE_RAM: ") || !kernel_number(owner->Window->Lease.Base) || !kernel_text("\n")) goto cleanup;

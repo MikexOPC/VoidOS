@@ -27,7 +27,7 @@ static uint32_t color_private(uint32_t x,uint32_t y)
 
 // ====== x86_vgpu_visual_probe ======
 
-int x86_vgpu_visual_probe(VGPU_QUEUE *queue,VGPU_RESOURCE *resource,X86_SURFACE_MAPPING *surface)
+int x86_vgpu_visual_probe(VGPU_QUEUE *queue,VGPU_RESOURCE *resource,X86_SURFACE_MAPPING *surface,uint64_t device)
 {
     volatile uint32_t *pixels=x86_vgpu_surface_pixels(surface);
     if (!pixels || queue->Width<128 || queue->Height<96) return 0;
@@ -36,7 +36,7 @@ int x86_vgpu_visual_probe(VGPU_QUEUE *queue,VGPU_RESOURCE *resource,X86_SURFACE_
         pixels[(uint64_t)y*queue->Width+x]=color_private(x,y);
     if (!kernel_text("KERNEL_VGPU_SCANOUT_MAILBOX: ") || !kernel_number(queue->Buffers.Physical[1]+4092) ||
         !kernel_text("\nKERNEL_VGPU_SCANOUT_ID: ") || !kernel_number(queue->Scanout) || !kernel_text("\n") ||
-        !kernel_vgpu_resource_open(queue,resource,surface->Authority.Data.Base,queue->Width,queue->Height) ||
+        !kernel_vgpu_resource_open(queue,resource,surface->Authority.Data.Base,device,queue->Width,queue->Height) ||
         !kernel_vgpu_scanout_bind(queue,resource) || !checkpoint_private(queue,1)) return 0;
     for (uint32_t y=24; y<56; ++y) for (uint32_t x=16; x<80; ++x)
         pixels[(uint64_t)y*queue->Width+x]=0xffe040a0;
