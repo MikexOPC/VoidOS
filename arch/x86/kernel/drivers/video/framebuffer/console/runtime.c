@@ -22,6 +22,29 @@ static uint32_t absent;
 // flushes found nothing to draw; settle is the time spent in the serial pointer record.
 static uint64_t flush_count, flush_total, settle_total, idle_count, idle_total;
 static uint32_t flush_max;
+#ifdef KERNEL_VGPU_IOMMU
+// V2c Z2-A: cells drawn since the last present, as one pixel rectangle (Width 0 = nothing).
+static uint32_t damage_x, damage_y, damage_right, damage_bottom;
+static uint32_t pointer_x, pointer_y, pointer_seen;
+
+// ====== damage_private ======
+
+static void damage_private(uint32_t left, uint32_t top, uint32_t right, uint32_t bottom)
+{
+    uint32_t width = view.Columns * KERNEL_CONSOLE_CELL_WIDTH, height = view.Rows * KERNEL_CONSOLE_CELL_HEIGHT;
+
+    if (right > width) right = width;
+    if (bottom > height) bottom = height;
+    if (left >= right || top >= bottom) return;
+
+    if (damage_right == damage_x) { damage_x = left; damage_y = top; damage_right = right; damage_bottom = bottom; return; }
+
+    if (left < damage_x) damage_x = left;
+    if (top < damage_y) damage_y = top;
+    if (right > damage_right) damage_right = right;
+    if (bottom > damage_bottom) damage_bottom = bottom;
+}
+#endif
 #ifdef KERNEL_PS2_MOUSE
 static KERNEL_CONSOLE_POINTER pointer;
 static uint64_t pointer_frame = UINT64_MAX;
@@ -82,6 +105,17 @@ static int draw_group(void *context, uint32_t column, uint32_t row,
         view.Caret % view.Columns >= column && view.Caret % view.Columns - column < count ?
         view.Caret % view.Columns - column : UINT32_MAX;
     if (context != source || !task_valid(source, 1) || service.Busy != 2) return 0;
+#ifdef KERNEL_VGPU_IOMMU
+    damage_private(column * KERNEL_CONSOLE_CELL_WIDTH, row * KERNEL_CONSOLE_CELL_HEIGHT,
+        (column + count) * KERNEL_CONSOLE_CELL_WIDTH, (row + 1) * KERNEL_CONSOLE_CELL_HEIGHT);
+#ifdef KERNEL_PS2_MOUSE
+    // The pointer layer composes the whole 18x18 image and restores the previous box beyond the
+    // drawn cells: both boxes belong to the damage.
+    if (pointer_seen) damage_private(pointer_x, pointer_y, pointer_x + KERNEL_POINTER_SIZE, pointer_y + KERNEL_POINTER_SIZE);
+    damage_private(pointer.Image.X, pointer.Image.Y, pointer.Image.X + KERNEL_POINTER_SIZE, pointer.Image.Y + KERNEL_POINTER_SIZE);
+    pointer_x = pointer.Image.X; pointer_y = pointer.Image.Y; pointer_seen = 1;
+#endif
+#endif
 #ifdef KERNEL_PS2_MOUSE
     if (!kernel_pointer_valid(&pointer)) return 0;
     return x86_fb_kernel_group_pointer(column, row, scalars, count, 0xffffff, 0x081018, ticks, caret, &pointer.Image);
@@ -225,6 +259,13 @@ int x86_console_flush(X86_PS2_SESSION *session)
     if (!x86_vgpu_session_poll()) return flush_failure(1);
 #endif
     if (absent) return 1;
+#ifdef KERNEL_VGPU_IOMMU
+    // After a target change (bring-up or GOP fallback) every cell is drawn again on the new target.
+    if (x86_vgpu_present_redraw()) {
+        for (uint32_t index = 0; index < view.Columns * view.Rows; ++index) view.Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
+        render.Next = 0;
+    }
+#endif
     begin = clock_read(source);
 #ifdef KERNEL_PS2_MOUSE
     if (pointer_pending) {
@@ -244,6 +285,19 @@ int x86_console_flush(X86_PS2_SESSION *session)
         int settled = pointer_settled();
         settle_total += elapsed(mark);
         if (!settled) return flush_failure(6);
+    }
+#endif
+#ifdef KERNEL_VGPU_IOMMU
+    // Z2-A: every flush that drew something presents its bounding rectangle once.
+    if (damage_right != damage_x) {
+        uint32_t x = damage_x, y = damage_y, w = damage_right - damage_x, h = damage_bottom - damage_y;
+        damage_x = damage_y = damage_right = damage_bottom = 0;
+        if (!x86_vgpu_present_rect(x, y, w, h)) return flush_failure(7);
+        if (x86_vgpu_present_redraw()) {
+            for (uint32_t index = 0; index < view.Columns * view.Rows; ++index) view.Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
+            render.Next = 0;
+            if (!wake()) return flush_failure(7);
+        }
     }
 #endif
     spent = elapsed(begin);

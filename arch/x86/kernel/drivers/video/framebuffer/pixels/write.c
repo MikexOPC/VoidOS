@@ -1,6 +1,26 @@
 #include "session.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 
+static const X86_FB_TARGET *redirect;
+
+// ====== x86_fb_target_redirect ======
+
+int x86_fb_target_redirect(const X86_FB_TARGET *expected, const X86_FB_TARGET *next)
+{
+    if (redirect != expected ||
+        (next && (expected || next->Self != (BOOT_U64)next || !next->Valid || !next->Base || (next->Base & 4095) ||
+            !next->Bytes || next->Base > ~0ULL - next->Bytes || !next->Valid(next)))
+    )
+    return 0;
+
+    redirect = next;
+    return 1;
+}
+
+// ====== x86_fb_target ======
+
+const X86_FB_TARGET *x86_fb_target(void) { return redirect; }
+
 // ====== x86_fb_pixels_begin ======
 
 int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
@@ -28,6 +48,15 @@ int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
     if (last > mapped - 4 || start > mapped - 4 - last ||
         owner->Authority.Region.Virtual > ~0ULL - start - last) return 0;
     base = owner->Authority.Region.Virtual + start;
+
+    // Redirected target: same geometry by contract, so only the base changes; it must still hold
+    // every byte the GOP layout addresses.
+    if (redirect) {
+        if (!redirect->Valid(redirect) || fb->Used > redirect->Bytes || last > redirect->Bytes - 4) return 0;
+
+        base = redirect->Base;
+    }
+
     if (base & 3 || !x86_paging_inventory_verify_video(owner->Context, owner->Window->Pool,
         owner->Lapic, &owner->Authority, x86_fb_authority, owner->Inventory)) return 0;
     session->Owner = owner; session->Surface = *fb; session->Base = base;
@@ -58,7 +87,8 @@ int x86_fb_pixels_store(const X86_FB_PIXEL_SESSION *session,
 
 int x86_fb_pixels_end(const X86_FB_PIXEL_SESSION *session)
 {
-    return session && x86_fb_authority(&session->Owner->Authority);
+    return session && x86_fb_authority(&session->Owner->Authority) &&
+        (!redirect || redirect->Valid(redirect));
 }
 
 // ====== x86_fb_pixel ======

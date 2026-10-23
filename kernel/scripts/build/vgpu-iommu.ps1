@@ -15,7 +15,14 @@ $iommuSources=@("$bus/ecam/table.c","$bus/ecam/find.c","$bus/ecam/reader.c","$bu
     'arch/x86/kernel/drivers/video/virtio/iommu/domain.c')
 # V2b: the persistent session also needs the arena, the surface mapper and its geometry policy.
 if ($VgpuIommu) { $iommuSources+=@('arch/x86/kernel/drivers/video/virtio/iommu/session.c','arch/x86/mm/dma/arena.c',
-    'arch/x86/kernel/drivers/video/virtio/resources/mapping.c','arch/x86/kernel/drivers/video/virtio/resources/construction.c') }
+    'arch/x86/kernel/drivers/video/virtio/resources/mapping.c','arch/x86/kernel/drivers/video/virtio/resources/construction.c',
+    # V2c: the persistent GPU transport, queues, resource and scanout.
+    'arch/x86/kernel/drivers/video/virtio/iommu/present.c','arch/x86/kernel/drivers/video/virtio/initialization/transport.c',
+    'arch/x86/kernel/drivers/video/virtio/initialization/access.c','kernel/drivers/video/virtio/initialization/protocol.c',
+    'kernel/drivers/video/virtio/queues/setup.c','kernel/drivers/video/virtio/queues/exchange.c','kernel/drivers/video/virtio/queues/response.c',
+    'arch/x86/kernel/drivers/video/virtio/queues/native.c','arch/x86/kernel/drivers/video/virtio/queues/pci.c',
+    'arch/x86/kernel/drivers/video/virtio/queues/access.c','kernel/drivers/video/virtio/resources/resource.c',
+    'kernel/drivers/video/virtio/resources/scanout.c') }
 foreach ($source in $iommuSources) {
     $object=Join-Path $output ($source.Replace('/','-').Replace('.c','.obj'))
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags+@(('/Fo'+$object),(Join-Path $project $source)))
@@ -33,4 +40,10 @@ if ($VgpuIommu) {
     Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort',
         '-C','opt-level=2','-C','overflow-checks=yes',"$project/kernel/drivers/video/virtio/resources/rust/ffi/geometry.rs",'-o',"$output/v2b-geometry.obj")
     $objects+="$output/v2b-geometry.obj"
+    foreach ($policy in @(@('kernel/drivers/video/virtio/initialization/rust/ffi/policy.rs','v2c-init'),
+        @('kernel/drivers/video/virtio/queues/rust/ffi/validation.rs','v2c-queues'))) {
+        Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort',
+            '-C','opt-level=2','-C','overflow-checks=yes',"$project/$($policy[0])",'-o',"$output/$($policy[1]).obj")
+        $objects+="$output/$($policy[1]).obj"
+    }
 }

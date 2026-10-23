@@ -1,7 +1,5 @@
 #include "session.h"
 #include "arch/x86/kernel/drivers/video/virtio/integration/kernel.h"
-#include "arch/x86/kernel/drivers/video/virtio/resources/mapping.h"
-#include "arch/x86/mm/dma/arena.h"
 #include "kernel/diagnostics/log.h"
 #include <intrin.h>
 static X86_DMA_ARENA arena;
@@ -83,8 +81,15 @@ int x86_vgpu_session_start(const KERNEL_ACPI_DIRECTORY *directory)
     }
 
     state = X86_VGPU_SESSION_TRANSLATING;
+
+    // V2c: the console moves to the GPU; a refused bring-up keeps GOP, an unconfirmed reset retains.
+    if (!x86_vgpu_present_open(gpu, directory, &arena, &surface)) state = X86_VGPU_SESSION_RETAINED;
+
     held = budget - gpu->Window->Pool->FreePages;
     quiet_end(flags);
+
+    if (state == X86_VGPU_SESSION_RETAINED) return kernel_log(3, "KERNEL_VGPU_SESSION_RETAINED") && 0;
+
     return number_private("KERNEL_VGPU_SESSION_BUDGET: ", budget) && kernel_log(0, "KERNEL_VGPU_SESSION_TRANSLATING");
 }
 
@@ -98,9 +103,9 @@ int x86_vgpu_session_poll(void)
 
     if (x86_vgpu_iommu_quiet()) return 1;
 
-    // X5-A: a GPU fault (or unreadable fault registers) withdraws the GPU; the console stays on GOP.
+    // X5-A: a GPU fault (or unreadable fault registers) withdraws the GPU; the console returns to GOP.
     state = X86_VGPU_SESSION_COMPROMISED;
-    return kernel_log(2, "KERNEL_VGPU_SESSION_GPU_FAULT");
+    return kernel_log(2, "KERNEL_VGPU_SESSION_GPU_FAULT") && x86_vgpu_present_abandon();
 }
 
 // ====== x86_vgpu_session_stop ======
@@ -112,6 +117,12 @@ int x86_vgpu_session_stop(void)
     if (state == X86_VGPU_SESSION_OFF) return 1;
 
     if (!gpu || state == X86_VGPU_SESSION_RETAINED || !number_private("KERNEL_VGPU_SESSION_POLLS: ", polls)) return 0;
+
+    // The GPU is stopped and reset before the translation it uses is turned off.
+    if (!x86_vgpu_present_close()) {
+        state = X86_VGPU_SESSION_RETAINED;
+        return 0;
+    }
 
     BOOT_U64 flags = quiet_begin();
 

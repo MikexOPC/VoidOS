@@ -5,6 +5,8 @@ typedef struct {
     X86_FB_MAPPING  *Owner;
     OS_FRAMEBUFFER  Surface;
     KERNEL_POINTER_IMAGE  Image;
+    // Drawing target the saved background was read from (0 = GOP aperture, see pixels/session.h).
+    const X86_FB_TARGET  *Target;
     BOOT_U32  Pixels[324], Valid, Failed;
     BOOT_U32  Staged[1944];
     BOOT_U32  Original[324];
@@ -58,6 +60,9 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
     BOOT_U32 next[324], used = 0;
     X86_FB_PIXEL_RECT text_rect;
     BOOT_U32 rectangles = 0, foreground, background;
+    // V2c: the background under the cursor belongs to the target it was read from; after a target
+    // change (GPU bring-up or GOP fallback) it is dropped and the full redraw repaints the old box.
+    if (backup.Valid && backup.Target != x86_fb_target()) backup.Valid = 0;
     if (backup.Failed || !owner || !owner->Context || !text || !font || !glyphs || !pointer || pointer->Visible > 1 ||
         !count || count > 8 || (backup.Valid && (backup.Self != (BOOT_U64)&backup ||
         backup.Owner != owner || backup.Root != owner->Authority.Root ||
@@ -122,7 +127,7 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
     }
     if (!x86_fb_transaction_end(&transaction)) goto failed;
     backup.Self = (BOOT_U64)&backup; backup.Owner = owner; backup.Root = owner->Authority.Root;
-    backup.Surface = owner->Context->Info.Framebuffer; backup.Image = *pointer;
+    backup.Surface = owner->Context->Info.Framebuffer; backup.Image = *pointer; backup.Target = x86_fb_target();
     backup.Valid = pointer->Visible;
     if (pointer->Visible) for (BOOT_U32 index = 0; index < 324; ++index) backup.Pixels[index] = next[index];
     return 1;

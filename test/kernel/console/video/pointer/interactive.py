@@ -58,7 +58,7 @@ def expected(scene, x, y):
 # V2b: the GPU domain translates from before the session to after exit (QEMU v11.1.0 trace).
 VTD_EVENTS = ('vtd_dmar_enable','vtd_switch_address_space','vtd_frr_new','vtd_reg_dmar_root')
 
-def translation_check(log, trace_text):
+def translation_check(log, trace_text, fallbacks=0):
     for marker in ('KERNEL_VGPU_SESSION_TRANSLATING','KERNEL_VGPU_IOMMU_TRANSLATING','KERNEL_VGPU_SESSION_RELEASED',
             'KERNEL_VGPU_IOMMU_RELEASED'):
         if marker not in log: raise RuntimeError('V2b marker missing: '+marker)
@@ -81,7 +81,13 @@ def translation_check(log, trace_text):
         match = re.fullmatch(r'vtd_frr_new index \d+ high (0x[0-9a-f]+) low (0x[0-9a-f]+)', line)
         if match and int(match[1],16) & 0xffff == source: raise RuntimeError('GPU fault record during the session')
     if not polls: raise RuntimeError('No fault scan during the session')
-    return dict(Source=hex(source),Polls=polls,Translated=True)
+    # V2c: the screenshots above come from the VirtIO scanout; the console presented through it.
+    presents = provider.number(log,'KERNEL_VGPU_PRESENTS')
+    if 'KERNEL_VGPU_PRESENTING' not in log or not presents or provider.number(log,'KERNEL_VGPU_PRESENT_FAILURES') != fallbacks:
+        raise RuntimeError('Console not presented through the GPU')
+    if fallbacks and 'KERNEL_VGPU_PRESENT_FALLBACK' not in log: raise RuntimeError('Fallback not reported')
+    if not fallbacks and 'KERNEL_VGPU_PRESENT_FALLBACK' in log: raise RuntimeError('Unexpected fallback')
+    return dict(Source=hex(source),Polls=polls,Translated=True,Presents=presents,Fallbacks=fallbacks)
 
 # ====== untranslated_check ======
 
@@ -93,7 +99,7 @@ def untranslated_check(log):
         raise RuntimeError('Translation claimed without a DMAR')
     return dict(Untranslated=True)
 
-def boot(image, out, index, iommu=False, absent=False):
+def boot(image, out, index, iommu=False, absent=False, fallbacks=0):
     directory = out / f'boot-{index}'
     esp = directory / 'esp/EFI/BOOT'
     esp.mkdir(parents=True)
@@ -110,7 +116,7 @@ def boot(image, out, index, iommu=False, absent=False):
     mouse_trace = directory/'mouse-trace.log'
     # V2b: intel-iommu before the VirtIO GPU it translates; one trace file for both event sets.
     video = (['-vga','none','-device','intel-iommu,intremap=off,caching-mode=on,device-iotlb=off',
-        '-device','virtio-vga,iommu_platform=on']+[item for event in VTD_EVENTS for item in ('-trace','enable='+event)]
+        '-device','virtio-vga,iommu_platform=on,xres=1024,yres=768']+[item for event in VTD_EVENTS for item in ('-trace','enable='+event)]
         if iommu else ['-vga','none','-device','virtio-vga'] if absent else ['-vga','std'])
     arguments = [str(QEMU/'qemu-system-x86_64.exe'),'-machine','q35','-cpu','max',
         '-accel','tcg','-m','128','-smp','1','-net','none']+video+[
@@ -154,7 +160,7 @@ def boot(image, out, index, iommu=False, absent=False):
                     time.sleep(0.002)
                 start = time.monotonic()
                 target = expected(scene,x,y).tobytes()
-                deadline = start+5
+                deadline = start+(90 if fallbacks else 5)  # V2c fallback: the GOP is redrawn in full once
                 while time.monotonic() < deadline:
                     actual = screenshot(vm,directory,f'move-{segment}-{captures}')
                     captures += 1
@@ -176,7 +182,9 @@ def boot(image, out, index, iommu=False, absent=False):
                     raise RuntimeError('Cursor trails, deformation or missing progress')
                 latencies.append(time.monotonic()-start)
             for row in range(18):
-                words = pointer.physical(vm,directory/'monitor.log',base+((y+row)*stride+x)*4)
+                # V2c: while presenting through the GPU the console pixels live in the surface backing.
+                origin = provider.number(log,'KERNEL_VGPU_PRESENT_SURFACE') if 'KERNEL_VGPU_PRESENTING' in log and not fallbacks else base
+                words = pointer.physical(vm,directory/'monitor.log',origin+((y+row)*stride+x)*4)
                 for col in range(18):
                     rgb = tuple(pointer.blend(pointer.sample(col,row),(8,16,24)))
                     r,g,b = rgb
@@ -226,7 +234,7 @@ def boot(image, out, index, iommu=False, absent=False):
             provider.command(vm,'quit')
             vm.wait(timeout=5)
             if vm.returncode: raise RuntimeError('QEMU exit failure')
-            translation = (translation_check(log,mouse_trace.read_text(errors='replace')) if iommu else
+            translation = (translation_check(log,mouse_trace.read_text(errors='replace'),fallbacks) if iommu else
                 untranslated_check(log) if absent else None)
             return dict(Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
                 EscCancelled=True,EscMouseProgress=True,CancelScenes=1,
@@ -273,6 +281,7 @@ def main():
     parser.add_argument('--audit',type=Path)
     parser.add_argument('--boots',type=int,choices=range(1,21),default=10)
     parser.add_argument('--iommu',action='store_true'); parser.add_argument('--iommu-absent',action='store_true')
+    parser.add_argument('--present-fallback',action='store_true')
     args = parser.parse_args()
     if args.audit:
         audit(args.audit)
@@ -287,7 +296,8 @@ def main():
         ROOT/'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'),Results=results)
     try:
         for index in range(1,args.boots+1):
-            results.append(boot(args.image,out,index,args.iommu,args.iommu_absent))
+            results.append(boot(args.image,out,index,args.iommu or args.present_fallback,args.iommu_absent,
+                1 if args.present_fallback else 0))
             (out/'results.json').write_text(json.dumps(report,indent=2))
             print(f'PASS: interactive cursor {index}/{args.boots}; pixels, movement, cleanup',flush=True)
     except Exception as failure:

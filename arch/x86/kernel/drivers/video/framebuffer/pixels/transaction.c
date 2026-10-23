@@ -95,7 +95,8 @@ int x86_fb_transaction_span(X86_FB_PIXEL_TRANSACTION *tx, BOOT_U32 rect,
         os_address_ranges_overlap(address,bytes,(BOOT_U64)tx,sizeof(*tx)) ||
         os_address_ranges_overlap(address,bytes,(BOOT_U64)tx->Pixel.Owner,sizeof(*tx->Pixel.Owner)) ||
         os_address_ranges_overlap(address,bytes,(BOOT_U64)tx->Pixel.Owner->Context,sizeof(*tx->Pixel.Owner->Context)) ||
-        os_address_ranges_overlap(address,bytes,X86_FB_VIRTUAL,4321ULL*4096)) goto failed;
+        os_address_ranges_overlap(address,bytes,X86_FB_VIRTUAL,4321ULL*4096) ||
+        (x86_fb_target() && os_address_ranges_overlap(address,bytes,x86_fb_target()->Base,x86_fb_target()->Bytes))) goto failed;
     for (BOOT_U32 x = 0; x < region.Width; ++x) {
         if (region.X > ~0U-x || region.Y > ~0U-row) goto failed;
         offset = fb_pixel_offset(tx->Pixel.Surface.Width,tx->Pixel.Surface.Height,tx->Pixel.Surface.Stride,
