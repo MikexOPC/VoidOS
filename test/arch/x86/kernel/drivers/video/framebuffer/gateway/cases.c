@@ -15,6 +15,12 @@ static const BOOT_U32 group_values[4] = {'A', 0xe8, 0x20ac, 0x1f600};
 // ====== clock_and_irq_mocks ======
 
 int x86_fb_cell_clock_available(void) { return (int)supported; }
+// Geometry A: the gateway is tested on the GOP geometry (no redirected target).
+const OS_FRAMEBUFFER *x86_fb_surface_geometry(const X86_FB_MAPPING *mapping, OS_FRAMEBUFFER *scratch)
+{
+    (void)scratch;
+    return mapping && mapping->Context ? &mapping->Context->Info.Framebuffer : 0;
+}
 BOOT_U64 x86_fb_cell_stamp(void) { counter += 100; return counter; }
 BOOT_U64 x86_fb_cell_suspend(void)
 {
