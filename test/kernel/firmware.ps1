@@ -192,18 +192,31 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $pagingCount = Read-Hex $log 'KERNEL_PAGING_TABLES: 0x([0-9a-f]{16})'
         $pagingLeaves = Read-Hex $log 'KERNEL_PAGING_MIXED_LEAVES: 0x([0-9a-f]{16})'
         $pagingRoot = [Convert]::ToUInt64($root,16)
+        # The framebuffer mapping is published after the inventory log line: its leaves and tables
+        # belong to the final snapshot dumped at the halt.
+        if ($log.Contains('KERNEL_FB_MAPPING_LIVE') -and
+            (Read-Hex $log 'KERNEL_FB_MAPPING_INVENTORY: 0x([0-9a-f]{16})') -eq $pagingInventory) {
+            $pagingLeaves += Read-Hex $log 'KERNEL_FB_PLAN_PAGES: 0x([0-9a-f]{16})'
+            $pagingCount += Read-Hex $log 'KERNEL_FB_TABLE_COUNT: 0x([0-9a-f]{16})'
+        }
         if (!$pagingCount -or $pagingCount -gt 128 -or !$pagingLeaves -or ($pagingInventory -band 7) -or
             $pagingInventory -lt $arenaInventory + 24 -or $pagingInventory + 3144 -gt 0x7000000b3000 -or
             $registers -notmatch ('(?im)^' + $pagingInventory.ToString('x16') + ':\s+0x' + $pagingRoot.ToString('x16') + '\s+0x' + $pagingLeaves.ToString('x16')) -or
             $registers -notmatch ('(?im)^' + ($pagingInventory + 16).ToString('x16') + ':\s+0x' + ((1L -shl 32) + $pagingCount).ToString('x16'))) {
             throw 'Inventario paging fuori arena o diverso dalla fotografia verificata.'
         }
-        if (($arenaContext -band 15) -or ($arenaInventory -band 7) -or
-            $arenaContext -lt 0x7000000a3000 -or $arenaContext + 176 -gt 0x7000000b3000 -or
+        # The contract grows with its version: size and version come from the log (v3 was 0xa8 bytes),
+        # the inventory follows the 16-byte aligned context.
+        $contractVersion = Read-Hex $log 'KERNEL_BOOT_VERSION: 0x([0-9a-f]{16})'
+        $contractSize = Read-Hex $log 'KERNEL_BOOT_SIZE: 0x([0-9a-f]{16})'
+        $contextBytes = [uint64]([math]::Floor(($contractSize + 15) / 16) * 16)
+        if (!$contractVersion -or !$contractSize -or ($arenaContext -band 15) -or ($arenaInventory -band 7) -or
+            $arenaContext -lt 0x7000000a3000 -or $arenaContext + $contextBytes -gt 0x7000000b3000 -or
             $arenaInventory -lt 0x7000000a3000 -or $arenaInventory + 24 -gt 0x7000000b3000 -or
-            ($arenaContext -lt $arenaInventory + 24 -and $arenaInventory -lt $arenaContext + 176) -or
-            (Read-Hex $log 'KERNEL_ARENA_USED: 0x([0-9a-f]{16})') -ne 200 -or
-            $registers -notmatch ('(?im)^' + $arenaContext.ToString('x16') + ':\s+0x314f464e49545342\s+0x000000a800000003')) {
+            ($arenaContext -lt $arenaInventory + 24 -and $arenaInventory -lt $arenaContext + $contextBytes) -or
+            (Read-Hex $log 'KERNEL_ARENA_USED: 0x([0-9a-f]{16})') -ne $contextBytes + 24 -or
+            $registers -notmatch ('(?im)^' + $arenaContext.ToString('x16') + ':\s+0x314f464e49545342\s+0x' +
+                (($contractSize -shl 32) + $contractVersion).ToString('x16'))) {
             throw 'Contesto persistente fuori arena, sovrapposto o contratto corrotto.'
         }
         Test-AcpiFirmware $log $registers $arenaContext $pagingInventory $case $windowPte

@@ -53,6 +53,13 @@ int kernel_inventory_memory(const unsigned char *map, BOOT_U64 bytes, BOOT_U64 s
             const unsigned char *other = map + previous * stride;
             if (kernel_regions_overlap(base, pages, read_number(other + 8, 8), read_number(other + 24, 8))) return 0;
         }
+        // B8 M2: in a conventional region at 0 only page zero is reserved.
+        if (!base && kernel_region_candidate(attributes, type)) {
+            if (draft.ReservedPages == ~0ULL) return 0;
+            ++draft.ReservedPages;
+            --pages;
+            base = 4096;
+        }
         total = base >= 4096 && kernel_region_candidate(attributes, type) ? &draft.ConventionalPages : &draft.ReservedPages;
         if (pages > ~0ULL - *total) return 0;
         *total += pages;

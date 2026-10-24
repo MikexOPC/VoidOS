@@ -110,7 +110,7 @@ int kernel_physical_initialize(KERNEL_PHYSICAL_ALLOCATOR *owner, const unsigned 
         BOOT_U64 pages;
         if (!kernel_read_region(map, bytes, stride, index, &region)) goto invalid;
         pages = kernel_physical_pages(region.Base, region.Pages, region.Attributes, region.Type, bits);
-        if (pages) insert_extent(owner, region.Base, pages);
+        if (pages) insert_extent(owner, kernel_physical_base(region.Base), pages);
     }
     owner->Self = (BOOT_U64)owner;
     owner->TotalPages = owner->FreePages = total;

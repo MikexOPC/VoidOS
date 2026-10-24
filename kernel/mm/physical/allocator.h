@@ -14,6 +14,7 @@ typedef struct {
     BOOT_U32 Pins[KERNEL_PHYSICAL_LEASES];
 } KERNEL_PHYSICAL_ALLOCATOR;
 _Static_assert(sizeof(KERNEL_PHYSICAL_ALLOCATOR) <= 8192, "Metadati allocatore entro 8 KiB");
+BOOT_U64 kernel_physical_base(BOOT_U64 base);
 BOOT_U64 kernel_physical_pages(BOOT_U64 base, BOOT_U64 pages, BOOT_U64 attributes, BOOT_U32 type, BOOT_U32 bits);
 int kernel_physical_initialize(KERNEL_PHYSICAL_ALLOCATOR *owner, const unsigned char *map,
                                BOOT_U64 bytes, BOOT_U64 stride, BOOT_U32 bits);
