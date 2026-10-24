@@ -40,7 +40,8 @@ typedef struct {
     uint16_t  Available, Used;
     uint32_t  Expected, Scanout;
     // V2d: clock ticks from notify to the observed completion of the last command.
-    uint32_t  LastWait, Reserved;
+    // Started: clock sample at the submit of the command in flight (State 2).
+    uint32_t  LastWait, Started;
 } VGPU_QUEUE;
 uint32_t kernel_vgpu_queue_register(uint32_t offset,uint32_t width,uint32_t write);
 uint32_t kernel_vgpu_queue_size(uint32_t maximum);
@@ -48,6 +49,8 @@ uint32_t kernel_vgpu_queue_completion(uint32_t old,uint32_t current,uint32_t id,
 uint32_t kernel_vgpu_queue_display(uint32_t x,uint32_t y,uint32_t width,uint32_t height,uint32_t enabled,uint32_t flags);
 int kernel_vgpu_queue_start(VGPU_QUEUE *queue,const VGPU_QUEUE_IO_CONTEXT *io,const VGPU_BUFFERS *buffers);
 int kernel_vgpu_queue_exchange(VGPU_QUEUE *queue);
+int kernel_vgpu_queue_submit(VGPU_QUEUE *queue,uint32_t command,const unsigned char *body,uint32_t bytes);
+int kernel_vgpu_queue_poll(VGPU_QUEUE *queue,uint32_t limit);
 int kernel_vgpu_queue_control(VGPU_QUEUE *queue,uint32_t command,const unsigned char *body,uint32_t bytes);
 uint32_t kernel_vgpu_queue_message(uint32_t command,uint32_t bytes);
 uint32_t kernel_vgpu_queue_completion_sized(uint32_t old,uint32_t current,uint32_t id,uint32_t bytes,uint32_t expected);

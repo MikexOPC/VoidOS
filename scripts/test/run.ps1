@@ -60,7 +60,9 @@ function Resolve-SuiteShell {
 # ============ isolated child process ============
 
 function Invoke-IsolatedSuite([string]$Shell, [string]$Script, [string]$Log, [string]$ErrorLog, [string[]]$Extra) {
-    $process = Start-Process -FilePath $Shell -ArgumentList (@('-NoProfile','-File',('"' + $Script + '"')) + $Extra) `
+    # An empty $Extra binds as $null in Windows PowerShell 5.1; Start-Process rejects null items.
+    $list = @('-NoProfile','-File',('"' + $Script + '"')) + @($Extra | Where-Object { $_ })
+    $process = Start-Process -FilePath $Shell -ArgumentList $list `
         -WorkingDirectory $project -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $Log -RedirectStandardError $ErrorLog
     try {
@@ -106,7 +108,8 @@ foreach ($name in $selected) {
     $log = Join-Path $output ($name + '.log')
     $errorLog = Join-Path $output ($name + '.stderr.log')
     Write-Output "[ INFO ] Suite $name"
-    $code = Invoke-IsolatedSuite $shell $script $log $errorLog @($arguments[$name])
+    $extra = if ($arguments.Contains($name)) { @($arguments[$name]) } else { @() }
+    $code = Invoke-IsolatedSuite $shell $script $log $errorLog $extra
     $results += [pscustomobject]@{ Suite = $name; ExitCode = $code; Log = $log; ErrorLog = $errorLog }
     $results | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
     if ($code -ne 0) {

@@ -19,6 +19,25 @@ static void word_private(unsigned char *data,uint32_t offset,uint32_t value)
     for (uint32_t byte=0; byte<4; ++byte) data[offset+byte]=(unsigned char)(value>>(byte*8));
 }
 
+// ====== deliver_private ======
+
+// The device side of one completion (response, used entry, used.idx), also run later by the
+// asynchronous tests while the mock stalls.
+static void deliver_private(MOCK *state)
+{
+    volatile VGPU_RING *ring=(volatile VGPU_RING *)pages[0];
+    uint32_t command=*(uint32_t *)pages[2];
+    uint32_t expected=command==0x100?408:24;
+    word_private(pages[3],0,command==0x100?0x1101:0x1100); word_private(pages[3],4,1);
+    memcpy(pages[3]+8,pages[2]+8,8);
+    if (command==0x100) { word_private(pages[3],32,1024); word_private(pages[3],36,768); word_private(pages[3],40,1); }
+    if (state->Corrupt==4) pages[3][1]=0;
+    if (state->Corrupt==5) pages[3][8]^=1;
+    if (state->Corrupt==6) word_private(pages[3],32,0);
+    ring->Entries[ring->Used%8]=(VGPU_USED){state->Corrupt==1?7:0,state->Corrupt==2?409:expected};
+    ring->Used=(uint16_t)(ring->Used+(state->Corrupt==3?2:1));
+}
+
 // ====== access_private ======
 
 static int access_private(void *opaque,uint32_t region,uint32_t offset,uint32_t width,uint32_t write,uint32_t *value)
@@ -36,14 +55,7 @@ static int access_private(void *opaque,uint32_t region,uint32_t offset,uint32_t 
         CHECK(ring->Descriptors[1].Address==0x1007000 && ring->Descriptors[1].Length==expected && ring->Descriptors[1].Flags==2);
         CHECK(ring->Heads[(ring->Available-1U)%8]==0 && ring->Available==(uint16_t)(ring->Used+1U));
         if (state->Stall) return 1;
-        word_private(pages[3],0,command==0x100?0x1101:0x1100); word_private(pages[3],4,1);
-        memcpy(pages[3]+8,pages[2]+8,8);
-        if (command==0x100) { word_private(pages[3],32,1024); word_private(pages[3],36,768); word_private(pages[3],40,1); }
-        if (state->Corrupt==4) pages[3][1]=0;
-        if (state->Corrupt==5) pages[3][8]^=1;
-        if (state->Corrupt==6) word_private(pages[3],32,0);
-        ring->Entries[ring->Used%8]=(VGPU_USED){state->Corrupt==1?7:0,state->Corrupt==2?409:expected};
-        ring->Used=(uint16_t)(ring->Used+(state->Corrupt==3?2:1));
+        deliver_private(state);
         return 1;
     }
     CHECK(region==0 && kernel_vgpu_queue_register(offset,width,write));
@@ -91,6 +103,60 @@ static int prepare_private(void)
         buffers.Views[index]=pages[index]; buffers.Physical[index]=0x100000+index*4096; buffers.Device[index]=0x1001000+index*8192;
     }
     return kernel_vgpu_queue_start(&queue,&io,&buffers);
+}
+
+// ====== asynchronous_cases ======
+
+// R1-A: submit posts and returns; poll observes once (1 done, 0 pending, -1 fault). The completion
+// is checked before the limit; one command at a time; faults are sticky.
+static void asynchronous_cases(void)
+{
+    unsigned char body[32]={0};
+    CHECK(prepare_private());
+    CHECK(kernel_vgpu_queue_submit(&queue,0x105,body,32) && queue.State==2);
+    CHECK(kernel_vgpu_queue_poll(&queue,1000)==1 && queue.State==1 && queue.Sequence==1 && queue.LastWait);
+
+    CHECK(prepare_private()); mock.Stall=1;
+    CHECK(kernel_vgpu_queue_submit(&queue,0x105,body,32));
+    for (uint32_t sample=0; sample<50; ++sample) CHECK(kernel_vgpu_queue_poll(&queue,1000)==0 && queue.State==2 && !queue.Fault);
+    CHECK(!kernel_vgpu_queue_submit(&queue,0x104,body,24) && !kernel_vgpu_queue_control(&queue,0x104,body,24));
+    deliver_private(&mock);
+    CHECK(kernel_vgpu_queue_poll(&queue,1000)==1 && queue.State==1 && queue.Sequence==1);
+    CHECK(kernel_vgpu_queue_poll(&queue,1000)==-1);
+    CHECK(kernel_vgpu_queue_submit(&queue,0x104,body,24));
+
+    // The limit: the stalled command times out once and the fault stays.
+    CHECK(prepare_private()); mock.Stall=1;
+    CHECK(kernel_vgpu_queue_submit(&queue,0x105,body,32));
+    uint32_t samples=0;
+    int result;
+    while ((result=kernel_vgpu_queue_poll(&queue,40))==0) ++samples;
+    CHECK(result==-1 && queue.Fault==VGPU_QUEUE_TIME && samples>=19 && samples<=40);
+    deliver_private(&mock);
+    CHECK(kernel_vgpu_queue_poll(&queue,40)==-1 && !kernel_vgpu_queue_submit(&queue,0x104,body,24));
+
+    // A completion already published wins over an elapsed limit.
+    CHECK(prepare_private()); mock.Stall=1;
+    CHECK(kernel_vgpu_queue_submit(&queue,0x105,body,32));
+    mock.Tick=(mock.Tick+500)&0xffffff;
+    deliver_private(&mock);
+    CHECK(kernel_vgpu_queue_poll(&queue,40)==1 && !queue.Fault);
+
+    // Device status lost while pending; a corrupted completion; invalid arguments.
+    CHECK(prepare_private()); mock.Stall=1;
+    CHECK(kernel_vgpu_queue_submit(&queue,0x105,body,32));
+    mock.Status=0x4f;
+    CHECK(kernel_vgpu_queue_poll(&queue,1000)==-1 && queue.Fault==VGPU_QUEUE_STATE);
+    CHECK(prepare_private()); mock.Stall=1;
+    CHECK(kernel_vgpu_queue_submit(&queue,0x105,body,32));
+    mock.Corrupt=5; deliver_private(&mock);
+    CHECK(kernel_vgpu_queue_poll(&queue,1000)==-1 && queue.Fault==VGPU_QUEUE_RESPONSE);
+    CHECK(prepare_private());
+    CHECK(kernel_vgpu_queue_poll(&queue,1000)==-1 && !queue.Fault);
+    CHECK(kernel_vgpu_queue_poll(0,1000)==-1);
+    mock.Stall=1;
+    CHECK(kernel_vgpu_queue_submit(&queue,0x105,body,32));
+    CHECK(kernel_vgpu_queue_poll(&queue,0)==-1 && kernel_vgpu_queue_poll(&queue,0xffffff/2)==-1 && queue.State==2);
 }
 
 // ====== main ======
@@ -169,6 +235,7 @@ int main(void)
     CHECK(prepare_private());
     CHECK(!kernel_vgpu_queue_control(&queue,0x101,pages[2],16));
     CHECK(!kernel_vgpu_queue_control(&queue,0x101,0,16));
+    asynchronous_cases();
     printf("PASS %lu queue host checks, 70000 completions, %u initial run IO accesses\n",checks,exchange_calls);
     return 0;
 }

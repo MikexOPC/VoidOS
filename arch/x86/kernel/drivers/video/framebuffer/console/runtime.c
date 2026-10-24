@@ -249,6 +249,9 @@ int x86_console_pending(X86_PS2_SESSION *session)
 #endif
     if (absent) return 0;
     int pending = kernel_console_service_pending(&service);
+#ifdef KERNEL_VGPU_IOMMU
+    if (pending == 0 && x86_vgpu_present_busy()) return 1;
+#endif
 #ifdef KERNEL_PS2_MOUSE
     if (pending >= 0 && pointer_pending) return 1;
 #endif
@@ -311,6 +314,8 @@ int x86_console_flush(X86_PS2_SESSION *session)
 #endif
     if (absent) return 1;
 #ifdef KERNEL_VGPU_IOMMU
+    // R1-A: the update in flight advances (or a recovery runs) before anything is drawn.
+    if (!x86_vgpu_present_poll()) return flush_failure(7);
     // After a target change (bring-up or GOP fallback) every cell is drawn again on the new target.
     if (x86_vgpu_present_redraw() && !retarget_private()) return flush_failure(7);
 #endif

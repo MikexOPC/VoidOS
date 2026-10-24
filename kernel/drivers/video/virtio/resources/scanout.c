@@ -62,6 +62,37 @@ int kernel_vgpu_scanout_update(VGPU_QUEUE *queue,VGPU_RESOURCE *resource,uint32_
     return 1;
 }
 
+// ====== kernel_vgpu_scanout_post ======
+
+// R1-A: the update of kernel_vgpu_scanout_update split in two posted commands. Phase 0 posts
+// TRANSFER_TO_HOST_2D (Bound becomes uncertain), phase 1 posts RESOURCE_FLUSH of the same
+// rectangle after the transfer completed; kernel_vgpu_scanout_settle confirms the flush.
+int kernel_vgpu_scanout_post(VGPU_QUEUE *queue,VGPU_RESOURCE *resource,uint32_t phase,
+    uint32_t x,uint32_t y,uint32_t width,uint32_t height)
+{
+    unsigned char body[32]={0};
+    if (phase>1 || !valid_private(queue,resource,phase ? UINT32_MAX : 1)) return 0;
+    uint64_t offset=kernel_vgpu_surface_offset(resource->Width,resource->Height,x,y,width,height);
+    if (offset==UINT64_MAX) return 0;
+    rectangle_private(body,x,y,width,height);
+    if (!phase) {
+        word_private(body,16,(uint32_t)offset); word_private(body,20,(uint32_t)(offset>>32));
+        word_private(body,24,resource->Id); resource->Bound=UINT32_MAX;
+        return kernel_vgpu_queue_submit(queue,0x105,body,32);
+    }
+    word_private(body,16,resource->Id);
+    return kernel_vgpu_queue_submit(queue,0x104,body,24);
+}
+
+// ====== kernel_vgpu_scanout_settle ======
+
+int kernel_vgpu_scanout_settle(const VGPU_QUEUE *queue,VGPU_RESOURCE *resource)
+{
+    if (!valid_private(queue,resource,UINT32_MAX)) return 0;
+    resource->Bound=1;
+    return 1;
+}
+
 // ====== kernel_vgpu_scanout_unbind ======
 
 // VirtIO1.2 5.7.6.8: resource_id0 disables scanout; retain backing until success or reset.
