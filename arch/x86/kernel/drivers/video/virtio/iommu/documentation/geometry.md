@@ -34,6 +34,16 @@ griglia GOP (113x42) tenendo visibile la riga del prompt.
 | Console GOP senza IOMMU | 3/3 | `...-29b55de6d05049c9bf602f3ee935e72a` |
 | IOMMU assente (virtio-vga senza traduzione) | 2/2 | `...-be7c9edf10754dbbaaf7a964f6df7add` |
 
+Regressione dopo la review (stesso layer pixel, altri profili):
+
+| Campagna | Esito | Evidenza (`kernel/build/`) |
+|---|---|---|
+| Framebuffer pixel e disegno con rollback | 10/10 | `framebuffer-live-b52fc41b4ce44420affe7b72822fe989` |
+| Console attiva | PASS | `ps2-input-firmware-f367093b81d84028b3e8593cadb04e5b` |
+| Shell console testo | 10/10 | `ps2-input-firmware-2e8704c72a9a4de9b5023437a98b3eca` |
+| Shell console senza video | 3/3 | `ps2-input-firmware-94d1eafcff4b4c029422718b413879bf` |
+| V2c, controllo dopo il nuovo loader | 3/3 | `pointer-interactive-check-694bbfb4ad764c248ee8ad5606391652` |
+
 Il runner non forza più `xres/yres`. Screenshot e verifica fisica usano la geometria della GPU
 mentre si presenta e quella GOP dopo il fallback.
 
