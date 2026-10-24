@@ -246,7 +246,7 @@ Geometria e presentazione:
 - **Timeout della present sotto carico dell'host**: fatto. Present asincrona, `SLOW` a 100 ms,
   fallback a 1 s, recupero dopo un timeout, 10/10 boot con host carico
   ([report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/asynchronous.md)).
-  Restano l'harness host di `present.c`, la taratura dei due limiti e il ritorno della griglia
+  Restano l'harness host di `iommu/present/`, la taratura dei due limiti e il ritorno della griglia
   a 142x44 dopo un recupero.
 - **Present con piu rettangoli**: oggi un solo inviluppo unisce celle e riquadri del puntatore
   lontani (area media circa 50.000 pixel per un gruppo da 1.296).
@@ -257,7 +257,7 @@ Geometria e presentazione:
 - **Interrupt di completamento** al posto del polling, se le attese fenced diventano il collo di
   bottiglia (oggi circa 0,05-0,13 ms di media).
 - **Fallback da errore reale**: oggi provato con un errore iniettato (`-TestVgpuPresentFault`).
-- **Host test di `present.c`** con una coda simulata (oggi coperto da test delle code/risorse e
+- **Host test di `iommu/present/`** con una coda simulata (oggi coperto da test delle code/risorse e
   da QEMU).
 
 IOMMU:

@@ -17,7 +17,7 @@ $iommuSources=@("$bus/ecam/table.c","$bus/ecam/find.c","$bus/ecam/reader.c","$bu
 if ($VgpuIommu) { $iommuSources+=@('arch/x86/kernel/drivers/video/virtio/iommu/session.c','arch/x86/mm/dma/arena.c',
     'arch/x86/kernel/drivers/video/virtio/resources/mapping.c','arch/x86/kernel/drivers/video/virtio/resources/construction.c',
     # V2c: the persistent GPU transport, queues, resource and scanout.
-    'arch/x86/kernel/drivers/video/virtio/iommu/present.c','arch/x86/kernel/drivers/video/virtio/initialization/transport.c',
+    'arch/x86/kernel/drivers/video/virtio/iommu/present/lifecycle.c','arch/x86/kernel/drivers/video/virtio/iommu/present/update.c','arch/x86/kernel/drivers/video/virtio/initialization/transport.c',
     'arch/x86/kernel/drivers/video/virtio/initialization/access.c','kernel/drivers/video/virtio/initialization/protocol.c',
     'kernel/drivers/video/virtio/queues/setup.c','kernel/drivers/video/virtio/queues/exchange.c','kernel/drivers/video/virtio/queues/response.c',
     'arch/x86/kernel/drivers/video/virtio/queues/native.c','arch/x86/kernel/drivers/video/virtio/queues/pci.c',

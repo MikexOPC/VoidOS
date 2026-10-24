@@ -21,7 +21,7 @@ buffer da 32 byte durante l'attesa e un overflow ferma l'intera sessione.
 - **Scanout** (`resources/scanout.c`): `kernel_vgpu_scanout_post` fase 0 (TRANSFER_TO_HOST_2D,
   Bound incerto) e fase 1 (RESOURCE_FLUSH dello stesso rettangolo); `kernel_vgpu_scanout_settle`
   conferma.
-- **Present** (`iommu/present.c`):
+- **Present** (`iommu/present/lifecycle.c` e `update.c`):
   - un solo aggiornamento in volo; il danno che arriva nel frattempo si unisce al successivo;
   - ogni flush della console avanza lo stato senza mai aspettare (`x86_vgpu_present_poll`);
   - `x86_vgpu_present_busy` tiene attivo il worker finché c'è qualcosa in volo o in attesa.
@@ -61,7 +61,7 @@ Sotto carico:
 ## Limiti dichiarati
 
 - La logica di present (unione del danno, limiti, recupero) è provata in QEMU con l'immagine di
-  stallo, non da test host: `present.c` non ha ancora un harness host (FW-011).
+  stallo, non da test host: `iommu/present/` non ha ancora un harness host (FW-011).
 - `FLUSH_WAIT_PM` misura ora dall'invio all'osservazione, che avviene al flush successivo: non è
   più confrontabile con i valori V2d.
 - 100 ms e 1 s sono ipotesi, non benchmark. Le misure V2d e del profilo non sono state ripetute.

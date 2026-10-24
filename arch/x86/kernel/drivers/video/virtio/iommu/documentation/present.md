@@ -61,5 +61,5 @@ Le campagne da 10 boot sono riportate nel commit.
 - Il ridisegno completo sul GOP dopo il fallback è lento in QEMU TCG (decine di secondi): il
   runner concede 90 s al segmento in cui avviene.
 - Polling sincrono: ogni flush attende due comandi fenced. Latenza da misurare (V2d).
-- Nessun host test del modulo `present.c` con una coda simulata: la sequenza è coperta dai
+- Nessun host test del modulo `iommu/present/` con una coda simulata: la sequenza è coperta dai
   test delle code/risorse/scanout e dalle prove QEMU positive e negative.

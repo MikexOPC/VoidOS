@@ -23,7 +23,7 @@ test host, per togliere i duplicati e preparare la GUI.
 ## Migrazione
 
 Il danno della console (`framebuffer/console/runtime.c`) e quello della present VirtIO
-(`virtio/iommu/present.c`) usano `OS_DAMAGE` con `Limit 1`: comportamento identico a prima.
+(`virtio/iommu/present/update.c`) usano `OS_DAMAGE` con `Limit 1`: comportamento identico a prima.
 PS/2 e la bitmap della console passeranno a `OS_RING`/`OS_BITMAP` nei rispettivi moduli.
 
 ## Prove
