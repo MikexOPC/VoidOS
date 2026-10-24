@@ -37,6 +37,9 @@ $suites = [ordered]@{
     'virtio-queues' = 'kernel/drivers/video/virtio/queues/scripts/test.ps1'
     'virtio-resources' = 'kernel/drivers/video/virtio/resources/scripts/test.ps1'
 }
+# The loader build writes esp/EFI/BOOT: without -BootKernel it leaves the probe loader there, which
+# does not start the kernel and breaks every later QEMU campaign. The suite keeps the boot loader.
+$arguments = @{ boot = @('-BootKernel') }
 # FW-012: QEMU campaigns run separately; every other test.ps1 must be listed above.
 $excluded = @('test/arch/x86/kernel/drivers/memory/iommu/intel/dma/scripts/test.ps1')
 
@@ -56,8 +59,8 @@ function Resolve-SuiteShell {
 
 # ============ isolated child process ============
 
-function Invoke-IsolatedSuite([string]$Shell, [string]$Script, [string]$Log, [string]$ErrorLog) {
-    $process = Start-Process -FilePath $Shell -ArgumentList @('-NoProfile','-File',('"' + $Script + '"')) `
+function Invoke-IsolatedSuite([string]$Shell, [string]$Script, [string]$Log, [string]$ErrorLog, [string[]]$Extra) {
+    $process = Start-Process -FilePath $Shell -ArgumentList (@('-NoProfile','-File',('"' + $Script + '"')) + $Extra) `
         -WorkingDirectory $project -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $Log -RedirectStandardError $ErrorLog
     try {
@@ -103,7 +106,7 @@ foreach ($name in $selected) {
     $log = Join-Path $output ($name + '.log')
     $errorLog = Join-Path $output ($name + '.stderr.log')
     Write-Output "[ INFO ] Suite $name"
-    $code = Invoke-IsolatedSuite $shell $script $log $errorLog
+    $code = Invoke-IsolatedSuite $shell $script $log $errorLog @($arguments[$name])
     $results += [pscustomobject]@{ Suite = $name; ExitCode = $code; Log = $log; ErrorLog = $errorLog }
     $results | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
     if ($code -ne 0) {

@@ -113,9 +113,9 @@ di accelerazione3D, Vulkan o compatibilita con GPU fisiche.
 ## FW-003 — Prestazioni e presentazione video
 
 **Stato (24 ottobre 2026):** misure V2d e profilo dei flush eseguiti
-([latenze](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/latency.md),
-[profilo](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/profile.md),
-[verifica condizionata](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/verification.md)).
+([latenze](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/measurements/latency.md),
+[profilo](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/measurements/profile.md),
+[verifica condizionata](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/measurements/verification.md)).
 Il flush V2c e sceso da circa 43.600 a circa 8.700 tick PM, ma costa ancora circa 3,4
 volte il GOP; fluidita e atomicita restano non certificate.
 **Quando:** durante l'integrazione VirtIO, prima di dichiarare fluida la GUI.
