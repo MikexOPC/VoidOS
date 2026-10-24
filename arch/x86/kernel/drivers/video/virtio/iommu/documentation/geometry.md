@@ -14,7 +14,7 @@ griglia GOP (113x42) tenendo visibile la riga del prompt.
 - **Superficie** (`iommu/session.h`): viene legata prima di GET_DISPLAY_INFO, perché il dominio
   GPU la mappa. Per questo è dimensionata per il maggiore tra GOP e 1920x1080
   (7,9 MiB, sotto il limite di 16 MiB del backing a voce singola).
-- **Present** (`iommu/present.c`): risorsa e target prendono la risoluzione dello scanout da
+- **Present** (`iommu/present/lifecycle.c` e `update.c`): risorsa e target prendono la risoluzione dello scanout da
   GET_DISPLAY_INFO (VirtIO 1.2 5.7.6.8), con stride uguale alla larghezza. Un display che non
   entra nella superficie resta sul GOP (`KERNEL_VGPU_PRESENT_GEOMETRY`). Il vecchio vincolo
   "GOP con stride = larghezza" è stato tolto.
