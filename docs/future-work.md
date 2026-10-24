@@ -278,6 +278,12 @@ Misure e verifica:
 
 ## FW-012 — Suite di test automatiche complete
 
+**Aggiornamento (24 ottobre 2026):** `scripts/test/run.ps1` elenca le 31 suite host, rifiuta
+ogni `test.ps1` non elencato (escluso esplicitamente solo il DMA `edu`, che usa QEMU), prosegue
+dopo un errore e chiude con un riepilogo. La prima esecuzione completa ha trovato due mock
+mancanti dopo la geometria A (corretti) e la verifica di formato su `read.c`, file non
+committato dell'utente. Resta da valutare uno smoke QEMU per profilo.
+
 **Stato:** aperto il 24 ottobre 2026. La suite host delle code VirtIO non linkava piu dal
 commit V2a e nessuna suite automatica se n'e accorta: `scripts/test/run.ps1` non comprende le
 suite IOMMU, VirtIO, arena DMA, latenza e paging.

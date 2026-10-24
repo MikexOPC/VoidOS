@@ -1,5 +1,4 @@
 param(
-    [ValidateSet('all','boot','kernel','bootstrap','scheduler','x86-scheduler','paging','ps2','framebuffer','x86-framebuffer','console','hpet','watchdog')]
     [string]$Suite = 'all',
     [switch]$List
 )
@@ -18,7 +17,28 @@ $suites = [ordered]@{
     console = 'kernel/console/video/scripts/test.ps1'
     hpet = 'arch/x86/kernel/timer/hpet/description/scripts/test.ps1'
     watchdog = 'arch/x86/kernel/timer/hpet/watchdog/scripts/test.ps1'
+    'uefi-pci' = 'arch/x86/boot/uefi/pci/scripts/test.ps1'
+    'pci-ecam' = 'arch/x86/kernel/drivers/bus/pci/ecam/scripts/test.ps1'
+    'pci-topology' = 'arch/x86/kernel/drivers/bus/pci/topology/scripts/test.ps1'
+    'iommu-activation' = 'arch/x86/kernel/drivers/memory/iommu/intel/activation/scripts/test.ps1'
+    'iommu-discovery' = 'arch/x86/kernel/drivers/memory/iommu/intel/discovery/scripts/test.ps1'
+    'iommu-domains' = 'arch/x86/kernel/drivers/memory/iommu/intel/domains/scripts/test.ps1'
+    'iommu-invalidation' = 'arch/x86/kernel/drivers/memory/iommu/intel/invalidation/scripts/test.ps1'
+    'iommu-registers' = 'arch/x86/kernel/drivers/memory/iommu/intel/registers/scripts/test.ps1'
+    'iommu-routing' = 'arch/x86/kernel/drivers/memory/iommu/intel/routing/scripts/test.ps1'
+    'x86-virtio' = 'arch/x86/kernel/drivers/video/virtio/scripts/test.ps1'
+    'dma-arena' = 'arch/x86/mm/dma/scripts/test.ps1'
+    pointer = 'kernel/console/video/scripts/pointer/test.ps1'
+    diagnostics = 'kernel/diagnostics/scripts/test.ps1'
+    'ps2-mouse' = 'kernel/drivers/input/ps2/scripts/mouse/test.ps1'
+    'virtio-discovery' = 'kernel/drivers/video/virtio/discovery/scripts/test.ps1'
+    'virtio-initialization' = 'kernel/drivers/video/virtio/initialization/scripts/test.ps1'
+    'virtio-mapping' = 'kernel/drivers/video/virtio/mapping/scripts/test.ps1'
+    'virtio-queues' = 'kernel/drivers/video/virtio/queues/scripts/test.ps1'
+    'virtio-resources' = 'kernel/drivers/video/virtio/resources/scripts/test.ps1'
 }
+# FW-012: QEMU campaigns run separately; every other test.ps1 must be listed above.
+$excluded = @('test/arch/x86/kernel/drivers/memory/iommu/intel/dma/scripts/test.ps1')
 
 # ============ resolve supported suite shell ============
 
@@ -52,6 +72,20 @@ function Invoke-IsolatedSuite([string]$Shell, [string]$Script, [string]$Log, [st
 
 # ============ suite inventory ============
 
+$listed = @($suites.Values) + $excluded
+# Source folders only: kernel/build holds ~20 GB of run evidence, reuse/ is reference only.
+$roots = Get-ChildItem -LiteralPath $project -Directory | Where-Object { $_.Name -notin @('reuse','build','.git') }
+$missing = $roots | ForEach-Object {
+        if ($_.Name -eq 'kernel') {
+            Get-ChildItem -LiteralPath $_.FullName -Directory | Where-Object Name -ne 'build' |
+                ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Recurse -Filter test.ps1 -File }
+        }
+        else { Get-ChildItem -LiteralPath $_.FullName -Recurse -Filter test.ps1 -File }
+    } |
+    ForEach-Object { $_.FullName.Substring($project.Length + 1).Replace([string][char]92, '/') } |
+    Where-Object { $listed -notcontains $_ }
+if ($missing) { throw ('[ FAIL ] Suites not listed in run.ps1: ' + ($missing -join ', ')) }
+if ($Suite -ne 'all' -and !$suites.Contains($Suite)) { throw "Unknown suite: $Suite (use -List)" }
 if ($List) {
     $suites.GetEnumerator() | ForEach-Object { '{0}: {1}' -f $_.Key, $_.Value }
     return
@@ -73,10 +107,18 @@ foreach ($name in $selected) {
     $results += [pscustomobject]@{ Suite = $name; ExitCode = $code; Log = $log; ErrorLog = $errorLog }
     $results | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
     if ($code -ne 0) {
+        # FW-012: keep running the other suites; the summary reports every failure.
         Get-Content -LiteralPath $log -Tail 20
         Get-Content -LiteralPath $errorLog -Tail 20
-        throw "[ FAIL ] Suite $name; logs: $log, $errorLog"
+        Write-Output "[ FAIL ] Suite $name; logs: $log, $errorLog"
+        continue
     }
     Write-Output "[ OK ] Suite $name; log: $log"
 }
-Write-Output "Host suites completed: $output. QEMU campaigns are separate."
+
+# ============ summary ============
+
+$failed = @($results | Where-Object { $_.ExitCode -ne 0 })
+Write-Output ('Host suites: {0} passed, {1} failed; evidence {2}. QEMU campaigns are separate.' -f
+    ($results.Count - $failed.Count), $failed.Count, $output)
+if ($failed) { throw ('[ FAIL ] ' + (($failed | ForEach-Object Suite) -join ', ')) }
