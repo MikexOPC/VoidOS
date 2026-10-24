@@ -10,6 +10,7 @@
 #include "../pixels/session.h"
 #ifdef KERNEL_VGPU_IOMMU
 #include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
+#include "lib/geometry/damage.h"
 #endif
 _Static_assert(X86_FB_CELL_WIDTH == KERNEL_CONSOLE_CELL_WIDTH && X86_FB_CELL_HEIGHT == KERNEL_CONSOLE_CELL_HEIGHT,
     "Console cell size must match the framebuffer font cell");
@@ -26,25 +27,19 @@ static uint64_t flush_count, flush_total, settle_total, idle_count, idle_total;
 static uint32_t flush_max;
 #ifdef KERNEL_VGPU_IOMMU
 // V2c Z2-A: cells drawn since the last present, as one pixel rectangle (Width 0 = nothing).
-static uint32_t damage_x, damage_y, damage_right, damage_bottom;
+// G1: lib/geometry damage with Limit 1 (one envelope, as before).
+static OS_DAMAGE damage = {0, 1, {{0}}};
 static uint32_t pointer_x, pointer_y, pointer_seen;
 
 // ====== damage_private ======
 
+// The rectangle is clipped to the view; an empty or invalid one adds nothing.
 static void damage_private(uint32_t left, uint32_t top, uint32_t right, uint32_t bottom)
 {
-    uint32_t width = view.Columns * KERNEL_CONSOLE_CELL_WIDTH, height = view.Rows * KERNEL_CONSOLE_CELL_HEIGHT;
+    OS_RECT rect = {left, top, right > left ? right - left : 0, bottom > top ? bottom - top : 0}, clipped;
 
-    if (right > width) right = width;
-    if (bottom > height) bottom = height;
-    if (left >= right || top >= bottom) return;
-
-    if (damage_right == damage_x) { damage_x = left; damage_y = top; damage_right = right; damage_bottom = bottom; return; }
-
-    if (left < damage_x) damage_x = left;
-    if (top < damage_y) damage_y = top;
-    if (right > damage_right) damage_right = right;
-    if (bottom > damage_bottom) damage_bottom = bottom;
+    if (os_rect_clip(&rect, view.Columns * KERNEL_CONSOLE_CELL_WIDTH, view.Rows * KERNEL_CONSOLE_CELL_HEIGHT, &clipped))
+        (void)os_damage_add(&damage, &clipped);
 }
 #endif
 #ifdef KERNEL_PS2_MOUSE
@@ -79,7 +74,7 @@ static int retarget_private(void)
     }
 
     for (uint32_t index = 0; index < view.Columns * view.Rows; ++index) view.Dirty[index / 8] |= (uint8_t)(1U << (index % 8));
-    damage_x = damage_y = damage_right = damage_bottom = 0;
+    os_damage_clear(&damage);
     render.Next = 0;
     return 1;
 }
@@ -344,9 +339,11 @@ int x86_console_flush(X86_PS2_SESSION *session)
 #endif
 #ifdef KERNEL_VGPU_IOMMU
     // Z2-A: every flush that drew something presents its bounding rectangle once.
-    if (damage_right != damage_x) {
-        uint32_t x = damage_x, y = damage_y, w = damage_right - damage_x, h = damage_bottom - damage_y;
-        damage_x = damage_y = damage_right = damage_bottom = 0;
+    if (!os_damage_empty(&damage)) {
+        OS_RECT box;
+        (void)os_damage_bounds(&damage, &box);
+        uint32_t x = box.X, y = box.Y, w = box.Width, h = box.Height;
+        os_damage_clear(&damage);
         X86_PROFILE_BEGIN(present_start);
         if (!x86_vgpu_present_rect(x, y, w, h)) return flush_failure(7);
         X86_PROFILE_END(X86_PROFILE_PRESENT, present_start);

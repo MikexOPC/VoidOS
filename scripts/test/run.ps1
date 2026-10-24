@@ -36,6 +36,7 @@ $suites = [ordered]@{
     'virtio-mapping' = 'kernel/drivers/video/virtio/mapping/scripts/test.ps1'
     'virtio-queues' = 'kernel/drivers/video/virtio/queues/scripts/test.ps1'
     'virtio-resources' = 'kernel/drivers/video/virtio/resources/scripts/test.ps1'
+    lib = 'lib/scripts/test.ps1'
 }
 # The loader build writes esp/EFI/BOOT: without -BootKernel it leaves the probe loader there, which
 # does not start the kernel and breaks every later QEMU campaign. The suite keeps the boot loader.
