@@ -109,6 +109,10 @@ int x86_paging_gpu_complete(const X86_PAGING_INVENTORY *snapshot)
         if (((const unsigned char *)owner)[byte] != ((const unsigned char *)&snapshot->Gpu)[byte]) return 0;
     for (BOOT_U32 index=0; index<snapshot->Count; ++index) {
         const X86_PAGING_RESOURCE *record=&snapshot->Tables[index];
+        if (record->Reserved>=X86_HEAP_TAG) {
+            if (!x86_heap_record(&snapshot->Heap,record->Physical,record->View,record->Level,record->Reserved)) return 0;
+            continue;
+        }
         if (record->Reserved>=40) {
             if (!x86_dma_record(&snapshot->Dma,record->Physical,record->View,record->Level,record->Reserved)) return 0;
             continue;

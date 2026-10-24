@@ -2,7 +2,7 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
     [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell, [switch]$InteractiveInput,
-    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestIommuDma, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestVgpuIommu, [switch]$TestVgpuIommuFault, [switch]$VgpuIommu, [switch]$TestVgpuPresentFault, [switch]$TestVgpuPresentStall, [switch]$ProfileVgpuFlush, [switch]$ProfileVgpuNoPresent, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
+    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestIommuDma, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestVgpuIommu, [switch]$TestVgpuIommuFault, [switch]$VgpuIommu, [switch]$TestVgpuPresentFault, [switch]$TestVgpuPresentStall, [switch]$TestKernelHeap, [switch]$ProfileVgpuFlush, [switch]$ProfileVgpuNoPresent, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
@@ -48,6 +48,7 @@ if ($ProfileVgpuFlush) { if (!$ConsoleShell) { throw 'Flush profiling needs the 
 if ($ProfileVgpuNoPresent) { if (!$VgpuIommu -or !$ProfileVgpuFlush) { throw 'NoPresent needs -VgpuIommu and -ProfileVgpuFlush.' }; $flags += '/DKERNEL_PROFILE_VGPU_NO_PRESENT=1' }
 if ($TestVgpuPresentFault) { if (!$VgpuIommu) { throw 'Present fault injection needs -VgpuIommu.' }; $flags += '/DKERNEL_TEST_VGPU_PRESENT_FAULT=700' }
 if ($TestVgpuPresentStall) { if (!$VgpuIommu) { throw 'Present stall injection needs -VgpuIommu.' }; $flags += '/DKERNEL_TEST_VGPU_PRESENT_STALL=300' }
+if ($TestKernelHeap) { $flags += '/DKERNEL_TEST_KERNEL_HEAP=1' }
 if ($TestIommuDiscovery) { $flags += '/DKERNEL_TEST_IOMMU_DISCOVERY=1' }
 if ($TestIommuRegisters) { $flags += '/DKERNEL_TEST_IOMMU_REGISTERS=1' }
 if ($TestIommuDomain) { $flags += '/DKERNEL_TEST_IOMMU_DOMAIN=1' }
@@ -117,7 +118,7 @@ foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sc
     'arch/x86/kernel/scheduler/irq/bridge.c','arch/x86/kernel/scheduler/runtime/memory.c','arch/x86/kernel/scheduler/runtime/payload.c','arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c','kernel/startup/early.c','kernel/startup/platform.c','kernel/startup/devices.c','kernel/startup/profile.c',
     'kernel/bootstrap/memory.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c','kernel/drivers/video/framebuffer/mapping.c',
     'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
-    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/mm/heap/binding.c','kernel/mm/heap/heap.c','lib/containers/bitmap.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
     'kernel/drivers/video/virtio/discovery/configuration/read.c',
     'arch/x86/kernel/drivers/video/virtio/preflight.c','arch/x86/kernel/drivers/video/virtio/construction.c',
     'arch/x86/kernel/drivers/video/virtio/lifecycle.c','arch/x86/kernel/drivers/video/virtio/pci/access.c',

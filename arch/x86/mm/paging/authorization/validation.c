@@ -80,6 +80,8 @@ BOOT_U32 x86_paging_table_source(const KERNEL_BOOT_CONTEXT *context,
     if (iommu) return iommu;
     BOOT_U32 dma=x86_dma_source(pool,physical);
     if (dma) return dma;
+    BOOT_U32 heap=x86_heap_source(pool,physical);
+    if (heap) return heap;
     BOOT_U32 index;
     if (video) for (index = 0; index < video->Region.TableCount; ++index) {
         const KERNEL_PHYSICAL_LEASE *lease = &video->Tables[index];
@@ -182,7 +184,8 @@ int x86_paging_video_tables_complete(const X86_PAGING_VIDEO_AUTH *video,
         } else if (record->Reserved && !x86_paging_gpu_record(inventory,record) &&
             !x86_iommu_record(&inventory->Iommu,record->Physical,record->View,record->Level,record->Reserved) &&
             !x86_surface_record(&inventory->Surface,record->Physical,record->View,record->Level,record->Reserved) &&
-            !x86_dma_record(&inventory->Dma,record->Physical,record->View,record->Level,record->Reserved)) return 0;
+            !x86_dma_record(&inventory->Dma,record->Physical,record->View,record->Level,record->Reserved) &&
+            !x86_heap_record(&inventory->Heap,record->Physical,record->View,record->Level,record->Reserved)) return 0;
     }
     return seen == (1U << video->Region.TableCount) - 1;
 }

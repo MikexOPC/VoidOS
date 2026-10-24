@@ -67,8 +67,8 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     BOOT_U32 index, slot;
     BOOT_U32 surface_seen=0;
     BOOT_U64 surface_leaves=0;
-    BOOT_U32 iommu_seen=0, iommu_leaves=0, dma_seen=0;
-    BOOT_U64 dma_leaves=0;
+    BOOT_U32 iommu_seen=0, iommu_leaves=0, dma_seen=0, heap_seen=0;
+    BOOT_U64 dma_leaves=0, heap_leaves=0;
     const X86_PAGING_GPU_AUTH *gpu=x86_paging_gpu_owner();
     for (index = 0; index < sizeof(*draft); ++index) ((volatile unsigned char *)draft)[index] = 0;
     draft->Root = context->Info.PageTableRoot;
@@ -76,6 +76,7 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     if (!x86_surface_inputs(pool,draft->Root,(BOOT_U64)draft,sizeof(*draft),&draft->Surface)) return 0;
     if (!x86_iommu_inputs(context,pool,(BOOT_U64)draft,sizeof(*draft),&draft->Iommu)) return 0;
     if (!x86_dma_inputs(pool,draft->Root,(BOOT_U64)draft,sizeof(*draft),&draft->Dma)) return 0;
+    if (!x86_heap_inputs(pool,draft->Root,(BOOT_U64)draft,sizeof(*draft),&draft->Heap)) return 0;
     if (gpu) draft->Gpu=*gpu;
     if (video) {
         draft->Video = video->Region;
@@ -89,7 +90,11 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     if ((draft->Root & 4095) || !append_table(context, pool, video, draft, draft->Root, PAGING_ROOT_VIEW, 0)) return 0;
     for (index = 0; index < draft->Count; ++index) {
         const X86_PAGING_RESOURCE *record = &draft->Tables[index];
-        if (record->Reserved>=40) {
+        if (record->Reserved>=X86_HEAP_TAG) {
+            if (!x86_heap_record(&draft->Heap,record->Physical,record->View,record->Level,record->Reserved) ||
+                (heap_seen&(1U<<(record->Reserved-X86_HEAP_TAG)))) return 0;
+            heap_seen|=1U<<(record->Reserved-X86_HEAP_TAG);
+        } else if (record->Reserved>=40) {
             if (!x86_dma_record(&draft->Dma,record->Physical,record->View,record->Level,record->Reserved) ||
                 (dma_seen&(1U<<(record->Reserved-40)))) return 0;
             dma_seen|=1U<<(record->Reserved-40);
@@ -116,6 +121,8 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
                 BOOT_U64 address = x86_paging_leaf_virtual(record->View,slot);
                 kind = x86_iommu_leaf(entry,address);
                 if (kind==7) { ++draft->MmioPages; ++draft->LeafPages; ++iommu_leaves; continue; }
+                if (kind==1) kind = x86_heap_leaf(entry,address);
+                if (kind==9) { ++draft->RamPages; ++draft->LeafPages; ++heap_leaves; continue; }
                 if (kind==1) kind = x86_dma_leaf(entry,address);
                 if (kind==8) { ++draft->RamPages; ++draft->LeafPages; ++dma_leaves; continue; }
                 if (kind==1) kind = x86_surface_leaf(entry,address);
@@ -141,6 +148,7 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
         (video ? video->Region.Pages : 0) + (gpu ? gpu->Plan.Count : 0) + draft->Iommu.Count || !x86_paging_gpu_complete(draft)) return 0;
     if (!x86_iommu_complete(&draft->Iommu,iommu_seen,iommu_leaves)) return 0;
     if (!x86_dma_complete(&draft->Dma,dma_seen,dma_leaves)) return 0;
+    if (!x86_heap_complete(&draft->Heap,heap_seen,heap_leaves)) return 0;
     if (!x86_surface_complete(&draft->Surface,surface_seen,surface_leaves) ||
         (video && !x86_paging_video_tables_complete(video, draft))) return 0;
     draft->Ready = 1;
@@ -195,6 +203,7 @@ static int snapshot_valid(const X86_PAGING_INVENTORY *inventory, BOOT_U32 bits)
         if ((record->Reserved > inventory->Video.TableCount && !x86_paging_gpu_record(inventory,record) &&
             !x86_iommu_record(&inventory->Iommu,record->Physical,record->View,record->Level,record->Reserved) &&
             !x86_dma_record(&inventory->Dma,record->Physical,record->View,record->Level,record->Reserved) &&
+            !x86_heap_record(&inventory->Heap,record->Physical,record->View,record->Level,record->Reserved) &&
             !x86_surface_record(&inventory->Surface,record->Physical,record->View,record->Level,record->Reserved)) ||
             record->Level > 3 || (index && !record->Level) ||
             (record->Physical & 4095) || !x86_paging_entry_valid(record->Physical | 3, 0, bits) ||

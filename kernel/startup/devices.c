@@ -8,6 +8,7 @@
 #endif
 #include "arch/x86/kernel/serial/interrupts/route.h"
 #include "arch/x86/kernel/timer/hpet/watchdog/integration/kernel.h"
+#include "arch/x86/mm/heap/binding.h"
 
 // ====== video_private ======
 
@@ -31,6 +32,11 @@ static void video_private(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTE
 // before the LAPIC timer, because the input session runs inside the watchdog start and needs it.
 void kernel_startup_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *context, X86_PAGING_INVENTORY *paging)
 {
+    // G3: the kernel heap is bound first, in every profile, so the framebuffer and later budgets
+    // already include it.
+    if (context->Info.Acpi.Source && !x86_heap_kernel_start(context, &startup->Memory->Window,
+        x86_uart_lapic_mapping(), paging)) kernel_panic("KERNEL_HEAP_FAILED");
+
     if (kernel_profile_devices(startup, context, paging)) return;
 
     #if defined(KERNEL_TEST_CONSOLE_ACTIVE) || defined(KERNEL_CONSOLE_SHELL)

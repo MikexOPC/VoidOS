@@ -279,6 +279,17 @@ Misure e verifica:
 
 **Chiusura per voce:** implementazione, test host e prove QEMU dedicate, report aggiornato.
 
+## FW-013 — Heap del kernel: crescita, lock e costo di verifica
+
+**Stato:** aperto il 24 ottobre 2026 con G3 ([report](../kernel/mm/heap/README.md)). L'heap ha 16 MiB fissi
+all'avvio.
+- **Crescita a runtime:** richiede di rivedere la contabilità della console (`FreePages` costante,
+  live group) insieme a G5.
+- **Lock** per SMP.
+- **Costo della verifica:** la scansione completa dell'inventario visita 4096 foglie in più e il
+  flush V2c costa +16%. Da ridurre con la verifica alla costruzione più audit (G5).
+- **Primo utilizzatore:** le superfici delle finestre della GUI.
+
 ## FW-012 — Suite di test automatiche complete
 
 **Aggiornamento (24 ottobre 2026):** `scripts/test/run.ps1` elenca le 31 suite host, rifiuta
