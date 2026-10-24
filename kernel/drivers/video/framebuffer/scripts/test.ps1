@@ -11,13 +11,8 @@ $boot = Join-Path $project 'arch/x86/boot/uefi'
 
 # ============ checked tools ============
 
-function Invoke-Checked([string]$Program, [string[]]$Arguments) {
-    $messages = & $Program @Arguments 2>&1
-    $code = $LASTEXITCODE
-    $messages | Out-File "$out/tools.log" -Append -Encoding utf8
-    $messages | Write-Output
-    if ($code) { throw "Tool failed: $Program ($code)" }
-}
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/common.ps1')
+function Invoke-Checked([string]$Program, [string[]]$Arguments) { Invoke-OsChecked $Program $Arguments "$out/tools.log" -Tee }
 
 # ============ Rust validators and ABI ============
 

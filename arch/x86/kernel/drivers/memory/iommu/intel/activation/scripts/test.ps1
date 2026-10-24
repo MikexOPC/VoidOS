@@ -12,10 +12,7 @@ $savedInclude=$env:INCLUDE; $savedLib=$env:LIB; $savedPath=$env:PATH
 
 # ============ checked execution ============
 
-function Invoke-Checked([string]$Program,[string[]]$Arguments) {
-    & $Program @Arguments
-    if ($LASTEXITCODE) {throw "Tool failed: $Program ($LASTEXITCODE)"}
-}
+. (Join-Path $PSScriptRoot '../../../../../../../../../scripts/lib/common.ps1')
 
 # ============ Rust policy, C model and static analysis ============
 

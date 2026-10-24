@@ -8,10 +8,7 @@ $python = "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependen
 
 # ============ checked execution ============
 
-function Invoke-Checked([string]$Program, [string[]]$Arguments) {
-    & $Program @Arguments
-    if ($LASTEXITCODE) { throw "Tool failed: $Program ($LASTEXITCODE)" }
-}
+. (Join-Path $PSScriptRoot '../../../../../../scripts/lib/common.ps1')
 
 Invoke-Checked $python @('-B',"$PSScriptRoot/structure.py")
 foreach ($mode in @('debug','release')) {

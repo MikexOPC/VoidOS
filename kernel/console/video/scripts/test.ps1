@@ -6,10 +6,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 
 # ============ checked execution ============
 
-function Invoke-Checked([string]$program, [string[]]$arguments) {
-    & $program @arguments
-    if ($LASTEXITCODE) { throw "Failed: $program" }
-}
+. (Join-Path $PSScriptRoot '../../../../scripts/lib/common.ps1')
 
 # ============ firmware harness regression tests ============
 

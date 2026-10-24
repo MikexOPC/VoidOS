@@ -13,14 +13,8 @@ $savedInclude = $env:INCLUDE; $savedLib = $env:LIB; $savedPath = $env:PATH
 
 # ============ checked execution ============
 
-function Invoke-Checked([string]$Program, [string[]]$Arguments) {
-    $messages = & $Program @Arguments 2>&1
-    $code = $LASTEXITCODE
-    "$Program $($Arguments -join ' ')" | Out-File "$out/tools.log" -Append -Encoding utf8
-    $messages | Out-File "$out/tools.log" -Append -Encoding utf8
-    $messages | Write-Output
-    if ($code) { throw "Tool failed ($code): $Program" }
-}
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/common.ps1')
+function Invoke-Checked([string]$Program, [string[]]$Arguments) { Invoke-OsChecked $Program $Arguments "$out/tools.log" -Tee }
 
 # ============ bounded owned test process ============
 

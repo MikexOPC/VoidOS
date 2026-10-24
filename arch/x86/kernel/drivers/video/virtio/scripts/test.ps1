@@ -12,10 +12,7 @@ $savedInclude=$env:INCLUDE; $savedLib=$env:LIB; $savedPath=$env:PATH
 
 # ============ checked execution ============
 
-function Invoke-Checked([string]$Program,[string[]]$Arguments) {
-    & $Program @Arguments
-    if ($LASTEXITCODE) {throw "Tool failed: $Program ($LASTEXITCODE)"}
-}
+. (Join-Path $PSScriptRoot '../../../../../../../scripts/lib/common.ps1')
 try {
     if (!$vc -or !$version) {throw 'MSVC/SDK unavailable'}
     $bin=$vc.FullName+'/bin/Hostx64/x64'; $env:PATH=$bin+';'+$env:PATH

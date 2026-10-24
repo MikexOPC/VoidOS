@@ -15,12 +15,8 @@ $savedPath = $env:PATH
 
 # ============ checked tools and evidence ============
 
-function Invoke-Checked([string]$Program, [string[]]$Arguments) {
-    $messages = & $Program @Arguments 2>&1
-    $code = $LASTEXITCODE
-    $messages | Tee-Object -FilePath "$OutputDirectory/tools.log" -Append
-    if ($code) { throw "Tool failed: $Program ($code)" }
-}
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/common.ps1')
+function Invoke-Checked([string]$Program, [string[]]$Arguments) { Invoke-OsChecked $Program $Arguments "$OutputDirectory/tools.log" -Tee }
 
 try {
     $bin = $vc.FullName + '/bin/Hostx64/x64'
