@@ -101,6 +101,13 @@ static int check_memory(void)
     if (kernel_inventory_memory(map, 144, 48, &output)) return 6;
     region(2, 7, 0, 1, 0);
     if (!kernel_inventory_memory(map, 144, 48, &output) || output.ReservedPages != 5) return 7;
+    // B8: a WB+XP ConventionalMemory region at 0 reserves only page zero.
+    region(1, 2, 0x9000, 4, 8);
+    region(2, 7, 0, 4, 0x400f);
+    if (!kernel_inventory_memory(map, 144, 48, &output) || output.ConventionalPages != 6 ||
+        output.ReservedPages != 5) return 9;
+    region(1, 2, 0x1000, 4, 8);
+    region(2, 7, 0, 1, 0);
     if (kernel_inventory_memory(map, 143, 48, &output) || kernel_inventory_memory(map, 144, 39, &output) ||
         kernel_inventory_memory(map, 144, 48, (KERNEL_MEMORY_INVENTORY *)map)) return 8;
     return 0;

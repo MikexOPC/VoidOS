@@ -139,8 +139,14 @@ function Test-MixedInventory($log, $registers, $mapping, $physical, $cache, $vir
     $ram = Read-Hex $log 'KERNEL_PAGING_MIXED_RAM: 0x([0-9a-f]{16})'
     $mmio = Read-Hex $log 'KERNEL_PAGING_MIXED_MMIO: 0x([0-9a-f]{16})'
     $total = Read-Hex $log 'KERNEL_PAGING_MIXED_LEAVES: 0x([0-9a-f]{16})'
+    # The framebuffer mapping (MMIO aperture) is published after this log line and belongs to the
+    # final snapshot dumped at the halt.
+    $finalMmio = [uint64]1
+    if ($log.Contains('KERNEL_FB_MAPPING_LIVE') -and (Read-Hex $log 'KERNEL_FB_MAPPING_INVENTORY: 0x([0-9a-f]{16})') -eq $paging) {
+        $finalMmio += Read-Hex $log 'KERNEL_FB_PLAN_PAGES: 0x([0-9a-f]{16})'
+    }
     if (!$log.Contains('KERNEL_PAGING_MIXED_OK') -or $mmio -ne 1 -or $ram+1 -ne $total -or
-        $registers -notmatch ('(?im)^'+($paging+3096).ToString('x16')+':\s+0x'+$ram.ToString('x16')+'\s+0x0000000000000001') -or
+        $registers -notmatch ('(?im)^'+($paging+3096).ToString('x16')+':\s+0x'+$ram.ToString('x16')+'\s+0x'+$finalMmio.ToString('x16')) -or
         $registers -notmatch ('(?im)^'+($paging+3112).ToString('x16')+':\s+0x'+$virtual.ToString('x16')+'\s+0x'+$physical.ToString('x16')) -or
         $registers -notmatch ('(?im)^'+($paging+3128).ToString('x16')+':\s+0x'+$cache.ToString('x16')+'\s+0x'+$mapping.ToString('x16'))) { throw 'Inventario RAM/MMIO diverso dallo snapshot.' }
 }

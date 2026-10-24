@@ -1,10 +1,9 @@
 #include "regions.h"
 #include "lib/memory/buffer_capacity.h"
+#include "lib/firmware/uefi/memory.h"
 
 #define EFI_CONVENTIONAL_MEMORY 7U
-#define EFI_CACHEABILITY_ATTRIBUTES 0x1fULL
-#define EFI_EXECUTE_PROTECTION_ATTRIBUTE 0x4000ULL
-#define ALLOWED_CONVENTIONAL_ATTRIBUTES (EFI_CACHEABILITY_ATTRIBUTES | EFI_EXECUTE_PROTECTION_ATTRIBUTE)
+#define ALLOWED_CONVENTIONAL_ATTRIBUTES OS_UEFI_CONVENTIONAL_ATTRIBUTES
 
 // ====== decodifica little endian senza cast del buffer ====== //
 
