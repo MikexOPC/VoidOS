@@ -4,6 +4,7 @@
 #include "kernel/drivers/video/virtio/resources/scanout.h"
 #include "kernel/diagnostics/log.h"
 #include "kernel/diagnostics/latency.h"
+#include "lib/geometry/damage.h"
 static X86_VGPU_TRANSPORT transport;
 static KERNEL_VGPU_IO io;
 static X86_VGPU_QUEUE_TRANSPORT native;
@@ -30,7 +31,9 @@ static X86_SURFACE_MAPPING *surface_saved;
 #define RECOVER_SPACING_PM (5ULL * 3579545U)
 #define RECOVER_TRIES 3U
 static BOOT_U32 phase, slow_marked, submitted_at;
-static BOOT_U32 fly_x, fly_y, fly_w, fly_h, damage_x, damage_y, damage_right, damage_bottom;
+static BOOT_U32 fly_x, fly_y, fly_w, fly_h;
+// G1: queued damage through lib/geometry, Limit 1 (one envelope per update).
+static OS_DAMAGE damage = {0, 1, {{0}}};
 static BOOT_U32 recoverable, recoveries, recover_last;
 static BOOT_U64 recover_elapsed, slows, timeouts, recovered;
 #ifdef KERNEL_TEST_VGPU_PRESENT_STALL
@@ -80,7 +83,7 @@ static int fallback_private(const char *reason)
     presenting = 0;
     redraw = 1;
     phase = 0;
-    damage_x = damage_y = damage_right = damage_bottom = 0;
+    os_damage_clear(&damage);
     recover_elapsed = 0;
     if (!io.Clock(io.Context, &recover_last)) recoverable = 0;
     ++failures;
@@ -246,7 +249,7 @@ static int pump_private(void)
 {
     for (BOOT_U32 step = 0; presenting && step < 4; ++step) {
         if (!phase) {
-            if (damage_right == damage_x) return 1;
+            if (os_damage_empty(&damage)) return 1;
 
             ++presents;
 
@@ -255,8 +258,11 @@ static int pump_private(void)
             if (presents == KERNEL_TEST_VGPU_PRESENT_FAULT) { recoverable = 0; return fallback_private("KERNEL_VGPU_PRESENT_FALLBACK"); }
 #endif
 
-            fly_x = damage_x; fly_y = damage_y; fly_w = damage_right - damage_x; fly_h = damage_bottom - damage_y;
-            damage_x = damage_y = damage_right = damage_bottom = 0;
+            OS_RECT box;
+
+            (void)os_damage_bounds(&damage, &box);
+            fly_x = box.X; fly_y = box.Y; fly_w = box.Width; fly_h = box.Height;
+            os_damage_clear(&damage);
 
             if (!io.Clock(io.Context, &submitted_at) ||
                 !kernel_vgpu_scanout_post(&queue, &resource, 0, fly_x, fly_y, fly_w, fly_h)
@@ -323,7 +329,7 @@ static int recover_private(void)
 
     for (BOOT_U64 index = 0; index < (BOOT_U64)queue.Width * queue.Height; ++index) pixels[index] = 0;
 
-    damage_x = 0; damage_y = 0; damage_right = queue.Width; damage_bottom = queue.Height;
+    (void)os_damage_add(&damage, &(OS_RECT){0, 0, queue.Width, queue.Height});
     ++recovered;
     return kernel_log(1, "KERNEL_VGPU_PRESENT_RECOVERED") && pump_private();
 }
@@ -336,13 +342,7 @@ int x86_vgpu_present_rect(BOOT_U32 x, BOOT_U32 y, BOOT_U32 width, BOOT_U32 heigh
 {
     if (!presenting || !width || !height) return presenting ? pump_private() : 1;
 
-    if (damage_right == damage_x) { damage_x = x; damage_y = y; damage_right = x + width; damage_bottom = y + height; }
-    else {
-        if (x < damage_x) damage_x = x;
-        if (y < damage_y) damage_y = y;
-        if (x + width > damage_right) damage_right = x + width;
-        if (y + height > damage_bottom) damage_bottom = y + height;
-    }
+    if (!os_damage_add(&damage, &(OS_RECT){x, y, width, height})) return 1;
 
     return pump_private();
 }
@@ -357,7 +357,7 @@ int x86_vgpu_present_poll(void) { return presenting ? pump_private() : recover_p
 // The console keeps flushing while an update is in flight, damage waits or a recovery is due.
 int x86_vgpu_present_busy(void)
 {
-    return presenting ? phase || damage_right != damage_x : recoverable && recoveries < RECOVER_TRIES && transport.Self;
+    return presenting ? phase || !os_damage_empty(&damage) : recoverable && recoveries < RECOVER_TRIES && transport.Self;
 }
 
 // ====== x86_vgpu_present_abandon ======
