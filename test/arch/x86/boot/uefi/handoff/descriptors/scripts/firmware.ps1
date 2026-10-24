@@ -32,10 +32,7 @@ $testRoot = Join-Path $output ('exception-test-' + [Guid]::NewGuid().ToString('N
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 Write-BootSection 'eccezioni reali in QEMU con immagine dedicata'
 
-function Invoke-Checked([string]$Program, [string[]]$Arguments) {
-    & $Program @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "Errore in $Program ($LASTEXITCODE)" }
-}
+. (Join-Path $PSScriptRoot '../../../../../../../../scripts/lib/common.ps1')
 Invoke-Checked (Join-Path $ToolchainBin 'ml64.exe') @('/nologo', '/W3', '/WX', '/c',
     "/Fo$testRoot\trigger.obj", (Join-Path $PSScriptRoot 'assembly/exceptions/trigger.asm'))
 

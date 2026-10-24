@@ -1,0 +1,65 @@
+{
+  "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. boots: full campaign; smoke: boots of the smoke set.",
+  "campaigns": {
+    "kernel-boot": {
+      "build": null,
+      "runner": ["powershell", "test/kernel/firmware.ps1"],
+      "boots": 1, "smoke": 1,
+      "summary": "23 boot scenarios: MADT 1/4 CPU, ACPI, mapping, stacks, guards, NX, NMI, double fault"
+    },
+    "v2c": {
+      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput", "-VgpuIommu"],
+      "runner": ["python", "test/kernel/console/video/pointer/interactive.py", "--image", "{image}", "--boots", "{boots}", "--iommu"],
+      "boots": 10, "smoke": 1,
+      "summary": "console through the translated VirtIO GPU"
+    },
+    "fallback": {
+      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput", "-VgpuIommu", "-TestVgpuPresentFault"],
+      "runner": ["python", "test/kernel/console/video/pointer/interactive.py", "--image", "{image}", "--boots", "{boots}", "--present-fallback"],
+      "boots": 2, "smoke": 1,
+      "summary": "injected present fault, GOP fallback and clip"
+    },
+    "stall": {
+      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput", "-VgpuIommu", "-TestVgpuPresentStall"],
+      "runner": ["python", "test/kernel/console/video/pointer/interactive.py", "--image", "{image}", "--boots", "{boots}", "--present-stall"],
+      "boots": 5, "smoke": 1,
+      "summary": "slow mark, timeout and recovery of the asynchronous present"
+    },
+    "plain": {
+      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput"],
+      "runner": ["python", "test/kernel/console/video/pointer/interactive.py", "--image", "{image}", "--boots", "{boots}"],
+      "boots": 3, "smoke": 1,
+      "summary": "interactive console on GOP"
+    },
+    "absent": {
+      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput", "-VgpuIommu"],
+      "runner": ["python", "test/kernel/console/video/pointer/interactive.py", "--image", "{image}", "--boots", "{boots}", "--iommu-absent"],
+      "boots": 2, "smoke": 1,
+      "summary": "VirtIO GPU without a DMAR: untranslated session"
+    },
+    "framebuffer-draw": {
+      "build": ["-TestFramebufferMapping"],
+      "runner": ["python", "arch/x86/kernel/drivers/video/framebuffer/scripts/firmware.py", "--kernel", "{image}", "--boots", "{boots}", "--rollback", "--pixels", "--drawing"],
+      "boots": 10, "smoke": 1,
+      "summary": "framebuffer pixels and drawing with rollback"
+    },
+    "console-active": {
+      "build": ["-TestConsoleActive"],
+      "runner": ["python", "kernel/console/video/scripts/active.py", "--kernel", "{image}", "--boots", "{boots}"],
+      "boots": 10, "smoke": 1,
+      "summary": "active console resources"
+    },
+    "shell-text": {
+      "build": ["-ConsoleShell"],
+      "runner": ["python", "arch/x86/kernel/drivers/input/ps2/scripts/firmware.py", "--image", "{image}", "--boots", "{boots}", "--text", "--shell", "--console-shell"],
+      "boots": 10, "smoke": 1,
+      "summary": "PS/2 keyboard shell on the text console"
+    },
+    "shell-novideo": {
+      "build": ["-ConsoleShell"],
+      "runner": ["python", "arch/x86/kernel/drivers/input/ps2/scripts/firmware.py", "--image", "{image}", "--boots", "{boots}", "--text", "--shell", "--console-shell", "--video-absent"],
+      "boots": 3, "smoke": 1,
+      "summary": "PS/2 shell without a video device"
+    }
+  }
+}

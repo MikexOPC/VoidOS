@@ -9,10 +9,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 
 # ============ checked tools ============
 
-function Invoke-Checked([string]$Program, [string[]]$Arguments) {
-    & $Program @Arguments
-    if ($LASTEXITCODE) { throw "Tool failed: $Program ($LASTEXITCODE)" }
-}
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/common.ps1')
 
 # ============ Rust debug release and Clippy ============
 
