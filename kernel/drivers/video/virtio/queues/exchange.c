@@ -47,34 +47,49 @@ static int complete_private(VGPU_QUEUE *queue,uint16_t current)
     return 1;
 }
 
+// ====== kernel_vgpu_queue_poll ======
+
+// VirtIO1.2 2.7.14: observe used.idx before reading the completion and payload. One sample:
+// 1 completed (State 1), 0 still in flight, -1 fault (Fault set). limit: ticks since the submit.
+int kernel_vgpu_queue_poll(VGPU_QUEUE *queue,uint32_t limit)
+{
+    uint32_t now, status;
+    if (!queue || queue->Self!=(uintptr_t)queue || queue->State!=2 || queue->Fault ||
+        !limit || limit>=queue->Io.Mask/2) return -1;
+    volatile VGPU_RING *ring=(volatile VGPU_RING *)queue->Buffers.Views[0];
+    uint32_t start=queue->Started;
+    if (!queue->Io.Clock(queue->Io.Context,&now) || now>queue->Io.Mask) { queue->Fault=VGPU_QUEUE_TIME; return -1; }
+    uint16_t current=ring->Used;
+    if (!barrier_private(queue)) return -1;
+    if (!kernel_vgpu_queue_access(queue,0,20,1,0,&status)) return -1;
+    if (status!=15) { queue->Fault=VGPU_QUEUE_STATE; return -1; }
+    if (current!=queue->Used && now!=start) {
+        queue->LastWait=(now-start)&queue->Io.Mask;
+        if (complete_private(queue,current)) return 1;
+        queue->Fault=VGPU_QUEUE_RESPONSE; return -1;
+    }
+    if (((now-start)&queue->Io.Mask)>=limit) { queue->Fault=VGPU_QUEUE_TIME; return -1; }
+    return 0;
+}
+
 // ====== wait_private ======
 
-// VirtIO1.2 2.7.14: observe used.idx before reading the completion and payload.
-static int wait_private(VGPU_QUEUE *queue,uint32_t start)
+// Blocking form for bring-up and teardown: Io.Samples polls within Io.Deadline.
+static int wait_private(VGPU_QUEUE *queue)
 {
-    volatile VGPU_RING *ring=(volatile VGPU_RING *)queue->Buffers.Views[0];
-    uint32_t now, status;
     for (uint32_t sample=0; sample<queue->Io.Samples; ++sample) {
-        if (!queue->Io.Clock(queue->Io.Context,&now) || now>queue->Io.Mask ||
-            ((now-start)&queue->Io.Mask)>=queue->Io.Deadline) { queue->Fault=VGPU_QUEUE_TIME; return 0; }
-        uint16_t current=ring->Used;
-        if (!barrier_private(queue)) return 0;
-        if (!kernel_vgpu_queue_access(queue,0,20,1,0,&status)) return 0;
-        if (status!=15) { queue->Fault=VGPU_QUEUE_STATE; return 0; }
-        if (current!=queue->Used && now!=start) {
-            queue->LastWait=(now-start)&queue->Io.Mask;
-            if (complete_private(queue,current)) return 1;
-            queue->Fault=VGPU_QUEUE_RESPONSE; return 0;
-        }
+        int result=kernel_vgpu_queue_poll(queue,queue->Io.Deadline);
+        if (result) return result>0;
     }
     queue->Fault=VGPU_QUEUE_TIME;
     return 0;
 }
 
-// ====== exchange_private ======
+// ====== kernel_vgpu_queue_submit ======
 
-// VirtIO1.2 2.7.5: NEXT bit0, WRITE bit1; request readable, response writable.
-static int exchange_private(VGPU_QUEUE *queue,uint32_t command,const unsigned char *body,uint32_t bytes)
+// VirtIO1.2 2.7.5: NEXT bit0, WRITE bit1; request readable, response writable. Posts one command
+// and notifies; the completion is observed by kernel_vgpu_queue_poll (State 2 until then).
+int kernel_vgpu_queue_submit(VGPU_QUEUE *queue,uint32_t command,const unsigned char *body,uint32_t bytes)
 {
     uint32_t start, value;
     if (!queue || queue->Self!=(uintptr_t)queue || queue->State!=1 || queue->Fault || queue->Sequence==UINT64_MAX) return 0;
@@ -98,8 +113,15 @@ static int exchange_private(VGPU_QUEUE *queue,uint32_t command,const unsigned ch
     queue->Available=(uint16_t)(queue->Available+1U); ring->Available=queue->Available;
     if (!barrier_private(queue)) return 0;
     value=0;
-    if (!kernel_vgpu_queue_access(queue,1,queue->Notify[0],2,1,&value) || !wait_private(queue,start)) return 0;
-    return 1;
+    queue->Started=start;
+    return kernel_vgpu_queue_access(queue,1,queue->Notify[0],2,1,&value);
+}
+
+// ====== exchange_private ======
+
+static int exchange_private(VGPU_QUEUE *queue,uint32_t command,const unsigned char *body,uint32_t bytes)
+{
+    return kernel_vgpu_queue_submit(queue,command,body,bytes) && wait_private(queue);
 }
 
 // ====== kernel_vgpu_queue_exchange ======

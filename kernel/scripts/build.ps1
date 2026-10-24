@@ -2,7 +2,7 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
     [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell, [switch]$InteractiveInput,
-    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestIommuDma, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestVgpuIommu, [switch]$TestVgpuIommuFault, [switch]$VgpuIommu, [switch]$TestVgpuPresentFault, [switch]$ProfileVgpuFlush, [switch]$ProfileVgpuNoPresent, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
+    [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestIommuDma, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestVgpuIommu, [switch]$TestVgpuIommuFault, [switch]$VgpuIommu, [switch]$TestVgpuPresentFault, [switch]$TestVgpuPresentStall, [switch]$ProfileVgpuFlush, [switch]$ProfileVgpuNoPresent, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
@@ -47,6 +47,7 @@ if ($VgpuIommu) { $flags += '/DKERNEL_VGPU_IOMMU=1' }
 if ($ProfileVgpuFlush) { if (!$ConsoleShell) { throw 'Flush profiling needs the console session.' }; $flags += '/DKERNEL_PROFILE_VGPU_FLUSH=1' }
 if ($ProfileVgpuNoPresent) { if (!$VgpuIommu -or !$ProfileVgpuFlush) { throw 'NoPresent needs -VgpuIommu and -ProfileVgpuFlush.' }; $flags += '/DKERNEL_PROFILE_VGPU_NO_PRESENT=1' }
 if ($TestVgpuPresentFault) { if (!$VgpuIommu) { throw 'Present fault injection needs -VgpuIommu.' }; $flags += '/DKERNEL_TEST_VGPU_PRESENT_FAULT=700' }
+if ($TestVgpuPresentStall) { if (!$VgpuIommu) { throw 'Present stall injection needs -VgpuIommu.' }; $flags += '/DKERNEL_TEST_VGPU_PRESENT_STALL=300' }
 if ($TestIommuDiscovery) { $flags += '/DKERNEL_TEST_IOMMU_DISCOVERY=1' }
 if ($TestIommuRegisters) { $flags += '/DKERNEL_TEST_IOMMU_REGISTERS=1' }
 if ($TestIommuDomain) { $flags += '/DKERNEL_TEST_IOMMU_DOMAIN=1' }

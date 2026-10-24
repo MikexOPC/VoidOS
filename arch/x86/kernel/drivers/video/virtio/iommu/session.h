@@ -33,6 +33,9 @@ BOOT_U64 x86_vgpu_session_pages(void);
 int x86_vgpu_present_open(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory,
     X86_DMA_ARENA *arena, X86_SURFACE_MAPPING *surface);
 int x86_vgpu_present_rect(BOOT_U32 x, BOOT_U32 y, BOOT_U32 width, BOOT_U32 height);
+// R1-A/R3-A: progress of the update in flight or the recovery; busy keeps the console flushing.
+int x86_vgpu_present_poll(void);
+int x86_vgpu_present_busy(void);
 // 1 once after the target changed (bring-up or fallback): the console must redraw every cell.
 int x86_vgpu_present_redraw(void);
 int x86_vgpu_present_abandon(void);

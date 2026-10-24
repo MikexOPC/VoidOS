@@ -32,6 +32,47 @@ int kernel_vgpu_queue_control(VGPU_QUEUE *queue,uint32_t command,const unsigned 
     return calls!=fail_at;
 }
 
+// ====== kernel_vgpu_queue_submit ======
+
+// R1-A mock: records the posted command; the test completes it by setting State back to 1.
+static uint32_t posted_command, posted_bytes, submit_fail;
+static unsigned char posted[32];
+
+int kernel_vgpu_queue_submit(VGPU_QUEUE *queue,uint32_t command,const unsigned char *body,uint32_t bytes)
+{
+    CHECK(queue->State==1 && bytes<=32);
+    if (submit_fail) return 0;
+    posted_command=command; posted_bytes=bytes; memcpy(posted,body,bytes); queue->State=2;
+    return 1;
+}
+
+// ====== asynchronous_update ======
+
+// R1-A: post TRANSFER (Bound uncertain), complete, post FLUSH of the same rectangle, settle.
+static void asynchronous_update(void)
+{
+    VGPU_QUEUE queue={0}; VGPU_RESOURCE resource={0};
+    queue.Self=(uintptr_t)&queue; queue.State=1; queue.Scanout=7; queue.Width=1280; queue.Height=800;
+    resource.Self=(uintptr_t)&resource; resource.Queue=(uintptr_t)&queue; resource.State=3; resource.Id=1;
+    resource.Width=1280; resource.Height=800; resource.Bytes=1280*800*4; resource.Bound=1; resource.Scanout=7;
+    CHECK(!kernel_vgpu_scanout_post(&queue,&resource,1,16,24,64,32) && !kernel_vgpu_scanout_post(&queue,&resource,2,16,24,64,32));
+    CHECK(!kernel_vgpu_scanout_settle(&queue,&resource) && !kernel_vgpu_scanout_post(&queue,&resource,0,1279,0,2,1));
+    CHECK(kernel_vgpu_scanout_post(&queue,&resource,0,16,24,64,32) && posted_command==0x105 && posted_bytes==32);
+    CHECK(word_private(posted,0)==16 && word_private(posted,4)==24 && word_private(posted,8)==64 && word_private(posted,12)==32);
+    CHECK(word_private(posted,16)==(24*1280+16)*4 && !word_private(posted,20) && word_private(posted,24)==1);
+    CHECK(resource.Bound==UINT32_MAX && !kernel_vgpu_scanout_post(&queue,&resource,1,16,24,64,32));
+    queue.State=1;
+    CHECK(!kernel_vgpu_scanout_post(&queue,&resource,0,16,24,64,32));
+    CHECK(kernel_vgpu_scanout_post(&queue,&resource,1,16,24,64,32) && posted_command==0x104 && posted_bytes==24);
+    CHECK(word_private(posted,8)==64 && word_private(posted,16)==1 && !word_private(posted,20));
+    CHECK(!kernel_vgpu_scanout_settle(&queue,&resource));
+    queue.State=1;
+    CHECK(kernel_vgpu_scanout_settle(&queue,&resource) && resource.Bound==1);
+    submit_fail=1;
+    CHECK(!kernel_vgpu_scanout_post(&queue,&resource,0,0,0,8,8) && resource.Bound==UINT32_MAX && queue.State==1);
+    submit_fail=0;
+}
+
 // ====== main ======
 
 int main(void)
@@ -66,6 +107,7 @@ int main(void)
         CHECK(kernel_vgpu_resource_close(&queue,&resource)==(fail_at==0));
         CHECK(resource.State==(fail_at?UINT32_MAX:5) && calls==(fail_at?fail_at:10));
     }
+    asynchronous_update();
     printf("PASS %u presentation checks, 1100 lifecycles, error at every command, unsafe close denied\n",checks);
     return 0;
 }

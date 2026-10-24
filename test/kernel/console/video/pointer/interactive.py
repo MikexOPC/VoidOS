@@ -72,7 +72,7 @@ def profile_check(log):
     if inside > phases['FLUSH']['Total']: raise RuntimeError('Profile phases exceed the flush')
     return phases
 
-def translation_check(log, trace_text, fallbacks=0, presenting=True):
+def translation_check(log, trace_text, fallbacks=0, presenting=True, stall=False):
     for marker in ('KERNEL_VGPU_SESSION_TRANSLATING','KERNEL_VGPU_IOMMU_TRANSLATING','KERNEL_VGPU_SESSION_RELEASED',
             'KERNEL_VGPU_IOMMU_RELEASED'):
         if marker not in log: raise RuntimeError('V2b marker missing: '+marker)
@@ -104,8 +104,17 @@ def translation_check(log, trace_text, fallbacks=0, presenting=True):
     presents = provider.number(log,'KERNEL_VGPU_PRESENTS')
     if 'KERNEL_VGPU_PRESENTING' not in log or not presents or provider.number(log,'KERNEL_VGPU_PRESENT_FAILURES') != fallbacks:
         raise RuntimeError('Console not presented through the GPU')
-    if fallbacks and 'KERNEL_VGPU_PRESENT_FALLBACK' not in log: raise RuntimeError('Fallback not reported')
-    if not fallbacks and 'KERNEL_VGPU_PRESENT_FALLBACK' in log: raise RuntimeError('Unexpected fallback')
+    # The fallback log line only: the KERNEL_VGPU_PRESENT_TIMEOUTS counter shares the prefix.
+    timeout = re.search(r'KERNEL_VGPU_PRESENT_TIMEOUT(?!S)',log)
+    if stall:
+        # R2/R3-A: the 0.2 s hold is only marked slow; the 1.2 s hold times out and is recovered.
+        if (provider.number(log,'KERNEL_VGPU_PRESENT_TIMEOUTS') != 1 or provider.number(log,'KERNEL_VGPU_PRESENT_RECOVERIES') != 1 or
+            not provider.number(log,'KERNEL_VGPU_PRESENT_SLOWS') or 'KERNEL_VGPU_PRESENT_FALLBACK' in log or
+            not timeout or timeout.start() > log.index('KERNEL_VGPU_PRESENT_RECOVERED')):
+            raise RuntimeError('Stall: slow mark, timeout or recovery missing')
+    elif fallbacks and 'KERNEL_VGPU_PRESENT_FALLBACK' not in log: raise RuntimeError('Fallback not reported')
+    elif not fallbacks and ('KERNEL_VGPU_PRESENT_FALLBACK' in log or timeout or
+        provider.number(log,'KERNEL_VGPU_PRESENT_TIMEOUTS')): raise RuntimeError('Unexpected fallback')
     latency = dict(Present=latency_check(log,'KERNEL_VGPU_PRESENT_PM',presents-fallbacks),
         FlushWait=latency_check(log,'KERNEL_VGPU_FLUSH_WAIT_PM',presents-fallbacks),
         Area=latency_check(log,'KERNEL_VGPU_PRESENT_AREA',presents-fallbacks),
@@ -135,7 +144,7 @@ def untranslated_check(log):
         raise RuntimeError('Translation claimed without a DMAR')
     return dict(Untranslated=True)
 
-def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=True):
+def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=True, stall=False):
     directory = out / f'boot-{index}'
     esp = directory / 'esp/EFI/BOOT'
     esp.mkdir(parents=True)
@@ -181,6 +190,7 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
                 width,height = int(presented[1],16),int(presented[2],16)
                 stride,fmt = width,1
             elif iommu and presenting and not absent: raise RuntimeError('Present geometry not reported')
+            gpu = (width,height,stride,fmt)
             columns,rows = width//9,height//18
             grid = re.search(r'KERNEL_CONSOLE_GRID: 0x([0-9a-f]{16})x0x([0-9a-f]{16})',log)
             if not grid or (int(grid[1],16),int(grid[2],16)) != (min(columns,240),min(rows,67)):
@@ -207,6 +217,15 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
                 # pointer clamped. The expected background is the old scene inside the new grid.
                 nonlocal scene,columns,rows,x,y,width,height,stride,fmt
                 if actual.size == scene.size: return
+                if stall and actual.size == gpu[:2]:
+                    # R3-A recovery: the cleared GPU surface shows the clipped grid on black.
+                    width,height,stride,fmt = gpu
+                    rebuilt = Image.new('RGB',actual.size,(0,0,0))
+                    rebuilt.paste(scene.crop((0,0,columns*9,rows*18)),(0,0))
+                    for row in range(18):
+                        for col in range(18): rebuilt.putpixel((x+col,y+row),(8,16,24))
+                    scene = rebuilt
+                    return
                 if not fallbacks or actual.size != gop[:2]: raise RuntimeError('Unexpected screen geometry')
                 width,height,stride,fmt = gop
                 columns,rows = min(columns,width//9),min(rows,height//18)
@@ -249,9 +268,23 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
                         Delivered=delivered(),Baseline=[baseline_x,baseline_y]),indent=2))
                     raise RuntimeError('Cursor trails, deformation or missing progress')
                 latencies.append(time.monotonic()-start)
+            if stall:
+                # R3-A: the recovery comes 5 s after the timeout; the moves may end before it.
+                deadline = time.monotonic()+20
+                while scene.size != gpu[:2]:
+                    if time.monotonic() > deadline: raise RuntimeError('Stall: no recovery to the GPU geometry')
+                    actual = screenshot(vm,directory,f'recovery-{captures}')
+                    captures += 1
+                    fit(actual)
+                deadline = time.monotonic()+5
+                while screenshot(vm,directory,f'recovered-{captures}').tobytes() != expected(scene,x,y).tobytes():
+                    captures += 1
+                    if time.monotonic() > deadline: raise RuntimeError('Stall: recovered screen mismatch')
             for row in range(18):
-                # V2c: while presenting through the GPU the console pixels live in the surface backing.
-                origin = provider.number(log,'KERNEL_VGPU_PRESENT_SURFACE') if 'KERNEL_VGPU_PRESENTING' in log and not fallbacks else base
+                # V2c: the console pixels live in the surface backing whenever the screen shows the GPU
+                # scanout (stall: after the recovery); otherwise in the GOP aperture.
+                origin = (provider.number(log,'KERNEL_VGPU_PRESENT_SURFACE')
+                    if 'KERNEL_VGPU_PRESENTING' in log and (not fallbacks or (stall and scene.size == gpu[:2])) else base)
                 words = pointer.physical(vm,directory/'monitor.log',origin+((y+row)*stride+x)*4)
                 for col in range(18):
                     rgb = tuple(pointer.blend(pointer.sample(col,row),(8,16,24)))
@@ -306,7 +339,7 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
             provider.command(vm,'quit')
             vm.wait(timeout=5)
             if vm.returncode: raise RuntimeError('QEMU exit failure')
-            translation = (translation_check(log,mouse_trace.read_text(errors='replace'),fallbacks,presenting) if iommu else
+            translation = (translation_check(log,mouse_trace.read_text(errors='replace'),fallbacks,presenting,stall) if iommu else
                 untranslated_check(log) if absent else None)
             return dict(Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
                 EscCancelled=True,EscMouseProgress=True,CancelScenes=1,
@@ -353,6 +386,7 @@ def main():
     parser.add_argument('--audit',type=Path)
     parser.add_argument('--boots',type=int,choices=range(1,21),default=10)
     parser.add_argument('--iommu',action='store_true'); parser.add_argument('--iommu-absent',action='store_true')
+    parser.add_argument('--present-stall',action='store_true')
     parser.add_argument('--present-fallback',action='store_true'); parser.add_argument('--iommu-nopresent',action='store_true')
     args = parser.parse_args()
     if args.audit:
@@ -368,8 +402,8 @@ def main():
         ROOT/'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'),Results=results)
     try:
         for index in range(1,args.boots+1):
-            results.append(boot(args.image,out,index,args.iommu or args.present_fallback or args.iommu_nopresent,
-                args.iommu_absent,1 if args.present_fallback else 0,not args.iommu_nopresent))
+            results.append(boot(args.image,out,index,args.iommu or args.present_fallback or args.iommu_nopresent or args.present_stall,
+                args.iommu_absent,1 if args.present_fallback or args.present_stall else 0,not args.iommu_nopresent,args.present_stall))
             (out/'results.json').write_text(json.dumps(report,indent=2))
             print(f'PASS: interactive cursor {index}/{args.boots}; pixels, movement, cleanup',flush=True)
     except Exception as failure:

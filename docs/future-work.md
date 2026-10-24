@@ -243,8 +243,11 @@ Geometria e presentazione:
 - **Geometria della GPU**: prima versione fatta (politica A, griglia 142x44 a 1280x800, clip a
   113x42 al fallback; [report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/geometry.md)).
   Restano: recupero delle righe perse nel clip, cambio di risoluzione a sessione avviata.
-- **Timeout della present sotto carico dell'host**: un boot con build in parallelo ha avuto
-  `QUEUE_FAULT 3` e un fallback reale; rivedere la scadenza della coda.
+- **Timeout della present sotto carico dell'host**: fatto. Present asincrona, `SLOW` a 100 ms,
+  fallback a 1 s, recupero dopo un timeout, 10/10 boot con host carico
+  ([report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/asynchronous.md)).
+  Restano l'harness host di `present.c`, la taratura dei due limiti e il ritorno della griglia
+  a 142x44 dopo un recupero.
 - **Present con piu rettangoli**: oggi un solo inviluppo unisce celle e riquadri del puntatore
   lontani (area media circa 50.000 pixel per un gruppo da 1.296).
 - **Costo residuo del flush V2c** (circa 3,4 volte il GOP): present, `prepare` e disegno nella
