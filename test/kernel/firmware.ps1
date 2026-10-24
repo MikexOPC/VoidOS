@@ -199,6 +199,12 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $pagingLeaves += Read-Hex $log 'KERNEL_FB_PLAN_PAGES: 0x([0-9a-f]{16})'
             $pagingCount += Read-Hex $log 'KERNEL_FB_TABLE_COUNT: 0x([0-9a-f]{16})'
         }
+        # G3: the kernel heap (slot 230) is also bound after the inventory log line.
+        if ($log.Contains('KERNEL_HEAP_READY') -and
+            (Read-Hex $log 'KERNEL_HEAP_INVENTORY: 0x([0-9a-f]{16})') -eq $pagingInventory) {
+            $pagingLeaves += Read-Hex $log 'KERNEL_HEAP_PAGES: 0x([0-9a-f]{16})'
+            $pagingCount += Read-Hex $log 'KERNEL_HEAP_TABLES: 0x([0-9a-f]{16})'
+        }
         if (!$pagingCount -or $pagingCount -gt 128 -or !$pagingLeaves -or ($pagingInventory -band 7) -or
             $pagingInventory -lt $arenaInventory + 24 -or $pagingInventory + 3144 -gt 0x7000000b3000 -or
             $registers -notmatch ('(?im)^' + $pagingInventory.ToString('x16') + ':\s+0x' + $pagingRoot.ToString('x16') + '\s+0x' + $pagingLeaves.ToString('x16')) -or

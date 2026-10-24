@@ -6,6 +6,7 @@
 #include "surface/authority.h"
 #include "iommu/authority.h"
 #include "dma/authority.h"
+#include "heap/authority.h"
 typedef struct { BOOT_U64 Physical, View; BOOT_U32 Level, Reserved; } X86_PAGING_RESOURCE;
 typedef struct { BOOT_U64 Virtual, Physical, Cache, Owner; } X86_PAGING_DEVICE;
 struct X86_LAPIC_MAPPING;
@@ -33,8 +34,9 @@ typedef struct {
     X86_SURFACE_SNAPSHOT Surface;
     X86_IOMMU_SNAPSHOT Iommu;
     X86_DMA_SNAPSHOT Dma;
+    X86_HEAP_SNAPSHOT Heap;
 } X86_PAGING_INVENTORY;
-_Static_assert(sizeof(X86_PAGING_INVENTORY) == 3896, "Registro RAM MMIO bounded");
+_Static_assert(sizeof(X86_PAGING_INVENTORY) == 3944, "Registro RAM MMIO bounded");
 _Static_assert(sizeof(X86_PAGING_VIDEO_AUTH) == 440, "Autorita video bounded");
 // ====== backend in sola lettura e matematica scalare verificata da Rust ===== //
 
