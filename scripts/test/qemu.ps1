@@ -2,11 +2,15 @@ param(
     [string[]]$Campaign,
     [switch]$Smoke,
     [switch]$List,
-    [int]$Boots = 0
+    [int]$Boots = 0,
+    [int]$Parallel = 1
 )
 # G2 Q4: builds and runs the QEMU campaigns of campaigns.json by name. -Smoke runs one boot of
 # every campaign (the check before a commit that touches the kernel). Every campaign runs even
 # after a failure; the summary lists each result and the script fails if any failed.
+# -Parallel N runs up to N campaigns at once (each has its own image and VM directories); the
+# campaigns that build their own images in the shared tree (build null) run alone, first, and the
+# heavy ones (VirtIO/IOMMU) one at a time.
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $registry = (Get-Content -Raw (Join-Path $PSScriptRoot 'campaigns.json') | ConvertFrom-Json).campaigns
@@ -28,50 +32,45 @@ New-Item -ItemType Directory -Path $output | Out-Null
 
 # ============ campaigns ============
 
+$campaign = Join-Path $PSScriptRoot 'campaign.ps1'
 $results = @()
-foreach ($name in $selected) {
+$running = @()
+
+function Complete-Campaign($job) {
+    $job.Process.WaitForExit()
+    $code = $job.Process.ExitCode
+    $log = Join-Path $output ($job.Name + '.log')
+    $script:results += [pscustomobject]@{ Campaign = $job.Name; Boots = $job.Count; ExitCode = $code; Log = $log }
+    $script:results | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
+    if ($code) {
+        if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 15 }
+        Write-Output "[ FAIL ] Campaign $($job.Name); log: $log"
+    }
+    else { Write-Output "[ OK ] Campaign $($job.Name); log: $log" }
+}
+
+# Shared-tree campaigns first and alone, then the others up to $Parallel at a time.
+$ordered = @($selected | Where-Object { !$registry.$_.build }) + @($selected | Where-Object { $registry.$_.build })
+foreach ($name in $ordered) {
     $entry = $registry.$name
     $count = if ($Boots) { $Boots } elseif ($Smoke) { $entry.smoke } else { $entry.boots }
-    $log = Join-Path $output ($name + '.log')
-    $image = ''
-    $code = 0
+    $limit = if ($entry.build) { [Math]::Max(1, $Parallel) } else { 1 }
+    while ($running.Count -ge $limit -or (!$entry.build -and $running.Count) -or
+        ($entry.heavy -and @($running | Where-Object { $registry.($_.Name).heavy }).Count)) {
+        $done = @($running | Where-Object { $_.Process.HasExited })
+        if (!$done) { Start-Sleep -Milliseconds 500; continue }
+        foreach ($job in $done) { Complete-Campaign $job }
+        $running = @($running | Where-Object { !$_.Process.HasExited })
+    }
     Write-Output "[ INFO ] Campaign $name ($count boots)"
-    try {
-        if ($entry.build) {
-            $images = Join-Path $output $name
-            $build = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $project 'kernel/scripts/build.ps1')) +
-                @($entry.build) + @('-OutputDirectory', $images)
-            & powershell.exe @build *> (Join-Path $output ($name + '.build.log'))
-            if ($LASTEXITCODE) { throw "Build failed: $name" }
-            $image = Join-Path $images 'kernel.elf'
-        }
-        $arguments = @($entry.runner | Select-Object -Skip 1 | ForEach-Object {
-            $_.Replace('{image}', $image).Replace('{boots}', [string]$count) })
-        $arguments[0] = Join-Path $project $arguments[0]
-        # Start-Process with file redirection: UTF-8 logs (PowerShell 5.1 '*>' writes UTF-16) and no
-        # NativeCommandError from the runner's stderr.
-        $quoted = @($arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } })
-        # Not $list: PowerShell names are case-insensitive and -List is a [switch] parameter.
-        if ($entry.runner[0] -eq 'python') { $program = $python; $runnerArguments = $quoted }
-        else { $program = 'powershell.exe'; $runnerArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File') + $quoted }
-        $start = @{
-            FilePath = $program; ArgumentList = $runnerArguments; WorkingDirectory = $project; WindowStyle = 'Hidden'
-            Wait = $true; PassThru = $true; RedirectStandardOutput = $log; RedirectStandardError = $log + '.stderr'
-        }
-        $process = Start-Process @start
-        $code = $process.ExitCode
-    } catch {
-        $_.Exception.Message | Out-File $log -Append -Encoding utf8
-        $code = 1
-    }
-    $results += [pscustomobject]@{ Campaign = $name; Boots = $count; ExitCode = $code; Log = $log }
-    $results | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
-    if ($code) {
-        Get-Content -LiteralPath $log -Tail 15
-        Write-Output "[ FAIL ] Campaign $name; log: $log"
-    }
-    else { Write-Output "[ OK ] Campaign $name; log: $log" }
+    [string[]]$campaignArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$campaign",
+        '-Name', "$name", '-Count', "$count", '-Output', "$output")
+    $process = Start-Process powershell.exe -ArgumentList $campaignArguments -WorkingDirectory $project -WindowStyle Hidden -PassThru
+    # PowerShell 5.1: ExitCode stays empty unless the handle is opened while the process runs.
+    $null = $process.Handle
+    $running += [pscustomobject]@{ Name = $name; Count = $count; Process = $process }
 }
+foreach ($job in $running) { Complete-Campaign $job }
 
 # ============ summary ============
 

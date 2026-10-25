@@ -88,7 +88,7 @@ try {
         $objects + @('/link','/incremental:no','/DEBUG','/WX'))
     Invoke-Checked "$out/host.exe" @()
     $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
-    $arguments = @('--enable=all','--check-level=exhaustive','--platform=win64','--std=c11','--xml','--xml-version=2',
+    $arguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml','--xml-version=2',
         ('"-I'+$project+'"')) + @(
         'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',
         'arch/x86/kernel/drivers/video/framebuffer/construction.c',

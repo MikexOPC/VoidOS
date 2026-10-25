@@ -1,5 +1,5 @@
 {
-  "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. boots: full campaign; smoke: boots of the smoke set.",
+  "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
     "kernel-boot": {
       "build": null,
@@ -49,6 +49,7 @@
       "summary": "heap PTE changed outside the APIs, caught by the idle paging audit"
     },
     "v2c": {
+      "heavy": true,
       "build": [
         "-Ps2Input",
         "-Ps2Mouse",
@@ -70,6 +71,7 @@
       "summary": "console through the translated VirtIO GPU"
     },
     "fallback": {
+      "heavy": true,
       "build": [
         "-Ps2Input",
         "-Ps2Mouse",
@@ -92,6 +94,7 @@
       "summary": "injected present fault, GOP fallback and clip"
     },
     "stall": {
+      "heavy": true,
       "build": [
         "-Ps2Input",
         "-Ps2Mouse",
@@ -133,6 +136,7 @@
       "summary": "interactive console on GOP"
     },
     "absent": {
+      "heavy": true,
       "build": [
         "-Ps2Input",
         "-Ps2Mouse",

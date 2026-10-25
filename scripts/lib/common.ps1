@@ -51,7 +51,9 @@ function Restore-Msvc($Saved) {
 # cppcheck with the project profile; error, warning, performance and portability findings block.
 function Invoke-Cppcheck([string]$Project, [string]$Out, [string[]]$Sources, [string[]]$Defines = @()) {
     $checker = "$Project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
-    $arguments = @('--enable=all', '--check-level=exhaustive', '--platform=win64', '--std=c11', '--xml', ('"-I' + $Project + '"')) +
+    # Test tiers: normal level by default (fast tier); OS_CPPCHECK_LEVEL=exhaustive for the full tier.
+    # -j spreads the files over the cores (unusedFunction is skipped with -j; the full tier reports it).
+    $arguments = @('--enable=all', "--check-level=$OsCppcheckLevel", "-j$OsCppcheckJobs","--quiet", '--platform=win64', '--std=c11', '--xml', ('"-I' + $Project + '"')) +
         @($Defines | ForEach-Object { '-D' + $_ }) + @($Sources | ForEach-Object { '"' + $_ + '"' })
     $checked = Start-Process $checker -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
         -RedirectStandardError "$Out/cppcheck.xml" -RedirectStandardOutput "$Out/cppcheck.log"
@@ -59,6 +61,27 @@ function Invoke-Cppcheck([string]$Project, [string]$Out, [string[]]$Sources, [st
     [xml]$report = Get-Content "$Out/cppcheck.xml"
     $blocking = @($report.results.errors.error | Where-Object { $_.severity -in 'error', 'warning', 'performance', 'portability' })
     if ($blocking.Count) { $blocking | ForEach-Object { "$($_.id): $($_.msg)" }; throw 'Blocking static diagnostics' }
+}
+
+# ============ test tiers ============
+
+# Fast tier by default: cppcheck normal level over all cores. OS_CPPCHECK_LEVEL=exhaustive for the full
+# tier. Dot-sourcing puts these in the caller's scope, so every suite script reads the same choice.
+$OsCppcheckLevel = if ($env:OS_CPPCHECK_LEVEL -eq 'exhaustive') { 'exhaustive' } else { 'normal' }
+$OsCppcheckJobs = [Math]::Max(1, [Environment]::ProcessorCount)
+
+# ====== Invoke-CppcheckRaw ======
+
+# Plain function on purpose: $args keeps tokens such as --enable=all as arguments. The first one is
+# the XML report path. Start-Process with file redirection: the '& exe 2> file' form of PowerShell 5.1
+# left cppcheck blocked on its output pipe. Sets LASTEXITCODE like a native call.
+function Invoke-CppcheckRaw {
+    $xml = $args[0]
+    $checker = "$PSScriptRoot/../../kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $arguments = @($args | Select-Object -Skip 1 | ForEach-Object { $_ } | ForEach-Object { if ("$_" -match '\s') { '"' + $_ + '"' } else { "$_" } })
+    $checked = Start-Process $checker -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
+        -RedirectStandardError $xml -RedirectStandardOutput ($xml + '.log')
+    $global:LASTEXITCODE = $checked.ExitCode
 }
 
 # ============ serial evidence ============

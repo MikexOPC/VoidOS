@@ -100,7 +100,7 @@ try {
         }
     }
     if (!(Test-Path -LiteralPath $CppcheckPath)) { throw 'Supply -CppcheckPath for C fixture analysis' }
-    $cppcheckArguments = @('--enable=all','--check-level=exhaustive','--platform=win64',
+    $cppcheckArguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64',
         '--std=c11','--xml','--xml-version=2','-DSCHEDULER_HOST_UNBOUND',('-I' + $project),
         (Join-Path $module '../../test/kernel/scheduler/ffi/gateway_test.c'),(Join-Path $module '../../test/kernel/scheduler/ffi/binding_test.c'),
         (Join-Path $module '../../test/kernel/scheduler/ffi/payload_test.c'))

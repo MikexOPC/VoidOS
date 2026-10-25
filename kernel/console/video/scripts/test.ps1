@@ -160,7 +160,7 @@ try {
         ("/Fo$out/"),("/Fd$out/host.pdb"),("/Fe$out/hpet-policy.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/hpet-policy.exe" @()
     $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
-    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+    Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/kernel/console/video/console.c" `
         "$project/kernel/console/video/pointer/state.c" "$project/kernel/console/video/pointer/shape.c" `
         "$project/test/kernel/console/video/pointer/state_test.c" `
@@ -177,13 +177,13 @@ try {
         "$project/test/arch/x86/kernel/drivers/video/framebuffer/gateway/cases.c" `
         "$project/test/kernel/console/video/kernel/render_probe.c" `
         "$project/test/kernel/console/video/host/cases.c" "$project/test/kernel/console/video/kernel/probe.c" `
-        2> "$out/cppcheck.xml"
+
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml = Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
         throw 'Blocking static diagnostics'
     }
-    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+    Invoke-CppcheckRaw "$out/cppcheck-active.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
         -DKERNEL_TEST_CONSOLE_ACTIVE=1 -DKERNEL_TEST_CONSOLE_DRAW=1 -DKERNEL_TEST_CONSOLE_BATCH=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
         "$project/test/kernel/console/video/active/worker.c" `
         "$project/test/kernel/console/video/profiling/profile.c" `
@@ -202,7 +202,7 @@ try {
         "$project/arch/x86/kernel/timer/hpet/description/probe/policy.c" `
         "$project/arch/x86/kernel/timer/hpet/watchdog/core.c" `
         "$project/arch/x86/kernel/timer/hpet/watchdog/recovery/control.c" `
-        "$project/arch/x86/kernel/timer/lapic/driver.c" 2> "$out/cppcheck-active.xml"
+        "$project/arch/x86/kernel/timer/lapic/driver.c"
     if ($LASTEXITCODE) { throw 'Active cppcheck failed' }
     [xml]$activeXml = Get-Content "$out/cppcheck-active.xml"
     if (@($activeXml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
@@ -211,7 +211,7 @@ try {
     foreach ($profile in @('keyboard','mouse')) {
         $profileFlags = @()
         if ($profile -eq 'mouse') { $profileFlags += '-DKERNEL_PS2_MOUSE=1' }
-        & $cppcheck @profileFlags --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+        Invoke-CppcheckRaw "$out/cppcheck-shell-$profile.xml" @profileFlags --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
             -DKERNEL_CONSOLE_SHELL=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
             "$project/kernel/console/video/service/console.c" "$project/kernel/shell/shell.c" `
             "$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c" `
@@ -221,7 +221,7 @@ try {
             "$project/arch/x86/kernel/drivers/input/ps2/runtime/session.c" `
             "$project/arch/x86/kernel/drivers/input/ps2/shell/task.c" `
             "$project/arch/x86/kernel/scheduler/integration/kernel.c" `
-            "$project/arch/x86/kernel/scheduler/mapping/native.c" 2> "$out/cppcheck-shell-$profile.xml"
+            "$project/arch/x86/kernel/scheduler/mapping/native.c"
         if ($LASTEXITCODE) { throw 'Operational console cppcheck failed' }
         [xml]$shellXml = Get-Content "$out/cppcheck-shell-$profile.xml"
         if (@($shellXml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {

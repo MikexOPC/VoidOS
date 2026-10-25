@@ -152,7 +152,7 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
     mouse_trace = directory/'mouse-trace.log'
     video = 'iommu' if iommu else 'virtio' if absent else 'std'
     with qemu.Vm(directory, image, video, traces=[('ps2_mouse_send_packet', mouse_trace)]) as vm:
-        log = vm.wait('KERNEL_POINTER_READY',240 if iommu or absent else 80)  # V2b scans the PCI graph first
+        log = vm.wait('KERNEL_POINTER_READY',600 if iommu or absent else 80)  # V2b scans the PCI graph first; TCG speed varies with host load
         packet_pattern = r'ps2_mouse_send_packet .*? x (-?\d+) y (-?\d+) z'
         def delivered():
             packets = re.findall(packet_pattern,mouse_trace.read_text(errors='replace'))

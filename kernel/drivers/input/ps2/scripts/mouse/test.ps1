@@ -76,7 +76,7 @@ try {
 # ============ static analysis ============
 
 $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
-& $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
     ("-I$project") "$project/kernel/drivers/input/ps2/mouse/decoder.c" `
     "$project/test/kernel/drivers/input/ps2/mouse/abi_test.c" `
     "$project/kernel/drivers/input/ps2/mouse/protocol.c" `
@@ -86,7 +86,7 @@ $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/bu
     "$project/arch/x86/kernel/drivers/input/ps2/mouse/session.c" `
     "$project/arch/x86/kernel/drivers/input/ps2/mouse/task.c" `
     "$project/test/kernel/drivers/input/ps2/mouse/runtime/task_test.c" `
-    "$project/test/kernel/drivers/input/ps2/mouse/controller/test.c" 2> "$out/cppcheck.xml"
+    "$project/test/kernel/drivers/input/ps2/mouse/controller/test.c"
 if ($LASTEXITCODE) { throw 'Cppcheck failed' }
 [xml]$xml=Get-Content "$out/cppcheck.xml"
 if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {

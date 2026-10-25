@@ -91,11 +91,11 @@ try {
         '/entry:efi_main','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed:no',
         ("/out:$out/BOOTX64.EFI")) + $objects)
     $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
-    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+    Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") ("-I$boot") "$boot/graphics/gop.c" "$boot/../../../../test/arch/x86/boot/uefi/graphics/selection_test.c" `
         "$boot/../../../../test/arch/x86/boot/uefi/graphics/probe.c" "$boot/graphics/handoff.c" "$module/handoff.c" `
         "$module/../../../../test/kernel/drivers/video/framebuffer/handoff/validation_test.c" "$module/mapping.c" `
-        "$module/../../../../test/kernel/drivers/video/framebuffer/mapping/geometry_test.c" 2> "$out/cppcheck.xml"
+        "$module/../../../../test/kernel/drivers/video/framebuffer/mapping/geometry_test.c"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml=Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {
