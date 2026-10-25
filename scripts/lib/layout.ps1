@@ -9,11 +9,18 @@ function Read-LayoutValue([string]$Name) {
     return [Convert]::ToUInt64($match.Groups[1].Value, 16)
 }
 
-# Slots below 256 only for now (K1 stages 2-4 add the sign extension of the upper half here).
 function Read-LayoutSlot([string]$Name) {
     $match = [regex]::Match($layoutHeader, "#define\s+$Name\s+(\d+)U")
     if (!$match.Success) { throw "layout.h: $Name missing" }
     return [uint32]$match.Groups[1].Value
+}
+
+# Intel SDM Vol. 3A 3.3.7.1: slots 256-511 are the upper half, bits 63:48 copy bit 47.
+function Get-LayoutSlotAddress([string]$Name) {
+    $slot = [uint64](Read-LayoutSlot $Name)
+    $address = $slot -shl 39
+    if ($slot -ge 256) { $address = $address -bor 0xFFFF000000000000 }
+    return [uint64]$address
 }
 
 $OsImageBase = Read-LayoutValue 'X86_KERNEL_IMAGE_BASE'
@@ -24,11 +31,13 @@ $OsImageLimit = $OsImageBase + (Read-LayoutValue 'X86_KERNEL_IMAGE_BYTES')
 # Rust objects cannot include layout.h: their copies of layout values are compared here at every
 # kernel build, so a later K1 stage cannot change one side only.
 function Assert-LayoutCopies {
-    $windows = [uint64](Read-LayoutSlot 'X86_LAYOUT_WINDOWS_SLOT') -shl 39
+    $windows = Get-LayoutSlotAddress 'X86_LAYOUT_WINDOWS_SLOT'
+    $fb = Get-LayoutSlotAddress 'X86_LAYOUT_FB_SLOT'
     $copies = @(
         @('arch/x86/kernel/exceptions/rust/frame/validation.rs', 'KERNEL_IMAGE_BASE', $OsImageBase),
         @('arch/x86/kernel/descriptors/rust/layout/validation.rs', 'GUARD', ($windows + 0x40000)),
-        @('arch/x86/mm/paging/rust/validation/entries.rs', 'LAPIC_VIRTUAL', ($windows + 0x120000))
+        @('arch/x86/mm/paging/rust/validation/entries.rs', 'LAPIC_VIRTUAL', ($windows + 0x120000)),
+        @('arch/x86/mm/paging/rust/validation/entries.rs', 'VIDEO', ($fb + 4096))
     )
     foreach ($copy in $copies) {
         $rust = Get-Content -Raw (Join-Path $PSScriptRoot ('../../' + $copy[0]))

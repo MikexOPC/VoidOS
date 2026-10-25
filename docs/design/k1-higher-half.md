@@ -90,3 +90,22 @@ rimuove all'ingresso e da lì la metà bassa è vuota. Da verificare nel loader 
 ## 6. Decisioni da approvare
 L1-A (a tappe dietro `layout.h`), L2-A (immagine a `0xFFFF_FFFF_8000_0000`), L3-A (intervalli dal
 log seriale), il layout del §2 e i criteri del §5.
+
+## 7. Avanzamento
+
+| Tappa | Stato | Prove |
+|---|---|---|
+| Prototipo del linker | `link.exe` con `/base:0xFFFFFFFF80000000 /fixed`: nessun errore di rilocazione, image base ed entry point nella metà alta | `kernel/build/k1-link-probe` |
+| 1. `layout.h` senza cambi di comportamento | Fatta (b19e4d0). Codice generato uguale salvo la maschera dello slot (+16 byte in 5 funzioni) | suite host, smoke 12/12 |
+| 2. Regioni dei device e heap negli slot 481–486 | Fatta. Il paging in Rust attraversa anche la metà alta (salvo lo slot ricorsivo) ed estende il segno degli indirizzi foglia | suite host 35/36 (virtio-discovery: `read.c` dell'utente), smoke 12/12 (`qemu-run-2a75b8781a424ee08ca8a8dd3c281778`), QI e inizializzazione VirtIO 1/1 |
+| 3. Finestre di boot, stack e arena | Da fare | |
+| 4. Vista ricorsiva | Da fare | |
+| 5. Immagine del kernel | Da fare; da allargare la finestra di 1 MiB (immagine già a 692 KiB) | |
+
+Deviazione da L3-A: i runner leggono `layout.h` (`scripts/lib/layout.ps1` e `layout.py`) invece del log
+seriale. La fonte resta unica e serve anche prima del boot (`/base:` del linker).
+
+Trovati durante la tappa 2 e non causati da K1:
+- Il runner QI rifiutava una coda sotto 1 MiB, che è possibile da B8 in poi: corretto.
+- La campagna del mapping VirtIO (`virtio/scripts/firmware.py`, build `-TestVgpuMapping`) aspetta
+  `KERNEL_POINTER_READY`, e fallisce allo stesso modo anche sul commit precedente a K1: da sistemare a parte.

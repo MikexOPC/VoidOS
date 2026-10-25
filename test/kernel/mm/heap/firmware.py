@@ -3,6 +3,11 @@ import argparse
 import importlib.util
 import uuid
 from pathlib import Path
+# K1: slot addresses from arch/x86/configs/layout.h
+import importlib.util as _layout_util
+_layout_spec = _layout_util.spec_from_file_location("os_layout", __import__("pathlib").Path(__file__).resolve().parents[4] / "scripts/lib/layout.py")
+layout = _layout_util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 
 ROOT = Path(__file__).resolve().parents[4]
 spec = importlib.util.spec_from_file_location("os_qemu", ROOT / "scripts/lib/qemu.py")
@@ -20,7 +25,7 @@ def boot(image, out, index):
         if not log.before("KERNEL_HEAP_READY", "KERNEL_READY"): raise RuntimeError("Heap not bound during boot")
         if log.failures(): raise RuntimeError("Failure markers: " + ", ".join(log.failures()))
         values = {name: log.number("KERNEL_HEAP_" + name) for name in ("VIRTUAL", "PAGES", "TABLES", "DATA", "INVENTORY")}
-        if values["VIRTUAL"] != (230 << 39) + 0x200000 or values["PAGES"] != 4096 or values["TABLES"] != 10:
+        if values["VIRTUAL"] != layout.slot_address("X86_LAYOUT_HEAP_SLOT") + 0x200000 or values["PAGES"] != 4096 or values["TABLES"] != 10:
             raise RuntimeError("Heap layout")
         if values["DATA"] & 4095 or log.number("KERNEL_HEAP_SELFTEST_REJECTED") != 65:  # 64 double frees + 1 canary
             raise RuntimeError("Heap data or rejected count")

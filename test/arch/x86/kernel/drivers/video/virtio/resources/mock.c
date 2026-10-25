@@ -22,11 +22,11 @@ static int capture_private(const KERNEL_BOOT_CONTEXT *boot,const KERNEL_PHYSICAL
     out->Tables[0]=(X86_PAGING_RESOURCE){0x400000,0x400000,0,0};
     if (!x86_surface_inputs(allocator,out->Root,(BOOT_U64)out,sizeof(*out),&out->Surface)) return 0;
     const X86_SURFACE_AUTH *auth=x86_surface_owner();
-    if (!auth) return !roots[227];
+    if (!auth) return !roots[X86_SURFACE_SLOT];
     for (BOOT_U32 table=0; table<auth->Count; ++table) {
         const BOOT_U64 *page=(const BOOT_U64 *)auth->Tables[table].Base;
         BOOT_U32 level=table<2?table+1:3;
-        BOOT_U64 view=227ULL<<(12+(level-1)*9);
+        BOOT_U64 view=(BOOT_U64)X86_SURFACE_SLOT<<(12+(level-1)*9);
         out->Tables[out->Count++]=(X86_PAGING_RESOURCE){auth->Tables[table].Base,view,level,20+table};
         CHECK(x86_surface_record(&out->Surface,auth->Tables[table].Base,view,level,20+table));
         for (BOOT_U32 slot=0; slot<512; ++slot) {

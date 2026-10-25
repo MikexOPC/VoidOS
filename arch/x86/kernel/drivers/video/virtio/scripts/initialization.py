@@ -9,6 +9,11 @@ import shutil
 import subprocess
 import time
 import uuid
+# K1: slot indices from arch/x86/configs/layout.h
+import importlib.util as _layout_util
+_layout_spec = _layout_util.spec_from_file_location("os_layout", __import__("pathlib").Path(__file__).resolve().parents[7] / "scripts/lib/layout.py")
+layout = _layout_util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 
 ROOT=Path(__file__).resolve().parents[7]
 spec=importlib.util.spec_from_file_location('vgpu_firmware',ROOT/'kernel/drivers/video/virtio/discovery/scripts/firmware.py')
@@ -86,9 +91,9 @@ def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_
                     number=backend.protocol.number
                     root=number(log,'KERNEL_VGPU_INIT_ROOT')
                     if not 0x100000<=root<=0x08000000-4096 or root&4095: raise RuntimeError('Root outside test RAM')
-                    if backend.qtest(ts,f'readq {root+226*8:#x}'): raise RuntimeError('GPU branch retained')
-                    if backend.qtest(ts,f'readq {root+227*8:#x}'): raise RuntimeError('Surface branch retained')
-                    if backend.qtest(ts,f'readq {root+229*8:#x}'): raise RuntimeError('DMA arena branch retained')
+                    if backend.qtest(ts,f'readq {root+layout.slot("X86_LAYOUT_GPU_SLOT")*8:#x}'): raise RuntimeError('GPU branch retained')
+                    if backend.qtest(ts,f'readq {root+layout.slot("X86_LAYOUT_SURFACE_SLOT")*8:#x}'): raise RuntimeError('Surface branch retained')
+                    if backend.qtest(ts,f'readq {root+layout.slot("X86_LAYOUT_DMA_SLOT")*8:#x}'): raise RuntimeError('DMA arena branch retained')
                     table=root
                     for shift in (39,30,21):
                         entry=backend.qtest(ts,f'readq {table+((0x700000020000>>shift)&511)*8:#x}')

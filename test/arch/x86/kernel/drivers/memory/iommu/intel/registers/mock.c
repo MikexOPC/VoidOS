@@ -23,7 +23,7 @@ int x86_paging_inventory_capture(const KERNEL_BOOT_CONTEXT *boot,const KERNEL_PH
     if (!auth) return !roots[X86_IOMMU_SLOT];
     for (BOOT_U32 table=0; table<3; ++table) {
         const BOOT_U64 *page=(const BOOT_U64 *)auth->Tables[table].Base;
-        BOOT_U64 view=228ULL<<(12+table*9);
+        BOOT_U64 view=(BOOT_U64)X86_IOMMU_SLOT<<(12+table*9);
         out->Tables[out->Count++]=(X86_PAGING_RESOURCE){auth->Tables[table].Base,view,table+1,32+table};
         CHECK(x86_iommu_record(&out->Iommu,auth->Tables[table].Base,view,table+1,32+table));
         for (BOOT_U32 slot=0; slot<512; ++slot) {

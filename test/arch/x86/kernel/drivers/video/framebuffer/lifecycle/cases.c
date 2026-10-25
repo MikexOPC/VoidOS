@@ -29,7 +29,7 @@ static int roundtrip(void)
     CHECK(frame(owner.Authority.Tables[2].Base)[0] == 0);
     CHECK(frame(owner.Authority.Tables[2].Base)[4] == 0);
     stale = inventory;
-    CHECK(x86_fb_unbind(&owner)); CHECK(pool.FreePages == 128 && !owner.Self && !frame(4096)[225]);
+    CHECK(x86_fb_unbind(&owner)); CHECK(pool.FreePages == 128 && !owner.Self && !frame(4096)[X86_FB_SLOT]);
     CHECK(x86_paging_inventory_verify_lapic(&context, &pool, &lapic, &inventory));
     CHECK(bind());
     CHECK(!x86_paging_inventory_verify_video(&context, &pool, &lapic, &owner.Authority,
@@ -43,7 +43,7 @@ static int roundtrip(void)
 static int construction_failure(void)
 {
     CHECK(fixture()); fail_borrow = 2; CHECK(!bind());
-    CHECK(pool.FreePages == 128 && !owner.Self && !frame(4096)[225]);
+    CHECK(pool.FreePages == 128 && !owner.Self && !frame(4096)[X86_FB_SLOT]);
     CHECK(fixture()); lose_view = 1; CHECK(!bind());
     CHECK(owner.Ready == 1 && pool.FreePages == 125 && window.Active == 2);
     CHECK(!x86_fb_unbind(&owner) && pool.FreePages == 125);
@@ -59,7 +59,7 @@ static int flush_failure(void)
     CHECK(pool.FreePages == 128 && !owner.Self && flushes == 2);
     CHECK(fixture()); fail_flush = 1; CHECK(!bind());
     CHECK(owner.Ready == 3 && owner.Published && pool.FreePages == 125);
-    CHECK(!frame(4096)[225]); CHECK(!x86_fb_unbind(&owner) && pool.FreePages == 125);
+    CHECK(!frame(4096)[X86_FB_SLOT]); CHECK(!x86_fb_unbind(&owner) && pool.FreePages == 125);
     fail_flush = 0; CHECK(x86_fb_unbind(&owner)); CHECK(pool.FreePages == 128);
     return 0;
 }
@@ -74,9 +74,9 @@ static int authority_changes(void)
     CHECK(!x86_fb_unbind(&copy) && pool.FreePages == 125);
     cpu.Pat ^= 1; CHECK(!x86_fb_unbind(&owner) && pool.FreePages == 125); cpu.Pat ^= 1;
     bad_cpu = 1; CHECK(!x86_fb_unbind(&owner)); bad_cpu = 0;
-    entry = frame(4096)[225]; frame(4096)[225] = 0x2003;
-    CHECK(!x86_fb_unbind(&owner) && frame(4096)[225] == 0x2003);
-    frame(4096)[225] = entry;
+    entry = frame(4096)[X86_FB_SLOT]; frame(4096)[X86_FB_SLOT] = 0x2003;
+    CHECK(!x86_fb_unbind(&owner) && frame(4096)[X86_FB_SLOT] == 0x2003);
+    frame(4096)[X86_FB_SLOT] = entry;
     frame(owner.Authority.Tables[2].Base)[1] |= 4;
     CHECK(!x86_paging_inventory_verify_video(&context, &pool, &lapic, &owner.Authority,
         x86_fb_authority, &inventory));
@@ -123,7 +123,7 @@ static int allocation_exhaustion(void)
     CHECK(fixture());
     for (index = 0; index < 62; ++index) CHECK(kernel_physical_allocate(&pool, 1, &leases[index]));
     CHECK(pool.FreePages == 66);
-    CHECK(!bind() && !owner.Self && pool.FreePages == 66 && !borrows && !frame(4096)[225]);
+    CHECK(!bind() && !owner.Self && pool.FreePages == 66 && !borrows && !frame(4096)[X86_FB_SLOT]);
     for (index = 0; index < 62; ++index) CHECK(kernel_physical_release(&pool, &leases[index]));
     CHECK(pool.FreePages == 128);
     return 0;

@@ -1,11 +1,17 @@
 """Independent QTest verification of QI completion, retired buffers and CPU mapping."""
 import base64
 import re
+# K1: slot indices from arch/x86/configs/layout.h
+import importlib.util as _layout_util
+_layout_spec = _layout_util.spec_from_file_location("os_layout", __import__("pathlib").Path(__file__).resolve().parents[9] / "scripts/lib/layout.py")
+layout = _layout_util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 
 # ====== page ======
 
 def page(stream,physical,directory,name):
-    if physical&4095 or not 0x100000<=physical<=0x8000000-4096: raise RuntimeError('QI page outside test RAM')
+    # B8: low memory (page 0 excluded) is in the pool, so the queue may sit below 1 MiB.
+    if physical&4095 or not 0x1000<=physical<=0x8000000-4096: raise RuntimeError('QI page outside test RAM')
     stream.write(f'b64read {physical:#x} 0x1000\n'.encode()); stream.flush()
     fields=stream.readline(16384).decode().split()
     if len(fields)!=2 or fields[0]!='OK': raise RuntimeError('QI page read failed')
@@ -43,7 +49,7 @@ def verify(backend,stream,directory,log,discovery):
     observed_iqa=backend.qtest(stream,f'readq {physical+0x90:#x}')
     if observed_iqa not in (0,queue): raise RuntimeError('Foreign latched IQA after stop')
     root=number(log,'KERNEL_QI_ROOT')
-    if backend.qtest(stream,f'readq {root+228*8:#x}'): raise RuntimeError('QI CPU mapping still active')
+    if backend.qtest(stream,f'readq {root+layout.slot("X86_LAYOUT_IOMMU_SLOT")*8:#x}'): raise RuntimeError('QI CPU mapping still active')
     tables=[int(value,16) for value in re.findall(r'KERNEL_QI_TABLE: 0x([0-9a-fA-F]+)',log)]
     if len(tables)!=3 or len(set([queue,status,*tables]))!=5: raise RuntimeError('QI page alias')
     cache=number(log,'KERNEL_QI_CACHE'); pat=number(log,'KERNEL_QI_PAT')
