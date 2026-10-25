@@ -1,24 +1,19 @@
 #include "session.h"
-#include <string.h>
 #include "../console/profile.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 
 static const X86_FB_TARGET *redirect;
 
-// H1-A: the last fully verified paging snapshot. A pixel session repeats the full scan only when
-// the paging generation moved, the snapshot or the allocator differ, the owner changed, after 64 skipped sessions
-// (periodic net, H3) or after a reset at the session boundaries.
-#define VERIFY_PERIOD 64U
-static X86_PAGING_INVENTORY verified;
-// The allocator is part of what the full scan checks (pinned table leases): a changed pool also
-// forces the scan, so only page-table writes outside the APIs wait for the periodic net.
-static KERNEL_PHYSICAL_ALLOCATOR verified_pool;
-// CPU paging state (CR3, PAT, physical bits) is not a PTE write either: it is compared as well.
+// G5 V2: the pixel path keeps no full scan. The paging inventory is scanned in full when the cache
+// is empty (reset at the session boundaries) or when owner or CPU paging state change. A moved
+// paging or allocator generation is a change made through the kernel APIs, which verify what they
+// build (V4): it is accepted without a scan. Anything that bypasses the APIs is the job of the idle
+// audit (x86_fb_audit, at most once per second).
 static X86_FB_CPU verified_cpu;
 static BOOT_U64 verified_generation;
+static BOOT_U32 verified_pool, verified_ready;
 static const X86_FB_MAPPING *verified_owner;
-static BOOT_U32 verified_ready, verified_skips;
-static BOOT_U64 verify_full, verify_skipped;
+static BOOT_U64 verify_full, verify_skipped, verify_accepted;
 
 // ====== x86_fb_verify_reset ======
 
@@ -26,46 +21,53 @@ void x86_fb_verify_reset(void) { verified_ready = 0; }
 
 // ====== x86_fb_verify_counts ======
 
-void x86_fb_verify_counts(BOOT_U64 *full, BOOT_U64 *skipped)
+void x86_fb_verify_counts(BOOT_U64 *full, BOOT_U64 *skipped, BOOT_U64 *accepted)
 {
     if (full) *full = verify_full;
     if (skipped) *skipped = verify_skipped;
+    if (accepted) *accepted = verify_accepted;
+}
+
+// ====== x86_fb_audit ======
+
+// One full scan of the paging inventory against the owner's snapshot (the idle audit, the first
+// session after a reset, or an owner/CPU change).
+int x86_fb_audit(X86_FB_MAPPING *owner)
+{
+    return owner && owner->Context && owner->Window && owner->Window->Pool && owner->Lapic && owner->Inventory &&
+        x86_paging_inventory_verify_video(owner->Context, owner->Window->Pool, owner->Lapic, &owner->Authority,
+            x86_fb_authority, owner->Inventory);
 }
 
 // ====== verify_private ======
 
 static int verify_private(X86_FB_MAPPING *owner)
 {
-    BOOT_U64 generation = x86_paging_generation();
     X86_FB_CPU cpu;
 
     if (!x86_fb_cpu(&cpu)) return 0;
 
-    if (verified_ready && verified_owner == owner && cpu.Root == verified_cpu.Root && cpu.Pat == verified_cpu.Pat &&
-        cpu.PhysicalBits == verified_cpu.PhysicalBits && verified_generation == generation && verified_skips < VERIFY_PERIOD &&
-        !memcmp(&verified, owner->Inventory, sizeof(verified)) &&
-        !memcmp(&verified_pool, owner->Window->Pool, sizeof(verified_pool))
-    ) {
-        ++verified_skips;
-        ++verify_skipped;
-        return 1;
+    BOOT_U64 generation = x86_paging_generation();
+    BOOT_U32 pool = owner->Window->Pool->Generation;
+    int same = verified_ready && verified_owner == owner && cpu.Root == verified_cpu.Root &&
+        cpu.Pat == verified_cpu.Pat && cpu.PhysicalBits == verified_cpu.PhysicalBits;
+
+    if (same && verified_generation == generation && verified_pool == pool) { ++verify_skipped; return 1; }
+
+    if (same) {
+        ++verify_accepted;
+    }
+    else {
+        verified_ready = 0;
+        if (!x86_fb_audit(owner)) return 0;
+        ++verify_full;
+        verified_cpu = cpu;
+        verified_owner = owner;
+        verified_ready = 1;
     }
 
-    verified_ready = 0;
-
-    if (!x86_paging_inventory_verify_video(owner->Context, owner->Window->Pool, owner->Lapic, &owner->Authority,
-        x86_fb_authority, owner->Inventory)
-    )
-    return 0;
-
-    ++verify_full;
-    verified = *owner->Inventory;
-    verified_pool = *owner->Window->Pool;
-    verified_cpu = cpu;
-    verified_owner = owner;
     verified_generation = x86_paging_generation();
-    verified_skips = 0;
-    verified_ready = 1;
+    verified_pool = owner->Window->Pool->Generation;
     return 1;
 }
 

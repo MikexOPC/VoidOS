@@ -64,6 +64,8 @@ static void worker_private(void)
         if (!console_flush_private(owner)) worker_failure_private(2, owner);
         if (owner->Quiet) { x86_scheduler_yield(); continue; }
         if (x86_console_pending(owner)) poll_ticks = X86_PM_CLOCK_HZ / 1000;
+        // G5 V1-A: nothing to draw, so the paging audit (at most once per second) runs here.
+        else if (!x86_console_audit(owner)) worker_failure_private(6, owner);
 #else
         if (owner->Quiet) break;
 #endif

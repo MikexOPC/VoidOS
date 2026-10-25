@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/drivers/video/framebuffer/live/group.h"
+#include "kernel/mm/physical/holdings.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +44,19 @@ int x86_fb_group_pointer(X86_FB_MAPPING *mapping, BOOT_U32 column, BOOT_U32 row,
 {
     CHECK(pointer != NULL);
     return x86_fb_group_caret(mapping, column, row, scalars, count, foreground, background, ticks, caret);
+}
+
+// ====== x86_fb_audit ======
+
+// G5: the audit scans with the live expected inventory (task stacks added) and restores the owner.
+static BOOT_U32 audits, audit_fail;
+
+int x86_fb_audit(X86_FB_MAPPING *mapping)
+{
+    CHECK(mapping == &owner && mapping->Inventory != &inventory);
+    CHECK(mapping->Inventory->LeafPages == inventory.LeafPages + pages);
+    ++audits;
+    return !audit_fail;
 }
 
 // ====== setup ======
@@ -100,6 +114,19 @@ int main(void)
         CHECK(x86_fb_live_group_caret(&owner, 2, 3, &scalar, 1, 1, 2, &ticks, 0));
         CHECK(owner.Inventory == &inventory && calls == 1 && ticks == 1);
     }
+    // G5 V1-A: the idle audit uses the same expected inventory and accounting as a group.
+    setup(48); audits = audit_fail = 0;
+    CHECK(x86_fb_live_audit(&owner) && audits == 1 && owner.Inventory == &inventory);
+    audit_fail = 1; CHECK(!x86_fb_live_audit(&owner) && audits == 2 && owner.Inventory == &inventory);
+    audit_fail = 0; --pool.FreePages; CHECK(!x86_fb_live_audit(&owner));
+    // G5 V3: pages declared by a registered holder are subtracted from the budget.
+    static KERNEL_HOLDING session;
+    setup(48); pool.FreePages -= 7;
+    CHECK(!x86_fb_live_audit(&owner) && kernel_holdings_register(&session, 7) && x86_fb_live_audit(&owner));
+    CHECK(kernel_holdings_total() == 7 && kernel_holdings_update(&session, 9) && !x86_fb_live_audit(&owner));
+    CHECK(kernel_holdings_update(&session, 7) && x86_fb_live_audit(&owner));
+    CHECK(!kernel_holdings_register(&session, 1) && kernel_holdings_unregister(&session) && !kernel_holdings_unregister(&session));
+    CHECK(kernel_holdings_total() == 0 && !x86_fb_live_audit(&owner));
     printf("PASS live group: %u checks; authority/CPU/paging MOCK; scoped snapshot restored\n", checks);
     return 0;
 }

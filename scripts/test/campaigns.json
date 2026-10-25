@@ -28,6 +28,26 @@
       "smoke": 1,
       "summary": "kernel heap bound at boot: self-test of slabs, page runs, rejections"
     },
+    "paging-tamper": {
+      "build": [
+        "-Ps2Input",
+        "-Ps2Mouse",
+        "-ConsoleShell",
+        "-InteractiveInput",
+        "-TestPagingTamper"
+      ],
+      "runner": [
+        "python",
+        "test/kernel/mm/heap/tamper.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}"
+      ],
+      "boots": 3,
+      "smoke": 1,
+      "summary": "heap PTE changed outside the APIs, caught by the idle paging audit"
+    },
     "v2c": {
       "build": [
         "-Ps2Input",

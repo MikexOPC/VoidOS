@@ -58,7 +58,9 @@ uint32_t kernel_console_measure_batch_step_live(KERNEL_CONSOLE_MEASUREMENT *owne
 { (void)owner; (void)group; CHECK(0); return 0; }
 // H1-A verification cache of the pixel layer: not part of the session under test.
 void x86_fb_verify_reset(void) {}
-void x86_fb_verify_counts(BOOT_U64 *full, BOOT_U64 *skipped) { if (full) *full = 0; if (skipped) *skipped = 0; }
+void x86_fb_verify_counts(BOOT_U64 *full, BOOT_U64 *skipped, BOOT_U64 *accepted)
+{ if (full) *full = 0; if (skipped) *skipped = 0; if (accepted) *accepted = 0; }
+int x86_fb_kernel_audit(void) { return 1; }
 // Geometry A: no redirected target in the keyboard session; the grid follows the GOP.
 const X86_FB_TARGET *x86_fb_target(void) { return 0; }
 int x86_fb_kernel_group_caret(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,

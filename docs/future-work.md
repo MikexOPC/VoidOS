@@ -286,8 +286,11 @@ all'avvio.
 - **Crescita a runtime:** richiede di rivedere la contabilità della console (`FreePages` costante,
   live group) insieme a G5.
 - **Lock** per SMP.
-- **Costo della verifica:** la scansione completa dell'inventario visita 4096 foglie in più e il
-  flush V2c costa +16%. Da ridurre con la verifica alla costruzione più audit (G5).
+- **Costo della verifica:** risolto con G5. La scansione completa è uscita dal flush, che ora costa
+  7.544 tick PM contro 9.680, meno anche di prima dell'heap
+  ([politica](mm/paging/verification-policy.md)). La crescita può usare il registro dei detentori
+  (G5 V3). Resta il blocco di 15–25 ms dell'audit in inattività, da spezzare con un audit
+  incrementale.
 - **Primo utilizzatore:** le superfici delle finestre della GUI.
 
 ## FW-012 — Suite di test automatiche complete

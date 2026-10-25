@@ -27,4 +27,6 @@ int x86_heap_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *w
     const X86_LAPIC_MAPPING *lapic, X86_PAGING_INVENTORY *inventory);
 // The kernel heap once started, otherwise 0.
 KERNEL_HEAP *kernel_heap(void);
+// Test image -TestPagingTamper only: one heap PTE changed outside the APIs.
+int x86_heap_tamper(void);
 #endif

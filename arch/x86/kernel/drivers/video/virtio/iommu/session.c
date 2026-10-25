@@ -1,4 +1,5 @@
 #include "session.h"
+#include "kernel/mm/physical/holdings.h"
 #include "arch/x86/kernel/drivers/video/virtio/integration/kernel.h"
 #include "kernel/diagnostics/log.h"
 #include "kernel/diagnostics/latency.h"
@@ -6,6 +7,7 @@
 static X86_DMA_ARENA arena;
 static X86_SURFACE_MAPPING surface;
 static BOOT_U64 budget, polls, held;
+static KERNEL_HOLDING holding;
 static BOOT_U32 state;
 // V2d: fault scan per flush, and the IF=0 sections of start and stop (one sample each).
 static KERNEL_LATENCY poll_ticks, quiet_ticks;
@@ -120,6 +122,8 @@ int x86_vgpu_session_start(const KERNEL_ACPI_DIRECTORY *directory)
 #endif
 
     held = budget - gpu->Window->Pool->FreePages;
+    // G5 V3: the session declares what it holds; the console accounting subtracts the total.
+    if (held && !kernel_holdings_register(&holding, held)) state = X86_VGPU_SESSION_RETAINED;
     quiet_end(flags, since);
 
     if (state == X86_VGPU_SESSION_RETAINED) return kernel_log(3, "KERNEL_VGPU_SESSION_RETAINED") && 0;
@@ -179,7 +183,10 @@ int x86_vgpu_session_stop(void)
 
     state = released ? X86_VGPU_SESSION_OFF : X86_VGPU_SESSION_RETAINED;
 
-    if (released) held = 0;
+    if (released) {
+        held = 0;
+        if (holding.Self) released = kernel_holdings_unregister(&holding);
+    }
 
     quiet_end(flags, since);
     // IF=0 sections: only the stop one is timed; the start one begins before the PM clock is captured.

@@ -8,7 +8,9 @@ typedef struct { BOOT_U64 Base, Pages; } KERNEL_PHYSICAL_EXTENT;
 typedef struct { BOOT_U64 Base, Pages, Id, Owner; } KERNEL_PHYSICAL_LEASE;
 typedef struct {
     BOOT_U64 Self, TotalPages, FreePages, NextId;
-    BOOT_U32 Ready, PhysicalBits, Count, Reserved;
+    // G5 V2: Generation advances on every allocate, release and pin change, so a cache keyed on
+    // the allocator compares one counter instead of the whole metadata.
+    BOOT_U32 Ready, PhysicalBits, Count, Generation;
     KERNEL_PHYSICAL_EXTENT Free[KERNEL_PHYSICAL_EXTENTS];
     KERNEL_PHYSICAL_LEASE Live[KERNEL_PHYSICAL_LEASES];
     BOOT_U32 Pins[KERNEL_PHYSICAL_LEASES];
