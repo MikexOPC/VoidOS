@@ -14,14 +14,13 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
     if (!plan || plan->Count < 2 || plan->Count > BOOT_MAPPING_LIMIT ||
         plan->StackTop != X86_BOOT_STACK_TOP)
         return EFI_INVALID_PARAMETER;
-    if (plan->DescriptorBase && ((plan->DescriptorBase & 4095) || plan->DescriptorBase < 4096 ||
-        plan->DescriptorBase > X86_BOOT_LOW_ADDRESS_LIMIT - X86_BOOT_TRANSITION_DATA_PAGES * 4096)) return EFI_INVALID_PARAMETER;
+    if (plan->DescriptorBase && ((plan->DescriptorBase & 4095) ||
+        !X86_LAYOUT_RANGE(plan->DescriptorBase, X86_BOOT_TRANSITION_DATA_PAGES * 4096))) return EFI_INVALID_PARAMETER;
     for (index = 0; index < plan->Count; ++index) {
         const BOOT_MAPPING *mapping = &plan->Mappings[index];
         UINT64 bytes;
         if (!mapping->PhysicalBase || (mapping->PhysicalBase & 4095) ||
-            mapping->VirtualBase < 4096 || (mapping->VirtualBase & 4095) ||
-            mapping->VirtualBase >= X86_BOOT_LOW_ADDRESS_LIMIT || !mapping->Pages ||
+            (mapping->VirtualBase & 4095) || !X86_LAYOUT_RANGE(mapping->VirtualBase, 4096) || !mapping->Pages ||
             mapping->Pages > ELF_MAX_MEMORY_BYTES / 4096 ||
             (mapping->Flags & ~7U) || !(mapping->Flags & 4) ||
             (mapping->Flags & 3) == 3)
@@ -45,8 +44,8 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
                 mapping->PhysicalBase != mapping->VirtualBase) return EFI_INVALID_PARAMETER;
             ++descriptor_count;
         }
-        if (mapping->PhysicalBase > ~0ULL - bytes ||
-            bytes > X86_BOOT_LOW_ADDRESS_LIMIT - mapping->VirtualBase)
+        // K1: one canonical half, either one (layout.h).
+        if (mapping->PhysicalBase > ~0ULL - bytes || !X86_LAYOUT_RANGE(mapping->VirtualBase, bytes))
             return EFI_INVALID_PARAMETER;
         if (index + 1 == plan->Count) {
             if (mapping->VirtualBase != BOOT_STACK_VIRTUAL ||

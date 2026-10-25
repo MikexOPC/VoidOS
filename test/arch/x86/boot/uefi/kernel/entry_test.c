@@ -1,4 +1,5 @@
 #include "handoff/protocol/start_info.h"
+#include "arch/x86/configs/layout.h"
 #include "elf/validate.h"
 
 BOOT_U64 kernel_probe_entry(const BOOT_START_INFO *info);
@@ -9,8 +10,8 @@ BOOT_U64 kernel_probe_marker(void);
 __declspec(dllexport) int run_kernel_probe_tests(void) {
     BOOT_START_INFO info = {BOOT_START_SIGNATURE, BOOT_START_VERSION, sizeof(BOOT_START_INFO),
         BOOT_START_FEATURES, BOOT_START_FEATURES, 0x400000,
-        0x0000700000001000ULL, 65536, 0x101000, 0,
-        0x0000500000000000ULL, 96, 4096, 48, 1, 0};
+        (X86_LAYOUT_WINDOWS_VIRTUAL + 0x1000ULL), 65536, 0x101000, 0,
+        X86_LAYOUT_MAP_VIRTUAL, 96, 4096, 48, 1, 0};
     BOOT_START_INFO bad;
     BOOT_U32 i;
     if (kernel_probe_marker() != 0 || kernel_probe_entry(0) != 1) return 1;

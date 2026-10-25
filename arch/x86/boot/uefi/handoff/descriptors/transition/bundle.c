@@ -1,11 +1,11 @@
 #include "bundle.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== confini e separazione prima di accedere al profilo ====== //
 
 static int valid_layout(const BOOT_DESCRIPTOR_BUNDLE *bundle, const BOOT_DESCRIPTOR_LAYOUT *layout)
 {
-    const uint64_t limit = UINT64_C(1) << 47;
     const uint64_t bytes = X86_BOOT_EXCEPTION_STACK_BYTES;
     uint32_t vector;
     if (!bundle || !layout || ((uintptr_t)bundle & 15) || ((uintptr_t)layout & 7)) return 0;
@@ -13,18 +13,16 @@ static int valid_layout(const BOOT_DESCRIPTOR_BUNDLE *bundle, const BOOT_DESCRIP
         (BOOT_DESCRIPTOR_OFFSET(bundle, Task) & 15) || (BOOT_DESCRIPTOR_OFFSET(bundle, Idt) & 15)) return 0;
     if (os_address_ranges_overlap((uint64_t)(uintptr_t)bundle, sizeof(*bundle),
                                   (uint64_t)(uintptr_t)layout, sizeof(*layout))) return 0;
-    if (layout->LinearBase < 4096 || (layout->LinearBase & 4095) ||
-        layout->LinearBase > limit - 4096 ||
-        layout->PrivilegeStack < 4096 || (layout->PrivilegeStack & 4095) ||
-        layout->PrivilegeStack >= limit - bytes ||
-        layout->ExceptionStack < 4096 || (layout->ExceptionStack & 4095) ||
-        layout->ExceptionStack >= limit - bytes) return 0;
+    // K1: each range in one canonical half (layout.h). Stacks keep the former strict end margin.
+    if ((layout->LinearBase & 4095) || !X86_LAYOUT_RANGE(layout->LinearBase, 4096) ||
+        (layout->PrivilegeStack & 4095) || !X86_LAYOUT_RANGE(layout->PrivilegeStack, bytes + 1) ||
+        (layout->ExceptionStack & 4095) || !X86_LAYOUT_RANGE(layout->ExceptionStack, bytes + 1)) return 0;
     if (os_address_ranges_overlap(layout->LinearBase, 4096, layout->PrivilegeStack, bytes) ||
         os_address_ranges_overlap(layout->LinearBase, 4096, layout->ExceptionStack, bytes) ||
         os_address_ranges_overlap(layout->PrivilegeStack, bytes, layout->ExceptionStack, bytes)) return 0;
     for (vector = 0; vector < X86_BOOT_EXCEPTION_COUNT; ++vector) {
         uint64_t target = layout->Targets[vector];
-        if (target < 4096 || target >= limit ||
+        if (!X86_LAYOUT_RANGE(target, 1) ||
             os_address_ranges_overlap(target, 1, layout->LinearBase, 4096) ||
             os_address_ranges_overlap(target, 1, layout->PrivilegeStack, bytes) ||
             os_address_ranges_overlap(target, 1, layout->ExceptionStack, bytes)) return 0;

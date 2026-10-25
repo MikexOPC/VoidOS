@@ -1,12 +1,13 @@
 #include "objects.h"
+#include "arch/x86/configs/layout.h"
 
 // ====== range canonico e allineato esterno all'arena dei mapping ===== //
 
 static int range(const void *object, BOOT_U64 bytes, BOOT_U64 alignment)
 {
     BOOT_U64 base = (BOOT_U64)object;
-    if (!object || base < 4096 || (base & (alignment - 1)) ||
-        base > X86_BOOT_LOW_ADDRESS_LIMIT - bytes) {
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    if (!object || (base & (alignment - 1)) || !X86_LAYOUT_RANGE(base, bytes)) {
         return 0;
     }
     return base + bytes <= X86_REGION_GUARD || base >= X86_REGION_GUARD + 4 * 34 * 4096;

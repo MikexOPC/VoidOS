@@ -1,15 +1,17 @@
 #[path = "../../../../../../arch/x86/mm/paging/rust/validation/entries.rs"]
 mod entries;
 use entries::{x86_paging_child_view as child, x86_paging_entry_valid as valid};
+// K1: base of the windows slot (X86_LAYOUT_WINDOWS_VIRTUAL in arch/x86/configs/layout.h).
+const WINDOWS: u64 = 0xFFFF_F400_0000_0000;
 const ROOT: u64 = (128 << 39) | (128 << 30) | (128 << 21) | (128 << 12);
 
 // ====== virtuale LAPIC ricostruito e classificazione scalare senza unsafe ===== //
 
 #[test]
 fn mixed_leaf() {
-    let pt = child(child(child(ROOT,0,224),1,0),2,0);
+    let pt = child(child(child(ROOT,0,488),1,0),2,0); // K1: windows slot 488
     let address = entries::x86_paging_leaf_virtual(pt,288);
-    assert_eq!(address,0x700000120000);
+    assert_eq!(address,WINDOWS + 0x12_0000);
     let entry = 0x80000000fee0001b;
     assert_eq!(entries::x86_paging_leaf_kind(entry,address,0xfee00000,0x18,36),2);
     for bit in 0..64 {

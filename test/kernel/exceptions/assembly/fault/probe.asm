@@ -1,4 +1,6 @@
 option casemap:none
+; K1: base of the main stack (X86_KERNEL_MAIN_BASE in layout.h terms), exported by stack/main.c.
+EXTERN x86_cpu_fault_stack:QWORD
 .code
 
 ; ====== eccezioni vere senza INT nei vettori riservati alla CPU ===== ;
@@ -24,7 +26,7 @@ invalid_selector:
     mov ds, ax
     ret
 invalid_stack:
-    mov rsp, 700000061000h
+    mov rsp, x86_cpu_fault_stack
     push rax
     ; Se il push non fallisce, UD2 segnala un fault diverso da quello atteso.
     ud2

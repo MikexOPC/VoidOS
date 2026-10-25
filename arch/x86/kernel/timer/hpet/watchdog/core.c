@@ -133,7 +133,8 @@ static int handle(void)
 static int trusted_range(const void *pointer, BOOT_U64 bytes)
 {
     BOOT_U64 address = (BOOT_U64)pointer;
-    return address >= 4096 && !(address & 7) && address <= (1ULL << 47) - bytes &&
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    return !(address & 7) && X86_LAYOUT_RANGE(address, bytes) &&
         !os_address_ranges_overlap(address,bytes,(BOOT_U64)&watchdog,sizeof(watchdog)) &&
         !os_address_ranges_overlap(address,bytes,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) &&
         !os_address_ranges_overlap(address,bytes,X86_LAPIC_VIRTUAL-4096,12288) &&

@@ -1,4 +1,5 @@
 #include "arch/x86/mm/regions/mapping.h"
+#include "arch/x86/configs/layout.h"
 static X86_REGION_MAPPER owner, copy;
 static KERNEL_PHYSICAL_ALLOCATOR pool;
 static BOOT_U64 tables[4][512];
@@ -40,8 +41,8 @@ static int fixture(void)
     clear(&owner, sizeof(owner)); clear(&pool, sizeof(pool)); clear(tables, sizeof(tables)); clear(map, sizeof(map));
     missing = byte_offset = invalidations = ordering = 0;
     map[0] = 7; map[10] = 0x10; map[24] = 128; map[32] = 8;
-    tables[0][128] = 0x8000000000001003ULL;
-    tables[0][224] = 0x2003; tables[1][0] = 0x3003; tables[2][0] = 0x4003;
+    tables[0][X86_LAYOUT_RECURSIVE_SLOT] = 0x8000000000001003ULL;
+    tables[0][X86_LAYOUT_WINDOWS_SLOT] = 0x2003; tables[1][0] = 0x3003; tables[2][0] = 0x4003;
     return kernel_physical_initialize(&pool, map, 48, 48, 32) && x86_region_initialize(&owner, &pool, 0x1000);
 }
 
@@ -140,7 +141,7 @@ static int corruptions(void)
 
 static int parents(void)
 {
-    const BOOT_U32 indices[] = {224, 0, 0};
+    const BOOT_U32 indices[] = {X86_LAYOUT_WINDOWS_SLOT, 0, 0};
     BOOT_U32 level, bit;
     if (!fixture()) return 1;
     for (level = 0; level < 3; ++level) {

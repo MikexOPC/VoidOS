@@ -1,4 +1,5 @@
 #include "terminal.h"
+#include "arch/x86/configs/layout.h"
 #include "kernel/diagnostics/log.h"
 extern const BOOT_U64 x86_kernel_fault_targets[32];
 extern const unsigned char x86_kernel_fault_begin[], x86_kernel_fault_end[];
@@ -24,8 +25,8 @@ static int arguments(const X86_KERNEL_IDT *table, const X86_KERNEL_IDTR *pointer
     BOOT_U64 base = (BOOT_U64)table;
     if (!table || !pointer || !targets || count != 32 || ((BOOT_U64)targets & 7) ||
         !x86_exception_idtr(base, sizeof(*table) - 1) ||
-        (BOOT_U64)pointer < 4096 || (BOOT_U64)pointer > X86_BOOT_LOW_ADDRESS_LIMIT - sizeof(*pointer) ||
-        (BOOT_U64)targets < 4096 || (BOOT_U64)targets > X86_BOOT_LOW_ADDRESS_LIMIT - 32 * sizeof(*targets)) return 0;
+        !X86_LAYOUT_RANGE((BOOT_U64)pointer, sizeof(*pointer)) ||
+        !X86_LAYOUT_RANGE((BOOT_U64)targets, 32 * sizeof(*targets))) return 0;
     if (!separate(base, sizeof(*table), (BOOT_U64)pointer, sizeof(*pointer)) ||
         !separate(base, sizeof(*table), (BOOT_U64)targets, 32 * sizeof(*targets)) ||
         !separate((BOOT_U64)pointer, sizeof(*pointer), (BOOT_U64)targets, 32 * sizeof(*targets))) return 0;
@@ -112,8 +113,7 @@ int x86_exception_activate(const X86_KERNEL_IDTR *pointer)
 {
     X86_KERNEL_IDTR old = {{0}}, actual = {{0}};
     BOOT_U32 byte;
-    if (!pointer || (BOOT_U64)pointer < 4096 ||
-        (BOOT_U64)pointer > X86_BOOT_LOW_ADDRESS_LIMIT - sizeof(*pointer) ||
+    if (!pointer || !X86_LAYOUT_RANGE((BOOT_U64)pointer, sizeof(*pointer)) ||
         !x86_exception_environment()) return 0;
     if (!x86_exception_idtr(idt_base(pointer),
         (BOOT_U64)pointer->Bytes[0] | ((BOOT_U64)pointer->Bytes[1] << 8))) return 0;

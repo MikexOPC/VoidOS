@@ -1,4 +1,5 @@
 #include "mapping.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/platform.h"
 #define NX (1ULL << 63)
 #define ADDRESS 0x000ffffffffff000ULL
@@ -9,7 +10,8 @@
 static int range(const void *object, BOOT_U64 bytes, BOOT_U64 alignment)
 {
     BOOT_U64 base = (BOOT_U64)object;
-    if (!object || base < 4096 || (base & (alignment - 1)) || base > X86_BOOT_LOW_ADDRESS_LIMIT - bytes) return 0;
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    if (!object || (base & (alignment - 1)) || !X86_LAYOUT_RANGE(base, bytes)) return 0;
     return base + bytes <= X86_REGION_GUARD || base >= X86_REGION_GUARD + 4 * 34 * 4096;
 }
 
@@ -29,7 +31,7 @@ static int branch(BOOT_U64 root, BOOT_U32 bits)
     volatile BOOT_U64 *table;
     if (bits < 32 || bits > 52 || !root || (root & 4095) || root >= (1ULL << bits) || root != x86_kernel_root()) return 0;
     table = x86_region_entries(0);
-    if (!table || (table[128] & ~AD) != (root | 3 | NX)) return 0;
+    if (!table || (table[X86_BOOT_RECURSIVE_SLOT] & ~AD) != (root | 3 | NX)) return 0;
     for (level = 0; level < 3; ++level) {
         BOOT_U64 entry, physical;
         table = x86_region_entries(level);

@@ -1,14 +1,15 @@
 #include "context.h"
+#include "arch/x86/configs/layout.h"
 
 // ====== context_bounds_private ======
 
 static int context_bounds_private(const X86_TASK_CONTEXT *context, uint64_t base, uint64_t bytes)
 {
     uint64_t address = (uint64_t)(uintptr_t)context;
-    uint64_t limit = UINT64_C(1) << 47;
-    if (!context || (address & 15) || address > limit - sizeof(*context) ||
-        bytes != X86_TASK_STACK_BYTES || base < 4096 || (base & 4095) ||
-        base > limit - bytes - 4096) return 0;
+    // K1: context and stack (with its upper guard page) in one canonical half (layout.h).
+    if (!context || (address & 15) || !X86_LAYOUT_RANGE(address, sizeof(*context)) ||
+        bytes != X86_TASK_STACK_BYTES || (base & 4095) ||
+        !X86_LAYOUT_RANGE(base, bytes + 4096)) return 0;
     return address + sizeof(*context) <= base - 4096 || address >= base + bytes + 4096;
 }
 

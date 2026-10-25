@@ -1,4 +1,5 @@
 #include "stacks.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/platform.h"
 #define IST_NX (1ULL << 63)
 #define IST_ADDRESS 0x000ffffffffff000ULL
@@ -10,8 +11,8 @@ static int metadata_range(const void *object, BOOT_U64 bytes, BOOT_U64 alignment
 {
     BOOT_U64 base = (BOOT_U64)object;
     BOOT_U64 end;
-    if (!object || base < 4096 || (base & (alignment - 1)) ||
-        base > X86_BOOT_LOW_ADDRESS_LIMIT - bytes) {
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    if (!object || (base & (alignment - 1)) || !X86_LAYOUT_RANGE(base, bytes)) {
         return 0;
     }
     end = base + bytes;

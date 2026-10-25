@@ -116,7 +116,7 @@ function Test-LapicRetention($log, $registers) {
     $expected = [Convert]::ToUInt64('8000000000000003',16) -bor $physical -bor $cache
     $ist = Read-Hex $log 'KERNEL_IST_PTE: 0x([0-9a-f]{16})'
     if (!$log.Contains('KERNEL_LAPIC_MAPPING_OK') -or $entry -ne $expected -or
-        $virtual -ne [uint64]123145303490560 -or ($mapping -band 7) -or
+        $virtual -ne ($OsWindows + 0x120000) -or ($mapping -band 7) -or
         $mapping -lt $OsImageBase -or $mapping+40 -gt $OsImageLimit) { throw 'Mapping LAPIC non conforme.' }
     $root = Read-Hex $registers 'CR3=([0-9a-f]{16})'
     $profile = Read-Hex $log 'KERNEL_APIC_PROFILE: 0x([0-9a-f]{16})'

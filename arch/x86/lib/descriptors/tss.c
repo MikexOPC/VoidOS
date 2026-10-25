@@ -1,4 +1,5 @@
 #include "tss.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== durate esterne e intervalli numerici distinti ====== //
@@ -6,11 +7,11 @@
 static int valid_arguments(const X86_BOOT_TSS *tss, const X86_TSS_DESCRIPTOR *descriptor,
                            uint64_t base, uint64_t privilege, uint64_t exception)
 {
-    const uint64_t limit = UINT64_C(1) << 47;
     const uint64_t bytes = X86_BOOT_EXCEPTION_STACK_BYTES;
-    if (!tss || !descriptor || base < 4096 || (base & 15) || base > limit - sizeof(*tss) ||
-        privilege < 4096 || exception < 4096 || (privilege & 4095) || (exception & 4095) ||
-        privilege >= limit - bytes || exception >= limit - bytes)
+    // K1: each range in one canonical half (layout.h). Stacks keep the former strict end margin.
+    if (!tss || !descriptor || (base & 15) || !X86_LAYOUT_RANGE(base, sizeof(*tss)) ||
+        (privilege & 4095) || (exception & 4095) ||
+        !X86_LAYOUT_RANGE(privilege, bytes + 1) || !X86_LAYOUT_RANGE(exception, bytes + 1))
         return 0;
     return !os_address_ranges_overlap((uint64_t)(uintptr_t)tss, sizeof(*tss),
                                       (uint64_t)(uintptr_t)descriptor, sizeof(*descriptor)) &&

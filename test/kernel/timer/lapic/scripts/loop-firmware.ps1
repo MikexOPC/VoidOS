@@ -136,7 +136,7 @@ try {
         $taskEnd=Read-Hex $log 'SCHEDULER_IRQ_END: 0x([0-9a-f]{16})'
         $taskRsp=Read-Hex $log 'SCHEDULER_IRQ_RSP: 0x([0-9a-f]{16})'
         if ($taskRip -lt $taskBegin -or $taskRip -ge $taskEnd -or
-            $taskRsp -lt 0x700000154000 -or $taskRsp -ge 0x700000163000 -or
+            $taskRsp -lt ($OsWindows + 0x154000) -or $taskRsp -ge ($OsWindows + 0x163000) -or
             (Read-Hex $log 'SCHEDULER_IRQ_TASK: 0x([0-9a-f]{16})') -ne 1 -or
             (Read-Hex $log 'SCHEDULER_IRQ_GENERATION: 0x([0-9a-f]{16})') -lt 2) {
             throw 'Owner o compute della prima consegna task non validi.'

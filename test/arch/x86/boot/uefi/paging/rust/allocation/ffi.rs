@@ -1,4 +1,6 @@
 use std::mem::{align_of, offset_of, size_of};
+// K1: base of the windows slot (X86_LAYOUT_WINDOWS_VIRTUAL in arch/x86/configs/layout.h).
+pub const WINDOWS: u64 = 0xFFFF_F400_0000_0000;
 
 pub const SUCCESS: u64 = 0;
 pub const INVALID: u64 = (1 << 63) | 2;
@@ -6,7 +8,7 @@ pub const UNSUPPORTED: u64 = (1 << 63) | 3;
 pub const DEVICE_ERROR: u64 = (1 << 63) | 7;
 pub const OUT_OF_RESOURCES: u64 = (1 << 63) | 9;
 pub const NX: u64 = 1 << 63;
-pub const STACK_BASE: u64 = 0x0000_7000_0000_1000;
+pub const STACK_BASE: u64 = WINDOWS + 0x1000;
 
 // ====== unico proprietario numerico passato al C ====== //
 

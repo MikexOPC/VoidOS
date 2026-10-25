@@ -1,6 +1,8 @@
 #[path = "../../../../../arch/x86/kernel/descriptors/rust/layout/validation.rs"]
 mod layout;
 use layout::*;
+// K1: base of the windows slot (X86_LAYOUT_WINDOWS_VIRTUAL in arch/x86/configs/layout.h).
+const WINDOWS: u64 = 0xFFFF_F400_0000_0000;
 
 // ====== guardie e stack separati con estremi esatti ===== //
 
@@ -56,8 +58,8 @@ fn main_layout() {
         assert_eq!(x86_stack_frame(2, (1u64 << bits) - 65536, bits), 1);
         assert_eq!(x86_stack_frame(2, (1u64 << bits) - 61440, bits), 0);
     }
-    for pointer in [0x700000061000, 0x700000070ff8] { assert_eq!(x86_main_pointer(pointer), 1); }
-    for pointer in [0, 0x700000060ff8, 0x700000061001, 0x700000071000, u64::MAX] {
+    for pointer in [WINDOWS + 0x61000, WINDOWS + 0x70FF8] { assert_eq!(x86_main_pointer(pointer), 1); }
+    for pointer in [0, WINDOWS + 0x60FF8, WINDOWS + 0x61001, WINDOWS + 0x71000, u64::MAX] {
         assert_eq!(x86_main_pointer(pointer), 0);
     }
 }

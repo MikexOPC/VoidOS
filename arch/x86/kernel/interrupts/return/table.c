@@ -26,7 +26,7 @@ static int arguments(const X86_IRQ_IDT *table, const X86_KERNEL_IDTR *pointer,
     BOOT_U32 index, other;
     if (!x86_irq_idtr(addresses[0],4095) || (addresses[2] & 15) || (addresses[3] & 7)) return 0;
     for (index = 0; index < 4; ++index) {
-        if (addresses[index] < 4096 || addresses[index] > X86_BOOT_LOW_ADDRESS_LIMIT - sizes[index]) return 0;
+        if (!X86_LAYOUT_RANGE(addresses[index], sizes[index])) return 0;
         for (other = 0; other < index; ++other)
             if (os_address_ranges_overlap(addresses[index],sizes[index],addresses[other],sizes[other])) return 0;
     }
@@ -123,8 +123,7 @@ int x86_irq_activate(const X86_KERNEL_IDTR *pointer)
 {
     X86_KERNEL_IDTR old = {{0}}, actual = {{0}};
     BOOT_U64 limit;
-    if (!pointer || (BOOT_U64)pointer < 4096 ||
-        (BOOT_U64)pointer > X86_BOOT_LOW_ADDRESS_LIMIT - sizeof(*pointer) ||
+    if (!pointer || !X86_LAYOUT_RANGE((BOOT_U64)pointer, sizeof(*pointer)) ||
         !x86_exception_environment() || !x86_irq_idtr(base(pointer),
             pointer->Bytes[0] | ((BOOT_U64)pointer->Bytes[1] << 8))) return 0;
     x86_exception_read_idt(&old);

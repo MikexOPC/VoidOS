@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/layout.ps1')
 # ====== contratto ACPI persistente dopo revoca dello stack loader ===== #
 
 function Test-AcpiFirmware($log, $registers, $arenaContext, $pagingInventory, $case, $windowPte) {
@@ -17,7 +18,7 @@ function Test-AcpiFirmware($log, $registers, $arenaContext, $pagingInventory, $c
     if (!$log.Contains('KERNEL_ACPI_XSDT_OK') -or !$log.Contains('KERNEL_ACPI_DIRECTORY_OK') -or
         !$acpiCount -or $acpiCount -gt 256 -or $acpiBytes -ne 36 + 8 * $acpiCount -or
         ($acpiDirectory -band 7) -or $acpiDirectory -lt $pagingInventory + 3144 -or
-        $acpiDirectory + 2072 -gt 0x7000000b3000 -or
+        $acpiDirectory + 2072 -gt ($OsWindows + 0xB3000) -or
         $registers -notmatch ('(?im)^' + $acpiDirectory.ToString('x16') + ':\s+0x' + $acpiRoot.ToString('x16') + '\s+0x' + (($acpiCount -shl 32) + $acpiBytes).ToString('x16')) -or
         $registers -notmatch ('(?im)^' + ($acpiDirectory + 16).ToString('x16') + ':\s+0x0000000000000008')) {
         throw 'Directory XSDT fuori arena o diversa dai dati verificati dal kernel.'
@@ -57,7 +58,7 @@ function Test-MadtFirmware($log, $registers, $directory, $case) {
         (Read-Hex $log 'KERNEL_MADT_ENABLED_COUNT: 0x([0-9a-f]{16})') -ne $expected -or
         (Read-Hex $log 'KERNEL_MADT_UNKNOWN_COUNT: 0x([0-9a-f]{16})') -ne 0 -or
         !$io -or $io -gt 16 -or $iso -gt 16 -or !$nmi -or $nmi -gt 64 -or
-        ($topology -band 7) -or $topology -lt $directory + 2072 -or $topology + 2624 -gt 0x7000000b3000) {
+        ($topology -band 7) -or $topology -lt $directory + 2072 -or $topology + 2624 -gt ($OsWindows + 0xB3000)) {
         throw 'Topologia MADT assente, fuori arena o conteggi CPU errati.'
     }
     $first = [regex]::Match($registers, '(?im)^0*' + $physical.ToString('x').TrimStart('0') + ':\s+0x([0-9a-f]{16})\s+0x([0-9a-f]{16})')

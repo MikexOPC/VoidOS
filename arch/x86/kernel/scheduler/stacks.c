@@ -1,4 +1,5 @@
 #include "stacks.h"
+#include "arch/x86/configs/layout.h"
 
 // ====== x86_task_stack_base ======
 
@@ -31,10 +32,11 @@ static int identity_private(const X86_TASK_STACK *owner)
     guard = X86_TASK_STACK_GUARD;
     end = guard + (uint64_t)X86_TASK_STACK_SLOTS * X86_TASK_STACK_STRIDE * 4096;
     address = (uint64_t)(uintptr_t)owner;
-    if (address > (UINT64_C(1) << 47) - sizeof(*owner) ||
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    if (!X86_LAYOUT_RANGE(address, sizeof(*owner)) ||
         !(address + sizeof(*owner) <= guard || address >= end)) return 0;
     address = (uint64_t)(uintptr_t)owner->pool;
-    if (address > (UINT64_C(1) << 47) - sizeof(*owner->pool) ||
+    if (!X86_LAYOUT_RANGE(address, sizeof(*owner->pool)) ||
         !(address + sizeof(*owner->pool) <= guard || address >= end)) return 0;
     return kernel_physical_validate(owner->pool) == 1;
 }

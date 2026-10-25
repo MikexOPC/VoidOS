@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/descriptors/segments.h"
+#include "arch/x86/configs/layout.h"
 static X86_KERNEL_SEGMENTS segments;
 static BOOT_U32 activation_calls, register_reads;
 static void clear_segments(void);
@@ -77,7 +78,7 @@ static int retarget_tests(void)
     for (byte = 0; byte < 104; ++byte) before[byte] = segments.Task.Bytes[byte];
     segments.Descriptor.Bytes[5] = 0x8b;
     if (!x86_kernel_segments_retarget(&segments) || !x86_kernel_segments_verify(&segments, 1) ||
-        read_le(segments.Task.Bytes + 4, 8) != 0x700000071000ULL ||
+        read_le(segments.Task.Bytes + 4, 8) != (X86_LAYOUT_WINDOWS_VIRTUAL + 0x71000ULL) ||
         segments.Descriptor.Bytes[5] != 0x8b || x86_kernel_segments_retarget(&segments)) return 22;
     for (byte = 0; byte < 104; ++byte) {
         if ((byte < 4 || byte >= 12) && before[byte] != segments.Task.Bytes[byte]) return 23;
@@ -114,8 +115,8 @@ static unsigned char expected_task(BOOT_U32 byte)
 {
     const BOOT_U32 offsets[] = {4, 36, 44, 52};
     const BOOT_U64 values[] = {
-        0x700000011000ULL, 0x700000045000ULL,
-        0x70000004a000ULL, 0x70000004f000ULL
+        (X86_LAYOUT_WINDOWS_VIRTUAL + 0x11000ULL), (X86_LAYOUT_WINDOWS_VIRTUAL + 0x45000ULL),
+        (X86_LAYOUT_WINDOWS_VIRTUAL + 0x4A000ULL), (X86_LAYOUT_WINDOWS_VIRTUAL + 0x4F000ULL)
     };
     BOOT_U32 field;
     for (field = 0; field < 4; ++field) {

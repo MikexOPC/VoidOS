@@ -6,7 +6,8 @@
 // Intel SDM Vol. 3A 4.5 (4-level paging): bits 47:39 of a linear address select one of the 512
 // PML4 entries (one slot = 512 GiB); bits 63:48 must equal bit 47 (canonical form, 3A 3.3.7.1),
 // so slots 256-511 are the upper half 0xFFFF8000_00000000 and above.
-// K1 stage 2: device regions and heap in the upper half; the rest moves in later stages
+// K1 stage 3: boot windows, stacks, arena and devices in the upper half; the recursive view and
+// the image move in later stages
 // (docs/design/k1-higher-half.md).
 
 #define X86_LAYOUT_SLOT_SHIFT 39U
@@ -27,9 +28,9 @@
 // ====== slots ===== //
 
 #define X86_LAYOUT_RECURSIVE_SLOT  128U
-#define X86_LAYOUT_MAP_SLOT        160U  // boot memory map window
-#define X86_LAYOUT_INFO_SLOT       192U  // boot contract
-#define X86_LAYOUT_WINDOWS_SLOT    224U  // boot stack, page window, arena, LAPIC, task stacks
+#define X86_LAYOUT_MAP_SLOT        479U  // boot memory map window
+#define X86_LAYOUT_INFO_SLOT       480U  // boot contract
+#define X86_LAYOUT_WINDOWS_SLOT    488U  // boot stack, page window, arena, LAPIC, task stacks
 #define X86_LAYOUT_FB_SLOT         481U
 #define X86_LAYOUT_GPU_SLOT        482U
 #define X86_LAYOUT_SURFACE_SLOT    483U
@@ -61,6 +62,17 @@ X86_LAYOUT_ASSERT(X86_LAYOUT_GPU_SLOT == X86_LAYOUT_FB_SLOT + 1 && X86_LAYOUT_SU
     X86_LAYOUT_IOMMU_SLOT == X86_LAYOUT_FB_SLOT + 3, "Device slots must stay consecutive");
 
 // ====== predicates ===== //
+
+// Intel SDM Vol. 3A 3.3.7.1: canonical addresses are [0, 2^47) and [0xFFFF8000_00000000, 2^64).
+#define X86_LAYOUT_LOWER_LIMIT  (1ULL << 47)
+#define X86_LAYOUT_UPPER_BASE   0xFFFF800000000000ULL
+// K1: a kernel virtual range [address, address + bytes) of at least one byte, outside page 0,
+// inside one canonical half (never across the non-canonical hole). For the lower half it is the
+// former "address >= 4096 && bytes <= 2^47 - address" check.
+#define X86_LAYOUT_RANGE(address, bytes) \
+    ((bytes) != 0 && \
+     (((address) >= 4096ULL && (address) < X86_LAYOUT_LOWER_LIMIT && (bytes) <= X86_LAYOUT_LOWER_LIMIT - (address)) || \
+      ((address) >= X86_LAYOUT_UPPER_BASE && (bytes) - 1 <= ~0ULL - (address))))
 
 // The whole object [address, address + bytes) lies inside the kernel image window.
 #define X86_KERNEL_IMAGE_CONTAINS(address, bytes) \

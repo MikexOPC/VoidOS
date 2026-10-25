@@ -1,4 +1,5 @@
 #include "arch/x86/mm/paging/inventory.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/mm/devices/lapic.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/mapping.h"
 static BOOT_U64 tables[129][512], views[129];
@@ -73,13 +74,13 @@ static int fixture(void)
     map[48] = 7; number(map + 56, 0x100000); number(map + 72, 128); map[80] = 8;
     context.MemoryMap = map; context.Info.MemoryMapBytes = 96;
     context.Info.MemoryDescriptorBytes = 48; context.Info.PageTableRoot = 4096;
-    views[0] = (128ULL << 39) | (128ULL << 30) | (128ULL << 21) | (128ULL << 12);
+    views[0] = X86_LAYOUT_RECURSIVE_VIEW(X86_LAYOUT_RECURSIVE_SLOT, X86_LAYOUT_RECURSIVE_SLOT, X86_LAYOUT_RECURSIVE_SLOT, X86_LAYOUT_RECURSIVE_SLOT);
     for (level = 0; level < 3; ++level) {
-        BOOT_U32 slot = level ? 0 : 224;
+        BOOT_U32 slot = level ? 0 : X86_LAYOUT_WINDOWS_SLOT;
         tables[level][slot] = ((BOOT_U64)level + 2) * 4096 | 3;
         views[level + 1] = x86_paging_child_view(views[level], level, slot);
     }
-    tables[0][128] = 0x8000000000001003ULL;
+    tables[0][X86_LAYOUT_RECURSIVE_SLOT] = 0x8000000000001003ULL;
     tables[2][1] = 0x5003;
     views[4] = x86_paging_child_view(views[2], 2, 1);
     tables[3][1] = 0x8000000000100003ULL;
@@ -116,7 +117,7 @@ static int corruption(void)
 {
     BOOT_U32 bit, level;
     for (level = 0; level < 3; ++level) for (bit = 0; bit < 64; ++bit) {
-        BOOT_U32 slot = level ? 0 : 224;
+        BOOT_U32 slot = level ? 0 : X86_LAYOUT_WINDOWS_SLOT;
         BOOT_U64 original;
         if (!fixture()) return 1;
         if (!x86_paging_inventory_capture(&context, &pool, &ledger)) return 7;
@@ -128,9 +129,9 @@ static int corruption(void)
         tables[level][slot] = original;
     }
     if (!fixture()) return 4;
-    tables[0][224] = 0x1003;
+    tables[0][X86_LAYOUT_WINDOWS_SLOT] = 0x1003;
     if (x86_paging_inventory_capture(&context, &pool, &ledger) || reads != 1) return 5;
-    tables[0][224] = 0x2003; tables[2][1] = 0x4003; reads = 0;
+    tables[0][X86_LAYOUT_WINDOWS_SLOT] = 0x2003; tables[2][1] = 0x4003; reads = 0;
     if (x86_paging_inventory_capture(&context, &pool, &ledger)) return 6;
     if (!fixture()) return 7;
     tables[0][256] = 0x2003;
@@ -148,7 +149,7 @@ static int reservations(void)
     BOOT_U32 index;
     for (index = 0; index < 5; ++index) {
         if (!fixture()) return 1;
-        tables[0][224] = 0x100003;
+        tables[0][X86_LAYOUT_WINDOWS_SLOT] = 0x100003;
         if (x86_paging_inventory_capture(&context, &pool, &ledger) || reads != 1) return 2;
         if (!fixture()) return 3;
         map[0] = (unsigned char)(index == 0 ? 7 : index);
@@ -168,8 +169,8 @@ static int capacity(void)
     BOOT_U32 index;
     if (!fixture()) return 1;
     clear(tables, sizeof(tables)); clear(views, sizeof(views));
-    views[0] = (128ULL << 39) | (128ULL << 30) | (128ULL << 21) | (128ULL << 12);
-    tables[0][128] = 0x8000000000001003ULL;
+    views[0] = X86_LAYOUT_RECURSIVE_VIEW(X86_LAYOUT_RECURSIVE_SLOT, X86_LAYOUT_RECURSIVE_SLOT, X86_LAYOUT_RECURSIVE_SLOT, X86_LAYOUT_RECURSIVE_SLOT);
+    tables[0][X86_LAYOUT_RECURSIVE_SLOT] = 0x8000000000001003ULL;
     table_count = 129;
     for (index = 1; index < 129; ++index) {
         tables[0][index - 1] = ((BOOT_U64)index + 1) * 4096 | 3;

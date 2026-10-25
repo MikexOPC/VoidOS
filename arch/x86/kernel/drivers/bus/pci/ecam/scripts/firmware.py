@@ -10,6 +10,11 @@ import struct
 import subprocess
 import time
 import uuid
+# K1: layout values from arch/x86/configs/layout.h
+import importlib.util as _layout_util
+_layout_spec = _layout_util.spec_from_file_location("os_layout", __import__("pathlib").Path(__file__).resolve().parents[8] / "scripts/lib/layout.py")
+layout = _layout_util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 
 ROOT=Path(__file__).resolve().parents[8]
 spec=importlib.util.spec_from_file_location('pci_test_backend',ROOT/'kernel/drivers/video/virtio/discovery/scripts/firmware.py')
@@ -79,7 +84,7 @@ def verify(stream,directory,log,absent,negative):
     pat=number(log,'KERNEL_ECAM_PAT'); cache=number(log,'KERNEL_ECAM_CACHE')
     index=((cache>>3)&3)|((cache>>5)&4)
     if cache&~0x98 or (pat>>(index*8))&255: raise RuntimeError('ECAM UC cache policy')
-    table=number(log,'KERNEL_ECAM_ROOT'); address=0x700000020000
+    table=number(log,'KERNEL_ECAM_ROOT'); address=(layout.slot_address("X86_LAYOUT_WINDOWS_SLOT")+0x20000)
     for shift in (39,30,21):
         entry=backend.qtest(stream,f'readq {table+((address>>shift)&511)*8:#x}')
         if entry&0x87!=3: raise RuntimeError('ECAM window ancestor')
