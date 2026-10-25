@@ -1,4 +1,5 @@
 #include "probe.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/mm/window/access.h"
 #include "kernel/mm/inventory.h"
 #include "kernel/diagnostics/log.h"
@@ -188,7 +189,7 @@ static int output_valid(const KERNEL_BOOT_CONTEXT *context, const X86_PAGE_WINDO
         !os_address_ranges_overlap(target, sizeof(*output), (BOOT_U64)profile, sizeof(*profile)) &&
         !os_address_ranges_overlap(target, sizeof(*output), (BOOT_U64)context->MemoryMap, context->Info.MemoryMapCapacity) &&
         !os_address_ranges_overlap(target, sizeof(*output), X86_KERNEL_PAGE_WINDOW, X86_KERNEL_WINDOW_BYTES) &&
-        !os_address_ranges_overlap(target, sizeof(*output), X86_BOOT_RECURSIVE_SLOT * (1ULL << 39), 1ULL << 39);
+        !os_address_ranges_overlap(target, sizeof(*output), X86_LAYOUT_RECURSIVE_VIRTUAL, X86_LAYOUT_SLOT_BYTES);
 }
 
 // ====== probe completo prima della pubblicazione nessuna rotta IRQ configurata ===== //

@@ -1,4 +1,5 @@
 #include "activation.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== x86_vtd_activation_valid ======
@@ -65,7 +66,7 @@ int x86_vtd_activation_begin(X86_QI *qi,X86_VTD_DOMAIN *domain,const X86_VTD_ROU
         !x86_qi_valid(qi) || os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)qi->Mapping,sizeof(*qi->Mapping)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)qi->Mapping->Window,sizeof(*qi->Mapping->Window)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
-        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),225ULL<<39,4ULL<<39) ||
+        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_LAYOUT_DEVICES_VIRTUAL,X86_LAYOUT_DEVICES_BYTES) ||
         qi->State!=3 || qi->Pending || !qi->EnableIssued || qi->Status || qi->Mapping->Authority.Count!=1 ||
         // CAP.RWBF bit4 (11.4.2, 6.8): write-buffer flushing is not implemented, so it must not be required.
         (qi->Cap&(1ULL<<4)) || !x86_vtd_domain_verify(domain) || domain->State!=3 ||

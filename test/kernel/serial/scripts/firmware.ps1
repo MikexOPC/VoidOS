@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot '../../../../scripts/lib/layout.ps1')
 # ====== snapshot owner UART dopo la chiusura della sorgente ===== #
 
 function Write-UartMonitor($log, $vm) {
@@ -40,7 +41,7 @@ function Test-UartFirmware($log, $registers, $cpuLog) {
         $expectedVector40 += 3
     }
     if (!$log.Contains('KERNEL_UART_IRQ_OK') -or ($owner -band 7) -or
-        $owner -lt 0x100000000 -or $owner+48 -gt 0x100100000 -or
+        $owner -lt $OsImageBase -or $owner+48 -gt $OsImageLimit -or
         (Read-Hex $log 'KERNEL_UART_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 140 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_ERROR: 0x([0-9a-f]{16})') -ne 0 -or
         (Read-Hex $log 'KERNEL_UART_IRQ_VECTOR: 0x([0-9a-f]{16})') -ne 64 -or
@@ -60,7 +61,7 @@ function Test-UartTransmit($log, $registers, $owner) {
     $second = $log.IndexOf('KERNEL_UART_TX_REUSE: 0123456789abcdef0123456789abcdef01234567')
     $third = $log.IndexOf('KERNEL_UART_TX_FINAL: OK')
     if (!$log.Contains('KERNEL_UART_TX_OK') -or ($tx -band 7) -or
-        $tx -lt 0x100000000 -or $tx+88 -gt 0x100100000 -or
+        $tx -lt $OsImageBase -or $tx+88 -gt $OsImageLimit -or
         (Read-Hex $log 'KERNEL_UART_TX_BYTES: 0x([0-9a-f]{16})') -ne $payload.Length -or
         (Read-Hex $log 'KERNEL_UART_TX_TOTAL: 0x([0-9a-f]{16})') -ne 134 -or
         (Read-Hex $log 'KERNEL_UART_TX_COMPLETED: 0x([0-9a-f]{16})') -ne 3 -or
@@ -89,7 +90,7 @@ function Test-UartTransmit($log, $registers, $owner) {
 function Test-UartQueue($log, $registers) {
     $queue = Read-Hex $log 'KERNEL_UART_QUEUE_OWNER: 0x([0-9a-f]{16})'
     if (!$log.Contains('KERNEL_UART_QUEUE_OK') -or ($queue -band 7) -or
-        $queue -lt 0x100000000 -or $queue+272 -gt 0x100100000 -or
+        $queue -lt $OsImageBase -or $queue+272 -gt $OsImageLimit -or
         (Read-Hex $log 'KERNEL_UART_QUEUE_FULL: 0x([0-9a-f]{16})') -ne 1) {
         throw 'Coda UART: owner o rifiuto della quarta submission non conforme.'
     }
@@ -116,7 +117,7 @@ function Test-LapicRetention($log, $registers) {
     $ist = Read-Hex $log 'KERNEL_IST_PTE: 0x([0-9a-f]{16})'
     if (!$log.Contains('KERNEL_LAPIC_MAPPING_OK') -or $entry -ne $expected -or
         $virtual -ne [uint64]123145303490560 -or ($mapping -band 7) -or
-        $mapping -lt 0x100000000 -or $mapping+40 -gt 0x100100000) { throw 'Mapping LAPIC non conforme.' }
+        $mapping -lt $OsImageBase -or $mapping+40 -gt $OsImageLimit) { throw 'Mapping LAPIC non conforme.' }
     $root = Read-Hex $registers 'CR3=([0-9a-f]{16})'
     $profile = Read-Hex $log 'KERNEL_APIC_PROFILE: 0x([0-9a-f]{16})'
     $raw = [regex]::Match($registers,'(?im)^'+($profile+32).ToString('x16')+':\s+0x[0-9a-f]{16}\s+0x([0-9a-f]{16})')

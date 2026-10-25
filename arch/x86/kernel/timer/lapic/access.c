@@ -1,4 +1,5 @@
 #include "timer.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== sola lettura dei registri xAPIC timer attraverso un owner valido ===== //
@@ -10,7 +11,7 @@ int x86_timer_read(const X86_LAPIC_MAPPING *mapping, BOOT_U32 offset, BOOT_U32 *
         os_address_ranges_overlap(address,sizeof(*output),(BOOT_U64)mapping,sizeof(*mapping)) ||
         os_address_ranges_overlap(address,sizeof(*output),X86_LAPIC_VIRTUAL-4096,12288) ||
         os_address_ranges_overlap(address,sizeof(*output),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
-        os_address_ranges_overlap(address,sizeof(*output),128ULL<<39,1ULL<<39) ||
+        os_address_ranges_overlap(address,sizeof(*output),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
         (offset != 0x30 && offset != 0x320 && offset != 0x380 && offset != 0x390 && offset != 0x3e0) ||
         !x86_lapic_validate(mapping)) return 0;
     *output = *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL+offset);

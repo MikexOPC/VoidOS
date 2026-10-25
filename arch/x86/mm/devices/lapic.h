@@ -1,7 +1,8 @@
 #ifndef OS_X86_LAPIC_MAPPING_H
 #define OS_X86_LAPIC_MAPPING_H
 #include "arch/x86/kernel/interrupts/apic/probe.h"
-#define X86_LAPIC_VIRTUAL 0x0000700000120000ULL
+#include "arch/x86/configs/layout.h"
+#define X86_LAPIC_VIRTUAL (X86_LAYOUT_WINDOWS_VIRTUAL + 0x120000ULL)
 #define X86_LAPIC_LEAF 288U
 typedef struct X86_LAPIC_MAPPING {
     BOOT_U64 Self, Root, Physical, Cache;

@@ -1,11 +1,12 @@
 #ifndef X86_DMA_AUTHORITY_H
 #define X86_DMA_AUTHORITY_H
 #include "kernel/mm/physical/allocator.h"
+#include "arch/x86/configs/layout.h"
 
 // Persistent DMA arena: one contiguous pinned RAM lease of 1-16 pages, mapped supervisor RW/XD WB
 // at its own PML4 slot with a guard page on each side. Three owned tables (PDPT, PD, PT).
-#define X86_DMA_SLOT    229U
-#define X86_DMA_VIRTUAL ((229ULL << 39) + 4096)
+#define X86_DMA_SLOT    X86_LAYOUT_DMA_SLOT
+#define X86_DMA_VIRTUAL    (X86_LAYOUT_SLOT_ADDRESS(X86_DMA_SLOT) + 4096)
 #define X86_DMA_PAGES   16U
 typedef struct {
     BOOT_U64  Owner, Base, Pages, DataId, TableIds[3];

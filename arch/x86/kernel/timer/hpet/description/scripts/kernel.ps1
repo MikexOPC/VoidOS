@@ -1,4 +1,5 @@
 param([string]$QemuDirectory = 'C:\Program Files\qemu')
+. (Join-Path $PSScriptRoot '../../../../../../../scripts/lib/layout.ps1')
 $ErrorActionPreference = 'Stop'
 $module = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $project = (Resolve-Path (Join-Path $module '../../../../../..')).Path
@@ -100,7 +101,7 @@ for ($index = 1; $index -le 11; ++$index) {
                 (Read-Number $log 'KERNEL_HPET_FSB_CAPABLE') -eq 0)) {
                 throw 'No usable HPET comparator capability observed'
             }
-            if (($owner -band 7) -or $owner -lt 0x100000000 -or $owner -ge 0x100100000) {
+            if (($owner -band 7) -or $owner -lt $OsImageBase -or $owner -ge $OsImageLimit) {
                 throw 'Persistent HPET description outside kernel image'
             }
             $vm.StandardInput.WriteLine('stop')

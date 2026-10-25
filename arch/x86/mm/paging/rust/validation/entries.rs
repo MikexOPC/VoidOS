@@ -50,10 +50,13 @@ pub extern "C" fn x86_paging_leaf_virtual(view: u64, slot: u32) -> u64 {
 
 // ====== un solo slot MMIO autorizzato senza accettare alias WB ===== //
 
+// K1: X86_LAPIC_VIRTUAL (layout.h windows slot + 0x120000), checked by Assert-LayoutCopies.
+const LAPIC_VIRTUAL: u64 = 0x0000_7000_0012_0000;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_paging_leaf_kind(entry: u64, address: u64, physical: u64, cache: u64, bits: u32) -> u32 {
     if !(32..=52).contains(&bits) { return 0; }
-    if address == 0x0000_7000_0012_0000 {
+    if address == LAPIC_VIRTUAL {
         if physical == 0 || physical & 4095 != 0 || physical >= (1u64 << bits) || cache & !0x98 != 0 {
             return 0;
         }

@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/layout.ps1')
 # ============ owner timer e registri xAPIC dopo arresto e ripristino ============ #
 
 function Write-LapicTimerMonitor($log, $vm) {
@@ -77,7 +78,7 @@ function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
     $port = Read-Hex $log 'KERNEL_TIMER_PM_PORT: 0x([0-9a-f]{16})'
     if (!$log.Contains('KERNEL_TIMER_OK') -or !$log.Contains('KERNEL_TIMER_EVENTS_OK') -or
         !$log.Contains('KERNEL_IRQ_SLEEP_REJECT_OK') -or ($owner -band 7) -or
-        $owner -lt 0x100000000 -or $owner+144 -gt 0x100100000 -or
+        $owner -lt $OsImageBase -or $owner+144 -gt $OsImageLimit -or
         !$reload -or $reload -gt 4294967295L -or $mask -notin @(16777215L,4294967295L) -or
         $port -lt 256 -or $port -gt 65532 -or ($port -band 3) -or ($port -ge 1016 -and $port -lt 1024) -or
         (Read-Hex $log 'KERNEL_TIMER_IRQ_COUNT: 0x([0-9a-f]{16})') -ne 3 -or
@@ -124,7 +125,7 @@ function Test-LapicTimerFirmware($log, $registers, $cpuLog) {
         throw 'Timer: sonno o consegna gia presente non verificati.'
     }
     $resume = Read-Hex $log 'KERNEL_TIMER_SLEEP_RESUME: 0x([0-9a-f]{16})'
-    if ($resume -lt 0x100000002 -or $resume -ge 0x100100000 -or
+    if ($resume -lt ($OsImageBase + 2) -or $resume -ge $OsImageLimit -or
         $registers -notmatch ('(?im)^'+($resume-2).ToString('x16')+':\s+0xfb\s+0xf4\s+0xfa')) {
         throw 'Sequenza STI HLT CLI assente nell''immagine eseguita.'
     }

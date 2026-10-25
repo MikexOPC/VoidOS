@@ -1,4 +1,5 @@
 #include "main.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/descriptors/segments.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
@@ -195,7 +196,7 @@ __declspec(noreturn) void x86_kernel_main_enter(X86_KERNEL_MAIN_STACK *owner, vo
 {
     BOOT_U64 target = (BOOT_U64)next;
     // next e un ingresso statico RX del kernel, non un callback fornito dall'utente.
-    if (!next || target < 0x100000000ULL || target >= 0x100100000ULL ||
+    if (!next || target < X86_KERNEL_IMAGE_BASE || target >= X86_KERNEL_IMAGE_LIMIT ||
         !x86_kernel_main_commit(owner) || !x86_kernel_segments_bind_main(&owner->Storage)) {
         kernel_panic("MAIN_STACK_ACTIVATION_FAILED");
     }

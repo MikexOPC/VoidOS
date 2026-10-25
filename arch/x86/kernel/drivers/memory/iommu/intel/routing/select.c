@@ -1,4 +1,5 @@
 #include "routing.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== storage_private ======
@@ -12,8 +13,8 @@ static int storage_private(const X86_DMAR_INFO *info,const X86_PCI_TOPOLOGY *top
     return !os_address_ranges_overlap(base,bytes,(BOOT_U64)info,sizeof(*info)) &&
         !os_address_ranges_overlap(base,bytes,(BOOT_U64)topology,sizeof(*topology)) &&
         !os_address_ranges_overlap(base,bytes,(BOOT_U64)request,sizeof(*request)) &&
-        !os_address_ranges_overlap(base,bytes,128ULL<<39,1ULL<<39) &&
-        !os_address_ranges_overlap(base,bytes,225ULL<<39,4ULL<<39) &&
+        !os_address_ranges_overlap(base,bytes,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) &&
+        !os_address_ranges_overlap(base,bytes,X86_LAYOUT_DEVICES_VIRTUAL,X86_LAYOUT_DEVICES_BYTES) &&
         !os_address_ranges_overlap(base,bytes,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES);
 }
 

@@ -1,4 +1,5 @@
 #include "transaction/internal.h"
+#include "arch/x86/configs/layout.h"
 #include "kernel/drivers/video/framebuffer/handoff.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
@@ -10,7 +11,7 @@ static int owner_range(const X86_FB_MAPPING *owner)
     BOOT_U64 address = (BOOT_U64)owner;
     return owner && !(address & 7) && address <= ~0ULL - sizeof(*owner) &&
         !os_address_ranges_overlap(address, sizeof(*owner), X86_FB_VIRTUAL - 4096, 1ULL << 30) &&
-        !os_address_ranges_overlap(address, sizeof(*owner), 128ULL << 39, 1ULL << 39) &&
+        !os_address_ranges_overlap(address, sizeof(*owner), X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) &&
         !os_address_ranges_overlap(address, sizeof(*owner), X86_KERNEL_PAGE_WINDOW, X86_KERNEL_WINDOW_BYTES);
 }
 

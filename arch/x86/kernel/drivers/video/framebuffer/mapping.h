@@ -1,10 +1,11 @@
 #ifndef OS_X86_FRAMEBUFFER_MAPPING_H
 #define OS_X86_FRAMEBUFFER_MAPPING_H
 #include "arch/x86/mm/devices/lapic.h"
+#include "arch/x86/configs/layout.h"
 #include "kernel/drivers/video/framebuffer/mapping.h"
 
-#define X86_FB_VIRTUAL ((225ULL << 39) + 4096)
-#define X86_FB_SLOT 225U
+#define X86_FB_SLOT X86_LAYOUT_FB_SLOT
+#define X86_FB_VIRTUAL (X86_LAYOUT_SLOT_ADDRESS(X86_FB_SLOT) + 4096)
 #define X86_FB_RENDERING 4U
 typedef struct {
     BOOT_U64  Root, Pat;

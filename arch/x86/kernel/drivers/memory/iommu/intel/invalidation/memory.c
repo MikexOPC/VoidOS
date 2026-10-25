@@ -1,4 +1,5 @@
 #include "qi.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/mm/window/access.h"
 #include "lib/memory/address_ranges.h"
 typedef struct { X86_QI *Owner; BOOT_U32 Action, Page, Value; } QI_MEMORY;
@@ -38,8 +39,8 @@ int x86_qi_memory(X86_QI *owner,BOOT_U32 action,BOOT_U32 *status)
             os_address_ranges_overlap((BOOT_U64)status,4,(BOOT_U64)owner->Mapping->Window,sizeof(*owner->Mapping->Window)) ||
             os_address_ranges_overlap((BOOT_U64)status,4,(BOOT_U64)owner->Mapping->Inventory,sizeof(*owner->Mapping->Inventory)) ||
             os_address_ranges_overlap((BOOT_U64)status,4,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
-            os_address_ranges_overlap((BOOT_U64)status,4,128ULL<<39,1ULL<<39) ||
-            os_address_ranges_overlap((BOOT_U64)status,4,225ULL<<39,4ULL<<39) ||
+            os_address_ranges_overlap((BOOT_U64)status,4,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
+            os_address_ranges_overlap((BOOT_U64)status,4,X86_LAYOUT_DEVICES_VIRTUAL,X86_LAYOUT_DEVICES_BYTES) ||
             os_address_ranges_overlap((BOOT_U64)status,4,(BOOT_U64)owner->Mapping->Window->Pool,sizeof(*owner->Mapping->Window->Pool)))) ||
         (action!=2 && owner->Pending)) return 0;
     QI_MEMORY request={owner,action,1,0};

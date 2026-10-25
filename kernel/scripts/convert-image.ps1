@@ -1,4 +1,5 @@
 param([Parameter(Mandatory)][string]$Image, [Parameter(Mandatory)][string]$Output)
+. (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
 $ErrorActionPreference = 'Stop'
 
 # ====== PE locale limitato senza import TLS o rilocazioni ====== #
@@ -18,7 +19,7 @@ if ($pe -gt 65536 -or (Read-Field 0 2) -ne 0x5a4d -or (Read-Field $pe 4) -ne 0x4
 $optional = $pe + 24
 $count = Read-Field ($pe + 6) 2
 if ($count -lt 1 -or $count -gt 16 -or (Read-Field ($pe + 20) 2) -ne 240 -or
-    (Read-Field $optional 2) -ne 0x20b -or (Read-Field ($optional + 24) 8) -ne 0x100000000 -or
+    (Read-Field $optional 2) -ne 0x20b -or (Read-Field ($optional + 24) 8) -ne $OsImageBase -or
     (Read-Field ($optional + 32) 4) -ne 4096 -or (Read-Field ($optional + 108) 4) -ne 16) {
     throw 'Profilo kernel PE inatteso.'
 }
@@ -27,10 +28,10 @@ for ($index = 0; $index -lt 16; ++$index) {
         throw 'Directory runtime non consentita.'
     }
 }
-$entry = [uint64]0x100000000 + (Read-Field ($optional + 16) 4)
+$entry = $OsImageBase + (Read-Field ($optional + 16) 4)
 $sections = @()
 $fileEnd = 4096
-$previousEnd = [uint64]0x100000000
+$previousEnd = $OsImageBase
 $entryFound = $false
 $names = @{}
 
@@ -54,7 +55,7 @@ for ($index = 0; $index -lt $count; ++$index) {
         '.pdata' { [uint32]1073741824 }
         default { throw "Sezione non supportata: $name" }
     }
-    $address = [uint64]0x100000000 + $rva
+    $address = $OsImageBase + $rva
     $memorySize = [Math]::Max($size, $rawSize)
     if ($permissions -ne $expected -or !$memorySize -or $memorySize -gt 134217728 -or
         ($address -band 4095) -ne 0 -or $address -lt $previousEnd -or
@@ -83,7 +84,7 @@ foreach ($directory in @(3,6)) {
     if (!$rva -and !$size) { continue }
     $contained = $false
     foreach ($section in $sections) {
-        $start = $section.Address - 0x100000000
+        $start = $section.Address - $OsImageBase
         if ($rva -and $size -and $section.Flags -eq 4 -and $rva -ge $start -and
             $rva + [uint64]$size -le $start + $section.Bytes) { $contained = $true }
     }

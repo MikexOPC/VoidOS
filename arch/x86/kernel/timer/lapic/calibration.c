@@ -1,4 +1,5 @@
 #include "timer.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "lib/memory/address_ranges.h"
 #include "kernel/diagnostics/log.h"
@@ -22,7 +23,7 @@ static int output_valid(const KERNEL_ACPI_DIRECTORY *directory, const X86_PM_CLO
         !os_address_ranges_overlap(address,sizeof(*output),(BOOT_U64)directory,sizeof(*directory)) &&
         !os_address_ranges_overlap(address,sizeof(*output),X86_LAPIC_VIRTUAL-4096,12288) &&
         !os_address_ranges_overlap(address,sizeof(*output),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) &&
-        !os_address_ranges_overlap(address,sizeof(*output),128ULL<<39,1ULL<<39);
+        !os_address_ranges_overlap(address,sizeof(*output),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES);
 }
 
 // ====== select_fadt ======
@@ -134,7 +135,7 @@ int x86_timer_owner_valid(const X86_LAPIC_TIMER *timer)
     if (!timer || (address & 7) || address > ~0ULL-sizeof(*timer) ||
         os_address_ranges_overlap(address,sizeof(*timer),X86_LAPIC_VIRTUAL-4096,12288) ||
         os_address_ranges_overlap(address,sizeof(*timer),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
-        os_address_ranges_overlap(address,sizeof(*timer),128ULL<<39,1ULL<<39)) {
+        os_address_ranges_overlap(address,sizeof(*timer),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES)) {
         return 0;
     }
     return !timer->Reserved && x86_timer_event_fields(timer->Count,timer->Consumed,timer->Phase,timer->Active) &&

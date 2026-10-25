@@ -7,6 +7,8 @@ param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','bl
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
+. (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
+Assert-LayoutCopies
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'build/profiles.ps1')
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -399,7 +401,7 @@ if ($TestPs2Decoder -or $Ps2Input) {
     $objects += $object
 }
 Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') (@('/nologo','/machine:x64','/subsystem:native',
-    '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed','/base:0x100000000',
+    '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed',('/base:0x' + $OsImageBase.ToString('X')),
     ('/out:' + $output + '/kernel.exe'),('/map:' + $output + '/kernel.map'),($output + '/io.obj'),($output + '/validation.obj'),($output + '/window-layout.obj'),
     ($output + '/object-bounds.obj')) + $objects)
 & (Join-Path $PSScriptRoot 'convert-image.ps1') -Image ($output + '/kernel.exe') -Output ($output + '/kernel.elf')

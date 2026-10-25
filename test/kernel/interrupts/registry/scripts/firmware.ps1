@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/layout.ps1')
 # ============ registro persistente con tutte le subscription rimosse ============ #
 
 function Write-IrqRegistryMonitor($log, $vm) {
@@ -36,14 +37,14 @@ function Test-IrqRegistryMonitorRejections($log, $registers) {
 function Test-IrqRegistryFirmware($log, $registers) {
     $registry = Read-Hex $log 'KERNEL_IRQ_REGISTRY: 0x([0-9a-f]{16})'
     if (!$log.Contains('KERNEL_IRQ_REGISTRY_OK') -or ($registry -band 7) -or
-        $registry -lt 0x100000000 -or $registry+120 -gt 0x100100000 -or
+        $registry -lt $OsImageBase -or $registry+120 -gt $OsImageLimit -or
         (Read-Hex $log 'KERNEL_IRQ_REGISTRY_DELIVERED: 0x([0-9a-f]{16})') -ne 140) {
         throw 'Registro IRQ: owner o consegne confermate non conformi.'
     }
     $expected = [byte[]]::new(120)
     [BitConverter]::GetBytes([uint64]$registry).CopyTo($expected,0)
-    [BitConverter]::GetBytes([uint64]0x100000000).CopyTo($expected,8)
-    [BitConverter]::GetBytes([uint64]0x100100000).CopyTo($expected,16)
+    [BitConverter]::GetBytes($OsImageBase).CopyTo($expected,8)
+    [BitConverter]::GetBytes([uint64]$OsImageLimit).CopyTo($expected,16)
     # Next starts at 1: UART and LAPIC bind once; the HPET watchdog binds once
     # after preflight. Unbind clears subscriptions, but preserves Next.
     $expectedNext = if ($log.Contains('KERNEL_WATCHDOG_READY')) { [uint64]4 } else { [uint64]3 }

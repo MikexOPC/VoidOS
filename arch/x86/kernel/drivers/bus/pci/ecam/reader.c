@@ -1,4 +1,5 @@
 #include "ecam.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 typedef struct { BOOT_U32 Offset, Value; } ECAM_REQUEST;
 
@@ -16,8 +17,8 @@ int x86_ecam_open(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WINDOW *window,con
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)inventory,sizeof(*inventory)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)lapic,lapic?sizeof(*lapic):0) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)context->MemoryMap,context->Info.MemoryMapCapacity) ||
-        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),128ULL<<39,1ULL<<39) ||
-        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),225ULL<<39,4ULL<<39) ||
+        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
+        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_LAYOUT_DEVICES_VIRTUAL,X86_LAYOUT_DEVICES_BYTES) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
         !x86_fb_cpu(&cpu) || cpu.PhysicalBits!=info->Bits || !x86_apic_uc_slot(cpu.Pat)) return 0;
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
@@ -68,8 +69,8 @@ int x86_ecam_read(X86_ECAM *owner,BOOT_U32 segment,BOOT_U32 bus,BOOT_U32 device,
         os_address_ranges_overlap((BOOT_U64)value,4,(BOOT_U64)owner->Inventory,sizeof(*owner->Inventory)) ||
         os_address_ranges_overlap((BOOT_U64)value,4,(BOOT_U64)owner->Context->MemoryMap,owner->Context->Info.MemoryMapCapacity) ||
         os_address_ranges_overlap((BOOT_U64)value,4,(BOOT_U64)owner->Lapic,owner->Lapic?sizeof(*owner->Lapic):0) ||
-        os_address_ranges_overlap((BOOT_U64)value,4,128ULL<<39,1ULL<<39) ||
-        os_address_ranges_overlap((BOOT_U64)value,4,225ULL<<39,4ULL<<39) ||
+        os_address_ranges_overlap((BOOT_U64)value,4,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
+        os_address_ranges_overlap((BOOT_U64)value,4,X86_LAYOUT_DEVICES_VIRTUAL,X86_LAYOUT_DEVICES_BYTES) ||
         os_address_ranges_overlap((BOOT_U64)value,4,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES)) return 0;
     BOOT_U64 page=page_private(owner,segment,bus,device,function);
     if (!page) return 0;

@@ -1,10 +1,18 @@
 #![cfg_attr(not(test), no_std)]
 
+// ====== finestra dell'immagine del kernel ===== //
+
+// K1: stesso valore di X86_KERNEL_IMAGE_BASE in arch/x86/configs/layout.h (unica fonte);
+// kernel/scripts/build.ps1 confronta le due definizioni a ogni build (Assert-LayoutCopies).
+const KERNEL_IMAGE_BASE: u64 = 0x0000_0001_0000_0000;
+// Intel SDM Vol. 3A 3.3.7.1: fine della metà bassa canonica (limite architetturale, non di layout).
+const LOWER_CANONICAL_LIMIT: u64 = 1 << 47;
+
 // ====== ingressi interamente contenuti nel codice dei terminali ===== //
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_exception_target(address: u64, begin: u64, end: u64) -> u32 {
-    u32::from(begin >= 0x1_0000_0000 && begin < end && end <= (1 << 47)
+    u32::from(begin >= KERNEL_IMAGE_BASE && begin < end && end <= LOWER_CANONICAL_LIMIT
         && address >= begin && address < end)
 }
 

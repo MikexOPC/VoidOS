@@ -1,4 +1,5 @@
 #include "queue.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/mm/devices/lapic.h"
 #include "arch/x86/mm/window/page.h"
@@ -13,7 +14,7 @@ static int range(const void *pointer, BOOT_U64 bytes)
     return pointer && bytes && address <= ~0ULL-bytes &&
         !os_address_ranges_overlap(address,bytes,X86_LAPIC_VIRTUAL-4096,12288) &&
         !os_address_ranges_overlap(address,bytes,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) &&
-        !os_address_ranges_overlap(address,bytes,128ULL<<39,1ULL<<39);
+        !os_address_ranges_overlap(address,bytes,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES);
 }
 
 // ====== intervalli disgiunti prima di copiare o pubblicare output ===== //

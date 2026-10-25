@@ -1,4 +1,5 @@
 #include "mapping.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== x86_vtd_mapping_preflight ======
@@ -15,10 +16,10 @@ int x86_vtd_mapping_preflight(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WINDOW
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)inventory,sizeof(*inventory)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)description,sizeof(*description)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)context->MemoryMap,context->Info.MemoryMapCapacity) ||
-        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),128ULL<<39,1ULL<<39) ||
-        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),225ULL<<39,4ULL<<39) ||
+        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
+        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_LAYOUT_DEVICES_VIRTUAL,X86_LAYOUT_DEVICES_BYTES) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
-        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_IOMMU_VIRTUAL-4096,1ULL<<39)) return 0;
+        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_IOMMU_VIRTUAL-4096,X86_LAYOUT_SLOT_BYTES)) return 0;
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
     if (!x86_page_window_idle_valid(window) || !x86_fb_cpu(cpu) || cpu->Root!=window->Root ||
         cpu->Root!=context->Info.PageTableRoot || cpu->PhysicalBits!=window->Pool->PhysicalBits || cpu->PhysicalBits<32 || cpu->PhysicalBits>52 ||

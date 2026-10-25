@@ -1,4 +1,5 @@
 #include "watchdog.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/integration/resources.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "kernel/diagnostics/log.h"
@@ -136,7 +137,7 @@ static int trusted_range(const void *pointer, BOOT_U64 bytes)
         !os_address_ranges_overlap(address,bytes,(BOOT_U64)&watchdog,sizeof(watchdog)) &&
         !os_address_ranges_overlap(address,bytes,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) &&
         !os_address_ranges_overlap(address,bytes,X86_LAPIC_VIRTUAL-4096,12288) &&
-        !os_address_ranges_overlap(address,bytes,128ULL << 39,1ULL << 39);
+        !os_address_ranges_overlap(address,bytes,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES);
 }
 
 // ====== announce ======

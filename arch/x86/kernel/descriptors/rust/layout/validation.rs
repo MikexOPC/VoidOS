@@ -1,4 +1,5 @@
 #![cfg_attr(not(test), no_std)]
+// K1: X86_KERNEL_IST_GUARD (layout.h windows slot + 0x40000), checked by Assert-LayoutCopies.
 const GUARD: u64 = 0x0000_7000_0004_0000;
 
 // ====== tre stack con una guardia prima e dopo ogni intervallo ===== //

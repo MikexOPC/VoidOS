@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
@@ -79,7 +80,7 @@ int x86_timer_take(X86_LAPIC_TIMER *state, BOOT_U32 *event)
         os_address_ranges_overlap(address,sizeof(*event),(BOOT_U64)state,sizeof(*state)) ||
         os_address_ranges_overlap(address,sizeof(*event),X86_LAPIC_VIRTUAL-4096,12288) ||
         os_address_ranges_overlap(address,sizeof(*event),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
-        os_address_ranges_overlap(address,sizeof(*event),128ULL<<39,1ULL<<39) ||
+        os_address_ranges_overlap(address,sizeof(*event),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
         !x86_timer_owner_valid(state) || !x86_irq_ready() || state->Error ||
         state->Phase != X86_TIMER_PENDING || !masked_idle(state) ||
         os_address_ranges_overlap(address,sizeof(*event),(BOOT_U64)state->Mapping,sizeof(*state->Mapping))) {

@@ -1,4 +1,5 @@
 #include "validation.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== reserved_private ======
@@ -73,7 +74,7 @@ BOOT_U32 x86_paging_gpu_leaf(BOOT_U64 entry, BOOT_U64 address)
     BOOT_U64 physical=entry & 0x000ffffffffff000ULL;
     if (!owner) return 1;
     if (owner->Ready != 1 || !owner->Plan.Count || owner->Plan.Count>16) return 0;
-    if ((address>>39) == X86_GPU_SLOT) {
+    if (X86_LAYOUT_SLOT_OF(address) == X86_GPU_SLOT) {
         BOOT_U64 index;
         if (address<X86_GPU_VIRTUAL || (address & 4095)) return 0;
         index=(address-X86_GPU_VIRTUAL)/4096;

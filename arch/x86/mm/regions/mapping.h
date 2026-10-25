@@ -2,7 +2,7 @@
 #define OS_X86_KERNEL_REGION_MAPPING_H
 #include "kernel/mm/physical/allocator.h"
 #include "arch/x86/configs/boot_profile.h"
-#define X86_REGION_GUARD 0x0000700000080000ULL
+#define X86_REGION_GUARD (X86_LAYOUT_WINDOWS_VIRTUAL + 0x80000ULL)
 #define X86_REGION_SLOTS 4U
 #define X86_REGION_PAGES 32U
 #define X86_REGION_STRIDE 34U
@@ -16,7 +16,7 @@ typedef struct {
     BOOT_U32 Ready, Reserved;
 } X86_REGION_MAPPER;
 _Static_assert(sizeof(X86_REGION_MAPPER) == 192, "Mapper metadata bounded to 192 bytes");
-_Static_assert(X86_REGION_GUARD == 0x0000700000080000ULL && X86_REGION_SLOTS == 4 &&
+_Static_assert(X86_REGION_GUARD == X86_LAYOUT_WINDOWS_VIRTUAL + 0x80000ULL && X86_REGION_SLOTS == 4 &&
                X86_REGION_STRIDE == 34 && X86_REGION_PAGES == 32, "C and Rust require the fixed arena profile");
 _Static_assert(((X86_REGION_GUARD >> 12) & 511) == X86_REGION_LEAF, "Arena leaf matches virtual address");
 _Static_assert((X86_REGION_GUARD >> 21) == (X86_KERNEL_PAGE_WINDOW >> 21), "Shared inherited PT branch");
