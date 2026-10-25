@@ -27,6 +27,7 @@ $suites = [ordered]@{
     'iommu-registers' = 'arch/x86/kernel/drivers/memory/iommu/intel/registers/scripts/test.ps1'
     'iommu-routing' = 'arch/x86/kernel/drivers/memory/iommu/intel/routing/scripts/test.ps1'
     'x86-virtio' = 'arch/x86/kernel/drivers/video/virtio/scripts/test.ps1'
+    'x86-vgpu-present' = 'arch/x86/kernel/drivers/video/virtio/iommu/scripts/test.ps1'
     'dma-arena' = 'arch/x86/mm/dma/scripts/test.ps1'
     pointer = 'kernel/console/video/scripts/pointer/test.ps1'
     diagnostics = 'kernel/diagnostics/scripts/test.ps1'

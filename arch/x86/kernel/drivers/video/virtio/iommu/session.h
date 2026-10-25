@@ -1,8 +1,8 @@
 #ifndef X86_VGPU_IOMMU_SESSION_H
 #define X86_VGPU_IOMMU_SESSION_H
-#include "domain.h"
-#include "arch/x86/kernel/drivers/video/virtio/resources/mapping.h"
-#include "arch/x86/mm/dma/arena.h"
+#include "present/present.h"
+#include "kernel/mm/physical/holdings.h"
+#include "kernel/drivers/video/display.h"
 
 // V2b: persistent VT-d translation of the VirtIO GPU for the interactive session (Y1-A..Y4-A).
 // States: OFF (no GPU, no DMAR or RMRR present: the session runs as before), TRANSLATING,
@@ -19,25 +19,32 @@
 #define X86_VGPU_SURFACE_WIDTH  1920U
 #define X86_VGPU_SURFACE_HEIGHT 1080U
 
-// Before the session tasks run. A failure before translation releases everything and leaves OFF.
-int x86_vgpu_session_start(const KERNEL_ACPI_DIRECTORY *directory);
-// Console task, at every flush: register-only fault scan, no window borrow (Y3-A).
-int x86_vgpu_session_poll(void);
-// After the session tasks stopped: TE off, invalidation, release of domain, arena and surface.
-int x86_vgpu_session_stop(void);
-BOOT_U32 x86_vgpu_session_state(void);
-// Pages the session holds (arena, surface, VT-d tables, queue, mapping) for the console accounting.
-BOOT_U64 x86_vgpu_session_pages(void);
+// G6 driver object. The VirtIO integration owns the one instance (x86_vgpu_kernel_session).
+// Context: start and stop run before and after the session tasks; poll and the display operations
+// run in the console task only. One owner, so no lock today; Lock is reserved for K2.
+typedef struct {
+    BOOT_U32                    Lock;
+    BOOT_U32                    State;
+    X86_DMA_ARENA               Arena;
+    X86_SURFACE_MAPPING         Surface;
+    BOOT_U64                    Budget, Polls, Held;
+    KERNEL_HOLDING              Holding;
+    // V2d: fault scan per flush, and the IF=0 sections of start and stop (one sample each).
+    KERNEL_LATENCY              PollTicks, QuietTicks;
+    // ACPI 6.5 4.8.3.3 PM timer, kept after enable so the stop section is timed after the QI is gone.
+    BOOT_U32                    ClockPort, ClockMask;
+    X86_VGPU_PRESENT            Present;
+} X86_VGPU_SESSION;
 
-// V2c (present.c): the console drawn through the translated GPU, GOP fallback (Z1-A..Z5-A).
-int x86_vgpu_present_open(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory,
-    X86_DMA_ARENA *arena, X86_SURFACE_MAPPING *surface);
-int x86_vgpu_present_rect(BOOT_U32 x, BOOT_U32 y, BOOT_U32 width, BOOT_U32 height);
-// R1-A/R3-A: progress of the update in flight or the recovery; busy keeps the console flushing.
-int x86_vgpu_present_poll(void);
-int x86_vgpu_present_busy(void);
-// 1 once after the target changed (bring-up or fallback): the console must redraw every cell.
-int x86_vgpu_present_redraw(void);
-int x86_vgpu_present_abandon(void);
-int x86_vgpu_present_close(void);
+// Before the session tasks run. A failure before translation releases everything and leaves OFF.
+int x86_vgpu_session_start(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory);
+// Console task, at every flush: register-only fault scan, no window borrow (Y3-A).
+int x86_vgpu_session_poll(X86_VGPU_SESSION *self);
+// After the session tasks stopped: TE off, invalidation, release of domain, arena and surface.
+int x86_vgpu_session_stop(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu);
+BOOT_U32 x86_vgpu_session_state(const X86_VGPU_SESSION *self);
+// Pages the session holds (arena, surface, VT-d tables, queue, mapping) for the console accounting.
+BOOT_U64 x86_vgpu_session_pages(const X86_VGPU_SESSION *self);
+// G6 O3: the console draws through this interface (fault scan, then the present operations).
+KERNEL_DISPLAY x86_vgpu_session_display(X86_VGPU_SESSION *self);
 #endif

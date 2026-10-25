@@ -2,11 +2,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.c"
+#include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
+#include "arch/x86/kernel/scheduler/integration/control.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/pixels/session.h"
+#include "kernel/console/video/render.h"
+#include "kernel/diagnostics/log.h"
+// G6: runtime.c is linked, not included; the test drives the console object through its owner.
 static X86_PS2_SESSION session;
-static uint32_t checks, signals, reject;
+static X86_CONSOLE console;
+static uint32_t checks, signals, reject, task_index, task_live, submits;
 #ifdef KERNEL_PS2_MOUSE
-static uint32_t task_index, task_live, pointer_calls, pointer_reject, pointer_still;
+static uint32_t pointer_calls, pointer_reject, pointer_still;
 #endif
 #define CHECK(expression) do { ++checks; assert(expression); } while (0)
 
@@ -25,29 +32,26 @@ int kernel_ps2_shell_output_unbind(KERNEL_SHELL_OUTPUT callback, void *context)
 
 __declspec(noreturn) void kernel_scheduler_fail_stop(void) { CHECK(0); abort(); }
 uint32_t x86_pm_read(unsigned short port) { (void)port; CHECK(0); return 0; }
-#ifdef KERNEL_PS2_MOUSE
 uint32_t x86_scheduler_index(void) { return task_index; }
 int x86_scheduler_task_valid(void) { return task_live != 0; }
-#else
-uint32_t x86_scheduler_index(void) { CHECK(0); return 0; }
-int x86_scheduler_task_valid(void) { CHECK(0); return 0; }
-#endif
+int kernel_console_service_clip(KERNEL_CONSOLE_SERVICE *owner, uint32_t columns, uint32_t rows)
+{ (void)owner; (void)columns; (void)rows; CHECK(0); return 0; }
 int kernel_ps2_shell_output_bind(KERNEL_SHELL_OUTPUT callback, void *context)
 { (void)callback; (void)context; CHECK(0); return 0; }
-int kernel_console_service_init(KERNEL_CONSOLE_SERVICE *owner, KERNEL_VIDEO_CONSOLE *console,
+int kernel_console_service_init(KERNEL_CONSOLE_SERVICE *owner, KERNEL_VIDEO_CONSOLE *view,
     uint32_t columns, uint32_t rows)
-{ (void)owner; (void)console; (void)columns; (void)rows; CHECK(0); return 0; }
+{ (void)owner; (void)view; (void)columns; (void)rows; CHECK(0); return 0; }
 int kernel_console_service_edit(KERNEL_CONSOLE_SERVICE *owner, const char *data, uint32_t length, uint32_t capacity)
 { (void)owner; (void)data; (void)length; (void)capacity; CHECK(0); return 0; }
 int kernel_console_service_write(KERNEL_CONSOLE_SERVICE *owner, const char *data, uint32_t length, uint32_t capacity)
 { (void)owner; (void)data; (void)length; (void)capacity; CHECK(0); return 0; }
-int kernel_console_service_submit(KERNEL_CONSOLE_SERVICE *owner) { (void)owner; CHECK(0); return 0; }
+int kernel_console_service_submit(KERNEL_CONSOLE_SERVICE *owner) { CHECK(owner == &console.Service); ++submits; return 1; }
 int kernel_console_service_render_begin(KERNEL_CONSOLE_SERVICE *owner) { (void)owner; CHECK(0); return 0; }
 int kernel_console_service_render_end(KERNEL_CONSOLE_SERVICE *owner, int success)
 { (void)owner; (void)success; CHECK(0); return 0; }
-int kernel_console_render_init(KERNEL_CONSOLE_RENDER *owner, KERNEL_VIDEO_CONSOLE *console,
+int kernel_console_render_init(KERNEL_CONSOLE_RENDER *owner, KERNEL_VIDEO_CONSOLE *view,
     KERNEL_CONSOLE_DRAW draw, void *context)
-{ (void)owner; (void)console; (void)draw; (void)context; CHECK(0); return 0; }
+{ (void)owner; (void)view; (void)draw; (void)context; CHECK(0); return 0; }
 int kernel_console_batch_init(KERNEL_CONSOLE_BATCH *owner, KERNEL_CONSOLE_RENDER *renderer,
     KERNEL_CONSOLE_GROUP_DRAW draw, void *context)
 { (void)owner; (void)renderer; (void)draw; (void)context; CHECK(0); return 0; }
@@ -72,16 +76,17 @@ int x86_fb_kernel_group_caret(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *sca
 
 #ifdef KERNEL_PS2_MOUSE
 int kernel_pointer_valid(const KERNEL_CONSOLE_POINTER *owner) { (void)owner; CHECK(0); return 0; }
-int kernel_pointer_init(KERNEL_CONSOLE_POINTER *owner, KERNEL_VIDEO_CONSOLE *console)
-{ (void)owner; (void)console; CHECK(0); return 0; }
+int kernel_pointer_init(KERNEL_CONSOLE_POINTER *owner, KERNEL_VIDEO_CONSOLE *view)
+{ (void)owner; (void)view; CHECK(0); return 0; }
 int kernel_pointer_request(KERNEL_CONSOLE_POINTER *owner, int32_t dx, int32_t dy, uint32_t buttons)
 {
-    CHECK(owner == &pointer && dx == -7 && dy == 11 && buttons == 2);
+    CHECK(owner == &console.Pointer && dx == -7 && dy == 11 && buttons == 2);
     ++pointer_calls;
     if (!pointer_reject) { if (!pointer_still) ++owner->Moves; owner->Buttons = buttons; }
     return !pointer_reject;
 }
 int kernel_pointer_hide(KERNEL_CONSOLE_POINTER *owner) { (void)owner; CHECK(0); return 0; }
+int kernel_pointer_clamp(KERNEL_CONSOLE_POINTER *owner) { (void)owner; CHECK(0); return 0; }
 int kernel_pointer_close(KERNEL_CONSOLE_POINTER *owner) { (void)owner; CHECK(0); return 0; }
 int x86_fb_kernel_group_pointer(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
     BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks,
@@ -110,10 +115,12 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
 static void clean_session(void)
 {
     memset(&session, 0, sizeof(session));
+    memset(&console, 0, sizeof(console));
     session.Quiet = session.WorkerDone = session.ConsumerDone = session.ShellDone = 1;
     session.Mouse.Done = 1;
-    source = &session;
-    absent = 1;
+    session.Console = &console;
+    console.Source = &session;
+    console.Absent = 1;
 }
 
 // ====== mouse_adapter_cases ======
@@ -122,7 +129,7 @@ static void clean_session(void)
 static void mouse_adapter_cases(void)
 {
     uint32_t saved_signals = signals;
-    clean_session(); session.Active = 1; absent = 0;
+    clean_session(); session.Active = 1; console.Absent = 0;
     task_index = 3; task_live = 1; reject = 0;
     CHECK(x86_console_mouse(&session, -7, 11, 2) && pointer_calls == 1 && signals == saved_signals + 1);
     for (task_index = 0; task_index < 5; ++task_index)
@@ -131,9 +138,9 @@ static void mouse_adapter_cases(void)
     session.Active = 0; CHECK(!x86_console_mouse(&session,-7,11,2)); session.Active = 1;
     session.Error = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); session.Error = 0;
     session.Losses = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); session.Losses = 0;
-    service.Busy = 2; CHECK(!x86_console_mouse(&session,-7,11,2)); service.Busy = 0;
-    service.Closed = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); service.Closed = 0;
-    service.Failed = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); service.Failed = 0;
+    console.Service.Busy = 2; CHECK(!x86_console_mouse(&session,-7,11,2)); console.Service.Busy = 0;
+    console.Service.Closed = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); console.Service.Closed = 0;
+    console.Service.Failed = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); console.Service.Failed = 0;
     CHECK(!x86_console_mouse(NULL,-7,11,2));
     {
         X86_PS2_SESSION copy = session;
@@ -143,11 +150,11 @@ static void mouse_adapter_cases(void)
     pointer_reject = 1; CHECK(!x86_console_mouse(&session,-7,11,2) && pointer_calls == 2);
     CHECK(signals == saved_signals + 1);
     pointer_reject = 0; session.Stop = 1; CHECK(x86_console_mouse(&session,-7,11,2));
-    session.Stop = 0; absent = 1; CHECK(x86_console_mouse(&session,-7,11,2));
+    session.Stop = 0; console.Absent = 1; CHECK(x86_console_mouse(&session,-7,11,2));
     CHECK(pointer_calls == 2 && signals == saved_signals + 1);
-    absent = 0; pointer_still = 1; pointer_pending = 0;
+    console.Absent = 0; pointer_still = 1; console.PointerPending = 0;
     CHECK(x86_console_mouse(&session,-7,11,2) && pointer_calls == 3);
-    CHECK(!pointer_pending && signals == saved_signals + 1);
+    CHECK(!console.PointerPending && signals == saved_signals + 1);
     pointer_still = 0;
 }
 #endif
@@ -156,11 +163,17 @@ static void mouse_adapter_cases(void)
 
 int main(void)
 {
+    // The wake signal through the public submit (task 0): accepted, then refused by the scheduler.
+    clean_session(); session.Active = 1; console.Absent = 0; task_live = 1; task_index = 0;
     for (uint32_t index = 0; index < 1000; ++index) {
-        reject = 0; CHECK(wake());
-        reject = 1; CHECK(!wake());
+        reject = 0; CHECK(x86_console_submit(&session));
+        reject = 1; CHECK(!x86_console_submit(&session));
     }
-    CHECK(signals == 2000);
+    CHECK(signals == 2000 && submits == 2000);
+    task_index = 1; CHECK(!x86_console_submit(&session) && submits == 2000);
+    session.Console = 0; task_index = 0; CHECK(!x86_console_submit(&session) && submits == 2000);
+    clean_session(); session.Active = 1; console.Source = 0; CHECK(!x86_console_submit(&session));
+    reject = 0;
     clean_session(); CHECK(x86_console_finish(&session));
     CHECK(!x86_console_finish(NULL));
 #ifdef KERNEL_PS2_MOUSE
