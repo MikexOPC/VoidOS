@@ -7,6 +7,7 @@
 #include "kernel/diagnostics/log.h"
 #include "kernel/diagnostics/latency.h"
 #include "lib/geometry/damage.h"
+#include "kernel/time/clock.h"
 
 // V2c console presentation through the translated VirtIO GPU (Z1-A..Z5-A), asynchronous since
 // R1-A. One instance today; the state is explicit so a driver object can own it later (G6).
@@ -14,9 +15,9 @@
 // R1-A: one update in flight. Phase 1 TRANSFER posted, phase 2 FLUSH posted; damage that arrives
 // meanwhile is merged (lib/geometry, Limit 1) and presented next. R2: SLOW mark past 100 ms,
 // fallback at 1 s. R3-A: after a timeout fallback, at most 3 bring-ups, 5 s apart.
-#define PRESENT_SLOW_PM     357955U
-#define PRESENT_LIMIT_PM    3579545U
-#define RECOVER_SPACING_PM  (5ULL * 3579545U)
+#define PRESENT_SLOW_PM     (KERNEL_PM_TIMER_HZ / 10)
+#define PRESENT_LIMIT_PM    KERNEL_PM_TIMER_HZ
+#define RECOVER_SPACING_PM  (5ULL * KERNEL_PM_TIMER_HZ)
 #define RECOVER_TRIES       3U
 
 typedef struct {
@@ -41,8 +42,11 @@ typedef struct {
     BOOT_U32                    Phase, SlowMarked, SubmittedAt;
     BOOT_U32                    FlyX, FlyY, FlyW, FlyH;
     OS_DAMAGE                   Damage;
-    BOOT_U32                    Recoverable, Recoveries, RecoverLast;
-    BOOT_U64                    RecoverElapsed, Slows, Timeouts, Recovered;
+    BOOT_U32                    Recoverable, Recoveries;
+    // G4: the transport PM clock through kernel/time; Recover measures the spacing of R3-A.
+    KERNEL_CLOCK                Clock;
+    KERNEL_STOPWATCH            Recover;
+    BOOT_U64                    Slows, Timeouts, Recovered;
     // Test-only (KERNEL_TEST_VGPU_PRESENT_STALL): the observation of a completed TRANSFER is held.
     BOOT_U32                    StallHold;
 } X86_VGPU_PRESENT;

@@ -21,9 +21,7 @@ int x86_vgpu_present_fault(void)
 
 static BOOT_U32 elapsed_private(void)
 {
-    uint32_t now = 0;
-
-    return state->Io.Clock(state->Io.Context, &now) ? (now - state->SubmittedAt) & state->Io.Mask : PRESENT_LIMIT_PM;
+    return kernel_clock_elapsed(&state->Clock, state->SubmittedAt);
 }
 
 // ====== complete_private ======
@@ -84,7 +82,7 @@ int x86_vgpu_present_pump(void)
             state->FlyX = box.X; state->FlyY = box.Y; state->FlyW = box.Width; state->FlyH = box.Height;
             os_damage_clear(&state->Damage);
 
-            if (!state->Io.Clock(state->Io.Context, &state->SubmittedAt) ||
+            if (!kernel_clock_now(&state->Clock, &state->SubmittedAt) ||
                 !kernel_vgpu_scanout_post(&state->Queue, &state->Resource, 0, state->FlyX, state->FlyY, state->FlyW, state->FlyH)
             )
             return x86_vgpu_present_fault();
@@ -124,15 +122,9 @@ int x86_vgpu_present_pump(void)
 // cleared and presented whole; the console redraws its (possibly clipped) grid on it.
 static int recover_private(void)
 {
-    uint32_t now = 0;
-
     if (state->Presenting || !state->Recoverable || state->Recoveries >= RECOVER_TRIES || !state->Transport.Self) return 1;
 
-    if (!state->Io.Clock(state->Io.Context, &now)) return 1;
-
-    state->RecoverElapsed += (now - state->RecoverLast) & state->Io.Mask;
-    state->RecoverLast = now;
-    if (state->RecoverElapsed < RECOVER_SPACING_PM) return 1;
+    if (!kernel_stopwatch_sample(&state->Clock, &state->Recover) || state->Recover.Total < RECOVER_SPACING_PM) return 1;
 
     ++state->Recoveries;
     state->Recoverable = 0;

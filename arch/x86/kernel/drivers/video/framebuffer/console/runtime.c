@@ -8,6 +8,7 @@
 #include "../drawing/draw.h"
 #include "profile.h"
 #include "../pixels/session.h"
+#include "kernel/time/clock.h"
 #ifdef KERNEL_VGPU_IOMMU
 #include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
 #include "lib/geometry/damage.h"
@@ -117,9 +118,10 @@ static uint32_t clock_read(void *context)
 
 // ====== elapsed ======
 
+// G4: the counter arithmetic of kernel/time (mask from the session clock, 24 or 32 bit).
 static uint32_t elapsed(uint32_t start)
 {
-    return (clock_read(source) - start) & source->Clock.Mask;
+    return kernel_counter_delta(source->Clock.Mask, start, clock_read(source));
 }
 
 // ====== draw_group ======

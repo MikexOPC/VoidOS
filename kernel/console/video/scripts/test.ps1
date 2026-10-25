@@ -120,9 +120,11 @@ try {
         if ($profile -eq 'mouse') { $profileFlags += '/DKERNEL_PS2_MOUSE=1' }
         foreach ($case in @('worker','session')) {
             $target = "$out/$case-$profile"
+            # Two sources (G4 kernel/time): /Fo names a directory.
+            New-Item -ItemType Directory -Force "$target-objects" | Out-Null
             Invoke-Checked "$bin/cl.exe" (@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/Gy',
-                ("/I$project"),"$project/test/kernel/console/video/runtime/${case}_test.c",
-                ("/Fo$target.obj"),("/Fd$target.pdb"),("/Fe$target.exe")) + $profileFlags +
+                ("/I$project"),"$project/test/kernel/console/video/runtime/${case}_test.c","$project/kernel/time/clock.c",
+                ("/Fo$target-objects/"),("/Fd$target.pdb"),("/Fe$target.exe")) + $profileFlags +
                 @('/link','/incremental:no','/DEBUG','/OPT:REF','/WX'))
             Invoke-Checked "$target.exe" @()
         }
