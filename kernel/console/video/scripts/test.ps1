@@ -112,7 +112,7 @@ try {
     Invoke-Checked "$out/native.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
         ("/I$project"),"$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c",
-        "$project/test/arch/x86/kernel/drivers/video/framebuffer/live/cases.c",
+        "$project/test/arch/x86/kernel/drivers/video/framebuffer/live/cases.c","$project/kernel/mm/physical/holdings.c",
         ("/Fo$out/"),("/Fd$out/live.pdb"),("/Fe$out/live.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/live.exe" @()
     foreach ($profile in @('keyboard','mouse')) {

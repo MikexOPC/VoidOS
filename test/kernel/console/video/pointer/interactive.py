@@ -304,6 +304,9 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
         dx_sent,dy_sent = delivered()
         if (dx_sent-baseline_x,dy_sent-baseline_y) != (x-initial_x,initial_y-y):
             raise RuntimeError('QEMU hardware packet sum differs from requested motion')
+        # G5: the idle paging audit ran during the session and never failed.
+        if not log.number('KERNEL_PAGING_AUDITS') or log.has('KERNEL_PAGING_AUDIT_FAILED'):
+            raise RuntimeError('Paging audit missing or failed')
         if log.number('MOUSE_LOSSES'):
             raise RuntimeError('Input loss')
         session = qemu.serial.SerialLog(log.text[:log.text.index('KERNEL_INPUT_TASKS_COLLECTED')].rsplit(

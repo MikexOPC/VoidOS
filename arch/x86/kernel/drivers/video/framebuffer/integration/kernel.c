@@ -17,6 +17,16 @@ static X86_FB_MAPPING mapping;
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #endif
 
+// ====== x86_fb_kernel_audit ======
+
+#ifdef KERNEL_CONSOLE_SHELL
+int x86_fb_kernel_audit(void)
+{
+    if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    return x86_fb_live_audit(&mapping);
+}
+#endif
+
 // ====== x86_fb_kernel_group_pointer ======
 
 #ifdef KERNEL_CONSOLE_SHELL

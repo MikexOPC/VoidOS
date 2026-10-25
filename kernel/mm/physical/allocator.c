@@ -59,7 +59,7 @@ int kernel_physical_validate(const KERNEL_PHYSICAL_ALLOCATOR *owner)
 {
     BOOT_U32 index, other;
     BOOT_U64 free_pages = 0, live_pages = 0;
-    if (!owner || owner->Ready != 1 || owner->Self != (BOOT_U64)owner || owner->Reserved ||
+    if (!owner || owner->Ready != 1 || owner->Self != (BOOT_U64)owner ||
         owner->PhysicalBits < 32 || owner->PhysicalBits > 52 || !owner->NextId ||
         owner->Count > KERNEL_PHYSICAL_EXTENTS || !owner->TotalPages || owner->FreePages > owner->TotalPages) return 0;
     for (index = 0; index < owner->Count; ++index) {
@@ -158,6 +158,7 @@ int kernel_physical_allocate_aligned(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 
     } else remove_extent(owner, index);
     owner->FreePages -= pages;
     ++owner->NextId;
+    ++owner->Generation;
     owner->Live[slot] = lease;
     *output = lease;
     return 1;
@@ -184,6 +185,7 @@ int kernel_physical_release(KERNEL_PHYSICAL_ALLOCATOR *owner, KERNEL_PHYSICAL_LE
     if (slot == KERNEL_PHYSICAL_LEASES || owner->Pins[slot] || !insertion_fits(owner, lease->Base, lease->Pages)) return 0;
     insert_extent(owner, lease->Base, lease->Pages);
     owner->FreePages += lease->Pages;
+    ++owner->Generation;
     owner->Live[slot] = (KERNEL_PHYSICAL_LEASE){0};
     *lease = (KERNEL_PHYSICAL_LEASE){0};
     return 1;
@@ -200,6 +202,7 @@ int kernel_physical_pin(KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_
         if (live->Id == lease->Id && live->Base == lease->Base && live->Pages == lease->Pages) {
             if (owner->Pins[slot] == pin) return 0;
             owner->Pins[slot] = pin;
+            ++owner->Generation;
             return 1;
         }
     }

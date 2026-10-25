@@ -278,6 +278,35 @@ int x86_heap_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *w
         kernel_text("\n") && kernel_log(0, "KERNEL_HEAP_READY");
 }
 
+// ====== x86_heap_tamper ======
+
+#ifdef KERNEL_TEST_PAGING_TAMPER
+// Test-only: clears XD of the first heap leaf through the recursive view of its PT, outside the heap
+// APIs (no authority update, no invlpg, no generation change). The next paging audit must reject
+// it (G5); until then the stale TLB entry keeps the old permissions.
+int x86_heap_tamper(void)
+{
+    const X86_PAGING_INVENTORY *inventory = binding.Inventory;
+
+    if (!started || !inventory) return 0;
+
+    for (BOOT_U32 index = 0; index < inventory->Count; ++index) {
+        const X86_PAGING_RESOURCE *record = &inventory->Tables[index];
+
+        if (record->Reserved != X86_HEAP_TAG + 2) continue;
+
+        volatile BOOT_U64 *entries = (volatile BOOT_U64 *)x86_paging_view(record->View);
+
+        if (!entries) return 0;
+
+        entries[0] &= ~0x8000000000000000ULL;
+        return kernel_log(2, "KERNEL_PAGING_TAMPERED");
+    }
+
+    return 0;
+}
+#endif
+
 // ====== kernel_heap ======
 
 KERNEL_HEAP *kernel_heap(void) { return started ? &heap : 0; }

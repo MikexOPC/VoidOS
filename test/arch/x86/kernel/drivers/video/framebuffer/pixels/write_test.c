@@ -175,40 +175,41 @@ static int pixel_target(void)
 
 // ====== pixel_generation ======
 
-// H1-A: the full paging scan runs on the first session, after a generation change, after a changed
-// snapshot and every 64 skipped sessions. The price (H3) is tested too: a page-table write that
-// bypasses the kernel APIs is noticed only by the next full scan, at most 64 sessions later.
+// G5 V2: a full scan runs on the first session after a reset and when the CPU paging state or the
+// owner change; a moved paging or allocator generation (an API change) is accepted without a scan;
+// nothing else is rescanned in the pixel path. A write that bypasses the APIs is caught by the
+// audit (x86_fb_audit), not by drawing.
 static int pixel_generation(void)
 {
-    BOOT_U64 full, skipped, full0, skipped0;
+    BOOT_U64 full, skipped, accepted, full0, skipped0, accepted0;
     CHECK(setup());
     x86_fb_verify_reset();
-    x86_fb_verify_counts(&full0, &skipped0);
+    x86_fb_verify_counts(&full0, &skipped0, &accepted0);
     CHECK(x86_fb_pixel(&owner, 0, 0, 1, 2, 3));
-    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 1 && skipped == skipped0);
+    x86_fb_verify_counts(&full, &skipped, &accepted); CHECK(full == full0 + 1 && skipped == skipped0 && accepted == accepted0);
     CHECK(x86_fb_pixel(&owner, 1, 0, 1, 2, 3));
-    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 1 && skipped == skipped0 + 1);
+    x86_fb_verify_counts(&full, &skipped, &accepted); CHECK(full == full0 + 1 && skipped == skipped0 + 1);
     x86_paging_generation_bump();
     CHECK(x86_fb_pixel(&owner, 2, 0, 1, 2, 3));
-    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 2);
-    for (BOOT_U32 index = 0; index < 64; ++index) CHECK(x86_fb_pixel(&owner, index, 1, 1, 2, 3));
-    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 2 && skipped == skipped0 + 65);
-    CHECK(x86_fb_pixel(&owner, 0, 2, 1, 2, 3));
-    x86_fb_verify_counts(&full, &skipped); CHECK(full == full0 + 3);
-    // A different snapshot is never accepted from the cache: the full scan rejects it at once.
+    x86_fb_verify_counts(&full, &skipped, &accepted); CHECK(full == full0 + 1 && accepted == accepted0 + 1);
+    ++owner.Window->Pool->Generation;
+    CHECK(x86_fb_pixel(&owner, 3, 0, 1, 2, 3));
+    x86_fb_verify_counts(&full, &skipped, &accepted); CHECK(full == full0 + 1 && accepted == accepted0 + 2);
+    for (BOOT_U32 index = 0; index < 200; ++index) CHECK(x86_fb_pixel(&owner, index, 1, 1, 2, 3));
+    x86_fb_verify_counts(&full, &skipped, &accepted); CHECK(full == full0 + 1 && skipped == skipped0 + 201);
+    // The audit rescans everything: a corrupted snapshot or a bypassing write is rejected there.
+    CHECK(x86_fb_audit(&owner));
     ++inventory.LeafPages;
-    CHECK(!x86_fb_pixel(&owner, 1, 2, 1, 2, 3));
+    CHECK(!x86_fb_audit(&owner) && x86_fb_pixel(&owner, 1, 2, 1, 2, 3));
     --inventory.LeafPages;
-    CHECK(x86_fb_pixel(&owner, 1, 2, 1, 2, 3));
-    // Bypassing write (no invlpg, no CR3 reload): accepted until the periodic full scan.
     BOOT_U64 *root = frame(4096), saved = root[300];
-    BOOT_U32 accepted = 0;
     root[300] = 0x2003;
-    while (accepted < 100 && x86_fb_pixel(&owner, accepted % 1024, 2, 1, 2, 3)) ++accepted;
-    CHECK(accepted >= 1 && accepted <= 64);
-    root[300] = saved;
+    CHECK(!x86_fb_audit(&owner) && x86_fb_pixel(&owner, 2, 2, 1, 2, 3));
+    // After a reset the first session scans again and refuses the bypassing write.
     x86_fb_verify_reset();
-    CHECK(x86_fb_pixel(&owner, 3, 2, 1, 2, 3));
+    CHECK(!x86_fb_pixel(&owner, 3, 2, 1, 2, 3));
+    root[300] = saved;
+    CHECK(x86_fb_audit(&owner) && x86_fb_pixel(&owner, 3, 2, 1, 2, 3));
     CHECK(x86_fb_unbind(&owner));
     return 0;
 }

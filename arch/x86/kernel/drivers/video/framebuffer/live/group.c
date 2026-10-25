@@ -1,12 +1,10 @@
 #include "group.h"
 #include "arch/x86/kernel/scheduler/mapping/native.h"
 #include "../console/profile.h"
-#ifdef KERNEL_VGPU_IOMMU
-#include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
-#define HELD_PAGES x86_vgpu_session_pages()
-#else
-#define HELD_PAGES 0
-#endif
+#include "../pixels/session.h"
+#include "kernel/mm/physical/holdings.h"
+// G5 V3: pages held for the session by registered owners (kernel/mm/physical/holdings).
+#define HELD_PAGES kernel_holdings_total()
 
 // ====== prepare ======
 
@@ -51,6 +49,26 @@ int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 r
         x86_fb_group_caret(owner, column, row, scalars, count, foreground, background, ticks, caret);
     owner->Inventory = original;
     return result && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
+        owner->Window->Pool->FreePages == owner->Budget - owner->Allocated - pages -
+            (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0) - HELD_PAGES;
+}
+
+// ====== x86_fb_live_audit ======
+
+// G5 V1-A: the idle audit. Same expected inventory as a drawing group (the live task stacks
+// added), one full scan, and the same accounting check afterwards.
+int x86_fb_live_audit(X86_FB_MAPPING *owner)
+{
+    X86_PAGING_INVENTORY expected, *original;
+    BOOT_U64 pages;
+
+    if (!prepare(owner, &expected, &pages)) return 0;
+
+    original = owner->Inventory;
+    owner->Inventory = &expected;
+    int audited = x86_fb_audit(owner);
+    owner->Inventory = original;
+    return audited && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
         owner->Window->Pool->FreePages == owner->Budget - owner->Allocated - pages -
             (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0) - HELD_PAGES;
 }

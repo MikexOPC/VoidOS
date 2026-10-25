@@ -25,6 +25,14 @@ static uint32_t absent;
 // Timing of flushes in PM ticks (3.579545 MHz), reported when the session closes. Idle
 // flushes found nothing to draw; settle is the time spent in the serial pointer record.
 static uint64_t flush_count, flush_total, settle_total, idle_count, idle_total;
+// G5 V1-A: idle audits of the paging inventory, at most one per AUDIT_PERIOD.
+#define AUDIT_PERIOD (KERNEL_PM_TIMER_HZ)
+static uint64_t audit_count, audit_total;
+static uint32_t audit_max, audit_last, audit_started;
+#ifdef KERNEL_TEST_PAGING_TAMPER
+#include "arch/x86/mm/heap/binding.h"
+static uint32_t tampered;
+#endif
 static uint32_t flush_max;
 #ifdef KERNEL_VGPU_IOMMU
 // V2c Z2-A: cells drawn since the last present, as one pixel rectangle (Width 0 = nothing).
@@ -295,6 +303,40 @@ static int pointer_settled(void)
 }
 #endif
 
+// ====== x86_console_audit ======
+
+// Called by the console worker when it has nothing to draw: one full audit of the paging
+// inventory per second at most. 0 only when the audit failed (the caller stops the session).
+int x86_console_audit(X86_PS2_SESSION *session)
+{
+    if (!task_valid(session, 1)) return 0;
+    if (absent || session->Stop) return 1;
+
+#ifdef KERNEL_TEST_PAGING_TAMPER
+    // Test-only: after 200 flushes one heap PTE is changed outside the APIs; the next audit stops.
+    if (flush_count >= 200 && !tampered) {
+        tampered = 1;
+        if (!x86_heap_tamper()) return kernel_log(3, "KERNEL_PAGING_TAMPER_FAILED") && 0;
+    }
+#endif
+    uint32_t now = clock_read(source);
+
+    if (audit_started && kernel_counter_delta(source->Clock.Mask, audit_last, now) < AUDIT_PERIOD) return 1;
+
+    audit_started = 1;
+    audit_last = now;
+    int audited = x86_fb_kernel_audit();
+    uint32_t spent = elapsed(now);
+
+    ++audit_count;
+    audit_total += spent;
+    if (spent > audit_max) audit_max = spent;
+    if (audited) return 1;
+
+    (void)kernel_log(3, "KERNEL_PAGING_AUDIT_FAILED");
+    return 0;
+}
+
 // ====== x86_console_flush ======
 
 int x86_console_flush(X86_PS2_SESSION *session)
@@ -376,8 +418,8 @@ int x86_console_finish(X86_PS2_SESSION *session)
         !session->WorkerDone || !session->ConsumerDone || !session->ShellDone || session->Error || session->Losses)
         return 0;
     if (absent) return kernel_log(0, "KERNEL_CONSOLE_SHELL_SERIAL_CLEAN");
-    BOOT_U64 verify_full = 0, verify_skipped = 0;
-    x86_fb_verify_counts(&verify_full, &verify_skipped);
+    BOOT_U64 verify_full = 0, verify_skipped = 0, verify_accepted = 0;
+    x86_fb_verify_counts(&verify_full, &verify_skipped, &verify_accepted);
 #ifdef KERNEL_PS2_MOUSE
     if (!kernel_pointer_close(&pointer) || !kernel_text("KERNEL_POINTER_X: ") ||
         !kernel_number(pointer.Image.X) || !kernel_text("\nKERNEL_POINTER_Y: ") ||
@@ -399,6 +441,10 @@ int x86_console_finish(X86_PS2_SESSION *session)
         kernel_text("\nKERNEL_CONSOLE_SETTLE_TOTAL_PM: ") && kernel_number(settle_total) &&
         kernel_text("\nKERNEL_FB_VERIFY_FULL: ") && kernel_number(verify_full) &&
         kernel_text("\nKERNEL_FB_VERIFY_SKIPPED: ") && kernel_number(verify_skipped) &&
+        kernel_text("\nKERNEL_FB_VERIFY_ACCEPTED: ") && kernel_number(verify_accepted) &&
+        kernel_text("\nKERNEL_PAGING_AUDITS: ") && kernel_number(audit_count) &&
+        kernel_text("\nKERNEL_PAGING_AUDIT_TOTAL_PM: ") && kernel_number(audit_total) &&
+        kernel_text("\nKERNEL_PAGING_AUDIT_MAX_PM: ") && kernel_number(audit_max) &&
         kernel_text("\n") &&
 #ifdef KERNEL_PROFILE_VGPU_FLUSH
         x86_profile_report() &&

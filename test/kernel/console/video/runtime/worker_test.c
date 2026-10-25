@@ -23,6 +23,8 @@ __declspec(noreturn) void kernel_scheduler_fail_stop(void)
 void x86_scheduler_yield(void) { ++yields; CHECK(yields < 100); }
 int x86_console_pending(X86_PS2_SESSION *owner)
 { CHECK(owner == &session); return injected == 1 ? -1 : pending != 0; }
+// G5: the idle audit always succeeds here; the audit itself is covered by its own tests.
+int x86_console_audit(X86_PS2_SESSION *owner) { CHECK(owner == &session); return 1; }
 int x86_console_flush(X86_PS2_SESSION *owner)
 {
     CHECK(owner == &session);
