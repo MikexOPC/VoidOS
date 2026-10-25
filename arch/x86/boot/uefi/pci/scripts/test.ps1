@@ -32,7 +32,7 @@ try {
         "/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no',"$out/gateway.obj"))
     Invoke-Checked "$out/host.exe" @()
     $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
-    $arguments = @('--enable=all','--check-level=exhaustive','--platform=win64','--std=c11','--xml',
+    $arguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',
         '"-D_M_X64=100"',('"-I'+$project+'"')) + @($paths | ForEach-Object {'"'+$_+'"'}) +
         @('"'+$project+'/test/arch/x86/boot/uefi/pci/acquire_test.c"')
     $checked = Start-Process $checker -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `

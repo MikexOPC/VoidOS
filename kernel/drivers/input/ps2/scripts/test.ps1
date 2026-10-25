@@ -166,7 +166,7 @@ try {
         ("/Fe$out/consumer-video.exe"),'/link','/incremental:no','/opt:ref',"$out/decoder.obj")
     Invoke-Checked "$out/consumer-video.exe" @()
     $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
-    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
+    Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") -DKERNEL_PS2_HOST_TEST "$project/test/kernel/drivers/input/ps2/decoder/abi_test.c" "$project/kernel/drivers/input/ps2/controller/controller.c" `
         "$project/kernel/drivers/input/ps2/controller/transport.c" "$project/kernel/drivers/input/ps2/controller/discovery.c" "$project/test/kernel/drivers/input/ps2/controller/transport_test.c" `
         "$project/test/kernel/drivers/input/ps2/controller/discovery_test.c" "$project/arch/x86/kernel/drivers/input/ps2/integration/native.c" `
@@ -177,7 +177,7 @@ try {
         "$project/test/kernel/shell/command/abi_test.c" "$project/kernel/shell/shell.c" "$project/kernel/shell/queue.c" `
         "$project/arch/x86/kernel/drivers/input/ps2/shell/task.c" `
         "$project/test/arch/x86/kernel/drivers/input/ps2/shell/bridge_test.c" `
-        2> "$out/cppcheck.xml"
+
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml=Get-Content "$out/cppcheck.xml"
     if (@($xml.results.errors.error | Where-Object {$_.severity -in 'error','warning','performance','portability'}).Count) {

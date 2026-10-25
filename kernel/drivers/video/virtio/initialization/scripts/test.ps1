@@ -46,7 +46,7 @@ try {
     $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     $paths+=@($native | ForEach-Object {"$project/$_"})+
         @("$project/arch/x86/kernel/drivers/video/virtio/initialization/access.c")
-    $arguments=@('--enable=all','--check-level=exhaustive','--platform=win64','--std=c11','--xml',
+    $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',
         ('"-I'+$project+'"'))+@($paths | ForEach-Object {'"'+$_+'"'})
     $checked=Start-Process $checker -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
         -RedirectStandardError "$out/cppcheck.xml" -RedirectStandardOutput "$out/cppcheck.log"

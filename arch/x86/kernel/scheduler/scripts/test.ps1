@@ -123,8 +123,8 @@ try {
         'dispatcher/engine.c','diagnostic/profiles.c','../../../../test/arch/x86/kernel/scheduler/dispatcher/engine_test.c',
         '../../../../test/arch/x86/kernel/scheduler/idle/idle_test.c','../../../../test/arch/x86/kernel/scheduler/idle/budget_test.c') |
         ForEach-Object { Join-Path $module $_ }
-    & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
-        ("-I$project") @inputs 2> "$out/cppcheck.xml"
+    Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
+        ("-I$project") @inputs
     if ($LASTEXITCODE) { throw 'Cppcheck execution failed' }
     [xml]$analysis = Get-Content "$out/cppcheck.xml"
     $blocking = @($analysis.results.errors.error | Where-Object {
