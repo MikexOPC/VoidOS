@@ -1,4 +1,5 @@
 #include "authority.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 static const X86_IOMMU_AUTH *registered;
 static X86_IOMMU_CHECK registered_check;
@@ -93,7 +94,7 @@ BOOT_U32 x86_iommu_leaf(BOOT_U64 entry,BOOT_U64 address)
     const X86_IOMMU_AUTH *owner=registered;
     if (!owner) return 1;
     if (!owner->Count || owner->Count>8 || owner->Writable>1) return 0;
-    if ((address>>39)==X86_IOMMU_SLOT) {
+    if (X86_LAYOUT_SLOT_OF(address)==X86_IOMMU_SLOT) {
         if (address<X86_IOMMU_VIRTUAL || (address&4095)) return 0;
         BOOT_U64 slot=(address-X86_IOMMU_VIRTUAL)/4096;
         return !(slot&1) && slot/2<owner->Count && (entry&~0x60ULL)==

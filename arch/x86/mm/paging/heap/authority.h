@@ -1,12 +1,13 @@
 #ifndef X86_HEAP_AUTHORITY_H
 #define X86_HEAP_AUTHORITY_H
 #include "kernel/mm/physical/allocator.h"
+#include "arch/x86/configs/layout.h"
 
 // G3 H1-A: kernel heap at its own PML4 slot. One contiguous pinned RAM lease of 4096 pages (16 MiB)
 // mapped supervisor RW/XD WB from 2 MiB into the slot; the first and the tenth 2 MiB of the slot
 // stay unmapped as guards. Ten owned tables in one pinned lease: PDPT, PD and eight PTs.
-#define X86_HEAP_SLOT     230U
-#define X86_HEAP_VIRTUAL  ((230ULL << 39) + 0x200000ULL)
+#define X86_HEAP_SLOT     X86_LAYOUT_HEAP_SLOT
+#define X86_HEAP_VIRTUAL  (X86_LAYOUT_SLOT_ADDRESS(X86_HEAP_SLOT) + 0x200000ULL)
 #define X86_HEAP_PAGES    4096U
 #define X86_HEAP_TABLES   10U
 // Inventory tags (Reserved) 48-57, one per table; the table source is tag + 1.

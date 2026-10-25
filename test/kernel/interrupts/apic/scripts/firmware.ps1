@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/layout.ps1')
 # ====== copia del profilo CPU e stato LAPIC dal monitor indipendente ===== #
 
 function Write-ApicMonitor($log, $vm) {
@@ -29,7 +30,7 @@ function Test-ApicFirmware($log, $registers) {
     $rflags = [Convert]::ToUInt64($flagsRow.Groups[1].Value,16)
     $leaf1 = [Convert]::ToUInt64($flagsRow.Groups[2].Value,16)
     if (!$log.Contains('KERNEL_APIC_PREFLIGHT_OK') -or ($profile -band 7) -or
-        $profile -lt 0x100000000 -or $profile + 80 -gt 0x100100000 -or
+        $profile -lt $OsImageBase -or $profile + 80 -gt $OsImageLimit -or
         ($base -band 0xd00) -ne 0x900 -or ($base -band [uint64]68719472640) -ne $lapic -or
         ($pat -band 255) -ne 6 -or $slot -lt 1 -or $slot -gt 7 -or
         (($pat -shr ([int]$slot * 8)) -band 255) -ne 0 -or
@@ -56,8 +57,8 @@ function Test-ApicCapabilities($log, $registers) {
     $end = Read-Hex $log 'KERNEL_IO_APIC_END: 0x([0-9a-f]{16})'
     $inputs = Read-Hex $log 'KERNEL_IO_APIC_INPUTS: 0x([0-9a-f]{16})'
     $ioVersion = Read-Hex $log 'KERNEL_IO_APIC_VERSION: 0x([0-9a-f]{16})'
-    if (!$log.Contains('KERNEL_APIC_MMIO_OK') -or ($target -band 7) -or $target -lt 0x100000000 -or
-        $target + 528 -gt 0x100100000 -or $id -ne (Read-Hex $log 'KERNEL_APIC_INITIAL_ID: 0x([0-9a-f]{16})') -or
+    if (!$log.Contains('KERNEL_APIC_MMIO_OK') -or ($target -band 7) -or $target -lt $OsImageBase -or
+        $target + 528 -gt $OsImageLimit -or $id -ne (Read-Hex $log 'KERNEL_APIC_INITIAL_ID: 0x([0-9a-f]{16})') -or
         (Read-Hex $log 'KERNEL_IO_APIC_COUNT: 0x([0-9a-f]{16})') -ne 1 -or
         $physical -ne [uint64]4273995776 -or $ioVersion -ne 0x00170020 -or $inputs -ne 24 -or $base -ne 0 -or $end -ne 24 -or
         $registers -notmatch ('(?im)^'+$target.ToString('x16')+':\s+0x'+(($version -shl 32)+$id).ToString('x16')+'\s+0x0000000100000001') -or
@@ -106,6 +107,6 @@ function Test-IrqFirmware($log, $registers) {
         $address = ($low -band 65535) + (($low -shr 48) -shl 16) + (($high -band 4294967295L) -shl 32)
         if (($low -shr 16 -band 65535) -ne 8 -or ($low -shr 32 -band 255) -ne $ist -or
             ($low -shr 40 -band 255) -ne 0x8e -or ($high -shr 32) -or
-            $address -lt 0x100000000 -or $address -ge 0x100100000) { throw 'Gate IRQ corrotto o IST errato.' }
+            $address -lt $OsImageBase -or $address -ge $OsImageLimit) { throw 'Gate IRQ corrotto o IST errato.' }
     }
 }

@@ -1,4 +1,5 @@
 #include "lapic.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "lib/memory/address_ranges.h"
@@ -15,7 +16,7 @@ static int range(const void *pointer, BOOT_U64 bytes)
     return pointer && !(address & 7) && address <= ~0ULL-bytes &&
         !os_address_ranges_overlap(address,bytes,X86_LAPIC_VIRTUAL-4096,12288) &&
         !os_address_ranges_overlap(address,bytes,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) &&
-        !os_address_ranges_overlap(address,bytes,X86_BOOT_RECURSIVE_SLOT*(1ULL<<39),1ULL<<39);
+        !os_address_ranges_overlap(address,bytes,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES);
 }
 
 // ====== nessun alias tra owner scrivibile e input di preflight ===== //
@@ -164,7 +165,7 @@ static int output_range(const X86_LAPIC_MAPPING *owner, BOOT_U32 *value) {
         os_address_ranges_overlap(target,sizeof(*value),(BOOT_U64)owner,sizeof(*owner)) ||
         os_address_ranges_overlap(target,sizeof(*value),X86_LAPIC_VIRTUAL-4096,12288) ||
         os_address_ranges_overlap(target,sizeof(*value),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
-        os_address_ranges_overlap(target,sizeof(*value),X86_BOOT_RECURSIVE_SLOT*(1ULL<<39),1ULL<<39)) return 0;
+        os_address_ranges_overlap(target,sizeof(*value),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES)) return 0;
     return 1;
 }
 

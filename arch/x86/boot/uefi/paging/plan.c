@@ -1,4 +1,5 @@
 #include "plan.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== intervalli e permessi del profilo a quattro livelli ===== //
@@ -26,7 +27,7 @@ EFI_STATUS boot_validate_mapping_plan(const BOOT_MAPPING_PLAN *plan)
             (mapping->Flags & 3) == 3)
             return EFI_INVALID_PARAMETER;
         bytes = mapping->Pages * 4096;
-        if (os_address_ranges_overlap(mapping->VirtualBase, bytes, (UINT64)X86_BOOT_RECURSIVE_SLOT << 39, 1ULL << 39) ||
+        if (os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_LAYOUT_RECURSIVE_VIRTUAL, X86_LAYOUT_SLOT_BYTES) ||
             os_address_ranges_overlap(mapping->VirtualBase, bytes, X86_KERNEL_PAGE_WINDOW - 4096,
                                       X86_KERNEL_WINDOW_BYTES + 2 * 4096))
             return EFI_INVALID_PARAMETER;

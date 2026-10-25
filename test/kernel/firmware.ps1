@@ -1,4 +1,5 @@
 param([string]$QemuDirectory = 'C:/Program Files/qemu', [switch]$UseInstalled, [string]$ImageDirectory)
+. (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
@@ -253,7 +254,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             throw 'IDTR attivo diverso dalla tabella kernel verificata.'
         }
         $idtBase = [Convert]::ToUInt64($idt.Groups[1].Value,16)
-        if ($idtBase -lt 0x100000000 -or $idtBase -ge 0x100100000 -or ($idtBase -band 15)) { throw 'IDT fuori dal kernel o non allineata.' }
+        if ($idtBase -lt $OsImageBase -or $idtBase -ge $OsImageLimit -or ($idtBase -band 15)) { throw 'IDT fuori dal kernel o non allineata.' }
         $gdt = [regex]::Match($log, '(?i)KERNEL_GDT_BASE: 0x([0-9a-f]{16})')
         $tss = [regex]::Match($log, '(?i)KERNEL_TSS_BASE: 0x([0-9a-f]{16})')
         if (!$gdt.Success -or !$tss.Success -or
@@ -263,7 +264,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         }
         $gdtBase = [Convert]::ToUInt64($gdt.Groups[1].Value,16)
         $tssBase = [Convert]::ToUInt64($tss.Groups[1].Value,16)
-        if ($gdtBase -lt 0x100000000 -or $gdtBase -ge 0x100100000 -or ($gdtBase -band 15) -or
+        if ($gdtBase -lt $OsImageBase -or $gdtBase -ge $OsImageLimit -or ($gdtBase -band 15) -or
             $tssBase -ne $gdtBase + 48) { throw 'Storage GDT TSS fuori dal kernel.' }
         $descriptor = [regex]::Match($registers, '(?im)^' + ($gdtBase + 24).ToString('x16') + ':\s+0x([0-9a-f]{16})\s+0x([0-9a-f]{16})')
         if (!$descriptor.Success -or ([Convert]::ToUInt64($descriptor.Groups[1].Value,16) -shr 40 -band 255) -ne 0x8b) {
@@ -362,8 +363,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $faultRsp = Read-Hex $log '(?i)FAULT_RSP: 0x([0-9a-f]{16})'
             $faultFlags = Read-Hex $log '(?i)FAULT_FLAGS: 0x([0-9a-f]{16})'
             if ((Read-Hex $registers 'RAX=([0-9a-f]{16})') -ne [Convert]::ToUInt64('4b4641554c540001',16) -or
-                (Read-Hex $registers 'RIP=([0-9a-f]{16})') -lt 0x100000000 -or
-                (Read-Hex $registers 'RIP=([0-9a-f]{16})') -ge 0x100100000 -or
+                (Read-Hex $registers 'RIP=([0-9a-f]{16})') -lt $OsImageBase -or
+                (Read-Hex $registers 'RIP=([0-9a-f]{16})') -ge $OsImageLimit -or
                 (Read-Hex $log '(?i)FAULT_VECTOR: 0x([0-9a-f]{16})') -ne $vector -or
                 (Read-Hex $log '(?i)FAULT_ERROR: 0x([0-9a-f]{16})') -ne $errorCode -or
                 (Read-Hex $log '(?i)FAULT_CS: 0x([0-9a-f]{16})') -ne 8 -or
@@ -382,7 +383,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             if ($vector -eq 14 -and ((Read-Hex $registers 'CR2=([0-9a-f]{16})') -ne $faultAddress -or
                 (Read-Hex $log '(?i)FAULT_CR2: 0x([0-9a-f]{16})') -ne $faultAddress -or
                 ($case.Variant -in @('execute','main-execute','region-execute') -and $faultRip -ne $faultAddress))) { throw 'Diagnostica CR2 o RIP NX errata.' }
-            if ($vector -ne 14 -and $vector -ne 8 -and ($faultRip -lt 0x100000000 -or $faultRip -ge 0x100100000)) { throw 'RIP fault fuori dal kernel.' }
+            if ($vector -ne 14 -and $vector -ne 8 -and ($faultRip -lt $OsImageBase -or $faultRip -ge $OsImageLimit)) { throw 'RIP fault fuori dal kernel.' }
             if ($raw -notmatch '\x1b\[31m\[ FAIL \]\x1b\[0m KERNEL_EXCEPTION\r?\n') { throw 'Colore etichetta eccezione errato.' }
         }
         $pages = [regex]::Match($log, 'Pagine convenzionali candidate: 0x([0-9a-f]{16})')

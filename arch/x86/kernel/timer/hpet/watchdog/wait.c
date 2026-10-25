@@ -1,4 +1,5 @@
 #include "watchdog.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "lib/memory/address_ranges.h"
 static BOOT_U32 wake_detail;
@@ -17,13 +18,13 @@ static int source_valid(const volatile BOOT_U32 *source, const volatile BOOT_U32
         os_address_ranges_overlap(address,8,(BOOT_U64)owner,sizeof(*owner)) ||
         os_address_ranges_overlap(address,8,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
         os_address_ranges_overlap(address,8,X86_LAPIC_VIRTUAL-4096,12288) ||
-        os_address_ranges_overlap(address,8,128ULL << 39,1ULL << 39)) { return 0; }
+        os_address_ranges_overlap(address,8,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES)) { return 0; }
     return !stop || (request >= 4096 && !(request & 3) && request <= (1ULL << 47) - 4 &&
         !os_address_ranges_overlap(request,4,(BOOT_U64)owner,sizeof(*owner)) &&
         !os_address_ranges_overlap(request,4,address,8) &&
         !os_address_ranges_overlap(request,4,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) &&
         !os_address_ranges_overlap(request,4,X86_LAPIC_VIRTUAL-4096,12288) &&
-        !os_address_ranges_overlap(request,4,128ULL << 39,1ULL << 39));
+        !os_address_ranges_overlap(request,4,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES));
 }
 
 // ====== wake_lapic_valid ======

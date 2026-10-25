@@ -1,8 +1,9 @@
 #ifndef X86_IOMMU_AUTHORITY_H
 #define X86_IOMMU_AUTHORITY_H
 #include "kernel/mm/physical/allocator.h"
-#define X86_IOMMU_SLOT 228U
-#define X86_IOMMU_VIRTUAL ((228ULL<<39)+4096)
+#include "arch/x86/configs/layout.h"
+#define X86_IOMMU_SLOT X86_LAYOUT_IOMMU_SLOT
+#define X86_IOMMU_VIRTUAL (X86_LAYOUT_SLOT_ADDRESS(X86_IOMMU_SLOT) + 4096)
 typedef struct {
     BOOT_U64  Owner, Cache, Base[8], TableIds[3], Writable;
     BOOT_U32  Count, Reserved;

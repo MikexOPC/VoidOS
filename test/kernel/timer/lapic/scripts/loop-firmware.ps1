@@ -1,6 +1,7 @@
 param([string]$QemuDirectory='C:/Program Files/qemu',[switch]$UseBuilt,
     [string]$ImageDirectory,[ValidateRange(8,128)][int]$StopAfterEvents=8,
     [ValidateSet(128,256)][int]$Ram=128,[ValidateSet(1,4)][int]$Processors=1)
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/layout.ps1')
 $ErrorActionPreference='Stop'
 $project=(Resolve-Path (Join-Path $PSScriptRoot '../../../../..')).Path
 . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
@@ -86,7 +87,7 @@ try {
     if(!$log.Contains('KERNEL_TIMER_LOOP_EVENTS:')) {throw 'Ciclo non avanza oltre il bootstrap.'}
     $control=Read-Hex $log 'KERNEL_TIMER_LOOP_CONTROL: 0x([0-9a-f]{16})'
     $owner=Read-Hex $log 'KERNEL_TIMER_LOOP_OWNER: 0x([0-9a-f]{16})'
-    if(($control -band 7) -or $control -lt 0x100000000 -or $control+48 -gt 0x100100000) {throw 'Controllo debug fuori immagine.'}
+    if(($control -band 7) -or $control -lt $OsImageBase -or $control+48 -gt $OsImageLimit) {throw 'Controllo debug fuori immagine.'}
     $client=[Net.Sockets.TcpClient]::new(); $client.Connect('127.0.0.1',$port)
     $stream=$client.GetStream(); $stream.ReadTimeout=5000; $stream.WriteTimeout=5000
     Send-Gdb $stream '?'; $reply=Read-Gdb $stream
@@ -124,7 +125,7 @@ try {
         $registers -notmatch '(?im)^LVTT\s+0x00010040' -or
         $registers -notmatch '(?im)^Timer\s+DCR=0xb\s+.*initial_count = 0 current_count = 0') {throw 'Stato terminale o traccia IRQ errati.'}
     $flags=Read-Hex $registers 'RFL=([0-9a-f]+)'
-    if(($flags -band 512) -or $resume -lt 0x100000002 -or $resume -ge 0x100100000 -or
+    if(($flags -band 512) -or $resume -lt ($OsImageBase + 2) -or $resume -ge $OsImageLimit -or
         $registers -notmatch ('(?im)^'+($resume-2).ToString('x16')+':\s+0xfb\s+0xf4\s+0xfa')) {throw 'IF terminale o sequenza sonno non conformi.'}
     $events=[regex]::Matches($trace,'(?s)Servicing hardware INT=0x41\s+.*?RIP=([0-9a-f]{16}) RFL=([0-9a-f]+)')
     if($events.Count -ne $count) {throw 'Trace timer incompleta.'}

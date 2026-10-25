@@ -1,8 +1,9 @@
 #ifndef X86_SURFACE_AUTHORITY_H
 #define X86_SURFACE_AUTHORITY_H
 #include "kernel/mm/physical/allocator.h"
-#define X86_SURFACE_SLOT 227U
-#define X86_SURFACE_VIRTUAL ((227ULL<<39)+4096)
+#include "arch/x86/configs/layout.h"
+#define X86_SURFACE_SLOT X86_LAYOUT_SURFACE_SLOT
+#define X86_SURFACE_VIRTUAL (X86_LAYOUT_SLOT_ADDRESS(X86_SURFACE_SLOT) + 4096)
 #define X86_SURFACE_TABLES 11U
 typedef struct {
     BOOT_U64  Owner, Base, Pages, DataId, TableIds[11];

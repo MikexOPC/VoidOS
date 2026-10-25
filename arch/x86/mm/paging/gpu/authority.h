@@ -2,8 +2,9 @@
 #define X86_PAGING_GPU_AUTHORITY_H
 #include "kernel/drivers/video/virtio/mapping/plan.h"
 #include "kernel/mm/physical/allocator.h"
-#define X86_GPU_SLOT 226U
-#define X86_GPU_VIRTUAL ((226ULL << 39)+4096)
+#include "arch/x86/configs/layout.h"
+#define X86_GPU_SLOT X86_LAYOUT_GPU_SLOT
+#define X86_GPU_VIRTUAL (X86_LAYOUT_SLOT_ADDRESS(X86_GPU_SLOT) + 4096)
 #define X86_GPU_TABLES 3U
 typedef struct {
     BOOT_U64  Self, Root, Pat, Cache;

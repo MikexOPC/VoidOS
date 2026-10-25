@@ -17,6 +17,9 @@ sys.dont_write_bytecode = True
 # ====== shared monitor protocol ======
 
 import importlib.util
+_layout_spec = importlib.util.spec_from_file_location("os_layout", Path(__file__).resolve().parents[7] / "scripts/lib/layout.py")
+layout = importlib.util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 _protocol_spec = importlib.util.spec_from_file_location("ps2_firmware_protocol",Path(__file__).with_name("protocol.py"))
 _protocol = importlib.util.module_from_spec(_protocol_spec)
 _protocol_spec.loader.exec_module(_protocol)
@@ -176,7 +179,7 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
             if idle_rollover:
                 fired = number(log, "KERNEL_WATCHDOG_FIRED")
                 ticks = number(log, "KERNEL_WATCHDOG_TICKS")
-                if not 0 < ticks < 0x80000000 or fired * ticks <= 0x100000000:
+                if not 0 < ticks < 0x80000000 or fired * ticks <= (1 << 32):
                     raise RuntimeError("No proven full 32-bit counter traversal")
                 counters["WatchdogDeadlines"] = fired
                 counters["MinimumCounterAdvance"] = fired * ticks
@@ -272,7 +275,7 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                     command(vm, "info lapic")
                     command(vm, "info irq")
                     owner = re.search(r'KERNEL_WATCHDOG_OWNER: 0x([0-9a-fA-F]{16})', read_serial(serial))
-                    if owner and 0x100000000 <= int(owner[1], 16) < (1 << 47):
+                    if owner and layout.KERNEL_IMAGE_BASE <= int(owner[1], 16) < layout.KERNEL_IMAGE_LIMIT:
                         command(vm, "x /28gx 0x" + owner[1])
                     time.sleep(0.2)
                 except (OSError, ValueError):

@@ -1,4 +1,5 @@
 #include "registry.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/mm/devices/lapic.h"
@@ -13,7 +14,7 @@ static int range(const void *pointer, BOOT_U64 bytes)
     return address >= 4096 && !(address & 7) && address <= (1ULL<<47)-bytes &&
         !os_address_ranges_overlap(address,bytes,X86_LAPIC_VIRTUAL-4096,12288) &&
         !os_address_ranges_overlap(address,bytes,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) &&
-        !os_address_ranges_overlap(address,bytes,128ULL<<39,1ULL<<39);
+        !os_address_ranges_overlap(address,bytes,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES);
 }
 
 // ====== azzeramento e verifica senza runtime o allocazioni ===== //

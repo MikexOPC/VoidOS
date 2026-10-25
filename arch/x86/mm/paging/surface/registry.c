@@ -1,4 +1,5 @@
 #include "authority.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 static const X86_SURFACE_AUTH *registered;
 static X86_SURFACE_CHECK registered_check;
@@ -65,7 +66,7 @@ BOOT_U32 x86_surface_leaf(BOOT_U64 entry,BOOT_U64 address)
 {
     const X86_SURFACE_AUTH *owner=registered;
     if (!owner) return 1;
-    if ((address>>39)==X86_SURFACE_SLOT) {
+    if (X86_LAYOUT_SLOT_OF(address)==X86_SURFACE_SLOT) {
         if (address<X86_SURFACE_VIRTUAL || (address&4095)) return 0;
         BOOT_U64 index=(address-X86_SURFACE_VIRTUAL)/4096;
         return index<owner->Data.Pages && (entry&~0x60ULL)==

@@ -1,4 +1,5 @@
 #include "table.h"
+#include "arch/x86/configs/layout.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/descriptors/stacks.h"
@@ -150,7 +151,7 @@ int x86_irq_initialize(void)
     result = x86_irq_activate(&irq_idtr);
     if (result < 0) x86_kernel_stop(0x4b49525142410001ULL);
     if (!result) return 0;
-    if (!x86_irq_registry_initialize(&irq_registry,0x100000000ULL,0x100100000ULL)) return 0;
+    if (!x86_irq_registry_initialize(&irq_registry,X86_KERNEL_IMAGE_BASE,X86_KERNEL_IMAGE_LIMIT)) return 0;
     installed = 1; armed = 1;
     result = x86_irq_return_test();
     armed = 0;
@@ -184,14 +185,14 @@ static int frame_owner(const X86_IRQ_FRAME *frame)
         top = x86_scheduler_irq_stack_top(address);
         if (!top) return 0; // Authority BEFORE reading the borrowed CPU frame.
         return frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= top &&
-            frame->Rip >= 0x100000000ULL && frame->Rip < 0x100100000ULL;
+            frame->Rip >= X86_KERNEL_IMAGE_BASE && frame->Rip < X86_KERNEL_IMAGE_LIMIT;
     }
 #endif
     // IST zero: il frame e preso in prestito dallo stack principale persistente.
     return frame && !(address & 7) && address >= X86_KERNEL_MAIN_BASE &&
         address <= X86_KERNEL_MAIN_TOP - sizeof(*frame) &&
         frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= top &&
-        frame->Rip >= 0x100000000ULL && frame->Rip < 0x100100000ULL;
+        frame->Rip >= X86_KERNEL_IMAGE_BASE && frame->Rip < X86_KERNEL_IMAGE_LIMIT;
 }
 
 // ====== contatori bounded senza wrap durante il boot uniprocessore ===== //

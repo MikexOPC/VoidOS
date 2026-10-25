@@ -1,4 +1,5 @@
 #include "qi.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== x86_qi_prepare ======
@@ -16,8 +17,8 @@ int x86_qi_prepare(X86_VTD_MAPPING *mapping,const X86_PM_CLOCK *clock,BOOT_U32 b
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)mapping->Inventory,sizeof(*mapping->Inventory)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)mapping->Context,sizeof(*mapping->Context)) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),(BOOT_U64)mapping->Context->MemoryMap,mapping->Context->Info.MemoryMapCapacity) ||
-        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),128ULL<<39,1ULL<<39) ||
-        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),225ULL<<39,4ULL<<39) ||
+        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
+        os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_LAYOUT_DEVICES_VIRTUAL,X86_LAYOUT_DEVICES_BYTES) ||
         os_address_ranges_overlap((BOOT_U64)owner,sizeof(*owner),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
         !x86_qi_cpu_line() || !x86_vtd_capabilities_read(mapping,0,&caps) || caps.Status || !(caps.Ecap&2) ||
         (caps.Version>>4)!=1 || caps.IotlbOffset>4080) return 0;

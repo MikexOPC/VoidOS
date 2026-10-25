@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot '../../../../../../../scripts/lib/layout.ps1')
 # ============ mandatory fields and closed owner ============
 
 function Read-Hex([string]$Text, [string]$Pattern) {
@@ -28,7 +29,7 @@ function Test-WatchdogOwner([string]$Log, [string]$Monitor, [uint64]$Expected, [
         (Read-LastHex $Log 'KERNEL_WATCHDOG_RECOVERY_ATTEMPTS: 0x([0-9a-f]{16})') -ne $Attempts) {
         throw 'Unexpected operational or cleanup failure phase.'
     }
-    if (($owner -band 7) -or $owner -lt 0x100000000 -or $owner+224 -gt 0x100100000 -or
+    if (($owner -band 7) -or $owner -lt $OsImageBase -or $owner+224 -gt $OsImageLimit -or
         !$Log.Contains('KERNEL_WATCHDOG_CLEANUP_OK') -or
         (Read-Hex $Log 'KERNEL_WATCHDOG_FIRED: 0x([0-9a-f]{16})') -ne $Expected -or
         (Read-Hex $Log 'KERNEL_WATCHDOG_RESULT: 0x([0-9a-f]{16})') -ne $Result -or

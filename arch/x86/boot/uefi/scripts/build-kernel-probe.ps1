@@ -1,5 +1,6 @@
 param([Parameter(Mandatory)][string]$ToolchainBin, [string]$OutputDirectory,
       [ValidateSet('none', 'contract-write', 'stack-guard', 'execute-data')][string]$Fault = 'none')
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/layout.ps1')
 $ErrorActionPreference = 'Stop'
 $bootRoot = Split-Path -Parent $PSScriptRoot
 $projectRoot = (Resolve-Path (Join-Path $bootRoot '../../../..')).Path
@@ -22,7 +23,7 @@ if ($Fault -ne 'none') { $probeFlags = @('/DBOOT_PROBE_FAULT=' + (@('none','cont
     ('/I' + $probeCompilerInclude) ('/I' + $probeUcrt) @probeFlags ('/I' + $bootRoot) ('/I' + $projectRoot) (Join-Path $bootRoot '../../../../test/arch/x86/boot/uefi/kernel/entry.c') ("/Fo$output/kernel_probe.obj")
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione kernel diagnostico fallita.' }
 & (Join-Path $ToolchainBin 'link.exe') /nologo /machine:x64 /subsystem:native `
-    /entry:kernel_probe_entry /nodefaultlib /incremental:no /dynamicbase:no /fixed /base:0x100000000 `
+    /entry:kernel_probe_entry /nodefaultlib /incremental:no /dynamicbase:no /fixed /base:0x$($OsImageBase.ToString('X')) `
     ("/out:$output/kernel_probe.exe") ("$output/kernel_probe.obj")
 if ($LASTEXITCODE -ne 0) { throw 'Collegamento kernel diagnostico fallito.' }
 
@@ -49,7 +50,7 @@ $count = Read-Number ($pe + 6) 2
 $expectedCount = if ($Fault -eq 'execute-data') { 4 } else { 3 }
 if ($count -ne $expectedCount -or $optionalSize -ne 240 -or
     (Read-Number $optional 2) -ne 0x20b -or
-    (Read-Number ($optional + 24) 8) -ne 0x100000000 -or
+    (Read-Number ($optional + 24) 8) -ne $OsImageBase -or
     (Read-Number ($optional + 32) 4) -ne 4096 -or
     (Read-Number ($optional + 108) 4) -ne 16) { throw 'Profilo PE diagnostico inatteso.' }
 for ($i = 0; $i -lt 16; $i++) {
@@ -58,9 +59,9 @@ for ($i = 0; $i -lt 16; $i++) {
         throw 'Il probe deve essere privo di import, relocation, TLS e directory runtime.'
     }
 }
-$entry = [uint64]0x100000000 + (Read-Number ($optional + 16) 4)
+$entry = $OsImageBase + (Read-Number ($optional + 16) 4)
 $sections = @()
-$previousEnd = [uint64]0x100000000
+$previousEnd = $OsImageBase
 $entryValid = $false
 $payloadEnd = 4096
 for ($i = 0; $i -lt $count; $i++) {
@@ -68,7 +69,7 @@ for ($i = 0; $i -lt $count; $i++) {
     $null = Read-Number ($header + 36) 4
     $name = [Text.Encoding]::ASCII.GetString($bytes, $header, 8).TrimEnd([char]0)
     $virtualSize = Read-Number ($header + 8) 4
-    $address = [uint64]0x100000000 + (Read-Number ($header + 12) 4)
+    $address = $OsImageBase + (Read-Number ($header + 12) 4)
     $rawSize = Read-Number ($header + 16) 4
     $rawOffset = Read-Number ($header + 20) 4
     $characteristics = Read-Number ($header + 36) 4
@@ -77,7 +78,7 @@ for ($i = 0; $i -lt $count; $i++) {
     if ($name -ne $expectedName -or ($characteristics -band [uint32]3758096384) -ne $expectedPermissions -or
         $virtualSize -eq 0 -or $virtualSize -gt 4096 -or $rawSize -gt 4096 -or
         $rawOffset -gt $bytes.Length -or $rawSize -gt $bytes.Length - $rawOffset -or
-        ($address -band 4095) -ne 0 -or $address -lt $previousEnd -or $address -ge 0x100100000) {
+        ($address -band 4095) -ne 0 -or $address -lt $previousEnd -or $address -ge $OsImageLimit) {
         throw 'Sezione fuori dal profilo ristretto del probe.'
     }
     if ($i -eq 0 -and $rawSize -eq 0) { throw 'Codice assente.' }
@@ -90,7 +91,7 @@ for ($i = 0; $i -lt $count; $i++) {
     if ($i -eq 1) {
         $debugRva = Read-Number ($optional + 160) 4
         $debugBytes = Read-Number ($optional + 164) 4
-        $sectionRva = $address - 0x100000000
+        $sectionRva = $address - $OsImageBase
         if ($debugBytes -ne 0 -and ($debugRva -lt $sectionRva -or
             $debugRva + [uint64]$debugBytes -gt $sectionRva + $virtualSize)) {
             throw 'Directory debug fuori dai dati in sola lettura.'
@@ -99,7 +100,7 @@ for ($i = 0; $i -lt $count; $i++) {
     if ($i -eq 3) {
         $exceptionRva = Read-Number ($optional + 136) 4
         $exceptionBytes = Read-Number ($optional + 140) 4
-        $sectionRva = $address - 0x100000000
+        $sectionRva = $address - $OsImageBase
         if (!$exceptionBytes -or $exceptionRva -lt $sectionRva -or
             $exceptionRva + [uint64]$exceptionBytes -gt $sectionRva + $virtualSize) {
             throw 'Directory unwind del solo probe NX fuori da .pdata.'

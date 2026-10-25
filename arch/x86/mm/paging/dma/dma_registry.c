@@ -1,4 +1,5 @@
 #include "authority.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 static const X86_DMA_AUTH *registered;
 static X86_DMA_CHECK registered_check;
@@ -97,7 +98,7 @@ BOOT_U32 x86_dma_leaf(BOOT_U64 entry, BOOT_U64 address)
 
     if (!owner) return 1;
 
-    if ((address >> 39) == X86_DMA_SLOT) {
+    if (X86_LAYOUT_SLOT_OF(address) == X86_DMA_SLOT) {
         if (address < X86_DMA_VIRTUAL || (address & 4095)) return 0;
 
         BOOT_U64 index = (address - X86_DMA_VIRTUAL) / 4096;

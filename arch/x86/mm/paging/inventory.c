@@ -1,11 +1,13 @@
 #include "inventory.h"
+#include "arch/x86/configs/layout.h"
 #include "authorization/validation.h"
 #include "gpu/validation.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/mm/devices/lapic.h"
 #define PAGING_ADDRESS 0x000ffffffffff000ULL
 #define PAGING_NX (1ULL << 63)
-#define PAGING_ROOT_VIEW ((128ULL << 39) | (128ULL << 30) | (128ULL << 21) | (128ULL << 12))
+#define PAGING_ROOT_VIEW X86_LAYOUT_RECURSIVE_VIEW(X86_LAYOUT_RECURSIVE_SLOT, X86_LAYOUT_RECURSIVE_SLOT, \
+    X86_LAYOUT_RECURSIVE_SLOT, X86_LAYOUT_RECURSIVE_SLOT)
 volatile BOOT_U64 x86_paging_generation_counter;
 
 // ====== x86_paging_generation ======
@@ -207,7 +209,7 @@ static int snapshot_valid(const X86_PAGING_INVENTORY *inventory, BOOT_U32 bits)
             !x86_surface_record(&inventory->Surface,record->Physical,record->View,record->Level,record->Reserved)) ||
             record->Level > 3 || (index && !record->Level) ||
             (record->Physical & 4095) || !x86_paging_entry_valid(record->Physical | 3, 0, bits) ||
-            (record->View & 4095) || record->View >> 39 != X86_BOOT_RECURSIVE_SLOT) return 0;
+            (record->View & 4095) || X86_LAYOUT_SLOT_OF(record->View) != X86_BOOT_RECURSIVE_SLOT) return 0;
         if (index && !record_linked(inventory, index)) return 0;
         for (other = 0; other < index; ++other)
             if (inventory->Tables[other].Physical == record->Physical ||

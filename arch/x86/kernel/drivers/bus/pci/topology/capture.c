@@ -1,4 +1,5 @@
 #include "topology.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 typedef struct {
     X86_PCI_CONFIG_READ  Read;
@@ -71,8 +72,8 @@ static int storage_private(const X86_MCFG *source,X86_PCI_TOPOLOGY *scratch,X86_
         os_address_ranges_overlap((BOOT_U64)output,sizeof(*output),(BOOT_U64)source,sizeof(*source))) return 0;
     const BOOT_U64 buffers[]={(BOOT_U64)scratch,(BOOT_U64)output};
     for (BOOT_U32 index=0; index<2; ++index)
-        if (os_address_ranges_overlap(buffers[index],sizeof(*output),128ULL<<39,1ULL<<39) ||
-            os_address_ranges_overlap(buffers[index],sizeof(*output),225ULL<<39,4ULL<<39) ||
+        if (os_address_ranges_overlap(buffers[index],sizeof(*output),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
+            os_address_ranges_overlap(buffers[index],sizeof(*output),X86_LAYOUT_DEVICES_VIRTUAL,X86_LAYOUT_DEVICES_BYTES) ||
             os_address_ranges_overlap(buffers[index],sizeof(*output),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES)) return 0;
     return 1;
 }

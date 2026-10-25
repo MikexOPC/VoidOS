@@ -1,4 +1,5 @@
 #include "authority.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 static const X86_HEAP_AUTH *registered;
 static X86_HEAP_CHECK registered_check;
@@ -82,7 +83,7 @@ BOOT_U32 x86_heap_leaf(BOOT_U64 entry, BOOT_U64 address)
 
     if (!owner) return 1;
 
-    if ((address >> 39) == X86_HEAP_SLOT) {
+    if (X86_LAYOUT_SLOT_OF(address) == X86_HEAP_SLOT) {
         if (address < X86_HEAP_VIRTUAL || (address & 4095)) return 0;
 
         BOOT_U64 index = (address - X86_HEAP_VIRTUAL) / 4096;

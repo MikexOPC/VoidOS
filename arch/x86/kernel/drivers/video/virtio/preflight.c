@@ -1,4 +1,5 @@
 #include "mapping.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/mm/window/access.h"
 #include "lib/memory/address_ranges.h"
 
@@ -18,9 +19,9 @@ int x86_vgpu_preflight(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *wind
         os_address_ranges_overlap(address,sizeof(*owner),(BOOT_U64)lapic,sizeof(*lapic)) ||
         os_address_ranges_overlap(address,sizeof(*owner),(BOOT_U64)inventory,sizeof(*inventory)) ||
         os_address_ranges_overlap(address,sizeof(*owner),(BOOT_U64)context->MemoryMap,context->Info.MemoryMapCapacity) ||
-        os_address_ranges_overlap(address,sizeof(*owner),128ULL<<39,1ULL<<39) ||
-        os_address_ranges_overlap(address,sizeof(*owner),X86_GPU_VIRTUAL-4096,1ULL<<39) ||
-        os_address_ranges_overlap(address,sizeof(*owner),X86_FB_VIRTUAL-4096,1ULL<<39) ||
+        os_address_ranges_overlap(address,sizeof(*owner),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES) ||
+        os_address_ranges_overlap(address,sizeof(*owner),X86_GPU_VIRTUAL-4096,X86_LAYOUT_SLOT_BYTES) ||
+        os_address_ranges_overlap(address,sizeof(*owner),X86_FB_VIRTUAL-4096,X86_LAYOUT_SLOT_BYTES) ||
         os_address_ranges_overlap(address,sizeof(*owner),X86_LAPIC_VIRTUAL-4096,12288) ||
         os_address_ranges_overlap(address,sizeof(*owner),X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES)) return 0;
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte)

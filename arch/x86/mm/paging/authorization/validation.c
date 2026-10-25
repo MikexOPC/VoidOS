@@ -1,4 +1,5 @@
 #include "validation.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/mm/devices/lapic.h"
 #include "../gpu/validation.h"
@@ -39,7 +40,7 @@ int x86_paging_buffers_valid(const KERNEL_BOOT_CONTEXT *context,
         os_address_ranges_overlap(target, sizeof(*output), (BOOT_U64)context, sizeof(*context)) ||
         os_address_ranges_overlap(target, sizeof(*output), (BOOT_U64)pool, sizeof(*pool)) ||
         os_address_ranges_overlap(target, sizeof(*output), X86_LAPIC_VIRTUAL-4096,12288) ||
-        os_address_ranges_overlap(target, sizeof(*output), 128ULL << 39, 1ULL << 39)) return 0;
+        os_address_ranges_overlap(target, sizeof(*output), X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES)) return 0;
     return kernel_physical_validate(pool) && map_consistent(context, pool) && x86_paging_gpu_inputs(context,pool,output);
 }
 
@@ -162,7 +163,7 @@ int x86_paging_video_inputs(const KERNEL_BOOT_CONTEXT *context,
 int x86_paging_video_tables_complete(const X86_PAGING_VIDEO_AUTH *video,
     const X86_PAGING_INVENTORY *inventory)
 {
-    BOOT_U32 index, seen = 0, branch = (BOOT_U32)(video->Region.Virtual >> 39);
+    BOOT_U32 index, seen = 0, branch = X86_LAYOUT_SLOT_OF(video->Region.Virtual);
     for (index = 0; index < sizeof(video->Region); ++index)
         if (((const unsigned char *)&video->Region)[index] !=
             ((const unsigned char *)&inventory->Video)[index]) return 0;

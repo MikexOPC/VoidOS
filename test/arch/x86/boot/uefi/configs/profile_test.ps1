@@ -12,13 +12,15 @@ New-Item -ItemType Directory -Path $output | Out-Null
 $original = [IO.File]::ReadAllText((Join-Path $projectRoot 'arch/x86/configs/boot_profile.h'))
 $source = Join-Path $output 'consumer.c'
 [IO.File]::WriteAllText($source, '#include "boot_profile.h"')
+# K1: the profile takes its windows from layout.h, copied unchanged next to each variant.
+Copy-Item -LiteralPath (Join-Path $projectRoot 'arch/x86/configs/layout.h') -Destination (Join-Path $output 'layout.h')
 $cases = @(
     @{ Name='valid'; Before=''; After='' },
     @{ Name='page-size'; Before='#define X86_BOOT_PAGE_BYTES 4096ULL'; After='#define X86_BOOT_PAGE_BYTES 8192ULL' },
-    @{ Name='unaligned'; Before='0x0000600000000000ULL'; After='0x0000600000000001ULL' },
-    @{ Name='noncanonical'; Before='0x0000600000000000ULL'; After='0x0000800000000000ULL' },
-    @{ Name='overlap'; Before='0x0000600000000000ULL'; After='0x0000700000000000ULL' },
-    @{ Name='stack-overflow'; Before='0x0000700000000000ULL'; After='0x00007ffffffff000ULL' },
+    @{ Name='unaligned'; Before='#define X86_BOOT_INFO_VIRTUAL X86_LAYOUT_INFO_VIRTUAL'; After='#define X86_BOOT_INFO_VIRTUAL (X86_LAYOUT_INFO_VIRTUAL + 1ULL)' },
+    @{ Name='noncanonical'; Before='#define X86_BOOT_INFO_VIRTUAL X86_LAYOUT_INFO_VIRTUAL'; After='#define X86_BOOT_INFO_VIRTUAL 0x0000800000000000ULL' },
+    @{ Name='overlap'; Before='#define X86_BOOT_INFO_VIRTUAL X86_LAYOUT_INFO_VIRTUAL'; After='#define X86_BOOT_INFO_VIRTUAL X86_LAYOUT_WINDOWS_VIRTUAL' },
+    @{ Name='stack-overflow'; Before='#define X86_BOOT_STACK_GUARD X86_LAYOUT_WINDOWS_VIRTUAL'; After='#define X86_BOOT_STACK_GUARD 0x00007ffffffff000ULL' },
     @{ Name='empty-stack'; Before='#define X86_BOOT_STACK_PAGES 16ULL'; After='#define X86_BOOT_STACK_PAGES 0ULL' },
     @{ Name='stack-budget'; Before='#define X86_BOOT_STACK_PAGES 16ULL'; After='#define X86_BOOT_STACK_PAGES 17ULL' },
     @{ Name='table-budget'; Before='#define X86_BOOT_TABLE_LIMIT 128U'; After='#define X86_BOOT_TABLE_LIMIT 129U' }
