@@ -46,8 +46,7 @@ int x86_vgpu_present_fallback(const char *reason)
     state->Redraw = 1;
     state->Phase = 0;
     os_damage_clear(&state->Damage);
-    state->RecoverElapsed = 0;
-    if (!state->Io.Clock(state->Io.Context, &state->RecoverLast)) state->Recoverable = 0;
+    if (!kernel_stopwatch_start(&state->Clock, &state->Recover)) state->Recoverable = 0;
     ++state->Failures;
     reset = reset_private(0);
     return kernel_log(2, reason) && reset;
@@ -114,6 +113,7 @@ int x86_vgpu_present_open(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *di
     if (!bytes || !x86_vgpu_transport_open(gpu, directory, &state->Transport, &state->Io)) return kernel_log(2, "KERNEL_VGPU_PRESENT_OPEN_FAILED");
 
     state->Io.Platform = 1;
+    state->Clock = (KERNEL_CLOCK){state->Io.Clock, state->Io.Context, state->Io.Mask, KERNEL_PM_TIMER_HZ};
     buffers.Bits = gpu->Authority.PhysicalBits;
 
     for (uint32_t index = 0; index < 4; ++index) {

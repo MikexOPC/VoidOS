@@ -1,6 +1,7 @@
 #include "profile.h"
 #include "arch/x86/kernel/timer/lapic/timer.h"
 #include "kernel/diagnostics/latency.h"
+#include "kernel/time/clock.h"
 static KERNEL_LATENCY phases[X86_PROFILE_PHASES];
 static uint32_t clock_port, clock_mask, active;
 
@@ -29,7 +30,7 @@ void x86_profile_add(uint32_t phase, uint32_t start)
 {
     if (!active || phase >= X86_PROFILE_PHASES) return;
 
-    kernel_latency_add(&phases[phase], (x86_profile_now() - start) & clock_mask);
+    kernel_latency_add(&phases[phase], kernel_counter_delta(clock_mask, start, x86_profile_now()));
 }
 
 // ====== x86_profile_report ======
