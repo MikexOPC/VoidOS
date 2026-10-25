@@ -1,5 +1,6 @@
 #include "arch/x86/mm/paging/inventory.h"
 #include "arch/x86/mm/devices/lapic.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/mapping.h"
 static BOOT_U64 tables[129][512], views[129];
 static BOOT_U32 table_count, reads, missing;
 static unsigned char map[144];
@@ -270,7 +271,7 @@ static int video_fixture(void)
     tables[3][288] = 0x80000000fee0001bULL;
     tables[3][1] = 0x8000000000300003ULL;
     video.Self = (BOOT_U64)&video; video.Root = 4096; video.Ready = 1; video.PhysicalBits = 32;
-    video.Region.Virtual = (225ULL << 39) + 4096;
+    video.Region.Virtual = X86_FB_VIRTUAL;
     video.Region.Physical = 0xc0000000; video.Region.Pages = 3; video.Region.AperturePages = 8;
     video.Region.Cache = 0x18; video.Region.Pat = 0x0007040600070406ULL;
     video.Region.Owner = (BOOT_U64)&video; video.Region.TableCount = 3;
@@ -283,8 +284,8 @@ static int video_fixture(void)
         if (!kernel_physical_allocate(&pool, 1, &video.Tables[index]) ||
             !kernel_physical_pin(&pool, &video.Tables[index], 1)) return 0;
         if (!index) {
-            tables[0][225] = video.Tables[index].Base | 3;
-            views[5] = x86_paging_child_view(views[0], 0, 225);
+            tables[0][X86_FB_SLOT] = video.Tables[index].Base | 3;
+            views[5] = x86_paging_child_view(views[0], 0, X86_FB_SLOT);
         } else {
             tables[4 + index][0] = video.Tables[index].Base | 3;
             views[5 + index] = x86_paging_child_view(views[4 + index], index, 0);
@@ -330,7 +331,7 @@ static int video_owned(void)
         video.Tables[0].Id == ledger.VideoTableIds[0]) return 12;
     if (x86_paging_inventory_verify_video(&context, &pool, &mapping,
         &video, video_authority, &ledger)) return 11;
-    tables[0][225] = 0;
+    tables[0][X86_FB_SLOT] = 0;
     for (index = 0; index < 3; ++index)
         if (!kernel_physical_pin(&pool, &video.Tables[index], 0) ||
             !kernel_physical_release(&pool, &video.Tables[index])) return 8;
@@ -471,7 +472,7 @@ static int video_arena(void)
     if (!x86_paging_video_register(&video, 0, 0) || x86_paging_video_owner() ||
         x86_paging_inventory_verify_lapic(&context, &pool, &mapping, &ledger)) return 9;
     if (!x86_dma_register(&arena, 0, 0)) return 10;
-    tables[0][X86_DMA_SLOT] = 0; tables[0][225] = 0;
+    tables[0][X86_DMA_SLOT] = 0; tables[0][X86_FB_SLOT] = 0;
     for (index = 0; index < 3; ++index)
         if (!kernel_physical_pin(&pool, &arena.Tables[index], 0) || !kernel_physical_release(&pool, &arena.Tables[index]) ||
             !kernel_physical_pin(&pool, &video.Tables[index], 0) || !kernel_physical_release(&pool, &video.Tables[index])) return 11;

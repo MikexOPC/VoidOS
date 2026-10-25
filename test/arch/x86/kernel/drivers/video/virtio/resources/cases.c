@@ -27,21 +27,21 @@ int main(void)
         CHECK(!x86_surface_leaf(mapping.Authority.Data.Base|3,X86_SURFACE_VIRTUAL));
         CHECK(!x86_surface_leaf(mapping.Authority.Data.Base|0x8000000000000003ULL,X86_SURFACE_VIRTUAL-4096));
         CHECK(!x86_surface_leaf((mapping.Authority.Data.Base+1000*4096)|0x8000000000000003ULL,X86_SURFACE_VIRTUAL+1000*4096));
-        BOOT_U64 actual=roots[227]; roots[227]=0xdead0003;
+        BOOT_U64 actual=roots[X86_SURFACE_SLOT]; roots[X86_SURFACE_SLOT]=0xdead0003;
         CHECK(!x86_vgpu_surface_unbind(&mapping) && pool.FreePages==196);
-        roots[227]=actual; CHECK(x86_vgpu_surface_unbind(&mapping));
-        CHECK(pool.FreePages==1200 && !roots[227] && !x86_surface_owner());
+        roots[X86_SURFACE_SLOT]=actual; CHECK(x86_vgpu_surface_unbind(&mapping));
+        CHECK(pool.FreePages==1200 && !roots[X86_SURFACE_SLOT] && !x86_surface_owner());
         for (failure=1; failure<=3; ++failure) {
             unsigned scenario=failure; CHECK(!x86_vgpu_surface_bind(&gpu,1280,800,&mapping));
             if (scenario==1) {
                 CHECK(pool.FreePages<1200 && mapping.DataPinned);
                 failure=0; CHECK(x86_vgpu_surface_unbind(&mapping)); failure=scenario;
             }
-            CHECK(pool.FreePages==1200 && !roots[227] && !x86_surface_owner());
+            CHECK(pool.FreePages==1200 && !roots[X86_SURFACE_SLOT] && !x86_surface_owner());
         }
         failure=0;
         CHECK(!x86_vgpu_surface_bind(&gpu,4096,4096,&mapping) && pool.FreePages==1200);
-        roots[227]=3; CHECK(!x86_vgpu_surface_bind(&gpu,1280,800,&mapping)); roots[227]=0;
+        roots[X86_SURFACE_SLOT]=3; CHECK(!x86_vgpu_surface_bind(&gpu,1280,800,&mapping)); roots[X86_SURFACE_SLOT]=0;
         CHECK(!x86_vgpu_surface_bind(&gpu,1280,800,(X86_SURFACE_MAPPING *)&pool));
     }
     printf("PASS %u surface mapper checks, 100 real allocator cycles, CPU/MMU mocked\n",checks);

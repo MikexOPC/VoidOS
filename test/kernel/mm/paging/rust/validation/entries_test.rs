@@ -21,6 +21,11 @@ fn mixed_leaf() {
     assert_eq!(entries::x86_paging_leaf_kind(entry,address+4096,0xfee00000,0x18,36),0);
     assert_eq!(entries::x86_paging_leaf_virtual(pt,512),0);
     assert_eq!(entries::x86_paging_leaf_virtual(pt+1,288),0);
+    // K1: a leaf in an upper-half slot is rebuilt sign-extended (Intel SDM Vol. 3A 3.3.7.1).
+    let upper = child(child(child(ROOT,0,481),1,0),2,0);
+    assert_eq!(entries::x86_paging_leaf_virtual(upper,1),0xFFFF_F080_0000_1000);
+    let top = child(child(child(ROOT,0,511),1,511),2,511);
+    assert_eq!(entries::x86_paging_leaf_virtual(top,511),0xFFFF_FFFF_FFFF_F000);
 }
 
 // ====== flags esclusivamente supervisor e nessuna pagina scrivibile eseguibile ===== //
@@ -48,7 +53,7 @@ fn entry_policy() {
 
 #[test]
 fn recursive_views() {
-    for a in [0, 1, 127, 129, 224, 255] {
+    for a in [0, 1, 127, 129, 224, 255, 256, 481, 511] {
         let pdpt = child(ROOT, 0, a);
         assert_eq!(pdpt, (128 << 39) | (128 << 30) | (128 << 21) | (u64::from(a) << 12));
         for b in [0, 1, 511] {
@@ -59,7 +64,8 @@ fn recursive_views() {
             }
         }
     }
-    for slot in [128, 256, 511, 512, u32::MAX] { assert_eq!(child(ROOT, 0, slot), 0); }
+    // K1: upper-half kernel slots are descended; the recursive slot and indices >= 512 are not.
+    for slot in [128, 512, u32::MAX] { assert_eq!(child(ROOT, 0, slot), 0); }
     assert_eq!(child(ROOT + 1, 0, 1), 0);
     assert_eq!(child(ROOT, 3, 1), 0);
     assert_eq!(child(0, 0, 1), 0);
@@ -69,7 +75,7 @@ fn recursive_views() {
 
 #[test]
 fn video_uc_policy() {
-    let base = (225 << 39) + 4096;
+    let base = 0xFFFF_F080_0000_1000; // K1: X86_FB_VIRTUAL, framebuffer slot 481
     let pat = 0x0007_0406_0007_0406;
     for bits in 32..=52 {
         assert_eq!(entries::x86_paging_video_policy(base, 0xc000_0000, 4321, 8193, 0x18, pat, bits), 1);
@@ -98,7 +104,7 @@ fn video_uc_policy() {
 
 #[test]
 fn video_leaf_permissions_and_guards() {
-    let base = (225 << 39) + 4096;
+    let base = 0xFFFF_F080_0000_1000; // K1: X86_FB_VIRTUAL, framebuffer slot 481
     let physical = 0xc000_0000;
     for page in 0..4321 {
         let address = base + page * 4096;
@@ -119,7 +125,7 @@ fn video_leaf_permissions_and_guards() {
 
 #[test]
 fn video_capacity_aliases() {
-    let base = (225 << 39) + 4096;
+    let base = 0xFFFF_F080_0000_1000; // K1: X86_FB_VIRTUAL, framebuffer slot 481
     for page in 0..8193 {
         let entry = (0xc000_0000 + page * 4096) | (1 << 63) | 3;
         assert_eq!(entries::x86_paging_video_leaf(entry, 0x7000_0000_0000, 0xc000_0000,

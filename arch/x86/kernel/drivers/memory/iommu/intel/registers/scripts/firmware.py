@@ -1,6 +1,11 @@
 """Independent read-only VT-d and retired paging-table verification."""
 import base64
 import re
+# K1: slot indices from arch/x86/configs/layout.h
+import importlib.util as _layout_util
+_layout_spec = _layout_util.spec_from_file_location("os_layout", __import__("pathlib").Path(__file__).resolve().parents[9] / "scripts/lib/layout.py")
+layout = _layout_util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 
 # ====== verify ======
 
@@ -11,7 +16,7 @@ def verify(backend,stream,directory,log,discovery):
     root=number(log,'KERNEL_VTD_ROOT'); cache=number(log,'KERNEL_VTD_CACHE'); pat=number(log,'KERNEL_VTD_PAT')
     if not 0x100000<=root<=0x08000000-4096 or root&4095 or cache&~0x98: raise RuntimeError('Invalid root/cache')
     slot=((cache>>3)&3)|((cache>>5)&4)
-    if (pat>>(slot*8))&255 or backend.qtest(stream,f'readq {root+228*8:#x}'): raise RuntimeError('Cache or revocation mismatch')
+    if (pat>>(slot*8))&255 or backend.qtest(stream,f'readq {root+layout.slot("X86_LAYOUT_IOMMU_SLOT")*8:#x}'): raise RuntimeError('Cache or revocation mismatch')
     tables=[int(value,16) for value in re.findall(r'KERNEL_VTD_TABLE: 0x([0-9a-fA-F]+)',log)]
     if len(tables)!=6 or len(set(tables[-3:]))!=3: raise RuntimeError('Wrong table count')
     tables=tables[-3:]

@@ -1,6 +1,11 @@
 """Verify retired private VT-d structures independently through QTest."""
 import base64
 import re
+# K1: slot indices from arch/x86/configs/layout.h
+import importlib.util as _layout_util
+_layout_spec = _layout_util.spec_from_file_location("os_layout", __import__("pathlib").Path(__file__).resolve().parents[9] / "scripts/lib/layout.py")
+layout = _layout_util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 
 # ====== verify ======
 
@@ -57,7 +62,7 @@ def verify(backend,stream,directory,log,discovery):
             if int.from_bytes(raw[slot*8:slot*8+8],'little')!=expected:
                 raise RuntimeError(f'Domain entry mismatch {index}:{slot}')
     root=number(log,'KERNEL_VTD_ROOT')
-    if backend.qtest(stream,f'readq {root+228*8:#x}'): raise RuntimeError('CPU register mapping not revoked')
+    if backend.qtest(stream,f'readq {root+layout.slot("X86_LAYOUT_IOMMU_SLOT")*8:#x}'): raise RuntimeError('CPU register mapping not revoked')
     for unit in discovery['Units']:
         if backend.qtest(stream,f'readl {unit["Base"]+0x1c:#x}'): raise RuntimeError('VT-d state unexpectedly changed')
     return dict(Private=True,Active=False,TablePages=len(tables),DmaPages=4100,Guards=True,

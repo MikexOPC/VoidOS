@@ -2,7 +2,13 @@
 const RECURSIVE: u64 = 128;
 const ADDRESS: u64 = 0x000f_ffff_ffff_f000;
 const NX: u64 = 1 << 63;
-const VIDEO: u64 = (225 << 39) + 4096;
+// K1: X86_FB_VIRTUAL (layout.h framebuffer slot + 4096), checked by Assert-LayoutCopies.
+const VIDEO: u64 = 0xFFFF_F080_0000_1000;
+
+// Intel SDM Vol. 3A 3.3.7.1: slots 256-511 are the upper half, bits 63:48 copy bit 47.
+fn slot_address(slot: u64) -> u64 {
+    (slot << 39) | if slot >= 256 { 0xFFFF_0000_0000_0000 } else { 0 }
+}
 
 // ====== formato ristretto del bootstrap a quattro livelli e pagine da 4 KiB ===== //
 
@@ -31,9 +37,9 @@ pub extern "C" fn x86_paging_child_view(parent: u64, level: u32, slot: u32) -> u
     for index in indices.iter().take(3 - level as usize) {
         if *index != RECURSIVE { return 0; }
     }
-    if level != 0 && (indices[(3 - level) as usize] >= 256
-        || indices[(3 - level) as usize] == RECURSIVE) { return 0; }
-    if level == 0 && (slot >= 256 || u64::from(slot) == RECURSIVE) { return 0; }
+    // K1: kernel slots may be in either half; only the recursive slot is never descended.
+    if level != 0 && indices[(3 - level) as usize] == RECURSIVE { return 0; }
+    if level == 0 && u64::from(slot) == RECURSIVE { return 0; }
     (RECURSIVE << 39) | ((parent << 9) & ((1u64 << 39) - 1)) | (u64::from(slot) << 12)
 }
 
@@ -42,10 +48,10 @@ pub extern "C" fn x86_paging_child_view(parent: u64, level: u32, slot: u32) -> u
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_paging_leaf_virtual(view: u64, slot: u32) -> u64 {
     let a = (view >> 30) & 511;
-    if view >> 39 != RECURSIVE || view & 4095 != 0 || slot >= 512 || a >= 256 || a == RECURSIVE {
+    if view >> 39 != RECURSIVE || view & 4095 != 0 || slot >= 512 || a == RECURSIVE {
         return 0;
     }
-    (a << 39) | (((view >> 21) & 511) << 30) | (((view >> 12) & 511) << 21) | (u64::from(slot) << 12)
+    slot_address(a) | (((view >> 21) & 511) << 30) | (((view >> 12) & 511) << 21) | (u64::from(slot) << 12)
 }
 
 // ====== un solo slot MMIO autorizzato senza accettare alias WB ===== //

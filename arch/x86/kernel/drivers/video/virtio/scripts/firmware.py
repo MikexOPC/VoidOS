@@ -8,6 +8,11 @@ import re
 import struct
 import time
 import uuid
+# K1: slot addresses from arch/x86/configs/layout.h
+import importlib.util as _layout_util
+_layout_spec = _layout_util.spec_from_file_location("os_layout", __import__("pathlib").Path(__file__).resolve().parents[7] / "scripts/lib/layout.py")
+layout = _layout_util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 
 ROOT=Path(__file__).resolve().parents[7]
 spec=importlib.util.spec_from_file_location('vgpu_firmware',ROOT/'kernel/drivers/video/virtio/discovery/scripts/firmware.py')
@@ -57,7 +62,7 @@ def verify(stream,log,directory,gpu,diagnostic):
     if gpu=='std':
         root=number(log,'KERNEL_FB_ROOT')
         pml4=read_page(stream,root,directory,'pml4')
-        if pml4[226] or 'KERNEL_VGPU_MAPPING_ABSENT' not in log: raise RuntimeError('GPU fallback leaked mapping')
+        if pml4[layout.slot("X86_LAYOUT_GPU_SLOT")] or 'KERNEL_VGPU_MAPPING_ABSENT' not in log: raise RuntimeError('GPU fallback leaked mapping')
         result=dict(Present=False,NoAllocation=True)
     else:
         if 'KERNEL_VGPU_MAPPING_LIVE' not in log: raise RuntimeError('Missing live mapping')
@@ -69,12 +74,12 @@ def verify(stream,log,directory,gpu,diagnostic):
         tables=[int(v,16) for v in re.findall(r'KERNEL_VGPU_MAPPING_TABLE: 0x([0-9a-fA-F]+)',log)]
         physical=pci_pages((directory/'config.bin').read_bytes())
         logged=[int(v,16) for v in re.findall(r'KERNEL_VGPU_MAPPING_PHYSICAL: 0x([0-9a-fA-F]+)',log)]
-        if virtual!=(226<<39)+4096 or count!=len(physical) or not 1<=count<=16 or logged!=physical or len(tables)!=3:
+        if virtual!=layout.slot_address('X86_LAYOUT_GPU_SLOT')+4096 or count!=len(physical) or not 1<=count<=16 or logged!=physical or len(tables)!=3:
             raise RuntimeError('GPU plan mismatch')
         index=((cache>>3)&3)|((cache>>5)&4)
         if cache & ~0x98 or pat>>(index*8)&255 or pat&255!=6: raise RuntimeError('GPU cache policy')
         pml4=read_page(stream,root,directory,'pml4')
-        if pml4[226]&~0x60 != tables[0]|3: raise RuntimeError('Foreign GPU branch')
+        if pml4[layout.slot("X86_LAYOUT_GPU_SLOT")]&~0x60 != tables[0]|3: raise RuntimeError('Foreign GPU branch')
         for level,table in enumerate(tables):
             entries=read_page(stream,table,directory,'gpu-table-'+str(level))
             for slot,entry in enumerate(entries):

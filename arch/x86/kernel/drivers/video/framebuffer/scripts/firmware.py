@@ -8,6 +8,11 @@ import time
 import uuid
 sys.dont_write_bytecode = True
 import drawing
+# K1: slot addresses from arch/x86/configs/layout.h
+import importlib.util as _layout_util
+_layout_spec = _layout_util.spec_from_file_location("os_layout", __import__("pathlib").Path(__file__).resolve().parents[7] / "scripts/lib/layout.py")
+layout = _layout_util.module_from_spec(_layout_spec)
+_layout_spec.loader.exec_module(layout)
 ROOT = Path(__file__).resolve().parents[7]
 spec = importlib.util.spec_from_file_location('gop_probe',
     ROOT / 'kernel/drivers/video/framebuffer/scripts/firmware.py')
@@ -81,11 +86,11 @@ def inspect(vm, monitor, log, args):
     index = ((cache >> 7) & 1) * 4 + ((cache >> 4) & 1) * 2 + ((cache >> 3) & 1)
     if cache & ~0x98 or (pat >> (index * 8)) & 255 or pat & 255 != 6:
         raise RuntimeError('Video cache is not strong UC with RAM PA0 WB')
-    if n('VIRTUAL') != (225 << 39) + 4096 or n('TABLE_COUNT') != pt_count + 2:
+    if n('VIRTUAL') != layout.slot_address('X86_LAYOUT_FB_SLOT') + 4096 or n('TABLE_COUNT') != pt_count + 2:
         raise RuntimeError('Unexpected geometry/branch')
     if n('BUDGET_BEFORE') - n('BUDGET_LIVE') != pt_count + 2:
         raise RuntimeError('Physical budget does not match retained owned tables')
-    root_entry = physical(vm, monitor, root + 225 * 8, 1)[0]
+    root_entry = physical(vm, monitor, root + layout.slot("X86_LAYOUT_FB_SLOT") * 8, 1)[0]
     if root_entry & ~0x60 != n('TABLE0') | 3:
         raise RuntimeError('Live root does not point to owned PDPT')
     pdpt = physical(vm, monitor, n('TABLE0'), 512)

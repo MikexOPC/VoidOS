@@ -36,19 +36,19 @@ int main(void)
         CHECK(x86_vtd_capabilities_read(&mapping,0,&output) && !output.Compatible && output.Status==(1U<<31));
         registers[0][3]=0;
         failure=5; CHECK(!x86_vtd_mapping_unbind(&mapping) && mapping.Pinned==7); failure=0;
-        CHECK(x86_vtd_mapping_unbind(&mapping) && pool.FreePages==budget && !roots[228] && !x86_iommu_owner());
+        CHECK(x86_vtd_mapping_unbind(&mapping) && pool.FreePages==budget && !roots[X86_IOMMU_SLOT] && !x86_iommu_owner());
     }
     for (unsigned fail=1; fail<=4; ++fail) {
         vtd_fixture(1); BOOT_U64 budget=pool.FreePages; failure=fail;
         CHECK(!x86_vtd_mapping_bind(&context,&window,0,&description,&inventory,&mapping));
         failure=0;
         if (mapping.Self) CHECK(x86_vtd_mapping_unbind(&mapping));
-        CHECK(pool.FreePages==budget && !x86_iommu_owner() && !roots[228]);
+        CHECK(pool.FreePages==budget && !x86_iommu_owner() && !roots[X86_IOMMU_SLOT]);
     }
     vtd_fixture(1); description.Unit[0].Base=(BOOT_U64)arena;
     CHECK(!x86_vtd_mapping_bind(&context,&window,0,&description,&inventory,&mapping) && !mapping.Self);
-    vtd_fixture(1); roots[228]=0x300003;
-    CHECK(!x86_vtd_mapping_bind(&context,&window,0,&description,&inventory,&mapping) && roots[228]==0x300003);
+    vtd_fixture(1); roots[X86_IOMMU_SLOT]=0x300003;
+    CHECK(!x86_vtd_mapping_bind(&context,&window,0,&description,&inventory,&mapping) && roots[X86_IOMMU_SLOT]==0x300003);
     vtd_fixture(1); KERNEL_PHYSICAL_LEASE leases[62]={0};
     for (unsigned index=0; index<62; ++index) CHECK(kernel_physical_allocate(&pool,1,&leases[index]));
     BOOT_U64 budget=pool.FreePages;

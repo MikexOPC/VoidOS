@@ -6,7 +6,8 @@
 // Intel SDM Vol. 3A 4.5 (4-level paging): bits 47:39 of a linear address select one of the 512
 // PML4 entries (one slot = 512 GiB); bits 63:48 must equal bit 47 (canonical form, 3A 3.3.7.1),
 // so slots 256-511 are the upper half 0xFFFF8000_00000000 and above.
-// K1 stage 1 keeps today's values; later stages change them here only (docs/design/k1-higher-half.md).
+// K1 stage 2: device regions and heap in the upper half; the rest moves in later stages
+// (docs/design/k1-higher-half.md).
 
 #define X86_LAYOUT_SLOT_SHIFT 39U
 #define X86_LAYOUT_SLOT_BYTES (1ULL << X86_LAYOUT_SLOT_SHIFT)
@@ -29,12 +30,12 @@
 #define X86_LAYOUT_MAP_SLOT        160U  // boot memory map window
 #define X86_LAYOUT_INFO_SLOT       192U  // boot contract
 #define X86_LAYOUT_WINDOWS_SLOT    224U  // boot stack, page window, arena, LAPIC, task stacks
-#define X86_LAYOUT_FB_SLOT         225U
-#define X86_LAYOUT_GPU_SLOT        226U
-#define X86_LAYOUT_SURFACE_SLOT    227U
-#define X86_LAYOUT_IOMMU_SLOT      228U
-#define X86_LAYOUT_DMA_SLOT        229U
-#define X86_LAYOUT_HEAP_SLOT       230U
+#define X86_LAYOUT_FB_SLOT         481U
+#define X86_LAYOUT_GPU_SLOT        482U
+#define X86_LAYOUT_SURFACE_SLOT    483U
+#define X86_LAYOUT_IOMMU_SLOT      484U
+#define X86_LAYOUT_DMA_SLOT        485U
+#define X86_LAYOUT_HEAP_SLOT       486U
 
 #define X86_LAYOUT_MAP_VIRTUAL        X86_LAYOUT_SLOT_ADDRESS(X86_LAYOUT_MAP_SLOT)
 #define X86_LAYOUT_INFO_VIRTUAL       X86_LAYOUT_SLOT_ADDRESS(X86_LAYOUT_INFO_SLOT)
