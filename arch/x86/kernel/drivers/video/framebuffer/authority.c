@@ -16,6 +16,6 @@ int x86_fb_authority(const X86_PAGING_VIDEO_AUTH *owner)
             owner->Region.AperturePages, owner->Region.Cache, cpu.Pat, cpu.PhysicalBits)
         ) return 0;
     root = x86_fb_root();
-    return root && (root[128] & ~0x60ULL) == (owner->Root | 0x8000000000000003ULL) &&
+    return root && (root[X86_BOOT_RECURSIVE_SLOT] & ~0x60ULL) == (owner->Root | 0x8000000000000003ULL) &&
         (root[X86_FB_SLOT] & ~0x60ULL) == (owner->Tables[0].Base | 3);
 }

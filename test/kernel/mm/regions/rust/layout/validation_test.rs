@@ -1,20 +1,22 @@
 #[path = "../../../../../../arch/x86/mm/regions/rust/layout/validation.rs"]
 mod validation;
 use validation::*;
+// K1: base of the windows slot (X86_LAYOUT_WINDOWS_VIRTUAL in arch/x86/configs/layout.h).
+const WINDOWS: u64 = 0xFFFF_F400_0000_0000;
 
 // ====== basi distinte guardie e handle ammessi solo all'inizio del blocco ===== //
 
 #[test]
 fn layout_and_handles() {
     for slot in 0..4u32 {
-        let base = 0x700000081000 + u64::from(slot) * 34 * 4096;
+        let base = WINDOWS + 0x81000 + u64::from(slot) * 34 * 4096;
         assert_eq!(x86_region_base(slot), base);
         assert_eq!(x86_region_slot(base), slot + 1);
         for offset in 1..34 * 4096 { assert_eq!(x86_region_slot(base + offset), 0); }
         assert_eq!(x86_region_slot(base - 4096), 0);
     }
     for slot in [4, 5, u32::MAX] { assert_eq!(x86_region_base(slot), 0); }
-    for base in [0, 0x700000080000, u64::MAX] { assert_eq!(x86_region_slot(base), 0); }
+    for base in [0, WINDOWS + 0x80000, u64::MAX] { assert_eq!(x86_region_slot(base), 0); }
 }
 
 // ====== intervalli fisici bounded e limiti CPU verificati senza puntatori ===== //

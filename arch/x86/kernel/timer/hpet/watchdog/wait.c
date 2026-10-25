@@ -14,12 +14,13 @@ static int source_valid(const volatile BOOT_U32 *source, const volatile BOOT_U32
 {
     BOOT_U64 address = (BOOT_U64)source, request = (BOOT_U64)stop;
     const X86_HPET_WATCHDOG *owner = x86_watchdog_state();
-    if (address < 4096 || (address & 7) || address > (1ULL << 47) - 8 ||
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    if ((address & 7) || !X86_LAYOUT_RANGE(address, 8) ||
         os_address_ranges_overlap(address,8,(BOOT_U64)owner,sizeof(*owner)) ||
         os_address_ranges_overlap(address,8,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) ||
         os_address_ranges_overlap(address,8,X86_LAPIC_VIRTUAL-4096,12288) ||
         os_address_ranges_overlap(address,8,X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES)) { return 0; }
-    return !stop || (request >= 4096 && !(request & 3) && request <= (1ULL << 47) - 4 &&
+    return !stop || (!(request & 3) && X86_LAYOUT_RANGE(request, 4) &&
         !os_address_ranges_overlap(request,4,(BOOT_U64)owner,sizeof(*owner)) &&
         !os_address_ranges_overlap(request,4,address,8) &&
         !os_address_ranges_overlap(request,4,X86_KERNEL_PAGE_WINDOW,X86_KERNEL_WINDOW_BYTES) &&

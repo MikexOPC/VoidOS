@@ -1,4 +1,5 @@
 #include "fixture.h"
+#include "arch/x86/configs/layout.h"
 #include <string.h>
 KERNEL_BOOT_CONTEXT context;
 KERNEL_PHYSICAL_ALLOCATOR pool;
@@ -149,7 +150,7 @@ int fixture(void)
     context.Info.Framebuffer.Base = 0xc0000000; context.Info.Framebuffer.Capacity = 32768;
     context.Info.Framebuffer.Used = 12288; context.Info.Framebuffer.Width = 1024;
     context.Info.Framebuffer.Stride = 1024; context.Info.Framebuffer.Height = 3;
-    frames[0][128] = 0x8000000000001003ULL; frames[0][224] = 0x2003;
+    frames[0][X86_LAYOUT_RECURSIVE_SLOT] = 0x8000000000001003ULL; frames[0][X86_LAYOUT_WINDOWS_SLOT] = 0x2003;
     frames[1][0] = 0x3003; frames[2][0] = 0x4003;
     frames[3][288] = 0x80000000fee0001bULL; frames[3][1] = 0x8000000000200003ULL;
     cpu.Root = 4096; cpu.Pat = 0x0007040600070406ULL; cpu.PhysicalBits = 32; cpu.Reserved = 0;

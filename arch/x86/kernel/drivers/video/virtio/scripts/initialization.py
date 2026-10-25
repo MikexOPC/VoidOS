@@ -96,7 +96,7 @@ def boot(image,directory,gpu,reject=False,queues=False,resources=False,resource_
                     if backend.qtest(ts,f'readq {root+layout.slot("X86_LAYOUT_DMA_SLOT")*8:#x}'): raise RuntimeError('DMA arena branch retained')
                     table=root
                     for shift in (39,30,21):
-                        entry=backend.qtest(ts,f'readq {table+((0x700000020000>>shift)&511)*8:#x}')
+                        entry=backend.qtest(ts,f'readq {table+(((layout.slot_address("X86_LAYOUT_WINDOWS_SLOT")+0x20000)>>shift)&511)*8:#x}')
                         if not entry&1 or entry&128: raise RuntimeError('Window table absent or huge')
                         table=entry&0x000ffffffffff000
                         if not 0x100000<=table<=0x08000000-4096: raise RuntimeError('Window table outside test RAM')

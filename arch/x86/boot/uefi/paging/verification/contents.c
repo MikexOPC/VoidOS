@@ -1,4 +1,5 @@
 #include "contents.h"
+#include "arch/x86/configs/layout.h"
 
 typedef struct {
     const BOOT_MAPPING_PLAN *Plan;
@@ -48,13 +49,13 @@ static EFI_STATUS scan_table(TABLE_VERIFICATION *check, UINT32 index, UINT32 lev
     entries = (const UINT64 *)(UINTN)check->Tables->Pages[index];
     for (slot = 0; slot < 512; ++slot) {
         UINT64 entry = entries[slot];
-        UINT64 virtual_address = prefix | ((UINT64)slot << shifts[level]);
+        // K1: a PML4 slot >= 256 starts the upper half, sign-extended (Intel SDM Vol. 3A 3.3.7.1).
+        UINT64 virtual_address = level == 0 ? X86_LAYOUT_SLOT_ADDRESS(slot) : prefix | ((UINT64)slot << shifts[level]);
         if (level == 0 && slot == X86_BOOT_RECURSIVE_SLOT) {
             if (entry != (check->Tables->Root | 3ULL | BOOT_PTE_NX)) return EFI_DEVICE_ERROR;
             continue;
         }
         if (!entry) continue;
-        if (level == 0 && slot >= 256) return EFI_DEVICE_ERROR;
         if (level == 3) {
             if (!matches_mapping(check->Plan, virtual_address, entry)) return EFI_DEVICE_ERROR;
             ++check->Leaves;

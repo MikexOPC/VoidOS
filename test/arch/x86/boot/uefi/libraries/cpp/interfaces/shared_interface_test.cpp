@@ -1,4 +1,5 @@
 #include "lib/memory/address_ranges.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/buffer_capacity.h"
 #include "arch/x86/lib/processor/paging_validation.h"
 #include "arch/x86/lib/processor/processor_access.h"
@@ -9,7 +10,7 @@
 
 static_assert(sizeof(uint32_t) == 4 && sizeof(uint64_t) == 8, "Unexpected integer ABI");
 static_assert(sizeof(X86_PAGING_REGISTERS) == 32, "Unexpected register ABI");
-static_assert(X86_BOOT_STACK_BYTES == 65536 && X86_BOOT_STACK_TOP == 0x0000700000011000ULL,
+static_assert(X86_BOOT_STACK_BYTES == 65536 && X86_BOOT_STACK_TOP == (X86_LAYOUT_WINDOWS_VIRTUAL + 0x11000ULL),
               "Unexpected boot stack profile");
 static_assert((UINT64_C(0x800018) & X86_PAGING_ROOT_MASK) == UINT64_C(0x800000), "Unexpected CR3 mask");
 

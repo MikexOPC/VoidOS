@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
+#include "arch/x86/configs/layout.h"
 #include "kernel/scheduler/payload.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
@@ -38,7 +39,7 @@ static void check_private(int condition)
 uint32_t x86_scheduler_index(void) { return active_index; }
 uint64_t x86_scheduler_generation(void) { return 2; }
 int x86_scheduler_task_valid(void) { return (int)valid; }
-uint64_t x86_task_stack_base(uint32_t index) { return UINT64_C(0x700000141000) + index * 73728; }
+uint64_t x86_task_stack_base(uint32_t index) { return (X86_LAYOUT_WINDOWS_VIRTUAL + 0x141000ULL) + index * 73728; }
 uint64_t x86_kernel_stack_pointer(void) { return x86_task_stack_base(1) + 32768; }
 int x86_scheduler_code_valid(uint64_t target) { return target != 0; }
 int x86_timer_owner_valid(const X86_LAPIC_TIMER *timer) { return timer == &source; }

@@ -3,6 +3,10 @@
 #include "arch/x86/kernel/descriptors/segments.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
+#ifdef KERNEL_TEST_CPU_FAULT
+// Test-only (stack fault probe): the push below this base must hit the lower guard.
+const BOOT_U64 x86_cpu_fault_stack = X86_KERNEL_MAIN_BASE;
+#endif
 #define STACK_NX (1ULL << 63)
 #define STACK_ADDRESS 0x000ffffffffff000ULL
 #define STACK_AD 0x60ULL
@@ -12,8 +16,8 @@
 static int range(const void *object, BOOT_U64 bytes, BOOT_U64 alignment)
 {
     BOOT_U64 base = (BOOT_U64)object;
-    if (!object || base < 4096 || (base & (alignment - 1)) ||
-        base > X86_BOOT_LOW_ADDRESS_LIMIT - bytes) {
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    if (!object || (base & (alignment - 1)) || !X86_LAYOUT_RANGE(base, bytes)) {
         return 0;
     }
     return !os_address_ranges_overlap(base, bytes, X86_KERNEL_IST_GUARD, 65536) &&

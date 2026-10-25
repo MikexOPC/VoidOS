@@ -1,4 +1,5 @@
 #include <assert.h>
+#include "arch/x86/configs/layout.h"
 #include <stdio.h>
 #include <string.h>
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
@@ -72,7 +73,7 @@ uint64_t kernel_scheduler_payload_pop(uint32_t event, uint64_t source, uint64_t 
     return value;
 }
 int x86_scheduler_task_valid(void) { return 1; }
-uint64_t x86_task_stack_base(uint32_t index) { (void)index; return 0x700000150000; }
+uint64_t x86_task_stack_base(uint32_t index) { (void)index; return (X86_LAYOUT_WINDOWS_VIRTUAL + 0x150000ULL); }
 int x86_scheduler_code_valid(uint64_t address) { (void)address; return 1; }
 
 static BOOT_U32 line_cleared;

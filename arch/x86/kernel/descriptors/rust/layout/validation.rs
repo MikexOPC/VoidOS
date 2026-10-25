@@ -1,6 +1,10 @@
 #![cfg_attr(not(test), no_std)]
-// K1: X86_KERNEL_IST_GUARD (layout.h windows slot + 0x40000), checked by Assert-LayoutCopies.
-const GUARD: u64 = 0x0000_7000_0004_0000;
+// K1: base of the layout.h windows slot (X86_LAYOUT_WINDOWS_VIRTUAL), checked by Assert-LayoutCopies.
+const WINDOWS: u64 = 0xFFFF_F400_0000_0000;
+// X86_KERNEL_IST_GUARD and the main stack (X86_KERNEL_MAIN_BASE .. X86_KERNEL_MAIN_TOP).
+const GUARD: u64 = WINDOWS + 0x4_0000;
+const MAIN_BASE: u64 = WINDOWS + 0x6_1000;
+const MAIN_TOP: u64 = WINDOWS + 0x7_1000;
 
 // ====== tre stack con una guardia prima e dopo ogni intervallo ===== //
 
@@ -57,5 +61,5 @@ pub extern "C" fn x86_stack_frame(profile: u32, physical: u64, bits: u32) -> u32
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_main_pointer(pointer: u64) -> u32 {
-    u32::from((0x7000_0006_1000..0x7000_0007_1000).contains(&pointer) && pointer & 7 == 0)
+    u32::from((MAIN_BASE..MAIN_TOP).contains(&pointer) && pointer & 7 == 0)
 }

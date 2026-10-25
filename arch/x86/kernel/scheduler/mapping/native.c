@@ -1,4 +1,5 @@
 #include "native.h"
+#include "arch/x86/configs/layout.h"
 
 #define TASK_XD (UINT64_C(1) << 63)
 #define TASK_ADDRESS UINT64_C(0x000FFFFFFFFFF000)
@@ -34,8 +35,8 @@ static int metadata_private(const void *object, uint64_t bytes, uint64_t alignme
 {
     uint64_t address = (uint64_t)(uintptr_t)object;
     uint64_t end = X86_TASK_STACK_GUARD + 8 * 18 * 4096ULL;
-    return address >= 4096 && !(address & (alignment - 1)) &&
-        address <= (UINT64_C(1) << 47) - bytes &&
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    return !(address & (alignment - 1)) && X86_LAYOUT_RANGE(address, bytes) &&
         (address + bytes <= X86_TASK_STACK_GUARD || address >= end);
 }
 

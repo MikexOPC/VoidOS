@@ -1,4 +1,5 @@
 param([string]$QemuDirectory = 'C:\Program Files\qemu', [string]$ToolchainBin)
+. (Join-Path $PSScriptRoot '../../../../../../scripts/lib/layout.ps1')
 $ErrorActionPreference = 'Stop'
 $bootRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../../../arch/x86/boot/uefi')).Path
 . (Join-Path $bootRoot 'scripts/status.ps1')
@@ -106,14 +107,14 @@ foreach ($fault in @('none', 'contract-write', 'stack-guard', 'execute-data')) {
         }
         if ($fault -eq 'none') {
             if ($registers -notmatch 'SS =0010' -or $rax -ne [Convert]::ToUInt64('31454e4f444f534f',16) -or $rip -ne $base + 829 -or
-                $rsp -lt [Convert]::ToUInt64('700000001000',16) -or $rsp -ge [Convert]::ToUInt64('700000011000',16)) {
+                $rsp -lt ($OsWindows + 0x1000) -or $rsp -ge ($OsWindows + 0x11000)) {
                 throw "Kernel ELF non eseguito correttamente: $scenario"
             }
         } else {
             $expectedAddress = switch ($fault) {
                 'contract-write' { [Convert]::ToUInt64('600000000000',16) }
-                'stack-guard' { [Convert]::ToUInt64('700000000000',16) }
-                'execute-data' { [Convert]::ToUInt64('700000001000',16) }
+                'stack-guard' { ($OsWindows + 0x0) }
+                'execute-data' { ($OsWindows + 0x1000) }
             }
             $expectedError = switch ($fault) { 'contract-write' {3} 'stack-guard' {0} 'execute-data' {17} }
             # IST forces SS to null; the CPU frame preserves the interrupted SS=16.

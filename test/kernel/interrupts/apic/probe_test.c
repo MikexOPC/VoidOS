@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/interrupts/apic/probe.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
 static KERNEL_BOOT_CONTEXT context;
@@ -116,7 +117,7 @@ static void fixture(void)
     clear(&ledger, sizeof(ledger)); clear(&topology, sizeof(topology)); clear(&profile, sizeof(profile));
     clear(&output, sizeof(output)); clear(map, sizeof(map)); clear(entries, sizeof(entries));
     clear(parents,sizeof(parents)); clear(&uart_mapping,sizeof(uart_mapping)); lapic_fault = 0;
-    parents[0][128] = (1ULL<<63) | 0x1003; parents[0][224] = 0x2003;
+    parents[0][X86_LAYOUT_RECURSIVE_SLOT] = (1ULL<<63) | 0x1003; parents[0][X86_LAYOUT_WINDOWS_SLOT] = 0x2003;
     parents[1][0] = 0x3003; parents[2][0] = 0x4003;
     window.Root = context.Info.PageTableRoot = 0x1000;
     map[0] = 7; put(map + 8, 0x100000); put(map + 24, 128); map[32] = 8;

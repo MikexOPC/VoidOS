@@ -1,4 +1,5 @@
 #include "segments.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "kernel/diagnostics/log.h"
 static X86_KERNEL_SEGMENTS kernel_segments;
@@ -20,8 +21,8 @@ static int main_rsp0(const X86_BOOT_TSS *task)
 static int valid_owner(const X86_KERNEL_SEGMENTS *owner)
 {
     BOOT_U64 base = (BOOT_U64)owner;
-    if (!owner || base < 4096 || (base & 15) ||
-        base > X86_BOOT_LOW_ADDRESS_LIMIT - sizeof(*owner)) {
+    // K1: kernel objects may sit in either canonical half (layout.h).
+    if (!owner || (base & 15) || !X86_LAYOUT_RANGE(base, sizeof(*owner))) {
         return 0;
     }
     return base + sizeof(*owner) <= X86_KERNEL_IST_GUARD ||

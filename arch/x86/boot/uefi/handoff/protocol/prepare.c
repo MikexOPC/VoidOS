@@ -1,4 +1,5 @@
 #include "prepare.h"
+#include "arch/x86/configs/layout.h"
 
 // ====== invalidazione senza proprieta o rilascio delle risorse ====== //
 
@@ -17,8 +18,8 @@ EFI_STATUS boot_plan_entry_stack(UINT64 base, UINT64 bytes, BOOT_ENTRY_STACK *st
     UINT64 top;
     if (!stack) return EFI_INVALID_PARAMETER;
     stack->BeforeCall = stack->AtEntry = stack->ShadowBytes = 0;
-    if (base < 4096 || (base & 4095) || !bytes || (bytes & 4095) ||
-        base >= (1ULL << 47) || bytes > (1ULL << 47) - base)
+    // K1: the boot stack may sit in either canonical half (layout.h).
+    if ((base & 4095) || (bytes & 4095) || !X86_LAYOUT_RANGE(base, bytes))
         return EFI_INVALID_PARAMETER;
     top = base + bytes;
     stack->BeforeCall = top - 32;

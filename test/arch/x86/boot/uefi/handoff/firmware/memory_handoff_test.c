@@ -1,4 +1,5 @@
 #include "memory/final/mapping.h"
+#include "arch/x86/configs/layout.h"
 #include "paging/verification/contents.h"
 #include "handoff/firmware/terminal/handoff.h"
 #include "test/arch/x86/boot/uefi/pci/fixture.h"
@@ -357,7 +358,7 @@ __declspec(dllexport) int run_memory_handoff_tests(void)
             if (queries != 2 || owner.Snapshot.Key != 20 || tables.Root != root ||
                 tables.Count != baseline + 3 || !page.Ready || info->Signature != BOOT_START_SIGNATURE ||
                 info->Version != BOOT_START_VERSION || info->Size != sizeof(*info) || info->EnabledFeatures ||
-                info->MemoryMapVirtual != 0x0000500000000000ULL || info->MemoryMapCapacity != 8192 ||
+                info->MemoryMapVirtual != X86_LAYOUT_MAP_VIRTUAL || info->MemoryMapCapacity != 8192 ||
                 info->MemoryMapBytes != ((UINT64)tables.Count + 4) * 48 ||
                 info->MemoryDescriptorBytes != 48 || info->MemoryDescriptorVersion != 1 || info->MemoryReserved)
                 return 1420;

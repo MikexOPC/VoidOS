@@ -1,6 +1,7 @@
 param([string]$KernelDirectory = 'D:/OS/kernel/build/scheduler-native',
       [string]$QemuDirectory = 'C:/Program Files/qemu', [int]$Boots = 10,
       [ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$Fault = 'none')
+. (Join-Path $PSScriptRoot '../../../../../scripts/lib/layout.ps1')
 $ErrorActionPreference = 'Stop'
 if ($Boots -lt 1 -or $Boots -gt 20) { throw 'Boot count 1..20' }
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../../../../..')).Path
@@ -83,8 +84,8 @@ foreach ($bootIndex in 1..$Boots) {
             if (!$log.Contains($marker)) { throw "Missing $marker" }
         }
         if ($negative -and !$blocked -and !$timeout) {
-            $cr2 = switch ($Fault) { 'guard-low' {0x700000140000} 'guard-high' {0x700000151000}
-                default {0x700000141000} }
+            $cr2 = switch ($Fault) { 'guard-low' {($OsWindows + 0x140000)} 'guard-high' {($OsWindows + 0x151000)}
+                default {($OsWindows + 0x141000)} }
             $errorCode = if ($Fault -eq 'nx') {17} else {0}
             if ((Read-Hex $log 'FAULT_VECTOR') -ne 14 -or (Read-Hex $log 'FAULT_CR2') -ne $cr2 -or
                 (Read-Hex $log 'FAULT_ERROR') -ne $errorCode) { throw 'Unexpected fault vector/address/error' }
@@ -115,7 +116,7 @@ foreach ($bootIndex in 1..$Boots) {
             $irqFlags = Read-Hex $log 'SCHEDULER_IRQ_FLAGS'
             if ($irqRip -lt (Read-Hex $log 'SCHEDULER_IRQ_BEGIN') -or
                 $irqRip -ge (Read-Hex $log 'SCHEDULER_IRQ_END') -or
-                $irqRsp -lt 0x700000154000 -or $irqRsp -ge 0x700000163000 -or
+                $irqRsp -lt ($OsWindows + 0x154000) -or $irqRsp -ge ($OsWindows + 0x163000) -or
                 ($irqFlags -band 512) -ne 512 -or ($irqFlags -band 1024) -ne 0 -or
                 (Read-Hex $log 'SCHEDULER_IRQ_TASK') -ne 1 -or
                 (Read-Hex $log 'SCHEDULER_IRQ_GENERATION') -lt 2 -or
@@ -136,8 +137,8 @@ foreach ($bootIndex in 1..$Boots) {
         $rsp = [regex]::Match($monitor,'RSP=([0-9a-fA-F]{16})')
         $cpuReady = if ($blocked -or $timeout) { $monitor -match 'RAX=5343484641494c01' }
         elseif ($negative) { $monitor -match 'RAX=4b4641554c540001' } else {
-            $rsp.Success -and [Convert]::ToUInt64($rsp.Groups[1].Value,16) -ge 0x700000061000 -and
-            [Convert]::ToUInt64($rsp.Groups[1].Value,16) -lt 0x700000071000 -and
+            $rsp.Success -and [Convert]::ToUInt64($rsp.Groups[1].Value,16) -ge ($OsWindows + 0x61000) -and
+            [Convert]::ToUInt64($rsp.Groups[1].Value,16) -lt ($OsWindows + 0x71000) -and
             $monitor -match 'RAX=4b52454144590001'
         }
         if (!$registers.Success -or [Convert]::ToUInt64($registers.Groups[1].Value,16) -ne $root -or !$cpuReady) {

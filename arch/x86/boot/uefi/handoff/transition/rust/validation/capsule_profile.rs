@@ -1,6 +1,14 @@
 #![cfg_attr(not(test), no_std)]
 
 const LIMIT: u64 = 1 << 47;
+// Intel SDM Vol. 3A 3.3.7.1: start of the upper canonical half.
+const UPPER: u64 = 0xFFFF_8000_0000_0000;
+
+// K1: same rule as X86_LAYOUT_RANGE in arch/x86/configs/layout.h (one canonical half, not page 0).
+fn range(address: u64, bytes: u64) -> bool {
+    bytes != 0 && ((address >= PAGE && address < LIMIT && bytes <= LIMIT - address)
+        || (address >= UPPER && bytes - 1 <= !address))
+}
 const PAGE: u64 = 4096;
 const VECTOR_BASE: u32 = 64;
 const STOP: u32 = 576;
@@ -55,13 +63,14 @@ pub extern "C" fn boot_capsule_check_addresses(
 ) -> u32 {
     if !(PAGE..=LIMIT - PAGE).contains(&code) || code & (PAGE - 1) != 0
         || !(PAGE..LIMIT).contains(&entry)
-        || !(PAGE..=LIMIT - PAGE).contains(&contract) || contract & (PAGE - 1) != 0
-        || stack_top >= LIMIT || stack_top & 15 != 0
+        || !range(contract, PAGE) || contract & (PAGE - 1) != 0
+        || stack_top & 15 != 0
         || stack_bytes == 0 || stack_bytes > 65536 || stack_bytes & (PAGE - 1) != 0 {
         return 0;
     }
     let Some(stack_base) = stack_top.checked_sub(stack_bytes) else { return 0; };
-    if stack_base < PAGE || stack_base & (PAGE - 1) != 0 { return 0; }
+    // The former check kept stack_top strictly below the half: one byte of margin.
+    if !range(stack_base, stack_bytes + 1) || stack_base & (PAGE - 1) != 0 { return 0; }
     let overlaps = |base: u64, end: u64, other: u64, other_end: u64| base < other_end && other < end;
     if overlaps(code, code + PAGE, stack_base, stack_top)
         || overlaps(contract, contract + PAGE, stack_base, stack_top)

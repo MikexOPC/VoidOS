@@ -1,5 +1,8 @@
 #![cfg_attr(not(test), no_std)]
-const GUARD: u64 = 0x700000080000;
+// K1: base of the layout.h windows slot (X86_LAYOUT_WINDOWS_VIRTUAL), checked by Assert-LayoutCopies;
+// GUARD is X86_REGION_GUARD.
+const WINDOWS: u64 = 0xFFFF_F400_0000_0000;
+const GUARD: u64 = WINDOWS + 0x8_0000;
 const STRIDE: u64 = 34 * 4096;
 
 // ====== geometria fissa bounded nello stesso ramo PT di bootstrap ===== //

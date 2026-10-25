@@ -207,7 +207,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $pagingCount += Read-Hex $log 'KERNEL_HEAP_TABLES: 0x([0-9a-f]{16})'
         }
         if (!$pagingCount -or $pagingCount -gt 128 -or !$pagingLeaves -or ($pagingInventory -band 7) -or
-            $pagingInventory -lt $arenaInventory + 24 -or $pagingInventory + 3144 -gt 0x7000000b3000 -or
+            $pagingInventory -lt $arenaInventory + 24 -or $pagingInventory + 3144 -gt ($OsWindows + 0xB3000) -or
             $registers -notmatch ('(?im)^' + $pagingInventory.ToString('x16') + ':\s+0x' + $pagingRoot.ToString('x16') + '\s+0x' + $pagingLeaves.ToString('x16')) -or
             $registers -notmatch ('(?im)^' + ($pagingInventory + 16).ToString('x16') + ':\s+0x' + ((1L -shl 32) + $pagingCount).ToString('x16'))) {
             throw 'Inventario paging fuori arena o diverso dalla fotografia verificata.'
@@ -218,8 +218,8 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $contractSize = Read-Hex $log 'KERNEL_BOOT_SIZE: 0x([0-9a-f]{16})'
         $contextBytes = [uint64]([math]::Floor(($contractSize + 15) / 16) * 16)
         if (!$contractVersion -or !$contractSize -or ($arenaContext -band 15) -or ($arenaInventory -band 7) -or
-            $arenaContext -lt 0x7000000a3000 -or $arenaContext + $contextBytes -gt 0x7000000b3000 -or
-            $arenaInventory -lt 0x7000000a3000 -or $arenaInventory + 24 -gt 0x7000000b3000 -or
+            $arenaContext -lt ($OsWindows + 0xA3000) -or $arenaContext + $contextBytes -gt ($OsWindows + 0xB3000) -or
+            $arenaInventory -lt ($OsWindows + 0xA3000) -or $arenaInventory + 24 -gt ($OsWindows + 0xB3000) -or
             ($arenaContext -lt $arenaInventory + 24 -and $arenaInventory -lt $arenaContext + $contextBytes) -or
             (Read-Hex $log 'KERNEL_ARENA_USED: 0x([0-9a-f]{16})') -ne $contextBytes + 24 -or
             $registers -notmatch ('(?im)^' + $arenaContext.ToString('x16') + ':\s+0x314f464e49545342\s+0x' +
@@ -272,7 +272,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         }
         foreach ($stack in @(1,2,3)) {
             $top = [regex]::Match($log, '(?i)KERNEL_IST' + $stack + '_TOP: 0x([0-9a-f]{16})')
-            $expectedTop = 0x700000045000 + ($stack - 1)*5*4096
+            $expectedTop = ($OsWindows + 0x45000) + ($stack - 1)*5*4096
             if (!$top.Success -or [Convert]::ToUInt64($top.Groups[1].Value,16) -ne $expectedTop) {
                 throw 'Geometria IST diversa dal profilo.'
             }
@@ -289,13 +289,13 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $oldPhysical = Read-Hex $log '(?i)KERNEL_OLD_STACK_PHYSICAL: 0x([0-9a-f]{16})'
         $mainRsp = Read-Hex $log '(?i)KERNEL_MAIN_RSP: 0x([0-9a-f]{16})'
         if (($mainPhysical -lt $oldPhysical + 65536 -and $oldPhysical -lt $mainPhysical + 65536) -or
-            $mainRsp -lt 0x700000061000 -or $mainRsp -ge 0x700000071000 -or ($mainRsp -band 7)) {
+            $mainRsp -lt ($OsWindows + 0x61000) -or $mainRsp -ge ($OsWindows + 0x71000) -or ($mainRsp -band 7)) {
             throw 'Overlap fisico o RSP della continuazione errato.'
         }
         $mainBase = [Convert]::ToUInt64($mainPte.Groups[1].Value,16)
         $oldBase = [Convert]::ToUInt64($oldPte.Groups[1].Value,16)
         if ($mainBase -ne $oldBase + 96*8 -or
-            $registers -notmatch ('(?im)^' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16') + ':\s+0x0000700000071000')) {
+            $registers -notmatch ('(?im)^' + ([Convert]::ToUInt64($tss.Groups[1].Value,16) + 4).ToString('x16') + ':\s+0x' + ($OsWindows + 0x71000).ToString('x16'))) {
             throw 'RSP0 o ramo paging dello stack principale errati.'
         }
         for ($slot = 0; $slot -lt 18; $slot += 2) {
@@ -328,7 +328,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             if (!$rspMatch.Success) { throw 'Bounds IST assenti nel fault annidato.' }
             $nestedRsp = [Convert]::ToUInt64($rspMatch.Groups[1].Value,16)
             if ($registers -notmatch 'RAX=4b4e455354450001' -or $registers -notmatch 'SS =0000' -or
-                $registers -notmatch 'CR2=0000700000020000' -or $nestedRsp -ne 0x700000045000 - 56 -or
+                $registers -notmatch ('CR2=' + ($OsWindows + 0x20000).ToString('x16')) -or $nestedRsp -ne ($OsWindows + 0x45000) - 56 -or
                 $registers -notmatch ('(?im)^' + $nestedRsp.ToString('x16') + ':\s+0x000000000000000e\s+0x0000000000000000') -or
                 $registers -notmatch ('(?im)^' + ($nestedRsp + 48).ToString('x16') + ':\s+0x0000000000000000') -or
                 ([regex]::Matches($log,'(?m)^\[ FAIL \] KERNEL_EXCEPTION\r?$')).Count -ne 1 -or
@@ -338,25 +338,25 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         } elseif (!$faultCase) {
             $terminalRsp = Read-Hex $registers 'RSP=([0-9a-f]{16})'
             if ($registers -notmatch ('(?i)RAX=' + $marker) -or $registers -notmatch 'SS =0010' -or
-                $terminalRsp -lt 0x700000061000 -or $terminalRsp -ge 0x700000071000 -or
+                $terminalRsp -lt ($OsWindows + 0x61000) -or $terminalRsp -ge ($OsWindows + 0x71000) -or
                 ($case.Variant -eq 'main-return' -and $log.Contains('KERNEL_READY'))) { throw 'Arresto kernel errato.' }
         } else {
             $rsp = Read-Hex $registers 'RSP=([0-9a-f]{16})'
             $errorCode = switch ($case.Variant) { 'execute' {17} 'main-execute' {17} 'region-execute' {17} 'selector' {40} 'stack' {2} default {0} }
             $vector = if ($case.Nmi) { 2 } else { switch ($case.Variant) { 'opcode' {6} 'selector' {13} 'divide' {0} 'double' {8} default {14} } }
-            $istTop = if ($vector -eq 2) { 0x70000004a000 } elseif ($vector -eq 8) { 0x70000004f000 } else { 0x700000045000 }
+            $istTop = if ($vector -eq 2) { ($OsWindows + 0x4A000) } elseif ($vector -eq 8) { ($OsWindows + 0x4F000) } else { ($OsWindows + 0x45000) }
             $faultAddress = switch ($case.Variant) {
-                'guard-low' { [Convert]::ToUInt64('70000001f000',16) }
-                'guard-high' { [Convert]::ToUInt64('700000030000',16) }
-                'stack' { [Convert]::ToUInt64('700000060ff8',16) }
-                'main-retired' { [Convert]::ToUInt64('700000001000',16) }
-                'main-guard-high' { [Convert]::ToUInt64('700000071000',16) }
-                'main-execute' { [Convert]::ToUInt64('700000070000',16) }
-                'region-retired' { [Convert]::ToUInt64('700000081000',16) }
-                'region-guard-low' { [Convert]::ToUInt64('700000080000',16) }
-                'region-guard-high' { [Convert]::ToUInt64('7000000a1000',16) }
-                'region-execute' { [Convert]::ToUInt64('7000000a0000',16) }
-                default { [Convert]::ToUInt64('70000002f000',16) }
+                'guard-low' { ($OsWindows + 0x1F000) }
+                'guard-high' { ($OsWindows + 0x30000) }
+                'stack' { ($OsWindows + 0x60FF8) }
+                'main-retired' { ($OsWindows + 0x1000) }
+                'main-guard-high' { ($OsWindows + 0x71000) }
+                'main-execute' { ($OsWindows + 0x70000) }
+                'region-retired' { ($OsWindows + 0x81000) }
+                'region-guard-low' { ($OsWindows + 0x80000) }
+                'region-guard-high' { ($OsWindows + 0xA1000) }
+                'region-execute' { ($OsWindows + 0xA0000) }
+                default { ($OsWindows + 0x2F000) }
             }
             $frameAddress = Read-Hex $log '(?i)FAULT_FRAME: 0x([0-9a-f]{16})'
             $faultRip = Read-Hex $log '(?i)FAULT_RIP: 0x([0-9a-f]{16})'
@@ -369,7 +369,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 (Read-Hex $log '(?i)FAULT_ERROR: 0x([0-9a-f]{16})') -ne $errorCode -or
                 (Read-Hex $log '(?i)FAULT_CS: 0x([0-9a-f]{16})') -ne 8 -or
                 (Read-Hex $log '(?i)FAULT_SS: 0x([0-9a-f]{16})') -ne 16 -or
-                $faultRsp -lt 0x700000061000 -or $faultRsp -ge 0x700000071000 -or
+                $faultRsp -lt ($OsWindows + 0x61000) -or $faultRsp -ge ($OsWindows + 0x71000) -or
                 ($faultFlags -band 512) -ne 0 -or
                 $frameAddress -ne $istTop - 56 -or
                 $registers -notmatch 'SS =0000' -or $rsp -lt $istTop - 16384 -or $rsp -ge $istTop -or

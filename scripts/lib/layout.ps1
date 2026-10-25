@@ -25,6 +25,8 @@ function Get-LayoutSlotAddress([string]$Name) {
 
 $OsImageBase = Read-LayoutValue 'X86_KERNEL_IMAGE_BASE'
 $OsImageLimit = $OsImageBase + (Read-LayoutValue 'X86_KERNEL_IMAGE_BYTES')
+# Base of the windows slot (boot stack, page window, arena, LAPIC, task stacks).
+$OsWindows = Get-LayoutSlotAddress 'X86_LAYOUT_WINDOWS_SLOT'
 
 # ====== Assert-LayoutCopies ======
 
@@ -35,7 +37,8 @@ function Assert-LayoutCopies {
     $fb = Get-LayoutSlotAddress 'X86_LAYOUT_FB_SLOT'
     $copies = @(
         @('arch/x86/kernel/exceptions/rust/frame/validation.rs', 'KERNEL_IMAGE_BASE', $OsImageBase),
-        @('arch/x86/kernel/descriptors/rust/layout/validation.rs', 'GUARD', ($windows + 0x40000)),
+        @('arch/x86/kernel/descriptors/rust/layout/validation.rs', 'WINDOWS', $windows),
+        @('arch/x86/mm/regions/rust/layout/validation.rs', 'WINDOWS', $windows),
         @('arch/x86/mm/paging/rust/validation/entries.rs', 'LAPIC_VIRTUAL', ($windows + 0x120000)),
         @('arch/x86/mm/paging/rust/validation/entries.rs', 'VIDEO', ($fb + 4096))
     )

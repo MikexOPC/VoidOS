@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/serial/transmit/buffer.h"
+#include "arch/x86/configs/layout.h"
 static X86_UART_TX buffer;
 static unsigned char ports[8], wire[64];
 static BOOT_U32 writes, bad_port, environment, block_ier, busy, reads;
@@ -194,8 +195,8 @@ static int address_bounds(void)
     reset();
     if (x86_uart_tx_prepare(&buffer,(const unsigned char *)(~0ULL-1),64) ||
         x86_uart_tx_prepare((X86_UART_TX *)((BOOT_U64)&buffer+1),&source,1) ||
-        x86_uart_tx_prepare(&buffer,(const unsigned char *)0x0000700000120000ULL,1) ||
-        x86_uart_tx_prepare((X86_UART_TX *)0x0000700000120000ULL,&source,1) ||
+        x86_uart_tx_prepare(&buffer,(const unsigned char *)(X86_LAYOUT_WINDOWS_VIRTUAL + 0x120000ULL),1) ||
+        x86_uart_tx_prepare((X86_UART_TX *)(X86_LAYOUT_WINDOWS_VIRTUAL + 0x120000ULL),&source,1) ||
         x86_uart_tx_prepare(&buffer,(const unsigned char *)(128ULL<<39),1)) return 1;
     return 0;
 }
