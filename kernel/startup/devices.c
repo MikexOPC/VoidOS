@@ -20,7 +20,7 @@ static void video_private(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTE
         x86_uart_lapic_mapping(),paging)) kernel_panic("VGPU_MAPPING_FAILED");
 #ifdef KERNEL_VGPU_IOMMU
     // V2b: persistent GPU translation, started before the watchdog fixes its memory budget.
-    if (context->Info.Acpi.Source && !x86_vgpu_session_start(
+    if (context->Info.Acpi.Source && !x86_vgpu_kernel_session_start(
         (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&startup->Memory->Arena, startup->Acpi)))
     kernel_panic("VGPU_SESSION_FAILED");
 #endif
@@ -55,7 +55,7 @@ void kernel_startup_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CON
     #else
     #ifdef KERNEL_VGPU_IOMMU
         // After the watchdog closed its accounting: TE off and the GPU domain released.
-        if (!x86_vgpu_session_stop()) kernel_panic("VGPU_SESSION_RETAINED");
+        if (!x86_vgpu_kernel_session_stop()) kernel_panic("VGPU_SESSION_RETAINED");
     #endif
         if (!x86_fb_kernel_inventory_verify(context, &startup->Memory->Physical,
             x86_uart_lapic_mapping(), paging)

@@ -120,10 +120,16 @@ try {
         if ($profile -eq 'mouse') { $profileFlags += '/DKERNEL_PS2_MOUSE=1' }
         foreach ($case in @('worker','session')) {
             $target = "$out/$case-$profile"
-            # Two sources (G4 kernel/time): /Fo names a directory.
+            # Several sources (G4 kernel/time): /Fo names a directory. G6: the session case links the
+            # console object (runtime.c) and lib/geometry instead of including runtime.c.
             New-Item -ItemType Directory -Force "$target-objects" | Out-Null
+            $caseSources = @("$project/test/kernel/console/video/runtime/${case}_test.c","$project/kernel/time/clock.c")
+            if ($case -eq 'session') {
+                $caseSources += @("$project/arch/x86/kernel/drivers/video/framebuffer/console/runtime.c",
+                    "$project/lib/geometry/damage.c","$project/lib/geometry/rect.c")
+            }
             Invoke-Checked "$bin/cl.exe" (@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2','/Gy',
-                ("/I$project"),"$project/test/kernel/console/video/runtime/${case}_test.c","$project/kernel/time/clock.c",
+                ("/I$project")) + $caseSources + @(
                 ("/Fo$target-objects/"),("/Fd$target.pdb"),("/Fe$target.exe")) + $profileFlags +
                 @('/link','/incremental:no','/DEBUG','/OPT:REF','/WX'))
             Invoke-Checked "$target.exe" @()

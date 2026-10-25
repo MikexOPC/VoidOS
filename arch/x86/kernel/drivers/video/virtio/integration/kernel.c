@@ -5,6 +5,10 @@
 #include "test/arch/x86/kernel/drivers/video/virtio/mapping/probe.h"
 #endif
 static X86_VGPU_MAPPING mapping;
+#ifdef KERNEL_VGPU_IOMMU
+// G6 composition root: the V2b session object (and the present it owns) lives here.
+static X86_VGPU_SESSION session;
+#endif
 
 // ====== x86_vgpu_kernel_start ======
 
@@ -35,3 +39,31 @@ X86_VGPU_MAPPING *x86_vgpu_kernel_mapping(void)
 {
     return mapping.Self == (BOOT_U64)&mapping ? &mapping : 0;
 }
+
+#ifdef KERNEL_VGPU_IOMMU
+// ====== x86_vgpu_kernel_session_start ======
+
+int x86_vgpu_kernel_session_start(const KERNEL_ACPI_DIRECTORY *directory)
+{
+    return x86_vgpu_session_start(&session, x86_vgpu_kernel_mapping(), directory);
+}
+
+// ====== x86_vgpu_kernel_session_stop ======
+
+int x86_vgpu_kernel_session_stop(void)
+{
+    return x86_vgpu_session_stop(&session, x86_vgpu_kernel_mapping());
+}
+
+// ====== x86_vgpu_kernel_display ======
+
+KERNEL_DISPLAY x86_vgpu_kernel_display(void)
+{
+    return x86_vgpu_session_state(&session) == X86_VGPU_SESSION_TRANSLATING ? x86_vgpu_session_display(&session) : (KERNEL_DISPLAY){0};
+}
+#else
+// ====== x86_vgpu_kernel_display ======
+
+// Without the V2b session the console draws on the GOP.
+KERNEL_DISPLAY x86_vgpu_kernel_display(void) { return (KERNEL_DISPLAY){0}; }
+#endif

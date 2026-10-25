@@ -4,6 +4,7 @@
 #endif
 #ifdef KERNEL_CONSOLE_SHELL
 #include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
+#include "arch/x86/kernel/drivers/video/virtio/integration/kernel.h"
 #endif
 #ifdef KERNEL_TEST_CONSOLE_DRAW
 #include "test/kernel/console/video/active/worker.h"
@@ -12,6 +13,10 @@
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
 static X86_PS2_SESSION session;
+#ifdef KERNEL_CONSOLE_SHELL
+// G6: the console object of this input session (composition root of the interactive session).
+static X86_CONSOLE console;
+#endif
 
 // ====== x86_ps2_session ======
 
@@ -158,7 +163,8 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!x86_ps2_mouse_open(&session)) { kernel_log(3,"PS2_MOUSE_OPEN_FAILED"); return 0; }
 #endif
 #ifdef KERNEL_CONSOLE_SHELL
-    if (!x86_console_open(&session)) return 0;
+    session.Console = &console;
+    if (!x86_console_open(&session, x86_vgpu_kernel_display())) return 0;
 #endif
     session.Active = 1;
     if (!x86_scheduler_run_input() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||

@@ -55,6 +55,8 @@ typedef struct {
     volatile BOOT_U32 DeviceErrors;
     volatile BOOT_U32 DevicePending;
     BOOT_U32 Discarded, DeviceSeen, Streak, Resyncs;
+    // G6: the console object owned by this session (KERNEL_CONSOLE_SHELL), 0 otherwise.
+    struct X86_CONSOLE *Console;
 } X86_PS2_SESSION;
 _Static_assert(offsetof(X86_PS2_SESSION,Error) == 4, "Watchdog source count/error ABI");
 _Static_assert(offsetof(X86_PS2_SESSION,Token) % 8 == 0, "IRQ token alignment");

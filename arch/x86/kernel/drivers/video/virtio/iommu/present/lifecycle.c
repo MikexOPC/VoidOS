@@ -1,16 +1,17 @@
 #include "state.h"
 
-// One presentation per session (see state.h).
-X86_VGPU_PRESENT x86_vgpu_present_state = {.Damage = {0, 1, {{0}}}};
-static X86_VGPU_PRESENT *const state = &x86_vgpu_present_state;
-
 // ====== target_private ======
 
-// The console target stays valid only while the surface is the registered, published one.
+// The console target stays valid only while the surface is the registered, published one. The
+// target is embedded in its present object, so the object is found from the target itself.
 static int target_private(const X86_FB_TARGET *candidate)
 {
-    return candidate == &state->Target && state->Bound && x86_surface_owner() == &state->Bound->Authority &&
-        x86_vgpu_surface_check(&state->Bound->Authority);
+    if (!candidate || candidate->Self != (BOOT_U64)candidate) return 0;
+
+    const X86_VGPU_PRESENT *self = (const X86_VGPU_PRESENT *)((const char *)candidate - offsetof(X86_VGPU_PRESENT, Target));
+
+    return self->Bound && x86_surface_owner() == &self->Bound->Authority &&
+        x86_vgpu_surface_check(&self->Bound->Authority);
 }
 
 // ====== reset_private ======
@@ -18,37 +19,37 @@ static int target_private(const X86_FB_TARGET *candidate)
 // VirtIO 1.2 2.4: status 0 resets the device; confirmed before anything else is released.
 // The transport is ended (which recaptures the paging inventory) only outside the session tasks:
 // inside them the live stacks are mapped and the console accounting keeps its own baseline.
-static int reset_private(int final)
+static int reset_private(X86_VGPU_PRESENT *self, int final)
 {
     KERNEL_VGPU_NEGOTIATION result = {0};
 
-    state->Queue.State = 0;
-    state->Native.Self = 0;
+    self->Queue.State = 0;
+    self->Native.Self = 0;
 
-    if (!state->Transport.Self) return 1;
+    if (!self->Transport.Self) return 1;
 
-    if (!state->ResetDone && !kernel_vgpu_reset(&state->Io, &result)) return 0;
+    if (!self->ResetDone && !kernel_vgpu_reset(&self->Io, &result)) return 0;
 
-    state->ResetDone = 1;
-    return !final || x86_vgpu_transport_end(&state->Transport);
+    self->ResetDone = 1;
+    return !final || x86_vgpu_transport_end(&self->Transport);
 }
 
 // ====== x86_vgpu_present_fallback ======
 
 // Z4-A: first error → stop presenting, reset the GPU, back to GOP with a full console redraw.
-int x86_vgpu_present_fallback(const char *reason)
+int x86_vgpu_present_fallback(X86_VGPU_PRESENT *self, const char *reason)
 {
     int reset;
 
-    if (x86_fb_target() == &state->Target) (void)x86_fb_target_redirect(&state->Target, 0);
+    if (x86_fb_target() == &self->Target) (void)x86_fb_target_redirect(&self->Target, 0);
 
-    state->Presenting = 0;
-    state->Redraw = 1;
-    state->Phase = 0;
-    os_damage_clear(&state->Damage);
-    if (!kernel_stopwatch_start(&state->Clock, &state->Recover)) state->Recoverable = 0;
-    ++state->Failures;
-    reset = reset_private(0);
+    self->Presenting = 0;
+    self->Redraw = 1;
+    self->Phase = 0;
+    os_damage_clear(&self->Damage);
+    if (!kernel_stopwatch_start(&self->Clock, &self->Recover)) self->Recoverable = 0;
+    ++self->Failures;
+    reset = reset_private(self, 0);
     return kernel_log(2, reason) && reset;
 }
 
@@ -56,43 +57,43 @@ int x86_vgpu_present_fallback(const char *reason)
 
 // After the transport and the native queue: negotiation, queue, display info, resource, scanout
 // and the target. Returns the failure reason, 0 when presenting.
-const char *x86_vgpu_present_bringup(void)
+const char *x86_vgpu_present_bringup(X86_VGPU_PRESENT *self)
 {
     KERNEL_VGPU_NEGOTIATION result = {0};
-    X86_SURFACE_MAPPING *surface = state->SurfaceSaved;
+    X86_SURFACE_MAPPING *surface = self->SurfaceSaved;
 
-    state->Native = state->NativeSaved;
-    state->Queue = (VGPU_QUEUE){0};
-    state->Resource = (VGPU_RESOURCE){0};
+    self->Native = self->NativeSaved;
+    self->Queue = (VGPU_QUEUE){0};
+    self->Resource = (VGPU_RESOURCE){0};
 
-    if (!kernel_vgpu_negotiate(&state->Io, &result) || !kernel_vgpu_queue_start(&state->Queue, &state->AccessSaved, &state->BuffersSaved) ||
-        !kernel_vgpu_queue_exchange(&state->Queue)
+    if (!kernel_vgpu_negotiate(&self->Io, &result) || !kernel_vgpu_queue_start(&self->Queue, &self->AccessSaved, &self->BuffersSaved) ||
+        !kernel_vgpu_queue_exchange(&self->Queue)
     )
     return "KERNEL_VGPU_PRESENT_START_FAILED";
 
-    state->ResetDone = 0;
+    self->ResetDone = 0;
 
     // Geometry A: the resource takes the scanout size from GET_DISPLAY_INFO (VirtIO 1.2 5.7.6.8),
     // packed B8G8R8X8 (stride = width, the pixel layer's format 1); it must fit the surface, which
     // the session sized for X86_VGPU_SURFACE_WIDTH x HEIGHT before the display was known.
-    BOOT_U64 needed = kernel_vgpu_surface_bytes(state->Queue.Width, state->Queue.Height);
+    BOOT_U64 needed = kernel_vgpu_surface_bytes(self->Queue.Width, self->Queue.Height);
 
     if (!needed || needed > surface->Authority.Bytes) return "KERNEL_VGPU_PRESENT_GEOMETRY";
 
-    if (!kernel_vgpu_resource_open(&state->Queue, &state->Resource, surface->Authority.Data.Base, state->BackingSaved, state->Queue.Width, state->Queue.Height) ||
-        !kernel_vgpu_scanout_bind(&state->Queue, &state->Resource)
+    if (!kernel_vgpu_resource_open(&self->Queue, &self->Resource, surface->Authority.Data.Base, self->BackingSaved, self->Queue.Width, self->Queue.Height) ||
+        !kernel_vgpu_scanout_bind(&self->Queue, &self->Resource)
     )
     return "KERNEL_VGPU_PRESENT_SCANOUT_FAILED";
 
-    state->Bound = surface;
-    state->Target = (X86_FB_TARGET){(BOOT_U64)&state->Target, X86_SURFACE_VIRTUAL, surface->Authority.Bytes,
-        state->Queue.Width, state->Queue.Height, state->Queue.Width, 0, target_private};
+    self->Bound = surface;
+    self->Target = (X86_FB_TARGET){(BOOT_U64)&self->Target, X86_SURFACE_VIRTUAL, surface->Authority.Bytes,
+        self->Queue.Width, self->Queue.Height, self->Queue.Width, 0, target_private};
 
-    if (!x86_fb_target_redirect(0, &state->Target)) return "KERNEL_VGPU_PRESENT_TARGET_FAILED";
+    if (!x86_fb_target_redirect(0, &self->Target)) return "KERNEL_VGPU_PRESENT_TARGET_FAILED";
 
-    state->Presenting = 1;
-    state->Redraw = 1;
-    state->Phase = 0;
+    self->Presenting = 1;
+    self->Redraw = 1;
+    self->Phase = 0;
     return 0;
 }
 
@@ -100,20 +101,20 @@ const char *x86_vgpu_present_bringup(void)
 
 // Z5-A: inside the V2b start, after TE=1 and before the watchdog. Returns 0 only when the GPU
 // reset could not be confirmed; a refused or failed bring-up leaves the console on GOP.
-int x86_vgpu_present_open(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory,
+int x86_vgpu_present_open(X86_VGPU_PRESENT *self, X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory,
     X86_DMA_ARENA *arena, X86_SURFACE_MAPPING *surface)
 {
     VGPU_QUEUE_IO_CONTEXT access = {0};
     VGPU_BUFFERS buffers = {0};
 
-    if (state->Presenting || state->Transport.Self) return 0;
+    if (self->Presenting || self->Transport.Self || !os_damage_init(&self->Damage, 1)) return 0;
 
     volatile unsigned char *bytes = x86_dma_arena_bytes(arena);
 
-    if (!bytes || !x86_vgpu_transport_open(gpu, directory, &state->Transport, &state->Io)) return kernel_log(2, "KERNEL_VGPU_PRESENT_OPEN_FAILED");
+    if (!bytes || !x86_vgpu_transport_open(gpu, directory, &self->Transport, &self->Io)) return kernel_log(2, "KERNEL_VGPU_PRESENT_OPEN_FAILED");
 
-    state->Io.Platform = 1;
-    state->Clock = (KERNEL_CLOCK){state->Io.Clock, state->Io.Context, state->Io.Mask, KERNEL_PM_TIMER_HZ};
+    self->Io.Platform = 1;
+    self->Clock = (KERNEL_CLOCK){self->Io.Clock, self->Io.Context, self->Io.Mask, KERNEL_PM_TIMER_HZ};
     buffers.Bits = gpu->Authority.PhysicalBits;
 
     for (uint32_t index = 0; index < 4; ++index) {
@@ -124,84 +125,85 @@ int x86_vgpu_present_open(X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *di
 
     BOOT_U64 backing = x86_vgpu_iommu_device(surface->Authority.Data.Base, surface->Authority.Bytes, 1);
 
-    if (!x86_vgpu_queue_open(&state->Transport, &state->Native, &access) ||
+    if (!x86_vgpu_queue_open(&self->Transport, &self->Native, &access) ||
         !buffers.Device[0] || !buffers.Device[1] || !buffers.Device[2] || !buffers.Device[3] || !backing
     )
-    return x86_vgpu_present_fallback("KERNEL_VGPU_PRESENT_START_FAILED");
+    return x86_vgpu_present_fallback(self, "KERNEL_VGPU_PRESENT_START_FAILED");
 
-    state->NativeSaved = state->Native;
-    state->AccessSaved = access;
-    state->BuffersSaved = buffers;
-    state->BackingSaved = backing;
-    state->SurfaceSaved = surface;
+    self->NativeSaved = self->Native;
+    self->AccessSaved = access;
+    self->BuffersSaved = buffers;
+    self->BackingSaved = backing;
+    self->SurfaceSaved = surface;
+    self->Pixels = (volatile uint32_t *)X86_SURFACE_VIRTUAL;
 
-    const char *failure = x86_vgpu_present_bringup();
+    const char *failure = x86_vgpu_present_bringup(self);
 
-    if (failure) return x86_vgpu_present_fallback(failure);
+    if (failure) return x86_vgpu_present_fallback(self, failure);
 
     return kernel_text("KERNEL_VGPU_PRESENT_SURFACE: ") && kernel_number(surface->Authority.Data.Base) && kernel_text("\n") &&
-        kernel_text("KERNEL_VGPU_PRESENT_GEOMETRY: ") && kernel_number(state->Queue.Width) && kernel_text("x") &&
-        kernel_number(state->Queue.Height) && kernel_text("\n") && kernel_log(0, "KERNEL_VGPU_PRESENTING");
+        kernel_text("KERNEL_VGPU_PRESENT_GEOMETRY: ") && kernel_number(self->Queue.Width) && kernel_text("x") &&
+        kernel_number(self->Queue.Height) && kernel_text("\n") && kernel_log(0, "KERNEL_VGPU_PRESENTING");
 }
 
 // ====== x86_vgpu_present_abandon ======
 
-int x86_vgpu_present_abandon(void)
+int x86_vgpu_present_abandon(X86_VGPU_PRESENT *self)
 {
-    return state->Presenting ? x86_vgpu_present_fallback("KERNEL_VGPU_PRESENT_ABANDONED") : 1;
+    return self->Presenting ? x86_vgpu_present_fallback(self, "KERNEL_VGPU_PRESENT_ABANDONED") : 1;
 }
 
 // ====== x86_vgpu_present_redraw ======
 
-int x86_vgpu_present_redraw(void)
+int x86_vgpu_present_redraw(X86_VGPU_PRESENT *self)
 {
-    BOOT_U32 pending = state->Redraw;
+    BOOT_U32 pending = self->Redraw;
 
-    state->Redraw = 0;
+    self->Redraw = 0;
     return (int)pending;
 }
 
 // ====== x86_vgpu_present_close ======
 
 // Exit: scanout off, detach and unref, then the confirmed reset (VirtIO 1.2 5.7.6.8 order).
-int x86_vgpu_present_close(void)
+int x86_vgpu_present_close(X86_VGPU_PRESENT *self)
 {
     int closed = 1;
 
-    if (!kernel_text("KERNEL_VGPU_PRESENTS: ") || !kernel_number(state->Presents) || !kernel_text("\nKERNEL_VGPU_PRESENT_FAILURES: ") ||
-        !kernel_number(state->Failures) || !kernel_text("\n") ||
-        !kernel_latency_report("KERNEL_VGPU_PRESENT_PM", &state->PresentTicks) ||
-        !kernel_latency_report("KERNEL_VGPU_FLUSH_WAIT_PM", &state->FlushTicks) ||
-        !kernel_latency_report("KERNEL_VGPU_PRESENT_AREA", &state->PresentArea) ||
-        !kernel_text("KERNEL_VGPU_PRESENT_SLOWS: ") || !kernel_number(state->Slows) || !kernel_text("\nKERNEL_VGPU_PRESENT_TIMEOUTS: ") ||
-        !kernel_number(state->Timeouts) || !kernel_text("\nKERNEL_VGPU_PRESENT_RECOVERIES: ") || !kernel_number(state->Recovered) || !kernel_text("\n")
+    if (!kernel_text("KERNEL_VGPU_PRESENTS: ") || !kernel_number(self->Presents) || !kernel_text("\nKERNEL_VGPU_PRESENT_FAILURES: ") ||
+        !kernel_number(self->Failures) || !kernel_text("\n") ||
+        !kernel_latency_report("KERNEL_VGPU_PRESENT_PM", &self->PresentTicks) ||
+        !kernel_latency_report("KERNEL_VGPU_FLUSH_WAIT_PM", &self->FlushTicks) ||
+        !kernel_latency_report("KERNEL_VGPU_PRESENT_AREA", &self->PresentArea) ||
+        !kernel_text("KERNEL_VGPU_PRESENT_SLOWS: ") || !kernel_number(self->Slows) || !kernel_text("\nKERNEL_VGPU_PRESENT_TIMEOUTS: ") ||
+        !kernel_number(self->Timeouts) || !kernel_text("\nKERNEL_VGPU_PRESENT_RECOVERIES: ") || !kernel_number(self->Recovered) || !kernel_text("\n")
     )
     return 0;
 
     // The update in flight completes (bounded) before the scanout is disabled.
-    for (BOOT_U32 sample = 0; state->Presenting && state->Phase && sample < state->Io.Samples; ++sample) {
-        int result = kernel_vgpu_queue_poll(&state->Queue, PRESENT_LIMIT_PM);
+    for (BOOT_U32 sample = 0; self->Presenting && self->Phase && sample < self->Io.Samples; ++sample) {
+        int result = kernel_vgpu_queue_poll(&self->Queue, PRESENT_LIMIT_PM);
 
-        if (result < 0) { (void)x86_vgpu_present_fault(); break; }
+        if (result < 0) { (void)x86_vgpu_present_fault(self); break; }
         if (result) {
-            state->Phase = 0;
-            if (!kernel_vgpu_scanout_settle(&state->Queue, &state->Resource)) { (void)x86_vgpu_present_fault(); break; }
+            self->Phase = 0;
+            if (!kernel_vgpu_scanout_settle(&self->Queue, &self->Resource)) { (void)x86_vgpu_present_fault(self); break; }
         }
     }
 
-    state->Recoverable = 0;
+    self->Recoverable = 0;
 
-    if (state->Presenting) {
-        if (x86_fb_target() == &state->Target) (void)x86_fb_target_redirect(&state->Target, 0);
+    if (self->Presenting) {
+        if (x86_fb_target() == &self->Target) (void)x86_fb_target_redirect(&self->Target, 0);
 
-        closed = kernel_vgpu_scanout_unbind(&state->Queue, &state->Resource) && kernel_vgpu_resource_close(&state->Queue, &state->Resource);
-        state->Presenting = 0;
+        closed = kernel_vgpu_scanout_unbind(&self->Queue, &self->Resource) && kernel_vgpu_resource_close(&self->Queue, &self->Resource);
+        self->Presenting = 0;
     }
 
-    if (!reset_private(1)) return 0;
+    if (!reset_private(self, 1)) return 0;
 
-    state->Transport = (X86_VGPU_TRANSPORT){0};
-    state->ResetDone = 0;
-    state->Bound = 0;
+    self->Transport = (X86_VGPU_TRANSPORT){0};
+    self->ResetDone = 0;
+    self->Bound = 0;
     return closed || kernel_log(2, "KERNEL_VGPU_PRESENT_CLOSE_INCOMPLETE");
 }
