@@ -1,4 +1,5 @@
 #include "control.h"
+#include "arch/x86/configs/layout.h"
 #include "../idle/idle.h"
 #include "../persistent/persistent.h"
 #include "../diagnostic/profiles.h"
@@ -60,7 +61,7 @@ uint32_t kernel_scheduler_binding_context_valid(void)
 static int dispatcher_resume_private(void)
 {
     if (!x86_scheduler_context_resume_valid(&dispatcher, X86_KERNEL_MAIN_BASE, 65536,
-        4096, UINT64_C(1) << 47, x86_scheduler_machine_mask)) return 0;
+        X86_KERNEL_IMAGE_BASE, X86_KERNEL_IMAGE_LIMIT, x86_scheduler_machine_mask)) return 0;
     return x86_scheduler_code_valid(*(const uint64_t *)(uintptr_t)dispatcher.rsp);
 }
 

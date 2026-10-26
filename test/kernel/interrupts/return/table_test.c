@@ -1,5 +1,6 @@
 #include "arch/x86/kernel/interrupts/return/table.h"
-#define T 0x100000000ULL
+#include "arch/x86/configs/layout.h"
+#define T X86_KERNEL_IMAGE_BASE
 #define T8 T,T,T,T,T,T,T,T
 const BOOT_U64 x86_kernel_fault_targets[32] = {T8,T8,T8,T8};
 const BOOT_U64 x86_irq_targets[224] = {0};
@@ -39,7 +40,10 @@ static void reset(void)
         exceptions.Gates[vector][2] = 8;
         exceptions.Gates[vector][4] = vector == 2 ? 2 : vector == 8 ? 3 : 1;
         exceptions.Gates[vector][5] = 0x8e;
-        exceptions.Gates[vector][8] = 1;
+        // Intel SDM Vol. 3A 6.14.1: offset 15:0 in bytes 0-1, 31:16 in bytes 6-7, 63:32 in bytes 8-11.
+        exceptions.Gates[vector][0] = (unsigned char)(T & 255); exceptions.Gates[vector][1] = (unsigned char)((T >> 8) & 255);
+        exceptions.Gates[vector][6] = (unsigned char)((T >> 16) & 255); exceptions.Gates[vector][7] = (unsigned char)((T >> 24) & 255);
+        for (byte = 0; byte < 4; ++byte) exceptions.Gates[vector][8 + byte] = (unsigned char)((T >> (32 + 8 * byte)) & 255);
     }
     for (vector = 0; vector < 224; ++vector) targets[vector] = T + vector * 8;
     active.Bytes[0] = 255; active.Bytes[1] = 1;

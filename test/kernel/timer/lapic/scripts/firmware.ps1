@@ -37,7 +37,8 @@ function Test-LapicTimerMonitorRejections($log, $registers, $cpuLog) {
         try { Test-LapicTimerFirmware $log ($registers.Replace($row.Value,$changed)) $cpuLog } catch { $rejected=$true }
         if (!$rejected) { throw "Corruzione timer accettata a offset $offset." }
     }
-    $opcode = [regex]::Match($registers,'(?im)^00000001[0-9a-f]+:\s+0xfb\s+0xf4\s+0xfa')
+    # K1: the code lies in the image window (the first 9 hex digits of its base).
+    $opcode = [regex]::Match($registers,'(?im)^' + $OsImageBase.ToString('x16').Substring(0,9) + '[0-9a-f]+:\s+0xfb\s+0xf4\s+0xfa')
     if (!$opcode.Success) { throw 'Fixture opcodes attesa assente.' }
     $rejected = $false
     try { Test-LapicTimerFirmware $log ($registers.Replace($opcode.Value,$opcode.Value.Replace('0xf4','0x90'))) $cpuLog } catch { $rejected=$true }

@@ -57,8 +57,8 @@ int x86_irq_registry_validate(const X86_IRQ_REGISTRY *registry)
 {
     BOOT_U32 index;
     if (!range(registry,sizeof(*registry)) || registry->Self != (BOOT_U64)registry ||
-        registry->CodeBegin < 4096 || registry->CodeEnd <= registry->CodeBegin ||
-        registry->CodeEnd > (1ULL<<47) || !registry->Next || registry->Busy > 1 || registry->Reserved) {
+        registry->CodeEnd <= registry->CodeBegin ||
+        !X86_LAYOUT_RANGE(registry->CodeBegin, registry->CodeEnd - registry->CodeBegin) || !registry->Next || registry->Busy > 1 || registry->Reserved) {
         return 0;
     }
     for (index = 0; index < 3; ++index) {
@@ -86,7 +86,7 @@ int x86_irq_registry_validate(const X86_IRQ_REGISTRY *registry)
 int x86_irq_registry_initialize(X86_IRQ_REGISTRY *registry, BOOT_U64 begin, BOOT_U64 end)
 {
     if (!x86_exception_environment() || !range(registry,sizeof(*registry)) ||
-        begin < 4096 || end <= begin || end > (1ULL<<47) || !zero(registry,sizeof(*registry))) {
+        end <= begin || !X86_LAYOUT_RANGE(begin, end - begin) || !zero(registry,sizeof(*registry))) {
         return 0;
     }
     registry->Self = (BOOT_U64)registry;

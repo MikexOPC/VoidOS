@@ -1,4 +1,5 @@
 #include "arch/x86/kernel/exceptions/terminal.h"
+#include "arch/x86/configs/layout.h"
 const unsigned char x86_kernel_fault_begin[1] = {0}, x86_kernel_fault_end[1] = {0};
 const BOOT_U64 x86_kernel_fault_targets[32] = {0};
 static X86_KERNEL_IDT table;
@@ -101,7 +102,8 @@ static int generated_targets(void)
     BOOT_U32 round, vector, byte;
     for (round = 0; round < 256; ++round) {
         state = state * 6364136223846793005ULL + 1;
-        begin = 0x100000000ULL + (state & 0x1ffffffff000ULL);
+        // K1: random terminal ranges inside the 2 GiB above the image base (no wrap).
+        begin = X86_KERNEL_IMAGE_BASE + (state & 0x3ffff000ULL);
         end = begin + 4096;
         for (vector = 0; vector < 32; ++vector) {
             state = state * 6364136223846793005ULL + 1;
@@ -143,7 +145,7 @@ static int packed_operand(void)
     unsigned char storage[11];
     X86_KERNEL_IDTR *unaligned = (X86_KERNEL_IDTR *)(storage + 1);
     BOOT_U32 byte;
-    if (!x86_exception_prepare(&table, unaligned, targets, 32, 0x100000000ULL, 0x100001000ULL)) return 28;
+    if (!x86_exception_prepare(&table, unaligned, targets, 32, X86_KERNEL_IMAGE_BASE, X86_KERNEL_IMAGE_BASE + 0x1000ULL)) return 28;
     for (byte = 0; byte < 10; ++byte) {
         if (unaligned->Bytes[byte] != pointer.Bytes[byte]) return 29;
     }
@@ -156,7 +158,7 @@ __declspec(dllexport) int run_exception_tests(void)
 {
     BOOT_U32 vector, byte, bit;
     int result;
-    const BOOT_U64 begin = 0x100000000ULL, end = begin + 4096;
+    const BOOT_U64 begin = X86_KERNEL_IMAGE_BASE, end = begin + 4096;
     for (vector = 0; vector < 32; ++vector) targets[vector] = begin + vector * 16;
     if (!x86_exception_prepare(&table, &pointer, targets, 32, begin, end)) return 1;
     for (vector = 0; vector < 32; ++vector) {

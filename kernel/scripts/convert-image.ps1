@@ -59,7 +59,7 @@ for ($index = 0; $index -lt $count; ++$index) {
     $memorySize = [Math]::Max($size, $rawSize)
     if ($permissions -ne $expected -or !$memorySize -or $memorySize -gt 134217728 -or
         ($address -band 4095) -ne 0 -or $address -lt $previousEnd -or
-        $address + $memorySize -gt 0x108000000 -or $raw -gt $data.Length -or $rawSize -gt $data.Length - $raw) {
+        $address + $memorySize -gt $OsImageBase + 0x8000000 -or $raw -gt $data.Length -or $rawSize -gt $data.Length - $raw) {
         throw 'Sezione fuori limiti o con permessi inattesi.'
     }
     $flags = if ($name -eq '.text') { 5 } elseif ($name -eq '.data') { 6 } else { 4 }

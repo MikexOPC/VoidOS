@@ -56,7 +56,8 @@ static int check_rejections(void)
 {
     const uint64_t invalid_base[] = {0, 16, 4097, (UINT64_C(1) << 47) - 496,
                                      UINT64_C(1) << 47, UINT64_MAX};
-    const uint64_t invalid_target[] = {0, 8, UINT64_C(1) << 47, UINT64_MAX};
+    // K1: the upper half is valid for targets; the non-canonical hole (both ends) is not.
+    const uint64_t invalid_target[] = {0, 8, UINT64_C(1) << 47, UINT64_C(0xFFFF7FFFFFFFFFFF)};
     X86_BOOT_IDT idt;
     X86_IDT_POINTER pointer;
     uint64_t targets[32];

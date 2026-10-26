@@ -4,13 +4,18 @@ use frame::*;
 
 // ====== indirizzi canonici e confini degli ingressi ===== //
 
+// K1: X86_KERNEL_IMAGE_BASE (arch/x86/configs/layout.h), slot 511.
+const IMAGE: u64 = 0xFFFF_FFFF_8000_0000;
+
 #[test]
 fn targets() {
-    assert_eq!(x86_exception_target(0x100000010, 0x100000000, 0x100000100), 1);
-    for address in [0, 0xffffffff, 0x100000100, 1 << 47, u64::MAX] {
-        assert_eq!(x86_exception_target(address, 0x100000000, 0x100000100), 0);
+    assert_eq!(x86_exception_target(IMAGE + 0x10, IMAGE, IMAGE + 0x100), 1);
+    for address in [0, 0xffffffff, IMAGE - 1, IMAGE + 0x100, 1 << 47, u64::MAX] {
+        assert_eq!(x86_exception_target(address, IMAGE, IMAGE + 0x100), 0);
     }
-    assert_eq!(x86_exception_target(0x100000010, 0x100000100, 0x100000000), 0);
+    assert_eq!(x86_exception_target(IMAGE + 0x10, IMAGE + 0x100, IMAGE), 0);
+    // The terminal code must lie in the image: a lower-half range is refused.
+    assert_eq!(x86_exception_target(0x100000010, 0x100000000, 0x100000100), 0);
 }
 
 // ====== codici CPU distinti dai segnaposto degli ingressi assembly ===== //

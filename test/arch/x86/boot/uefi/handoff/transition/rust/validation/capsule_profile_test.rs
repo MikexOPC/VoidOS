@@ -38,6 +38,10 @@ fn rejects_overflow_alias_and_bad_alignment() {
     assert_eq!(check(0x3ff000, 0x200000, 0x400000, 0x500000), 0);
     assert_eq!(check(0x100000, 0x200000, 0x400000, 0x3ff000), 0);
     assert_eq!(check((1 << 47) - 4096, 0x200000, 0x400000, 0x500000), 1);
+    // K1: a kernel entry in the upper half (image at 0xFFFF_FFFF_8000_0000) is accepted, a
+    // non-canonical one is not.
+    assert_eq!(check(0x100000, 0xFFFF_FFFF_8002_1970, 0x400000, 0x500000), 1);
+    assert_eq!(check(0x100000, 0x0000_8000_0000_0000, 0x400000, 0x500000), 0);
     for bytes in [0, 1, 4095, 65537, u64::MAX] {
         assert_eq!(addresses(0x100000, 0x200000, 0x400000, 0x500000, bytes), 0);
     }

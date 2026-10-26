@@ -62,7 +62,8 @@ pub extern "C" fn boot_capsule_check_addresses(
     code: u64, entry: u64, stack_top: u64, contract: u64, stack_bytes: u64,
 ) -> u32 {
     if !(PAGE..=LIMIT - PAGE).contains(&code) || code & (PAGE - 1) != 0
-        || !(PAGE..LIMIT).contains(&entry)
+        // K1: entry in either half; the last byte is refused because the overlaps use entry + 1.
+        || !range(entry, 1) || entry == u64::MAX
         || !range(contract, PAGE) || contract & (PAGE - 1) != 0
         || stack_top & 15 != 0
         || stack_bytes == 0 || stack_bytes > 65536 || stack_bytes & (PAGE - 1) != 0 {

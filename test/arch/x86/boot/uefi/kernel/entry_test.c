@@ -10,7 +10,7 @@ BOOT_U64 kernel_probe_marker(void);
 __declspec(dllexport) int run_kernel_probe_tests(void) {
     BOOT_START_INFO info = {BOOT_START_SIGNATURE, BOOT_START_VERSION, sizeof(BOOT_START_INFO),
         BOOT_START_FEATURES, BOOT_START_FEATURES, 0x400000,
-        (X86_LAYOUT_WINDOWS_VIRTUAL + 0x1000ULL), 65536, 0x101000, 0,
+        (X86_LAYOUT_WINDOWS_VIRTUAL + 0x1000ULL), 65536, X86_KERNEL_IMAGE_BASE + 0x1000ULL, 0,
         X86_LAYOUT_MAP_VIRTUAL, 96, 4096, 48, 1, 0};
     BOOT_START_INFO bad;
     BOOT_U32 i;
@@ -55,7 +55,7 @@ __declspec(dllexport) int run_kernel_probe_elf(const UINT8 *bytes, UINT64 size) 
     ELF_LOAD_PLAN plan = {0};
     UINT64 prefix;
     if (elf_validate(bytes, size, &plan) != ELF_VALID) return 1;
-    if (plan.Entry != 0x100001000ULL || plan.SegmentCount != 3) return 2;
+    if (plan.Entry != X86_KERNEL_IMAGE_BASE + 0x1000ULL || plan.SegmentCount != 3) return 2;
     if (plan.Segments[0].Flags != 5 || plan.Segments[1].Flags != 4 ||
         plan.Segments[2].Flags != 6) return 3;
     if (plan.Segments[2].FileBytes != 0 || plan.Segments[2].MemoryBytes != 8) return 4;

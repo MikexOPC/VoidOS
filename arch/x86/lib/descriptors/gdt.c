@@ -1,4 +1,5 @@
 #include "gdt.h"
+#include "arch/x86/configs/layout.h"
 #include "lib/memory/address_ranges.h"
 
 // ====== profilo flat ring zero con bit accessed gia impostato ====== //
@@ -13,8 +14,8 @@ static uint64_t segment(uint8_t access, uint8_t flags)
 
 static int valid_arguments(const X86_BOOT_GDT *gdt, const X86_GDT_POINTER *pointer, uint64_t base)
 {
-    const uint64_t low_limit = UINT64_C(1) << 47;
-    if (!gdt || !pointer || !base || (base & 7) || base > low_limit - sizeof(*gdt))
+    // K1: one canonical half, either one (layout.h).
+    if (!gdt || !pointer || (base & 7) || !X86_LAYOUT_RANGE(base, sizeof(*gdt)))
         return 0;
     return !os_address_ranges_overlap((uint64_t)(uintptr_t)gdt, sizeof(*gdt),
                                       (uint64_t)(uintptr_t)pointer, sizeof(*pointer));

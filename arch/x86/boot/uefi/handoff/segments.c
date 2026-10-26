@@ -1,4 +1,5 @@
 #include "segments.h"
+#include "arch/x86/configs/layout.h"
 
 // ====== invalidazione del risultato prima dei controlli ====== //
 
@@ -42,9 +43,8 @@ EFI_STATUS boot_describe_segments(const ELF_LOAD_PLAN *plan, const ELF_STAGED_IM
         UINT64 bytes;
         UINT64 expected;
         if (!segment->MemoryBytes || segment->MemoryBytes > ELF_MAX_MEMORY_BYTES - memory ||
-            segment->FileBytes > segment->MemoryBytes || segment->VirtualAddress < 4096 ||
-            segment->VirtualAddress >= (1ULL << 47) ||
-            segment->MemoryBytes > (1ULL << 47) - segment->VirtualAddress ||
+            segment->FileBytes > segment->MemoryBytes ||
+            !X86_LAYOUT_RANGE(segment->VirtualAddress, segment->MemoryBytes) ||  // K1: either half
             (segment->Flags & ~7U) || !(segment->Flags & 4) || (segment->Flags & 3) == 3)
             return EFI_INVALID_PARAMETER;
         memory += segment->MemoryBytes;

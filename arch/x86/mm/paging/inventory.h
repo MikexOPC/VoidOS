@@ -41,6 +41,8 @@ _Static_assert(sizeof(X86_PAGING_VIDEO_AUTH) == 440, "Autorita video bounded");
 // ====== backend in sola lettura e matematica scalare verificata da Rust ===== //
 
 const volatile BOOT_U64 *x86_paging_view(BOOT_U64 address);
+// K1: present PML4 entries below slot 256 (first = lowest); 0xFFFFFFFF when unreadable.
+BOOT_U32 x86_paging_lower_slots(BOOT_U32 *first);
 BOOT_U64 x86_paging_child_view(BOOT_U64 parent, BOOT_U32 level, BOOT_U32 slot);
 BOOT_U32 x86_paging_entry_valid(BOOT_U64 entry, BOOT_U32 level, BOOT_U32 bits);
 BOOT_U64 x86_paging_leaf_virtual(BOOT_U64 view, BOOT_U32 slot);

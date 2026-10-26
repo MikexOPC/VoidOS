@@ -4,6 +4,14 @@ const VALID: u32 = 0;
 const UNSUPPORTED_PROFILE: u32 = 3;
 const BAD_SEGMENT: u32 = 5;
 const VIRTUAL_LIMIT: u64 = 1 << 47;
+// Intel SDM Vol. 3A 3.3.7.1: start of the upper canonical half.
+const UPPER_BASE: u64 = 0xFFFF_8000_0000_0000;
+
+// K1: same rule as X86_LAYOUT_RANGE in arch/x86/configs/layout.h (one canonical half, not page 0).
+fn virtual_range(address: u64, bytes: u64) -> bool {
+    bytes != 0 && ((address >= 4096 && address < VIRTUAL_LIMIT && bytes <= VIRTUAL_LIMIT - address)
+        || (address >= UPPER_BASE && bytes - 1 <= !address))
+}
 
 // ====== elf_check_load_segment ======
 
@@ -23,13 +31,8 @@ pub extern "C" fn elf_check_load_segment(
     if memory_bytes == 0 || file_bytes > memory_bytes || file_bytes > remaining_file {
         return BAD_SEGMENT;
     }
-    if !(4096..VIRTUAL_LIMIT).contains(&virtual_address) {
-        return BAD_SEGMENT;
-    }
-    let Some(remaining_virtual) = VIRTUAL_LIMIT.checked_sub(virtual_address) else {
-        return BAD_SEGMENT;
-    };
-    if memory_bytes > remaining_virtual {
+    // K1: the kernel image may be linked in either canonical half.
+    if !virtual_range(virtual_address, memory_bytes) {
         return BAD_SEGMENT;
     }
     if flags & !7 != 0 || flags & 4 == 0 || flags & 3 == 3 {

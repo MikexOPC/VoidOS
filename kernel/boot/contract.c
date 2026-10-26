@@ -1,4 +1,5 @@
 #include "contract.h"
+#include "arch/x86/configs/layout.h"
 #include "arch/x86/configs/boot_profile.h"
 #include "kernel/drivers/video/framebuffer/handoff.h"
 
@@ -14,7 +15,8 @@ int kernel_validate_contract(const BOOT_START_INFO *info, BOOT_U64 root, BOOT_U6
 
     if (info->RequiredFeatures != BOOT_START_FEATURES || info->EnabledFeatures != BOOT_START_FEATURES ||
         root < 4096 || (root & 4095) || root >= (1ULL << 52) || info->PageTableRoot != root) return 0;
-    if (entry < 4096 || entry >= X86_BOOT_LOW_ADDRESS_LIMIT || info->KernelEntry != entry ||
+    // K1: the entry lies in the kernel image window (layout.h).
+    if (!X86_KERNEL_IMAGE_CONTAINS(entry, 1) || info->KernelEntry != entry ||
         info->StackBase != X86_BOOT_STACK_VIRTUAL || info->StackBytes != X86_BOOT_STACK_BYTES) return 0;
     if (info->MemoryMapVirtual != X86_BOOT_MAP_VIRTUAL || !info->MemoryMapBytes ||
         !info->MemoryMapCapacity || info->MemoryMapCapacity > X86_BOOT_MAP_MAX_BYTES ||

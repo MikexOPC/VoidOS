@@ -19,9 +19,11 @@
 // ====== kernel image ===== //
 
 // Link base (/base: in kernel/scripts/build.ps1, checked by convert-image.ps1) and the code window
-// that RIP, IDT, GDT and owners of the image are checked against.
-#define X86_KERNEL_IMAGE_BASE   0x0000000100000000ULL
-#define X86_KERNEL_IMAGE_BYTES  0x0000000000100000ULL
+// that RIP, IDT, GDT and owners of the image are checked against. K1 stage 5: the last 2 GiB of
+// the address space (slot 511, the classic kernel code model), window of 4 MiB (the image was
+// 692 KiB of the former 1 MiB window).
+#define X86_KERNEL_IMAGE_BASE   0xFFFFFFFF80000000ULL
+#define X86_KERNEL_IMAGE_BYTES  0x0000000000400000ULL
 #define X86_KERNEL_IMAGE_LIMIT  (X86_KERNEL_IMAGE_BASE + X86_KERNEL_IMAGE_BYTES)
 
 // ====== slots ===== //

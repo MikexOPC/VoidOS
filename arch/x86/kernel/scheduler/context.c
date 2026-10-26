@@ -63,7 +63,7 @@ int x86_scheduler_context_resume_valid(const X86_TASK_CONTEXT *context, uint64_t
     uint64_t target;
     uint32_t mxcsr, saved_mask;
     if (!context_bounds_private(context, base, bytes) || code_begin >= code_end ||
-        code_end > (UINT64_C(1) << 47) || !mxcsr_mask || (mxcsr_mask & 0xFFFF0000U) ||
+        !X86_LAYOUT_RANGE(code_begin, code_end - code_begin) || !mxcsr_mask || (mxcsr_mask & 0xFFFF0000U) ||
         context->padding || (context->rsp & 15) != 8 || context->rsp < base ||
         context->rsp > base + bytes - 40) return 0;
     if (x86_scheduler_stack_authority(context, base, bytes) != 1) return 0;
