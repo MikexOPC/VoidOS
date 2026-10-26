@@ -40,7 +40,7 @@ __declspec(dllexport) int run_plan_tests(void)
         case 7: bad.Mappings[1].Flags = 5; break;
         case 8: bad.Mappings[0].PhysicalBase = ~0ULL - 4095; break;
         case 9: bad.StackTop++; break;
-        case 10: bad.Mappings[0].VirtualBase = (UINT64)X86_BOOT_RECURSIVE_SLOT << 39; bad.Entry = bad.Mappings[0].VirtualBase; break;
+        case 10: bad.Mappings[0].VirtualBase = X86_LAYOUT_RECURSIVE_VIRTUAL; bad.Entry = bad.Mappings[0].VirtualBase; break;
         case 11: bad.Mappings[0].VirtualBase = X86_KERNEL_PAGE_WINDOW - 4096; bad.Entry = bad.Mappings[0].VirtualBase; break;
         case 12: bad.Mappings[0].VirtualBase = X86_KERNEL_PAGE_WINDOW; bad.Entry = bad.Mappings[0].VirtualBase; break;
         case 13: bad.Mappings[0].VirtualBase = X86_KERNEL_PAGE_WINDOW + 4096; bad.Entry = bad.Mappings[0].VirtualBase; break;

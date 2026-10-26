@@ -42,6 +42,11 @@ function Assert-LayoutCopies {
         @('arch/x86/mm/paging/rust/validation/entries.rs', 'LAPIC_VIRTUAL', ($windows + 0x120000)),
         @('arch/x86/mm/paging/rust/validation/entries.rs', 'VIDEO', ($fb + 4096))
     )
+    foreach ($copy in @(,@('arch/x86/mm/paging/rust/validation/entries.rs', 'RECURSIVE', [uint64](Read-LayoutSlot 'X86_LAYOUT_RECURSIVE_SLOT')))) {
+        $rust = Get-Content -Raw (Join-Path $PSScriptRoot ('../../' + $copy[0]))
+        $match = [regex]::Match($rust, "const $($copy[1]): u64 = (\d+);")
+        if (!$match.Success -or [uint64]$match.Groups[1].Value -ne $copy[2]) { throw "$($copy[0]): $($copy[1]) differs from layout.h" }
+    }
     foreach ($copy in $copies) {
         $rust = Get-Content -Raw (Join-Path $PSScriptRoot ('../../' + $copy[0]))
         $match = [regex]::Match($rust, "const $($copy[1]): u64 = 0x([0-9A-Fa-f_]+);")

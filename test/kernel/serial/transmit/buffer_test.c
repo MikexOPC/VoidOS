@@ -197,7 +197,7 @@ static int address_bounds(void)
         x86_uart_tx_prepare((X86_UART_TX *)((BOOT_U64)&buffer+1),&source,1) ||
         x86_uart_tx_prepare(&buffer,(const unsigned char *)(X86_LAYOUT_WINDOWS_VIRTUAL + 0x120000ULL),1) ||
         x86_uart_tx_prepare((X86_UART_TX *)(X86_LAYOUT_WINDOWS_VIRTUAL + 0x120000ULL),&source,1) ||
-        x86_uart_tx_prepare(&buffer,(const unsigned char *)(128ULL<<39),1)) return 1;
+        x86_uart_tx_prepare(&buffer,(const unsigned char *)X86_LAYOUT_RECURSIVE_VIRTUAL,1)) return 1;
     return 0;
 }
 
