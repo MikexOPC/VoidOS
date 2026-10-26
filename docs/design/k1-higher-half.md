@@ -99,7 +99,7 @@ log seriale), il layout del §2 e i criteri del §5.
 | 1. `layout.h` senza cambi di comportamento | Fatta (b19e4d0). Codice generato uguale salvo la maschera dello slot (+16 byte in 5 funzioni) | suite host, smoke 12/12 |
 | 2. Regioni dei device e heap negli slot 481–486 | Fatta. Il paging in Rust attraversa anche la metà alta (salvo lo slot ricorsivo) ed estende il segno degli indirizzi foglia | suite host 35/36 (virtio-discovery: `read.c` dell'utente), smoke 12/12 (`qemu-run-2a75b8781a424ee08ca8a8dd3c281778`), QI e inizializzazione VirtIO 1/1 |
 | 3. Finestre di boot, stack e arena | Fatta. Mappa memoria 479, contratto 480, finestre (stack di boot, finestra di pagina, IST, stack principale, arena, LAPIC, stack dei task) 488. `X86_LAYOUT_RANGE` sostituisce i controlli "metà bassa" sugli oggetti del kernel; il loader verifica e costruisce anche la metà alta | suite host 35/36 (virtio-discovery: `read.c`), smoke 11/12 più kernel-boot rieseguita dopo la correzione dei runner |
-| 4. Vista ricorsiva | Da fare | |
+| 4. Vista ricorsiva | Fatta. Slot 510; il paging in Rust applica la maschera allo slot ed estende il segno della vista (copia di `RECURSIVE` confrontata a ogni build) | suite host 35/36 (virtio-discovery: `read.c`), smoke 12/12 con kernel-boot (`qemu-run-6ce98a06b7cd4871884a2265414376ed`) |
 | 5. Immagine del kernel | Da fare; da allargare la finestra di 1 MiB (immagine già a 692 KiB) | |
 
 Deviazione da L3-A: i runner leggono `layout.h` (`scripts/lib/layout.ps1` e `layout.py`) invece del log

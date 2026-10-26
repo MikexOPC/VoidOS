@@ -3,7 +3,10 @@ mod entries;
 use entries::{x86_paging_child_view as child, x86_paging_entry_valid as valid};
 // K1: base of the windows slot (X86_LAYOUT_WINDOWS_VIRTUAL in arch/x86/configs/layout.h).
 const WINDOWS: u64 = 0xFFFF_F400_0000_0000;
-const ROOT: u64 = (128 << 39) | (128 << 30) | (128 << 21) | (128 << 12);
+// K1: recursive slot 510 (X86_LAYOUT_RECURSIVE_SLOT), upper half so sign-extended.
+const R: u64 = 510;
+const RV: u64 = 0xFFFF_0000_0000_0000 | (R << 39);
+const ROOT: u64 = RV | (R << 30) | (R << 21) | (R << 12);
 
 // ====== virtuale LAPIC ricostruito e classificazione scalare senza unsafe ===== //
 
@@ -55,19 +58,19 @@ fn entry_policy() {
 
 #[test]
 fn recursive_views() {
-    for a in [0, 1, 127, 129, 224, 255, 256, 481, 511] {
+    for a in [0, 1, 127, 128, 129, 224, 255, 256, 481, 509, 511] {
         let pdpt = child(ROOT, 0, a);
-        assert_eq!(pdpt, (128 << 39) | (128 << 30) | (128 << 21) | (u64::from(a) << 12));
+        assert_eq!(pdpt, RV | (R << 30) | (R << 21) | (u64::from(a) << 12));
         for b in [0, 1, 511] {
             let pd = child(pdpt, 1, b);
-            assert_eq!(pd, (128 << 39) | (128 << 30) | (u64::from(a) << 21) | (u64::from(b) << 12));
+            assert_eq!(pd, RV | (R << 30) | (u64::from(a) << 21) | (u64::from(b) << 12));
             for c in [0, 1, 511] {
-                assert_eq!(child(pd, 2, c), (128 << 39) | (u64::from(a) << 30) | (u64::from(b) << 21) | (u64::from(c) << 12));
+                assert_eq!(child(pd, 2, c), RV | (u64::from(a) << 30) | (u64::from(b) << 21) | (u64::from(c) << 12));
             }
         }
     }
     // K1: upper-half kernel slots are descended; the recursive slot and indices >= 512 are not.
-    for slot in [128, 512, u32::MAX] { assert_eq!(child(ROOT, 0, slot), 0); }
+    for slot in [510, 512, u32::MAX] { assert_eq!(child(ROOT, 0, slot), 0); }
     assert_eq!(child(ROOT + 1, 0, 1), 0);
     assert_eq!(child(ROOT, 3, 1), 0);
     assert_eq!(child(0, 0, 1), 0);
@@ -97,7 +100,7 @@ fn video_uc_policy() {
     for pages in [0, 4322, u64::MAX] {
         assert_eq!(entries::x86_paging_video_policy(base, 0xc000_0000, pages, 8193, 0x18, pat, 32), 0);
     }
-    for address in [0, base - 4096, base + 1, base + 4096, (128 << 39) + 4096] {
+    for address in [0, base - 4096, base + 1, base + 4096, RV + 4096] {
         assert_eq!(entries::x86_paging_video_policy(address, 0xc000_0000, 3, 8, 0x18, pat, 32), 0);
     }
 }

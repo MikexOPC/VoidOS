@@ -153,7 +153,7 @@ static int parents(void)
             tables[level][indices[level]] = original;
         }
     }
-    tables[0][128] ^= 1ULL << 63;
+    tables[0][X86_LAYOUT_RECURSIVE_SLOT] ^= 1ULL << 63;
     if (x86_region_validate(&owner)) return 3;
     return 0;
 }

@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), no_std)]
-const RECURSIVE: u64 = 128;
+// K1: X86_LAYOUT_RECURSIVE_SLOT in arch/x86/configs/layout.h, checked by Assert-LayoutCopies.
+const RECURSIVE: u64 = 510;
 const ADDRESS: u64 = 0x000f_ffff_ffff_f000;
 const NX: u64 = 1 << 63;
 // K1: X86_FB_VIRTUAL (layout.h framebuffer slot + 4096), checked by Assert-LayoutCopies.
@@ -30,7 +31,7 @@ pub extern "C" fn x86_paging_entry_valid(entry: u64, level: u32, bits: u32) -> u
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_paging_child_view(parent: u64, level: u32, slot: u32) -> u64 {
-    if level > 2 || slot >= 512 || parent & 4095 != 0 || parent >> 39 != RECURSIVE {
+    if level > 2 || slot >= 512 || parent & 4095 != 0 || (parent >> 39) & 511 != RECURSIVE {
         return 0;
     }
     let indices = [(parent >> 30) & 511, (parent >> 21) & 511, (parent >> 12) & 511];
@@ -40,7 +41,7 @@ pub extern "C" fn x86_paging_child_view(parent: u64, level: u32, slot: u32) -> u
     // K1: kernel slots may be in either half; only the recursive slot is never descended.
     if level != 0 && indices[(3 - level) as usize] == RECURSIVE { return 0; }
     if level == 0 && u64::from(slot) == RECURSIVE { return 0; }
-    (RECURSIVE << 39) | ((parent << 9) & ((1u64 << 39) - 1)) | (u64::from(slot) << 12)
+    slot_address(RECURSIVE) | ((parent << 9) & ((1u64 << 39) - 1)) | (u64::from(slot) << 12)
 }
 
 // ====== indirizzo foglia ricostruito dalla vista PT prima della classificazione ===== //
@@ -48,7 +49,7 @@ pub extern "C" fn x86_paging_child_view(parent: u64, level: u32, slot: u32) -> u
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_paging_leaf_virtual(view: u64, slot: u32) -> u64 {
     let a = (view >> 30) & 511;
-    if view >> 39 != RECURSIVE || view & 4095 != 0 || slot >= 512 || a == RECURSIVE {
+    if (view >> 39) & 511 != RECURSIVE || view & 4095 != 0 || slot >= 512 || a == RECURSIVE {
         return 0;
     }
     slot_address(a) | (((view >> 21) & 511) << 30) | (((view >> 12) & 511) << 21) | (u64::from(slot) << 12)
