@@ -26,7 +26,7 @@ static void region(unsigned int index, BOOT_U32 type, BOOT_U64 base, BOOT_U64 pa
 static int check_contract(void)
 {
     BOOT_START_INFO info = {BOOT_START_SIGNATURE, BOOT_START_VERSION, sizeof(info), 3, 3,
-        0x1000, X86_BOOT_STACK_VIRTUAL, X86_BOOT_STACK_BYTES, 0x100001000, 0,
+        0x1000, X86_BOOT_STACK_VIRTUAL, X86_BOOT_STACK_BYTES, X86_KERNEL_IMAGE_BASE + 0x1000ULL, 0,
         X86_BOOT_MAP_VIRTUAL, 144, 4096, 48, 1, 0};
     KERNEL_BOOT_CONTEXT output;
     BOOT_U32 byte;

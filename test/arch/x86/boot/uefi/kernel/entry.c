@@ -14,7 +14,7 @@ BOOT_U64 kernel_probe_entry(const BOOT_START_INFO *info) {
     if (info->PageTableRoot == 0 || (info->PageTableRoot & 4095) != 0 ||
         info->PageTableRoot >= (1ULL << 52)) return 4;
     if (info->StackBase != X86_BOOT_STACK_VIRTUAL || info->StackBytes != X86_BOOT_STACK_BYTES) return 5;
-    if (info->KernelEntry < X86_BOOT_PAGE_BYTES || info->KernelEntry >= X86_BOOT_LOW_ADDRESS_LIMIT) return 6;
+    if (!X86_KERNEL_IMAGE_CONTAINS(info->KernelEntry, 1)) return 6;  // K1: entry in the image window
     if (info->MemoryMapVirtual != X86_BOOT_MAP_VIRTUAL || !info->MemoryMapBytes ||
         !info->MemoryMapCapacity || info->MemoryMapCapacity > X86_BOOT_MAP_MAX_BYTES ||
         (info->MemoryMapCapacity & 4095) || info->MemoryMapBytes > info->MemoryMapCapacity ||

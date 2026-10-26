@@ -250,7 +250,7 @@ int x86_scheduler_code_valid(uint64_t target)
 {
     uint64_t indices[4];
     uint64_t mask;
-    if (!x86_scheduler_native_gate() || target < 4096 || target >= (UINT64_C(1) << 47)) return 0;
+    if (!x86_scheduler_native_gate() || !X86_LAYOUT_RANGE(target, 1)) return 0;
     indices[0] = (target >> 39) & 511; indices[1] = (target >> 30) & 511;
     indices[2] = (target >> 21) & 511; indices[3] = (target >> 12) & 511;
     mask = ((UINT64_C(1) << bound_pool->PhysicalBits) - 1) & TASK_ADDRESS;

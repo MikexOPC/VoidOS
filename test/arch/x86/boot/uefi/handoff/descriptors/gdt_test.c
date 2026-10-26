@@ -60,7 +60,7 @@ static int check_rejections(void)
     const uint64_t invalid[] = {
         0, 1, 4097, (UINT64_C(1) << 47) - 16,
         UINT64_C(1) << 47, UINT64_C(1) << 48, UINT64_MAX,
-        UINT64_C(0xffff800000001000)
+        UINT64_C(0xffff7ffffffff000)  // K1: the upper half is valid, the non-canonical hole is not
     };
     X86_BOOT_GDT gdt;
     X86_GDT_POINTER pointer;
@@ -114,9 +114,12 @@ __declspec(dllexport) int run_gdt_tests(void)
         uint64_t base;
         state = state * UINT64_C(6364136223846793005) + 1;
         base = (state & ((UINT64_C(1) << 47) - 1)) & ~UINT64_C(7);
-        if (!base || base > (UINT64_C(1) << 47) - 24) base = 4096;
-        if (index == 512) base = 8;
+        // K1: page 0 is refused like everywhere else (X86_LAYOUT_RANGE).
+        if (base < 4096 || base > (UINT64_C(1) << 47) - 24) base = 4096;
+        if (index == 512) base = 4096;
         if (index == 513) base = (UINT64_C(1) << 47) - 24;
+        // K1: the image (and its GDT) now lives in the upper half.
+        if (index == 511) base = UINT64_C(0xFFFFFFFF80010000);
         if (!x86_prepare_boot_gdt(&guarded.Gdt, &guarded.Pointer, base) ||
             !check_encoding(&guarded.Gdt, &guarded.Pointer, base) ||
             !x86_validate_boot_gdt(&guarded.Gdt, &guarded.Pointer, base)) return 10;

@@ -16,7 +16,7 @@ volatile unsigned char *x86_scheduler_native_bytes(uint32_t index)
 volatile uint64_t *x86_scheduler_code_entries(uint32_t level, uint64_t target)
 {
     uint64_t r = X86_BOOT_RECURSIVE_SLOT, a, b, c, address;
-    if (target >= (UINT64_C(1) << 47)) return 0;
+    if (!X86_LAYOUT_RANGE(target, 1)) return 0;
     a = (target >> 39) & 511; b = (target >> 30) & 511; c = (target >> 21) & 511;
     if (level == 0) address = X86_LAYOUT_RECURSIVE_VIEW(r, r, r, r);
     else if (level == 1) address = X86_LAYOUT_RECURSIVE_VIEW(r, r, r, a);

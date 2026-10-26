@@ -128,7 +128,7 @@ static int borrowed_reads(void)
     clear(&context, sizeof(context)); clear(firmware_map, sizeof(firmware_map));
     context.Info.Signature = BOOT_START_SIGNATURE; context.Info.Version = BOOT_START_VERSION;
     context.Info.Size = sizeof(context.Info); context.Info.RequiredFeatures = context.Info.EnabledFeatures = 3;
-    context.Info.PageTableRoot = 0x1000; context.Info.KernelEntry = 0x100001000;
+    context.Info.PageTableRoot = 0x1000; context.Info.KernelEntry = X86_KERNEL_IMAGE_BASE + 0x1000ULL;
     context.Info.StackBase = X86_BOOT_STACK_VIRTUAL; context.Info.StackBytes = X86_BOOT_STACK_BYTES;
     context.Info.MemoryMapVirtual = X86_BOOT_MAP_VIRTUAL; context.Info.MemoryMapBytes = 40;
     context.Info.MemoryMapCapacity = 4096; context.Info.MemoryDescriptorBytes = 40; context.Info.MemoryDescriptorVersion = 1;

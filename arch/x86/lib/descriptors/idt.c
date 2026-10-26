@@ -1,4 +1,5 @@
 #include "idt.h"
+#include "arch/x86/configs/layout.h"
 #include "gdt.h"
 #include "lib/memory/address_ranges.h"
 
@@ -7,10 +8,9 @@
 static int valid_arguments(const X86_BOOT_IDT *idt, const X86_IDT_POINTER *pointer, uint64_t base,
                            const uint64_t *targets)
 {
-    const uint64_t limit = UINT64_C(1) << 47;
     uint32_t vector;
     if (!idt || !pointer || !targets || ((uintptr_t)idt & 15) || ((uintptr_t)targets & 7) ||
-        base < 4096 || (base & 15) || base > limit - sizeof(*idt))
+        (base & 15) || !X86_LAYOUT_RANGE(base, sizeof(*idt)))  // K1: one canonical half (layout.h)
         return 0;
     if (os_address_ranges_overlap((uint64_t)(uintptr_t)idt, sizeof(*idt),
                                   (uint64_t)(uintptr_t)pointer, sizeof(*pointer)) ||
@@ -20,7 +20,7 @@ static int valid_arguments(const X86_BOOT_IDT *idt, const X86_IDT_POINTER *point
                                   (uint64_t)(uintptr_t)targets, X86_BOOT_EXCEPTION_COUNT * sizeof(*targets)))
         return 0;
     for (vector = 0; vector < X86_BOOT_EXCEPTION_COUNT; ++vector)
-        if (targets[vector] < 4096 || targets[vector] >= limit)
+        if (!X86_LAYOUT_RANGE(targets[vector], 1))
             return 0;
     return 1;
 }

@@ -270,6 +270,15 @@ int x86_heap_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *w
 #ifdef KERNEL_TEST_KERNEL_HEAP
     if (!selftest_private()) return 0;
 #endif
+    // K1 criterion 1: what is still mapped below slot 256 once the kernel runs in the upper half.
+    BOOT_U32 lower_first = 0, lower = x86_paging_lower_slots(&lower_first);
+
+    if (!kernel_text("KERNEL_LOWER_HALF_SLOTS: ") || !kernel_number(lower) ||
+        !kernel_text("\nKERNEL_LOWER_HALF_FIRST: ") || !kernel_number(lower_first) || !kernel_text("\n") ||
+        !kernel_log(lower ? 2 : 0, lower ? "KERNEL_LOWER_HALF_USED" : "KERNEL_LOWER_HALF_EMPTY")
+    )
+    return 0;
+
     return kernel_text("KERNEL_HEAP_VIRTUAL: ") && kernel_number(X86_HEAP_VIRTUAL) &&
         kernel_text("\nKERNEL_HEAP_PAGES: ") && kernel_number(X86_HEAP_PAGES) &&
         kernel_text("\nKERNEL_HEAP_TABLES: ") && kernel_number(X86_HEAP_TABLES) &&
