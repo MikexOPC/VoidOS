@@ -1,4 +1,6 @@
-# VoidOS
+#                                   VoidOS
+
+## Cos'è?
 
 VoidOS è un sistema operativo sperimentale con un bootloader UEFI proprio
 e un kernel progettato per evolvere verso un'architettura ibrida.
@@ -7,6 +9,8 @@ applicazioni isolate e un'interfaccia grafica.
 
 Il progetto usa principalmente C, con Rust per validazioni e gestione
 degli stati e Assembly per le operazioni a basso livello.
+
+# ======================================================================================================================================= #
 
 ## Stato del progetto
 
@@ -18,6 +22,8 @@ uno scheduler SMP operativo. Userspace, syscall e filesystem del kernel
 restano obiettivi futuri.
 
 Per i risultati verificati e i limiti attuali consultare [docs/status.md](docs/status.md).
+
+# ======================================================================================================================================= #
 
 ## Struttura
 
@@ -33,6 +39,8 @@ Per i risultati verificati e i limiti attuali consultare [docs/status.md](docs/s
 Gli script specifici dei moduli si trovano nelle rispettive sottocartelle
 `scripts/`. Gli artefatti generati nelle directory `build/` sono esclusi
 dal versionamento.
+
+# ======================================================================================================================================= #
 
 ## Licenza
 
