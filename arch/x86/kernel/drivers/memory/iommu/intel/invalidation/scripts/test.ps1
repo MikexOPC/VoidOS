@@ -42,7 +42,7 @@ try {
     $sources=@("$module/lifecycle.c","$module/validation.c","$module/queue.c","$module/memory.c",
         "$registers/lifecycle.c","$registers/preflight.c","$registers/tables.c","$registers/access.c",
         "$domains/lifecycle.c","$domains/planning.c","$domains/construction.c","$domains/verification.c",
-        'arch/x86/mm/paging/iommu/iommu_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c',
         'lib/memory/address_ranges.c','test/arch/x86/kernel/drivers/memory/iommu/intel/registers/mock.c',"$test/model.c","$test/cases.c")
     $paths=@($sources | ForEach-Object {"$project/$_"})
     $flags=@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',"/I$project")
@@ -52,6 +52,8 @@ try {
         Invoke-Checked "$bin/cl.exe" ($flags+@($(if ($source -eq 'kernel/mm/physical/allocator.c') {'/Dkernel_physical_pin=qi_real_pin'} else {'/DQI_HOST_TEST=1'}),'/c',"$project/$source","/Fo$object","/Fd$out/host.pdb"))
         $compiled+=$object
     }
+    . (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+    $compiled += @(New-PhysicalHostSync $project $out)
     Invoke-Checked "$bin/cl.exe" (@('/nologo','/MD')+$compiled+@("/Fe$out/host.exe",'/link','/incremental:no','/DEBUG','/WX',
         "$out/policy.obj","$out/regions.obj","$out/placement.obj","$out/register-policy.obj","$out/domain-policy.obj"))
     Invoke-Checked "$out/host.exe" @()

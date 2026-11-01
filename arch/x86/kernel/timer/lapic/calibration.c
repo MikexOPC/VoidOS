@@ -138,7 +138,9 @@ int x86_timer_owner_valid(const X86_LAPIC_TIMER *timer)
         os_address_ranges_overlap(address,sizeof(*timer),X86_LAYOUT_RECURSIVE_VIRTUAL,X86_LAYOUT_SLOT_BYTES)) {
         return 0;
     }
-    return !timer->Reserved && x86_timer_event_fields(timer->Count,timer->Consumed,timer->Phase,timer->Active) &&
+    return !timer->Reserved && timer->ArmedPm <= timer->Clock.Mask &&
+        (timer->Phase == X86_TIMER_ARMED || !timer->ArmedPm) &&
+        x86_timer_event_fields(timer->Count,timer->Consumed,timer->Phase,timer->Active) &&
         timer->Mapping && clock_valid(&timer->Clock) &&
         !os_address_ranges_overlap(address,sizeof(*timer),(BOOT_U64)timer->Mapping,sizeof(*timer->Mapping)) &&
         x86_lapic_validate(timer->Mapping);

@@ -24,7 +24,7 @@ int x86_iommu_page_safe(const KERNEL_BOOT_CONTEXT *context,const KERNEL_PHYSICAL
 {
     if (!context || !pool || pool->PhysicalBits<32 || pool->PhysicalBits>52 || physical<4096 ||
         (physical&4095) || physical>(1ULL<<pool->PhysicalBits)-4096 ||
-        pool->Count>KERNEL_PHYSICAL_EXTENTS || !context->Info.MemoryMapBytes || context->Info.MemoryMapBytes>1048576 || context->Info.MemoryDescriptorBytes<40 ||
+        !context->Info.MemoryMapBytes || context->Info.MemoryMapBytes>1048576 || context->Info.MemoryDescriptorBytes<40 ||
         context->Info.MemoryMapBytes%context->Info.MemoryDescriptorBytes ||
         os_address_ranges_overlap(physical,4096,context->Info.Framebuffer.Base,context->Info.Framebuffer.Capacity)) return 0;
     for (BOOT_U64 index=0; index<context->Info.MemoryMapBytes/context->Info.MemoryDescriptorBytes; ++index) {
@@ -33,11 +33,7 @@ int x86_iommu_page_safe(const KERNEL_BOOT_CONTEXT *context,const KERNEL_PHYSICAL
         if (kernel_regions_overlap(physical,1,region.Base,region.Pages) &&
             ((region.Type!=0 && region.Type!=11) || (region.Attributes&0x3000) || (region.Attributes && !(region.Attributes&1)))) return 0;
     }
-    for (BOOT_U32 index=0; index<pool->Count; ++index)
-        if (kernel_regions_overlap(physical,1,pool->Free[index].Base,pool->Free[index].Pages)) return 0;
-    for (BOOT_U32 index=0; index<KERNEL_PHYSICAL_LEASES; ++index)
-        if (pool->Live[index].Id && kernel_regions_overlap(physical,1,pool->Live[index].Base,pool->Live[index].Pages)) return 0;
-    return 1;
+    return kernel_physical_range_unowned(pool, physical, 1);
 }
 
 // ====== x86_iommu_inputs ======

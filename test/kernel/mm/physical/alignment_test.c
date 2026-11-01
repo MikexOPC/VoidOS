@@ -1,4 +1,4 @@
-#include "kernel/mm/physical/allocator.h"
+#include "kernel/mm/physical/internal.h"
 static KERNEL_PHYSICAL_ALLOCATOR owner, snapshot;
 static KERNEL_PHYSICAL_LEASE leases[64];
 static unsigned char map[48];
@@ -57,7 +57,7 @@ static int split_and_merge(void)
         owner.Count || owner.FreePages || !kernel_physical_validate(&owner)) return 2;
     if (!kernel_physical_pin(&owner, &first, 1)) return 3;
     capture();
-    if (kernel_physical_release(&owner, &first) || !equal(&owner, &snapshot, sizeof(owner)) ||
+    if (kernel_physical_release(&owner, &first) || !equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate)) ||
         !kernel_physical_pin(&owner, &first, 0)) return 4;
     stale = first;
     if (!kernel_physical_release(&owner, &prefix) || !kernel_physical_release(&owner, &suffix) ||
@@ -79,22 +79,22 @@ static int rejected_requests(void)
     capture();
     for (index = 0; index < sizeof(bad) / sizeof(bad[0]); ++index)
         if (kernel_physical_allocate_aligned(&owner, 1, bad[index], &output) ||
-            !equal(&owner, &snapshot, sizeof(owner)) || output.Id || output.Base) return 2;
+            !equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate)) || output.Id || output.Base) return 2;
     if (kernel_physical_allocate_aligned(&owner, 0, 1, &output) ||
         kernel_physical_allocate_aligned(&owner, ~0ULL, 1, &output) ||
         kernel_physical_allocate_aligned(&owner, 1, 16, &output) ||
         kernel_physical_allocate_aligned(&owner, 1, 1, &owner.Live[0]) ||
-        !equal(&owner, &snapshot, sizeof(owner))) return 3;
+        !equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate))) return 3;
     output.Base = 0x7000; before = output;
     if (kernel_physical_allocate_aligned(&owner, 1, 1, &output) ||
-        !equal(&before, &output, sizeof(output)) || !equal(&owner, &snapshot, sizeof(owner))) return 4;
+        !equal(&before, &output, sizeof(output)) || !equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate))) return 4;
     clear(&output, sizeof(output)); owner.NextId = ~0ULL; capture();
     if (kernel_physical_allocate_aligned(&owner, 1, 1, &output) ||
-        !equal(&owner, &snapshot, sizeof(owner))) return 5;
+        !equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate))) return 5;
     if (!initialize(0xfffff000ULL, 1)) return 6;
     capture();
     if (kernel_physical_allocate_aligned(&owner, 1, 2, &output) ||
-        !equal(&owner, &snapshot, sizeof(owner)) ||
+        !equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate)) ||
         !kernel_physical_allocate_aligned(&owner, 1, 1, &output) || output.Base != 0xfffff000ULL ||
         !kernel_physical_release(&owner, &output)) return 7;
     return 0;
@@ -108,6 +108,7 @@ static int full_metadata(void)
     KERNEL_PHYSICAL_LEASE output = {0}, live;
     clear(&owner, sizeof(owner));
     owner.Self = (BOOT_U64)&owner; owner.Ready = 1; owner.PhysicalBits = 32;
+    if (!kernel_lock_initialize(&owner.Gate, KPHYS_LOCK_RANK)) return 20;
     owner.NextId = 2; owner.Count = KERNEL_PHYSICAL_EXTENTS;
     for (index = 0; index < owner.Count; ++index)
         owner.Free[index] = (KERNEL_PHYSICAL_EXTENT){0x1000 + (BOOT_U64)index * 0x10000, 1};
@@ -116,7 +117,7 @@ static int full_metadata(void)
     if (!kernel_physical_validate(&owner)) return 1;
     capture();
     if (kernel_physical_allocate_aligned(&owner, 1, 4, &output) ||
-        !equal(&owner, &snapshot, sizeof(owner))) return 2;
+        !equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate))) return 2;
     // Il primo candidato richiede uno split: proseguire verso un extent consumabile.
     owner.Free[1].Base = 0x10000;
     if (!kernel_physical_allocate_aligned(&owner, 1, 4, &output) || output.Base != 0x10000 ||
@@ -138,7 +139,7 @@ static int full_metadata(void)
     live = (KERNEL_PHYSICAL_LEASE){0x9000, 1, owner.NextId++, (BOOT_U64)&owner}; owner.Live[0] = live;
     if (!kernel_physical_validate(&owner)) return 7;
     capture();
-    if (kernel_physical_release(&owner, &live) || !equal(&owner, &snapshot, sizeof(owner)) || live.Base != 0x9000) return 8;
+    if (kernel_physical_release(&owner, &live) || !equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate)) || live.Base != 0x9000) return 8;
     live.Base = 0x2000; owner.Live[0] = live;
     if (!kernel_physical_validate(&owner) || !kernel_physical_release(&owner, &live) ||
         owner.Count != KERNEL_PHYSICAL_EXTENTS - 1 || owner.Free[0].Pages != 3 ||
@@ -193,7 +194,7 @@ static int mixed_sequences(void)
             if (base) {
                 if (leases[slot].Base != base || leases[slot].Pages != pages || !mark(&leases[slot], 1)) return 4;
                 used += pages;
-            } else if (!equal(&owner, &snapshot, sizeof(owner)) || leases[slot].Id) return 5;
+            } else if (!equal(&owner, &snapshot, offsetof(KERNEL_PHYSICAL_ALLOCATOR, Gate)) || leases[slot].Id) return 5;
         }
         if (owner.FreePages != 128 - used || !kernel_physical_validate(&owner)) return 6;
         for (index = 0; index < owner.Count; ++index) {

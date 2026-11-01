@@ -54,7 +54,7 @@ int x86_vgpu_surface_unbind(X86_SURFACE_MAPPING *owner)
         if (!kernel_physical_release(pool,&owner->Authority.Data)) return 0;
         owner->DataAllocated=0;
     }
-    if (pool->FreePages!=owner->Budget) return 0;
+    if (!kernel_physical_budget_matches(pool, owner->Budget)) return 0;
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte]=0;
     return 1;
 }
@@ -79,8 +79,8 @@ int x86_vgpu_surface_bind(X86_VGPU_MAPPING *gpu,uint32_t width,uint32_t height,X
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
     if (!gpu->Capture(gpu->Context,gpu->Window->Pool,gpu->Lapic,gpu->Inventory)) return 0;
     KERNEL_PHYSICAL_ALLOCATOR *pool=gpu->Window->Pool;
-    if (pool->FreePages<(bytes+4095)/4096+2+((bytes+4095)/4096+2+511)/512) return 0;
-    owner->Self=(BOOT_U64)owner; owner->Gpu=gpu; owner->Budget=pool->FreePages;
+    if (!kernel_physical_budget_at_least(pool, (bytes+4095)/4096+2+((bytes+4095)/4096+2+511)/512)) return 0;
+    owner->Self=(BOOT_U64)owner; owner->Gpu=gpu; if (!kernel_physical_budget_read(pool, &owner->Budget)) return 0;
     owner->Authority=(X86_SURFACE_AUTH){0};
     owner->Authority.Self=(BOOT_U64)&owner->Authority; owner->Authority.Root=cpu.Root;
     owner->Authority.Pat=cpu.Pat; owner->Authority.PhysicalBits=cpu.PhysicalBits; owner->Authority.Bytes=bytes;

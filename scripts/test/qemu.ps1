@@ -12,6 +12,15 @@ param(
 # campaigns that build their own images in the shared tree (build null) run alone, first, and the
 # heavy ones (VirtIO/IOMMU) one at a time.
 $ErrorActionPreference = 'Stop'
+$campaignShell = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+if (!$campaignShell) {
+    foreach ($candidate in @("$env:ProgramFiles/PowerShell/7/pwsh.exe",
+        "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe")) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $campaignShell = $candidate; break }
+    }
+}
+if (!$campaignShell) { throw 'PowerShell 7 required for QEMU campaigns, as for host suites.' }
+if ($PSVersionTable.PSVersion.Major -lt 7) { throw "Run with PowerShell 7: & '$campaignShell' -File '$PSCommandPath'" }
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $registry = (Get-Content -Raw (Join-Path $PSScriptRoot 'campaigns.json') | ConvertFrom-Json).campaigns
 $names = @($registry.PSObject.Properties.Name)
@@ -36,17 +45,22 @@ $campaign = Join-Path $PSScriptRoot 'campaign.ps1'
 $results = @()
 $running = @()
 
+function Record-Campaign([string]$Name, [int]$Count, [int]$Code) {
+    $log = Join-Path $output ($Name + '.log')
+    $script:results += [pscustomobject]@{ Campaign = $Name; Boots = $Count; ExitCode = $Code; Log = $log }
+    $script:results | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
+    if ($Code) {
+        if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 15 }
+        Write-Output "[ FAIL ] Campaign $Name; log: $log"
+    }
+    else { Write-Output "[ OK ] Campaign $Name; log: $log" }
+}
+
 function Complete-Campaign($job) {
     $job.Process.WaitForExit()
     $code = $job.Process.ExitCode
-    $log = Join-Path $output ($job.Name + '.log')
-    $script:results += [pscustomobject]@{ Campaign = $job.Name; Boots = $job.Count; ExitCode = $code; Log = $log }
-    $script:results | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
-    if ($code) {
-        if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 15 }
-        Write-Output "[ FAIL ] Campaign $($job.Name); log: $log"
-    }
-    else { Write-Output "[ OK ] Campaign $($job.Name); log: $log" }
+    if ($null -eq $code) { throw "Campaign exit code unavailable: $($job.Name)" }
+    Record-Campaign $job.Name $job.Count $code
 }
 
 # Shared-tree campaigns first and alone, then the others up to $Parallel at a time.
@@ -63,9 +77,14 @@ foreach ($name in $ordered) {
         $running = @($running | Where-Object { !$_.Process.HasExited })
     }
     Write-Output "[ INFO ] Campaign $name ($count boots)"
+    if ($Parallel -eq 1) {
+        & $campaign -Name $name -Count $count -Output $output
+        Record-Campaign $name $count $LASTEXITCODE
+        continue
+    }
     [string[]]$campaignArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$campaign",
         '-Name', "$name", '-Count', "$count", '-Output', "$output")
-    $process = Start-Process powershell.exe -ArgumentList $campaignArguments -WorkingDirectory $project -WindowStyle Hidden -PassThru
+    $process = Start-Process $campaignShell -ArgumentList $campaignArguments -WorkingDirectory $project -WindowStyle Hidden -PassThru
     # PowerShell 5.1: ExitCode stays empty unless the handle is opened while the process runs.
     $null = $process.Handle
     $running += [pscustomobject]@{ Name = $name; Count = $count; Process = $process }

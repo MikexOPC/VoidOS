@@ -68,11 +68,11 @@ int x86_ps2_controller_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW
     if (!context || !window || !window->Pool || !x86_page_window_idle_valid(window) ||
         !x86_exception_environment()) return 0;
     native.Context = context; native.Window = window;
-    free_pages = window->Pool->FreePages;
+    if (!kernel_physical_budget_read(window->Pool, &free_pages)) return 0;
     if (!kernel_ps2_discover(directory, window->Pool->PhysicalBits, ps2_firmware_read,
         &native, &description)) return 0;
     if (!description.Present) return x86_page_window_idle_valid(window) &&
-        window->Pool->FreePages == free_pages && kernel_log(2, "KERNEL_PS2_CONTROLLER_ABSENT");
+        kernel_physical_budget_matches(window->Pool, free_pages) && kernel_log(2, "KERNEL_PS2_CONTROLLER_ABSENT");
     if (!x86_pm_clock_capture(directory, window->Pool->PhysicalBits, ps2_firmware_read,
         &native, &native.Clock)) return 0;
     io.Context = &native; io.Read = ps2_port_read; io.Write = ps2_port_write;
@@ -83,7 +83,7 @@ int x86_ps2_controller_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW
     }
     if (!kernel_ps2_mouse_prepare(&owner) || owner.Auxiliary != 1 ||
         !kernel_ps2_close(&owner) || owner.Auxiliary || owner.Error || !x86_page_window_idle_valid(window) ||
-        window->Pool->FreePages != free_pages) return 0;
+        !kernel_physical_budget_matches(window->Pool, free_pages)) return 0;
     return kernel_log(0, "KERNEL_PS2_MOUSE_PREPARED") &&
         kernel_log(0, "KERNEL_PS2_CONTROLLER_SET2_OK");
 }

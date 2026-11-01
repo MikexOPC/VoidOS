@@ -4,8 +4,10 @@
 
 // ====== x86_scheduler_report ======
 
-int x86_scheduler_report(uint64_t root, uint64_t before, uint64_t after, uint32_t steps, uint32_t profile)
+int x86_scheduler_report(uint64_t root, uint64_t before, const KERNEL_PHYSICAL_ALLOCATOR *pool, uint32_t steps, uint32_t profile)
 {
+    BOOT_U64 after;
+    if (!kernel_physical_budget_read(pool, &after)) return 0;
     if (!kernel_text("SCHEDULER_ROOT: ") || !kernel_number(root) ||
         !kernel_text("\nSCHEDULER_PTE: ") || !kernel_number((BOOT_U64)&x86_stack_entries(3)[320]) ||
         !kernel_text("\nSCHEDULER_BUDGET_BEFORE: ") || !kernel_number(before) ||

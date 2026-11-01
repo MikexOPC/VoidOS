@@ -55,7 +55,7 @@ static int release_private(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu)
 
     if (self->Arena.Self && !x86_dma_arena_unbind(&self->Arena)) return 0;
 
-    return gpu->Window->Pool->FreePages == self->Budget;
+    return kernel_physical_budget_matches(gpu->Window->Pool, self->Budget);
 }
 
 // ====== x86_vgpu_session_start ======
@@ -76,7 +76,10 @@ int x86_vgpu_session_start(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu, const 
             route == X86_VGPU_IOMMU_ABSENT ? "KERNEL_VGPU_SESSION_UNTRANSLATED" : "KERNEL_VGPU_SESSION_ROUTE_FAILED");
     }
 
-    self->Budget = gpu->Window->Pool->FreePages;
+    if (!kernel_physical_budget_read(gpu->Window->Pool, &self->Budget)) {
+        quiet_end(self, flags, since);
+        return 0;
+    }
 
     // V2c draws the console into this surface; until then it only sizes the GPU domain.
     BOOT_U32 step = 1;
@@ -107,7 +110,13 @@ int x86_vgpu_session_start(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu, const 
     (void)directory;
 #endif
 
-    self->Held = self->Budget - gpu->Window->Pool->FreePages;
+    BOOT_U64 available;
+    if (!kernel_physical_budget_read(gpu->Window->Pool, &available) || available > self->Budget) {
+        self->State = X86_VGPU_SESSION_RETAINED;
+        quiet_end(self, flags, since);
+        return 0;
+    }
+    self->Held = self->Budget - available;
     // G5 V3: the session declares what it holds; the console accounting subtracts the total.
     if (self->Held && !kernel_holdings_register(&self->Holding, self->Held)) self->State = X86_VGPU_SESSION_RETAINED;
     quiet_end(self, flags, since);
@@ -174,8 +183,10 @@ int x86_vgpu_session_stop(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu)
 
     quiet_end(self, flags, since);
     // IF=0 sections: only the stop one is timed; the start one begins before the PM clock is captured.
+    BOOT_U64 after;
+    if (!released || !kernel_physical_budget_read(gpu->Window->Pool, &after)) return 0;
     return released && kernel_latency_report("KERNEL_VGPU_QUIET_PM", &self->QuietTicks) &&
-        number_private("KERNEL_VGPU_SESSION_BUDGET_AFTER: ", gpu->Window->Pool->FreePages) &&
+        number_private("KERNEL_VGPU_SESSION_BUDGET_AFTER: ", after) &&
         kernel_log(0, "KERNEL_VGPU_SESSION_RELEASED");
 }
 

@@ -87,7 +87,7 @@ rimuove all'ingresso e da lì la metà bassa è vuota. Da verificare nel loader 
 5. Nessun indirizzo del kernel scritto a mano fuori da `layout.h`: un controllo nello script di
    stile lo cerca.
 
-## 6. Decisioni da approvare
+## 6. Decisioni del progetto iniziale, adottate nelle tappe 1–5
 L1-A (a tappe dietro `layout.h`), L2-A (immagine a `0xFFFF_FFFF_8000_0000`), L3-A (intervalli dal
 log seriale), il layout del §2 e i criteri del §5.
 
@@ -101,7 +101,7 @@ log seriale), il layout del §2 e i criteri del §5.
 | 3. Finestre di boot, stack e arena | Fatta. Mappa memoria 479, contratto 480, finestre (stack di boot, finestra di pagina, IST, stack principale, arena, LAPIC, stack dei task) 488. `X86_LAYOUT_RANGE` sostituisce i controlli "metà bassa" sugli oggetti del kernel; il loader verifica e costruisce anche la metà alta | suite host 35/36 (virtio-discovery: `read.c`), smoke 11/12 più kernel-boot rieseguita dopo la correzione dei runner |
 | 4. Vista ricorsiva | Fatta. Slot 510; il paging in Rust applica la maschera allo slot ed estende il segno della vista (copia di `RECURSIVE` confrontata a ogni build) | suite host 35/36 (virtio-discovery: `read.c`), smoke 12/12 con kernel-boot (`qemu-run-6ce98a06b7cd4871884a2265414376ed`) |
 | 5. Immagine del kernel | Fatta: base `0xFFFF_FFFF_8000_0000`, finestra di 4 MiB. Loader (segmenti ELF, entry nella capsula, GDT e IDT di transizione), contratto, registro IRQ, scheduler ed eccezioni accettano la metà alta | suite host 35/36 (virtio-discovery: `read.c`), smoke 11/12 più kernel-boot rieseguita dopo la correzione dei runner, V2c 10/10 (`qemu-run-46bb4ffb4d07487ca39695399a80d3b0`) |
-| 5b. Slot 0 | Resta la sola mappatura identità della transizione: capsula (RX), pacchetto dei descrittori e due stack ausiliari del loader. Misurata a ogni boot (`KERNEL_LOWER_HALF_SLOTS`); la rimozione è il punto L4, da decidere | `KERNEL_LOWER_HALF_USED`, slot 0 |
+| 5b. Slot 0 | Fatta: revoca dopo stack/descrittori kernel, preflight CPU/ownership, MOV CR3, generazione e inventario post-commit; pagine ancora riservate | Host 37 suite con retry mirato; dieci boot dedicati; capsula warmed → #PF; kernel 23/23; campagne brevi 12/12; V2c 10/10 (`qemu-run-0e1e80c861594423ab6e9e7e662e7e17`); [report](../../arch/x86/mm/paging/retirement/documentation/validation.md) |
 
 Deviazione da L3-A: i runner leggono `layout.h` (`scripts/lib/layout.ps1` e `layout.py`) invece del log
 seriale. La fonte resta unica e serve anche prima del boot (`/base:` del linker).

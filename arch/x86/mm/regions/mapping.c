@@ -126,14 +126,10 @@ static int remove_mapping(X86_REGION_MAPPER *owner, BOOT_U32 slot)
 {
     BOOT_U32 entry;
     KERNEL_PHYSICAL_LEASE *lease = &owner->Live[slot];
-    int fits = owner->Pool->Count < KERNEL_PHYSICAL_EXTENTS;
-    for (entry = 0; !fits && entry < owner->Pool->Count; ++entry)
-        fits = owner->Pool->Free[entry].Base + owner->Pool->Free[entry].Pages * 4096 == lease->Base ||
-            lease->Base + lease->Pages * 4096 == owner->Pool->Free[entry].Base;
-    if (!fits) return 0;
+    if (!kernel_physical_release_fits(owner->Pool, lease)) return 0;
     for (entry = 0; entry < lease->Pages; ++entry) x86_region_entries(3)[128 + slot * 34 + 1 + entry] = 0;
     invalidate(slot, lease->Pages);
-    return kernel_physical_pin(owner->Pool, lease, 0) && kernel_physical_release(owner->Pool, lease);
+    return kernel_physical_release_after_unmap(owner->Pool, lease);
 }
 
 // ====== allineamento fisico pin e azzeramento prima di pubblicare l'handle ===== //

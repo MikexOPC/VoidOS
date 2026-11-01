@@ -24,7 +24,7 @@ int x86_ecam_open(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WINDOW *window,con
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
     owner->Self=(BOOT_U64)owner; owner->Context=context; owner->Window=window; owner->Lapic=lapic; owner->Inventory=inventory;
     owner->Info=*info; owner->Root=cpu.Root; owner->Pat=cpu.Pat; owner->Cache=x86_apic_cache_bits(x86_apic_uc_slot(cpu.Pat)-1);
-    owner->Budget=window->Pool->FreePages; owner->Ready=1;
+    if (!kernel_physical_budget_read(window->Pool, &owner->Budget)) return 0; owner->Ready=1;
     int valid=x86_ecam_current(owner);
     for (BOOT_U32 index=0; valid && index<info->Count; ++index) {
         const X86_ECAM_RANGE *range=&info->Ranges[index];
@@ -79,7 +79,7 @@ int x86_ecam_read(X86_ECAM *owner,BOOT_U32 segment,BOOT_U32 bus,BOOT_U32 device,
     int valid=x86_apic_borrow(owner->Window,page,owner->Cache,0,read_private,&request);
     owner->Busy=0;
     if (!x86_page_window_idle_valid(owner->Window)) { owner->Ready=2; return 0; }
-    if (!valid || !x86_ecam_current(owner) || owner->Budget!=owner->Window->Pool->FreePages) return 0;
+    if (!valid || !x86_ecam_current(owner) || !kernel_physical_budget_matches(owner->Window->Pool, owner->Budget)) return 0;
     *value=request.Value;
     return 1;
 }
@@ -90,7 +90,7 @@ int x86_ecam_close(X86_ECAM *owner)
 {
     if (!owner || ((BOOT_U64)owner&7) || owner->Self!=(BOOT_U64)owner || (owner->Ready!=1 && owner->Ready!=2) || owner->Busy ||
         !owner->Window || !owner->Window->Pool || !x86_page_window_idle_valid(owner->Window) ||
-        owner->Budget!=owner->Window->Pool->FreePages) return 0;
+        !kernel_physical_budget_matches(owner->Window->Pool, owner->Budget)) return 0;
     BOOT_U32 ready=owner->Ready; owner->Ready=1;
     if (!x86_ecam_current(owner)) {owner->Ready=ready;return 0;}
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte]=0;
@@ -130,7 +130,7 @@ int x86_ecam_command(X86_ECAM *owner, BOOT_U32 segment, BOOT_U32 bus, BOOT_U32 d
         return 0;
     }
 
-    if (!valid || !x86_ecam_current(owner) || owner->Budget != owner->Window->Pool->FreePages ||
+    if (!valid || !x86_ecam_current(owner) || !kernel_physical_budget_matches(owner->Window->Pool, owner->Budget) ||
         !x86_ecam_read(owner, segment, bus, device, function, 4, &old)
     )
     return 0;

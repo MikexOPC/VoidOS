@@ -3,6 +3,7 @@
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/stack/main.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
+
 #ifdef KERNEL_TEST_IOMMU_DISCOVERY
 #include "test/arch/x86/kernel/drivers/memory/iommu/intel/discovery/probe.h"
 #endif
@@ -72,28 +73,29 @@ void kernel_profile_after_acpi(const KERNEL_STARTUP *startup, const KERNEL_BOOT_
 int kernel_profile_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *context, X86_PAGING_INVENTORY *paging)
 {
     (void)startup; (void)context; (void)paging;
-#if defined(KERNEL_TEST_IOMMU_REGISTERS)
-    KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
-    if (!x86_vtd_kernel_probe(context,&memory->Window,x86_uart_lapic_mapping(),x86_dmar_kernel_information(),paging))
-        kernel_panic("VTD_REGISTERS_INVALID");
-#ifdef KERNEL_TEST_IOMMU_QI
-    if (!x86_qi_probe(context,&memory->Window,x86_uart_lapic_mapping(),paging,x86_dmar_kernel_information(),
-        (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory->Arena,startup->Acpi))) kernel_panic("QI_INVALID");
-#elif defined(KERNEL_TEST_IOMMU_DOMAIN)
-    if (!x86_vtd_domain_probe(context,&memory->Window,x86_uart_lapic_mapping(),paging,x86_dmar_kernel_information()))
-        kernel_panic("VTD_DOMAIN_INVALID");
-#endif
-    return 1;
-#elif defined(KERNEL_TEST_VGPU_INITIALIZATION)
-    KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
-    if (!context->Info.Acpi.Source || !x86_vgpu_initialization_probe(context,&memory->Window,
-        x86_uart_lapic_mapping(),paging,
-        (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory->Arena,startup->Acpi)))
-        kernel_panic("VGPU_INITIALIZATION_FAILED");
-    return 1;
-#else
-    return 0;
-#endif
+
+    #if defined(KERNEL_TEST_IOMMU_REGISTERS)
+        KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
+        if (!x86_vtd_kernel_probe(context,&memory->Window,x86_uart_lapic_mapping(),x86_dmar_kernel_information(),paging))
+            kernel_panic("VTD_REGISTERS_INVALID");
+    #ifdef KERNEL_TEST_IOMMU_QI
+        if (!x86_qi_probe(context,&memory->Window,x86_uart_lapic_mapping(),paging,x86_dmar_kernel_information(),
+            (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory->Arena,startup->Acpi))) kernel_panic("QI_INVALID");
+    #elif defined(KERNEL_TEST_IOMMU_DOMAIN)
+        if (!x86_vtd_domain_probe(context,&memory->Window,x86_uart_lapic_mapping(),paging,x86_dmar_kernel_information()))
+            kernel_panic("VTD_DOMAIN_INVALID");
+    #endif
+        return 1;
+    #elif defined(KERNEL_TEST_VGPU_INITIALIZATION)
+        KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
+        if (!context->Info.Acpi.Source || !x86_vgpu_initialization_probe(context,&memory->Window,
+            x86_uart_lapic_mapping(),paging,
+            (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory->Arena,startup->Acpi)))
+            kernel_panic("VGPU_INITIALIZATION_FAILED");
+        return 1;
+    #else
+        return 0;
+    #endif
 }
 
 #if defined(KERNEL_TEST_MAIN_FAULT) && KERNEL_TEST_MAIN_FAULT == 4
@@ -112,24 +114,25 @@ __declspec(noreturn) void kernel_profile_finish(const KERNEL_STARTUP *startup)
 {
     (void)startup;
     #ifdef KERNEL_TEST_REGION_FAULT
-        {
-            BOOT_U64 address = startup->Memory->Handles[0].Virtual;
-    #if KERNEL_TEST_REGION_FAULT == 1
-            if (!x86_region_release(&startup->Memory->Regions, &startup->Memory->Handles[0])) kernel_panic("REGION_FAULT_SETUP_FAILED");
-    #elif KERNEL_TEST_REGION_FAULT == 2
-            address -= 4096;
-    #elif KERNEL_TEST_REGION_FAULT == 3
-            address += 32 * 4096;
-    #elif KERNEL_TEST_REGION_FAULT == 4
-            address += 31 * 4096;
-            ((void (*)(void))address)();
-    #endif
-    #if KERNEL_TEST_REGION_FAULT != 4
-            volatile unsigned char value = *(volatile unsigned char *)address;
-            (void)value;
-    #endif
+    {
+        BOOT_U64 address = startup->Memory->Handles[0].Virtual;
+        #if KERNEL_TEST_REGION_FAULT == 1
+                if (!x86_region_release(&startup->Memory->Regions, &startup->Memory->Handles[0])) kernel_panic("REGION_FAULT_SETUP_FAILED");
+        #elif KERNEL_TEST_REGION_FAULT == 2
+                address -= 4096;
+        #elif KERNEL_TEST_REGION_FAULT == 3
+                address += 32 * 4096;
+        #elif KERNEL_TEST_REGION_FAULT == 4
+                address += 31 * 4096;
+                ((void (*)(void))address)();
+        #endif
+
+        #if KERNEL_TEST_REGION_FAULT != 4
+                volatile unsigned char value = *(volatile unsigned char *)address;
+                (void)value;
+        #endif
             kernel_panic("EXPECTED_REGION_FAULT_MISSING");
-        }
+    }
     #elif defined(KERNEL_TEST_MAIN_FAULT)
     #if KERNEL_TEST_MAIN_FAULT == 4
         // Test del guard return mantenendo prima la normale revoca del mapping.

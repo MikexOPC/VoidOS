@@ -147,7 +147,7 @@ int x86_heap_unbind(X86_HEAP_BINDING *owner)
 
     if (owner->DataAllocated) { if (!kernel_physical_release(pool, &owner->Authority.Data)) return 0; owner->DataAllocated = 0; }
 
-    if (pool->FreePages != owner->Budget) return 0;
+    if (!kernel_physical_budget_matches(pool, owner->Budget)) return 0;
 
     for (BOOT_U32 byte = 0; byte < sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte] = 0;
 
@@ -172,11 +172,11 @@ int x86_heap_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window, c
 
     for (BOOT_U32 byte = 0; byte < sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
 
-    if (!capture(context, window->Pool, lapic, inventory) || window->Pool->FreePages < X86_HEAP_PAGES + X86_HEAP_TABLES) return 0;
+    if (!capture(context, window->Pool, lapic, inventory) || !kernel_physical_budget_at_least(window->Pool, X86_HEAP_PAGES + X86_HEAP_TABLES)) return 0;
 
     KERNEL_PHYSICAL_ALLOCATOR *pool = window->Pool;
 
-    owner->Self = self; owner->Budget = pool->FreePages;
+    owner->Self = self; if (!kernel_physical_budget_read(pool, &owner->Budget)) return 0;
     owner->Context = context; owner->Window = window; owner->Lapic = lapic; owner->Inventory = inventory; owner->Capture = capture;
     owner->Authority.Self = (BOOT_U64)&owner->Authority; owner->Authority.Root = cpu.Root;
     owner->Authority.Pat = cpu.Pat; owner->Authority.PhysicalBits = cpu.PhysicalBits;
@@ -249,7 +249,7 @@ static int selftest_private(void)
 
     stats = kernel_heap_stats(&heap);
     // 64 double frees and the corrupted canary: Rejected == 65.
-    return stats.Objects == 1 && stats.RunPages == 0 && stats.SlabPages == 1 &&
+    return stats.Objects == 1 && stats.RunPages == 0 && stats.SlabPages == 1 && !stats.Pending && kernel_heap_valid(&heap) &&
         kernel_text("KERNEL_HEAP_SELFTEST_REJECTED: ") && kernel_number(stats.Rejected) && kernel_text("\n") &&
         kernel_log(0, "KERNEL_HEAP_SELFTEST_OK");
 }
@@ -270,6 +270,7 @@ int x86_heap_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *w
 #ifdef KERNEL_TEST_KERNEL_HEAP
     if (!selftest_private()) return 0;
 #endif
+    if (!kernel_heap_valid(&heap) || kernel_heap_stats(&heap).Pending || !kernel_log(0, "KERNEL_HEAP_SYNC_OK")) return 0;
     // K1 criterion 1: what is still mapped below slot 256 once the kernel runs in the upper half.
     BOOT_U32 lower_first = 0, lower = x86_paging_lower_slots(&lower_first);
 

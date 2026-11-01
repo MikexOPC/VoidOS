@@ -14,6 +14,6 @@ int x86_vtd_domain_verify(X86_VTD_DOMAIN *owner)
         if (!cursor) return 0;
     }
     if (owner->TableCount!=5+(cursor-4096-X86_VTD_DMA_BASE+0x1fffff)/0x200000 ||
-        owner->Budget<owner->Allocated || owner->Window->Pool->FreePages!=owner->Budget-owner->Allocated) return 0;
+        owner->Budget<owner->Allocated || !kernel_physical_budget_matches(owner->Window->Pool, owner->Budget-owner->Allocated)) return 0;
     return x86_vtd_domain_pages(owner,0);
 }

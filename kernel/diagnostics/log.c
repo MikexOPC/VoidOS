@@ -1,4 +1,7 @@
 #include "log.h"
+#ifdef KERNEL_PANIC_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/panic/native/runtime.h"
+#endif
 #include "arch/x86/kernel/platform.h"
 
 // ====== testi statici limitati e nessuna dipendenza da printf ====== //
@@ -42,8 +45,17 @@ int kernel_number(BOOT_U64 value)
 
 // ====== panic terminale anche quando la seriale smette di rispondere ====== //
 
-__declspec(noreturn) void kernel_panic(const char *message) {
+__declspec(noreturn) __declspec(noinline) static void panic_legacy_private(const char *message) {
     kernel_section("kernel panic");
     kernel_log(3, message);
     x86_kernel_stop(0x4b50414e49430001ULL);
+}
+
+// ====== kernel_panic ======
+
+__declspec(noreturn) void kernel_panic(const char *message) {
+#ifdef KERNEL_PANIC_RUNTIME
+    if (ks_atomic_load_acquire(&xp_panic_armed)) xp_panic_voluntary((BOOT_U64)message);
+#endif
+    panic_legacy_private(message);
 }

@@ -5,7 +5,7 @@ $objects = @()
 
 # ====== probe isolato con backend host senza accessi hardware ===== #
 
-foreach ($source in @('arch/x86/kernel/interrupts/apic/probe.c','arch/x86/kernel/interrupts/apic/profile.c',
+foreach ($source in @('test/kernel/mm/physical/synchronization/reader_model.c','arch/x86/kernel/interrupts/apic/probe.c','arch/x86/kernel/interrupts/apic/profile.c',
     'arch/x86/kernel/interrupts/apic/control/masked.c','arch/x86/kernel/interrupts/return/table.c','arch/x86/kernel/interrupts/registry/registry.c',
     'arch/x86/kernel/serial/interrupts/driver.c','arch/x86/kernel/serial/transmit/buffer.c','arch/x86/kernel/serial/queue/queue.c',
     'arch/x86/mm/devices/lapic.c','test/kernel/mm/devices/lapic_test.c',

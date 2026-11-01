@@ -192,7 +192,7 @@ int x86_page_window_release(X86_PAGE_WINDOW *window)
     BOOT_U64 index, pages;
     volatile BOOT_U64 *entries;
     if (!window_valid(window) || !window->Active ||
-        window->Pool->Count == KERNEL_PHYSICAL_EXTENTS || !leaves_match(window)) {
+        !kernel_physical_release_fits(window->Pool, &window->Lease) || !leaves_match(window)) {
         return 0;
     }
     pages = window->Lease.Pages;
@@ -201,8 +201,7 @@ int x86_page_window_release(X86_PAGE_WINDOW *window)
         entries[WINDOW_LEAF + index] = 0;
     }
     invalidate_span(pages);
-    if (!kernel_physical_pin(window->Pool, &window->Lease, 0) ||
-        !kernel_physical_release(window->Pool, &window->Lease)) {
+    if (!kernel_physical_release_after_unmap(window->Pool, &window->Lease)) {
         return 0;
     }
     window->Active = 0;

@@ -31,7 +31,7 @@ int x86_vgpu_preflight(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *wind
         !capture(context,window->Pool,lapic,inventory) ||
         !kernel_vgpu_plan(&context->Info.Gpu,cpu->PhysicalBits,plan)) return 0;
     if (!plan->Count) return 1;
-    if ((cpu->Pat & 255) != 6 || !x86_apic_uc_slot(cpu->Pat) || window->Pool->FreePages<3 ||
+    if ((cpu->Pat & 255) != 6 || !x86_apic_uc_slot(cpu->Pat) || !kernel_physical_budget_at_least(window->Pool, 3) ||
         !x86_vgpu_pci_match(&context->Info.Gpu,cpu->PhysicalBits) || !x86_fb_root() || x86_fb_root()[X86_GPU_SLOT]) return 0;
     for (BOOT_U32 page=0; page<plan->Count; ++page) {
         BOOT_U64 physical=plan->Physical[page];
@@ -54,11 +54,7 @@ int x86_vgpu_preflight(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *wind
             if (kernel_regions_overlap(physical,1,region.Base,region.Pages) &&
                 ((region.Type != 0 && region.Type != 11) || (region.Attributes & 0x3000))) return 0;
         }
-        for (BOOT_U32 index=0; index<window->Pool->Count; ++index)
-            if (kernel_regions_overlap(physical,1,window->Pool->Free[index].Base,window->Pool->Free[index].Pages)) return 0;
-        for (BOOT_U32 index=0; index<KERNEL_PHYSICAL_LEASES; ++index)
-            if (window->Pool->Live[index].Id && kernel_regions_overlap(physical,1,
-                window->Pool->Live[index].Base,window->Pool->Live[index].Pages)) return 0;
+        if (!kernel_physical_range_unowned(window->Pool, physical, 1)) return 0;
     }
     return 1;
 }

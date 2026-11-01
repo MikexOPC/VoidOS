@@ -15,9 +15,15 @@ int kernel_vgpu_config_read(KERNEL_VGPU_CONFIG_READ read, void *context, unsigne
     while (cursor) {
         uint32_t length=2, metadata=2;
         if (++count>48 || cursor<64 || cursor>252 || (cursor&3) ||
-            occupied[cursor] || occupied[cursor+1] || !read(context,cursor,2,draft+cursor)) return 0;
+            occupied[cursor] || occupied[cursor+1] || !read(context,cursor,2,draft+cursor)
+        )
+        return 0;
+
         if (draft[cursor]==9) {
-            if (occupied[cursor+2] || occupied[cursor+3] || !read(context,cursor+2,2,draft+cursor+2)) return 0;
+            if (
+                occupied[cursor+2] || occupied[cursor+3] || !read(context,cursor+2,2,draft+cursor+2)
+            )
+            return 0;
             length=draft[cursor+2];
             if (length<4 || length>256-cursor) return 0;
             if (draft[cursor+3]>=1 && draft[cursor+3]<=4) {

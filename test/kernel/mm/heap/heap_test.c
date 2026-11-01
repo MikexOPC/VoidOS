@@ -9,6 +9,13 @@ static unsigned long checks;
 static __declspec(align(4096)) unsigned char arena[KERNEL_HEAP_MAX_PAGES * 4096ULL];
 static KERNEL_HEAP heap;
 
+// ====== reset_private_fixture ======
+
+static int reset_private_fixture(uint32_t pages) {
+    memset(&heap, 0, sizeof(heap));
+    return kernel_heap_init(&heap, arena, pages);
+}
+
 // ====== next_private ======
 
 static uint32_t state = 0x9e3779b9U;
@@ -46,7 +53,7 @@ static void release_private(uint32_t index)
 // alignment honoured, statistics consistent, double free rejected.
 static void random_cases(void)
 {
-    CHECK(kernel_heap_init(&heap, arena, KERNEL_HEAP_MAX_PAGES));
+    CHECK(reset_private_fixture(KERNEL_HEAP_MAX_PAGES));
 
     for (uint32_t round = 0; round < 200000; ++round) {
         if (lives && (lives == LIVE || next_private() % 2)) { release_private(next_private() % lives); continue; }
@@ -83,7 +90,7 @@ static void rejected_cases(void)
 {
     CHECK(!kernel_heap_init(&heap, arena + 1, 4) && !kernel_heap_init(&heap, arena, 0) &&
         !kernel_heap_init(&heap, arena, KERNEL_HEAP_MAX_PAGES + 1) && !kernel_heap_init(0, arena, 4));
-    CHECK(kernel_heap_init(&heap, arena, 8));
+    CHECK(reset_private_fixture(8));
     CHECK(!kernel_heap_alloc(&heap, 0, 0) && !kernel_heap_alloc(&heap, 16, 3) && !kernel_heap_alloc(&heap, 16, 8192));
     CHECK(!kernel_heap_alloc(&heap, 9 * 4096, 0) && !kernel_heap_pages(&heap, 0) && !kernel_heap_pages(&heap, 9));
 
@@ -113,7 +120,7 @@ static void rejected_cases(void)
         uint32_t size = 16U << klass, slots = 4096 / size;
         unsigned char *first = 0;
 
-        CHECK(kernel_heap_init(&heap, arena, 4));
+        CHECK(reset_private_fixture(4));
         for (uint32_t slot = 0; slot < slots; ++slot) {
             unsigned char *pointer = kernel_heap_alloc(&heap, size - 8, size);
             CHECK(pointer && !((uintptr_t)pointer % size));

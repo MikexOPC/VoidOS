@@ -48,7 +48,8 @@ static int verify_private(X86_FB_MAPPING *owner)
     if (!x86_fb_cpu(&cpu)) return 0;
 
     BOOT_U64 generation = x86_paging_generation();
-    BOOT_U32 pool = owner->Window->Pool->Generation;
+    BOOT_U64 pool;
+    if (!kernel_physical_generation_read(owner->Window->Pool, &pool)) return 0;
     int same = verified_ready && verified_owner == owner && cpu.Root == verified_cpu.Root &&
         cpu.Pat == verified_cpu.Pat && cpu.PhysicalBits == verified_cpu.PhysicalBits;
 
@@ -67,7 +68,8 @@ static int verify_private(X86_FB_MAPPING *owner)
     }
 
     verified_generation = x86_paging_generation();
-    verified_pool = owner->Window->Pool->Generation;
+    if (!kernel_physical_generation_read(owner->Window->Pool, &pool)) { verified_ready = 0; return 0; }
+    verified_pool = (BOOT_U32)pool;
     return 1;
 }
 

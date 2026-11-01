@@ -1,4 +1,7 @@
 #include "lapic.h"
+#ifdef KERNEL_PANIC_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/panic/native/runtime.h"
+#endif
 #include "arch/x86/configs/layout.h"
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
@@ -125,12 +128,12 @@ int x86_lapic_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     ) return 0;
     entries = x86_window_entries(3);
     if (entries[X86_LAPIC_LEAF]) return 0;
-    budget = window->Pool->FreePages;
+    if (!kernel_physical_budget_read(window->Pool, &budget)) return 0;
     expected = x86_lapic_pte(profile->Lapic,profile->CacheBits,window->Pool->PhysicalBits);
     if (!expected) return 0;
     entries[X86_LAPIC_LEAF] = expected;
     x86_invalidate_page(X86_LAPIC_VIRTUAL);
-    if ((entries[X86_LAPIC_LEAF] & ~AD) != expected || budget != window->Pool->FreePages) {
+    if ((entries[X86_LAPIC_LEAF] & ~AD) != expected || !kernel_physical_budget_matches(window->Pool, budget)) {
         // Lo slot era vuoto e questa CPU lo ha appena pubblicato con IF zero.
         entries[X86_LAPIC_LEAF] = 0;
         x86_invalidate_page(X86_LAPIC_VIRTUAL);
@@ -149,6 +152,9 @@ int x86_lapic_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
 // ====== revoca soltanto a sorgente chiusa e senza liberare RAM del dispositivo ===== //
 
 int x86_lapic_unbind(X86_LAPIC_MAPPING *owner) {
+#ifdef KERNEL_PANIC_RUNTIME
+    if (xp_panic_lapic_held(owner)) return 0;
+#endif
     if (!x86_lapic_idle(owner)) return 0;
     x86_window_entries(3)[X86_LAPIC_LEAF] = 0;
     x86_invalidate_page(X86_LAPIC_VIRTUAL);

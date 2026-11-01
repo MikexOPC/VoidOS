@@ -18,14 +18,14 @@ try {
         $sdk+'/Include/'+$version.Name+'/um;'+$sdk+'/Include/'+$version.Name+'/shared'
     $env:LIB=$vc.FullName+'/lib/x64;'+$sdk+'/Lib/'+$version.Name+'/ucrt/x64;'+$sdk+'/Lib/'+$version.Name+'/um/x64'
     & "$bin/cl.exe" /nologo /TC /std:c11 /W4 /WX /Zi /fsanitize=address /MD /O2 ("/I$project") `
-        "$project/kernel/bootstrap/memory.c" "$project/test/kernel/bootstrap/ordinary_test.c" `
+        "$project/test/kernel/mm/physical/synchronization/reader_model.c" /DPHYSICAL_MODEL_EXTERNAL_READ=1 "$project/kernel/bootstrap/memory.c" "$project/test/kernel/bootstrap/ordinary_test.c" `
         ("/Fo$out/") ("/Fd$out/test.pdb") ("/Fe$out/test.exe") /link /incremental:no
     if ($LASTEXITCODE) { throw 'Host compilation failed' }
     & "$out/test.exe"
     if ($LASTEXITCODE) { throw 'Host bootstrap test failed' }
     $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
-        ("-I$project") "$project/kernel/bootstrap/memory.c" "$project/test/kernel/bootstrap/probes.c" `
+        ("-I$project") "$project/test/kernel/mm/physical/synchronization/reader_model.c" /DPHYSICAL_MODEL_EXTERNAL_READ=1 "$project/kernel/bootstrap/memory.c" "$project/test/kernel/bootstrap/probes.c" `
         "$project/test/kernel/bootstrap/ordinary_test.c" "$project/kernel/main.c" "$project/kernel/startup/early.c" "$project/kernel/startup/platform.c" "$project/kernel/startup/devices.c" "$project/kernel/startup/profile.c" 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck failed' }
     [xml]$xml=Get-Content "$out/cppcheck.xml"

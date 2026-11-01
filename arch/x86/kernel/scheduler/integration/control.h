@@ -17,7 +17,7 @@ uint64_t x86_scheduler_irq_stack_top(uint64_t frame);
 void x86_scheduler_irq_task(uint32_t index);
 int x86_scheduler_irq_verified(void);
 int x86_scheduler_irq_timeout_valid(void);
-int x86_scheduler_report(uint64_t root, uint64_t before, uint64_t after, uint32_t steps, uint32_t profile);
+int x86_scheduler_report(uint64_t root, uint64_t before, const KERNEL_PHYSICAL_ALLOCATOR *pool, uint32_t steps, uint32_t profile);
 void x86_scheduler_test_fault(uint32_t point);
 const X86_DISPATCH_STATS *x86_scheduler_session_stats(void);
 int x86_scheduler_retained_valid(void);

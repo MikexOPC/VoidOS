@@ -5,13 +5,13 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif
+    #endif
 
-// ====== confronto numerico di intervalli senza accesso alla memoria ====== //
+    // ====== confronto numerico di intervalli senza accesso alla memoria ====== //
 
-int os_address_ranges_overlap(uint64_t first, uint64_t first_bytes, uint64_t second, uint64_t second_bytes);
+    int os_address_ranges_overlap(uint64_t first, uint64_t first_bytes, uint64_t second, uint64_t second_bytes);
 
-#ifdef __cplusplus
+    #ifdef __cplusplus
 }
 #endif
 

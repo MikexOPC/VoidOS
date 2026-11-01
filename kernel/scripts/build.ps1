@@ -1,5 +1,10 @@
-param([ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
-    [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
+param([switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic,
+    [ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
+    [ValidateSet('none','guard','nx')][string]$TestApResourceFault = 'none',
+    [ValidateSet('none','prepare','voluntary','opcode','page','nmi','double','no-simd','recursive','lock-held','prepare-rollback','no-simd-call')][string]$TestSmpPanic = 'none',
+    [ValidateSet('none','prepare','rollback','freeze','image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')][string]$TestApTransition = 'none',
+    [switch]$TestApLowAbsent, [switch]$TestApCommit, [switch]$TestKernelSync, [ValidateSet('none','wait','irq-enabled')][string]$TestKernelSyncFault = 'none',
+    [switch]$TestLoaderRetired, [string]$ToolchainBin, [switch]$TestBootstrapMemory, [switch]$TestPs2Decoder, [switch]$TestPs2Controller, [switch]$Ps2Input, [switch]$Ps2Mouse, [switch]$TestPanic, [string]$OutputDirectory, [switch]$Install, [switch]$EventLoop,
     [switch]$TestWatchdogLostLapic, [switch]$TestFramebufferMapping, [switch]$TestConsoleActive, [switch]$TestConsoleDraw,
     [switch]$TestWatchdogAlternate, [switch]$TestConsoleBatch, [switch]$ConsoleShell, [switch]$InteractiveInput,
     [switch]$TestWatchdogCleanupRecovery, [switch]$TestSchedulerPreservation, [switch]$TestIommuActivation, [switch]$TestIommuDma, [switch]$TestVgpuMapping, [switch]$TestVgpuInitialization, [switch]$TestVgpuQueues, [switch]$TestVgpuResources, [switch]$TestVgpuResourceReject, [switch]$TestVgpuScanout, [switch]$TestVgpuIommu, [switch]$TestVgpuIommuFault, [switch]$VgpuIommu, [switch]$TestVgpuPresentFault, [switch]$TestVgpuPresentStall, [switch]$TestKernelHeap, [switch]$TestPagingTamper, [switch]$ProfileVgpuFlush, [switch]$ProfileVgpuNoPresent, [switch]$TestIommuDiscovery, [switch]$TestIommuRegisters, [switch]$TestIommuDomain, [switch]$TestIommuQi, [switch]$TestPciEcam, [switch]$TestPciEcamAbsent, [switch]$TestPciTopology, [switch]$TestIommuRouting,
@@ -32,63 +37,21 @@ $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory
     Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt/stddef.h') } |
     Sort-Object Name -Descending | Select-Object -First 1
 if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
-$flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project),
-    ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')), '/DKERNEL_SCHEDULER_IRQ=1')
-if ($TestPs2Decoder) { $flags += '/DKERNEL_TEST_PS2_DECODER=1' }
-if ($TestFramebufferMapping) { $flags += '/DKERNEL_TEST_FRAMEBUFFER_MAPPING=1' }
-if ($TestVgpuMapping) { $flags += '/DKERNEL_TEST_VGPU_MAPPING=1' }
-if ($TestVgpuInitialization) { $flags += '/DKERNEL_TEST_VGPU_INITIALIZATION=1' }
-if ($TestVgpuQueues) { $flags += '/DKERNEL_TEST_VGPU_QUEUES=1' }
-if ($TestVgpuResources) { $flags += '/DKERNEL_TEST_VGPU_RESOURCES=1' }
-if ($TestVgpuResourceReject) { $flags += '/DKERNEL_TEST_VGPU_RESOURCE_REJECT=1' }
-if ($TestVgpuScanout) { $flags += '/DKERNEL_TEST_VGPU_SCANOUT=1' }
-if ($TestVgpuIommu) { $flags += '/DKERNEL_TEST_VGPU_IOMMU=1' }
-if ($TestVgpuIommuFault) { $flags += '/DKERNEL_TEST_VGPU_IOMMU_FAULT=1' }
-if ($VgpuIommu) { $flags += '/DKERNEL_VGPU_IOMMU=1' }
-# Flush profiling (P1-A): timers per phase, profile-only images; NoPresent keeps the console on GOP.
-if ($ProfileVgpuFlush) { if (!$ConsoleShell) { throw 'Flush profiling needs the console session.' }; $flags += '/DKERNEL_PROFILE_VGPU_FLUSH=1' }
-if ($ProfileVgpuNoPresent) { if (!$VgpuIommu -or !$ProfileVgpuFlush) { throw 'NoPresent needs -VgpuIommu and -ProfileVgpuFlush.' }; $flags += '/DKERNEL_PROFILE_VGPU_NO_PRESENT=1' }
-if ($TestVgpuPresentFault) { if (!$VgpuIommu) { throw 'Present fault injection needs -VgpuIommu.' }; $flags += '/DKERNEL_TEST_VGPU_PRESENT_FAULT=700' }
-if ($TestVgpuPresentStall) { if (!$VgpuIommu) { throw 'Present stall injection needs -VgpuIommu.' }; $flags += '/DKERNEL_TEST_VGPU_PRESENT_STALL=300' }
-if ($TestKernelHeap) { $flags += '/DKERNEL_TEST_KERNEL_HEAP=1' }
-if ($TestPagingTamper) { if (!$ConsoleShell) { throw 'Paging tamper test needs -ConsoleShell.' }; $flags += '/DKERNEL_TEST_PAGING_TAMPER=1' }
-if ($TestIommuDiscovery) { $flags += '/DKERNEL_TEST_IOMMU_DISCOVERY=1' }
-if ($TestIommuRegisters) { $flags += '/DKERNEL_TEST_IOMMU_REGISTERS=1' }
-if ($TestIommuDomain) { $flags += '/DKERNEL_TEST_IOMMU_DOMAIN=1' }
-if ($TestIommuQi) { $flags += '/DKERNEL_TEST_IOMMU_QI=1' }
-if ($TestPciEcam) { $flags += '/DKERNEL_TEST_PCI_ECAM=1'; if ($TestPciEcamAbsent) { $flags += '/DKERNEL_TEST_PCI_ECAM_ABSENT=1' }; if ($TestPciTopology) { $flags += '/DKERNEL_TEST_PCI_TOPOLOGY=1' }; if ($TestIommuRouting) { $flags += '/DKERNEL_TEST_IOMMU_ROUTING=1' }; if ($TestIommuActivation) { $flags += '/DKERNEL_TEST_IOMMU_ACTIVATION=1' }; if ($TestIommuDma) { $flags += '/DKERNEL_TEST_IOMMU_DMA=1' } }
-if ($TestConsoleActive) { $flags += '/DKERNEL_TEST_CONSOLE_ACTIVE=1' }
-if ($TestConsoleDraw) { $flags += '/DKERNEL_TEST_CONSOLE_DRAW=1' }
-if ($TestConsoleBatch) { $flags += '/DKERNEL_TEST_CONSOLE_BATCH=1' }
-if ($ConsoleShell) { $flags += '/DKERNEL_CONSOLE_SHELL=1' }
-if ($InteractiveInput) { $flags += '/DKERNEL_INPUT_INTERACTIVE=1' }
-if ($TestPs2Controller) { $flags += '/DKERNEL_TEST_PS2_CONTROLLER=1' }
-if ($Ps2Input) { $flags += '/DKERNEL_PS2_INPUT=1' }
-if ($Ps2Mouse) { $flags += '/DKERNEL_PS2_MOUSE=1' }
-if ($bootstrapDiagnostics) { $flags += '/DKERNEL_TEST_BOOTSTRAP_MEMORY=1' }
-if ($TestSchedulerFault -ne 'none') {
-    $mode = switch ($TestSchedulerFault) { 'guard-low' {1} 'guard-high' {2} 'nx' {3} 'retired' {4} 'rollback' {5} 'blocked' {6} 'irq-timeout' {7} 'idle-timeout' {8} 'idle-repeat-timeout' {9} }
-    $flags += ('/DKERNEL_TEST_SCHEDULER_FAULT=' + $mode)
+. (Join-Path $PSScriptRoot 'build/profiles/flags.ps1')
+$flags += '/DKERNEL_PANIC_RUNTIME=1'
+if ($TestApTransition -ne 'none') {
+    if ($TestBootstrapMemory -or $TestApLowAbsent -or $TestSmpPanic -ne 'none') { throw 'Transition diagnostic requires ordinary early reservation and owns the terminal checkpoint.' }
+    if ($TestApTransition -like 'joint*' -and $TestApCommit) { throw 'Joint diagnostic owns all resource commits.' }
+    $flags += ('/DKERNEL_TEST_AP_TRANSITION=' + $(switch ($TestApTransition) { 'prepare' {1} 'rollback' {2} 'freeze' {3} 'image' {4} 'image-rollback' {5} 'joint' {6} 'joint-fail-before' {7} 'joint-fail-after' {8} 'joint-panic' {9} }))
+    if ($TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) { $flags += '/DKERNEL_TEST_AP_IMAGE=1' }
 }
-if ($TestSchedulerPreservation) { $flags += '/DKERNEL_TEST_SCHEDULER_PRESERVATION=1' }
-if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
-if ($EventLoop) { $flags += '/DKERNEL_EVENT_LOOP=1' }
-if ($TestWatchdogLostLapic) { $flags += '/DKERNEL_TEST_WATCHDOG_LOST_LAPIC=1' }
-if ($TestWatchdogAlternate) { $flags += '/DKERNEL_TEST_WATCHDOG_ALTERNATE=1' }
-if ($TestWatchdogCleanupRecovery) { $flags += '/DKERNEL_TEST_WATCHDOG_CLEANUP_RECOVERY=1' }
-if ($Install -and $TestWatchdogLostLapic) { throw 'Non installare la fault injection watchdog.' }
-if ($TestRegionFault -ne 'none') {
-    $mode = switch ($TestRegionFault) { 'retired' {1} 'guard-low' {2} 'guard-high' {3} 'execute' {4} }
-    $flags += ('/DKERNEL_TEST_REGION_FAULT=' + $mode)
+if ($TestApLowAbsent) { $flags += '/DKERNEL_TEST_AP_LOW_ABSENT=1' }
+if ($TestSmpPanic -ne 'none') {
+    if ($TestApCommit) { throw 'TestSmpPanic owns the commit; do not combine with TestApCommit.' }
+    $panicMode = switch ($TestSmpPanic) { 'prepare' {1} 'voluntary' {2} 'opcode' {3} 'page' {4} 'nmi' {5} 'double' {6} 'no-simd' {7} 'recursive' {8} 'lock-held' {9} 'prepare-rollback' {10} 'no-simd-call' {11} }
+    $flags += ('/DKERNEL_TEST_SMP_PANIC=' + $panicMode)
 }
-if ($TestMainFault -ne 'none') {
-    $mode = switch ($TestMainFault) { 'retired' {1} 'guard-high' {2} 'execute' {3} 'return' {4} }
-    $flags += ('/DKERNEL_TEST_MAIN_FAULT=' + $mode)
-}
-if ($TestWindowFault -ne 'none') {
-    $mode = switch ($TestWindowFault) { 'execute' {1} 'unmapped' {2} 'guard-low' {3} 'guard-high' {4} }
-    $flags += ('/DKERNEL_TEST_WINDOW_FAULT=' + $mode)
-}
+if ($TestApCommit) { $flags += '/DKERNEL_TEST_AP_COMMIT=1' }
 $objects = @()
 if ($TestCpuFault -ne 'none') {
     $mode = switch ($TestCpuFault) { 'opcode' {1} 'selector' {2} 'divide' {3} 'stack' {4} 'nested' {1} 'double' {2} }
@@ -121,14 +84,15 @@ foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sc
     'arch/x86/kernel/scheduler/irq/bridge.c','arch/x86/kernel/scheduler/runtime/memory.c','arch/x86/kernel/scheduler/runtime/payload.c','arch/x86/kernel/entry.c','arch/x86/kernel/serial.c','arch/x86/mm/window/page.c','arch/x86/mm/window/access.c','kernel/main.c','kernel/startup/early.c','kernel/startup/platform.c','kernel/startup/devices.c','kernel/startup/profile.c',
     'kernel/bootstrap/memory.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c','kernel/drivers/video/framebuffer/mapping.c',
     'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
-    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/mm/heap/binding.c','kernel/mm/heap/heap.c','lib/containers/bitmap.c','kernel/time/clock.c','kernel/mm/physical/holdings.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/kernel/cpu/percpu/resources/paging/registry.c','arch/x86/mm/heap/binding.c','kernel/mm/heap/heap.c','kernel/mm/heap/core/state.c','kernel/mm/heap/core/reserve.c','kernel/mm/heap/core/release.c','kernel/mm/heap/core/guard.c','kernel/mm/heap/core/fill.c','lib/containers/bitmap.c','kernel/time/clock.c','kernel/mm/physical/holdings.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
     'kernel/drivers/video/virtio/discovery/configuration/read.c',
     'arch/x86/kernel/drivers/video/virtio/preflight.c','arch/x86/kernel/drivers/video/virtio/construction.c',
     'arch/x86/kernel/drivers/video/virtio/lifecycle.c','arch/x86/kernel/drivers/video/virtio/pci/access.c',
     'arch/x86/kernel/drivers/video/virtio/integration/kernel.c',
-    'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
+    'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c','kernel/mm/objects/pool.c','kernel/diagnostics/log.c',
     'arch/x86/mm/regions/mapping.c','arch/x86/mm/regions/access.c',
     'arch/x86/mm/arena/objects.c',
+    'arch/x86/lib/processor/processor_access.c','arch/x86/mm/paging/retirement/retire.c','arch/x86/mm/paging/retirement/policy.c','arch/x86/mm/paging/retirement/native.c',
     'arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/access.c',
     'arch/x86/mm/paging/authorization/validation.c',
     'arch/x86/kernel/drivers/video/framebuffer/authority.c',
@@ -212,6 +176,9 @@ if ($TestWindowFault -ne 'none') {
         (Join-Path $project 'test/kernel/mm/window/assembly/fault/probe.asm'))
     $objects += ($output + '/fault.obj')
 }
+Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/c',('/Fo' + (Join-Path $output 'retirement.obj')),
+    (Join-Path $project 'arch/x86/mm/paging/retirement/assembly/retire/state.asm'))
+$objects += Join-Path $output 'retirement.obj'
 $schedulerAssembly = @('assembly/irq/compute.asm','assembly/switch/context.asm','assembly/profile/capture.asm','assembly/profile/permissions.asm')
 if ($TestSchedulerPreservation) { $schedulerAssembly += '../../../../test/arch/x86/kernel/scheduler/assembly/preservation/probe.asm' }
 foreach ($source in $schedulerAssembly) {
@@ -399,6 +366,10 @@ if ($TestPs2Decoder -or $Ps2Input) {
     Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
         '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'kernel/input/integration/rust/ffi/ps2.rs'),'-o',$object)
     $objects += $object
+}
+. (Join-Path $project 'kernel/sync/scripts/build.ps1')
+if ($TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) {
+    . (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/installation/scripts/build.ps1')
 }
 Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') (@('/nologo','/machine:x64','/subsystem:native',
     '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed',('/base:0x' + $OsImageBase.ToString('X')),

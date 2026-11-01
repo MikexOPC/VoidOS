@@ -23,7 +23,8 @@ typedef struct {
     KERNEL_OBJECT_HANDLE  *Paging, *Acpi, *Madt;
     X86_APIC_PROFILE  *ApicProfile;
     X86_APIC_CAPABILITIES  *ApicCapabilities;
-} KERNEL_STARTUP;
+}
+KERNEL_STARTUP;
 
 // ====== startup_steps ======
 
@@ -37,6 +38,9 @@ void kernel_startup_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CON
 // The only place where diagnostic profiles change the sequence; empty in the production image.
 void kernel_profile_after_retire(void);
 void kernel_profile_after_acpi(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *context, X86_PAGING_INVENTORY *paging);
+
 int kernel_profile_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *context, X86_PAGING_INVENTORY *paging);
+
 __declspec(noreturn) void kernel_profile_finish(const KERNEL_STARTUP *startup);
+
 #endif

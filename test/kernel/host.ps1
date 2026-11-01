@@ -17,14 +17,14 @@ $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory
 if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
 foreach ($source in @('test/kernel/contract_test.c','test/kernel/platform_mock.c','kernel/boot/contract.c','kernel/drivers/video/framebuffer/handoff.c',
     'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
-    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+    'kernel/drivers/video/virtio/mapping/plan.c','arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/kernel/cpu/percpu/resources/paging/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
     'arch/x86/kernel/scheduler/runtime/memory.c',
-    'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','test/kernel/mm/physical/allocator_test.c',
+    'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c','test/kernel/mm/physical/allocator_test.c',
     'test/kernel/mm/physical/alignment_test.c',
     'arch/x86/mm/regions/mapping.c','test/kernel/mm/regions/mapping_test.c',
     'arch/x86/mm/arena/objects.c','test/kernel/mm/arena/objects_test.c',
     'arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/authorization/validation.c',
-    'test/kernel/mm/paging/inventory_test.c',
+    'test/kernel/mm/paging/inventory_test.c','test/kernel/mm/paging/fixture.c','test/kernel/mm/paging/device_test.c',
     'lib/firmware/acpi/rsdp.c',
     'kernel/firmware/acpi/root.c','test/kernel/firmware/acpi/root_test.c',
     'kernel/firmware/acpi/madt/parser.c','kernel/firmware/acpi/madt/records.c','test/kernel/firmware/acpi/madt/parser_test.c',
@@ -84,6 +84,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione layout Rust fallita.' }
 & $rustc --edition=2024 --crate-type=lib --emit=obj --target x86_64-pc-windows-msvc -C panic=abort -C opt-level=2 -D warnings (Join-Path $project 'kernel/mm/objects/rust/validation/bounds.rs') -o ($output + '/object-bounds.obj')
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione bounds oggetti Rust fallita.' }
 $dll = Join-Path $output 'kernel-tests.dll'
+. (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+$objects += @(New-PhysicalHostSync $project $output)
 & (Join-Path $ToolchainBin 'link.exe') /nologo /machine:x64 /dll /noentry /nodefaultlib /incremental:no ('/out:' + $dll) ($output + '/validation.obj') ($output + '/window-layout.obj') ($output + '/object-bounds.obj') @objects
 if ($LASTEXITCODE -ne 0) { throw 'Link test fallito.' }
 $typeName = 'KernelTests' + [guid]::NewGuid().ToString('N')

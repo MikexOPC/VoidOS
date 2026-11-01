@@ -2,8 +2,7 @@
 
 // ====== kernel_ps2_command_clear ======
 
-void kernel_ps2_command_clear(KERNEL_PS2_COMMAND *command)
-{
+void kernel_ps2_command_clear(KERNEL_PS2_COMMAND *command) {
     if (!command) return;
     kernel_ps2_line_clear(&command->Line); command->Truncated = 0;
 }

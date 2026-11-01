@@ -12,7 +12,7 @@ ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 MARKER = re.compile(r"^\[\s*(OK|INFO|WARN|FAIL)\s*\]\s+([A-Z0-9_]+)\s*$")
 FIELD = re.compile(r"^([A-Z0-9_]+): 0x([0-9a-fA-F]{16})(?![0-9a-fA-Fx])")
 # Terminal kernel states: a runner waiting for a marker stops at the first of these.
-FAILURE = re.compile(r"KERNEL_EXCEPTION_HALTED|\bPANIC\b|DISPATCH_FAILED|PS2_INPUT_FAILED|KERNEL_CONSOLE_DRAW_REJECTED_PM")
+FAILURE = re.compile(r"KERNEL_EXCEPTION_HALTED|\bKERNEL_SMP_PANIC(?:_HALTED)?\b|\bPANIC\b|DISPATCH_FAILED|PS2_INPUT_FAILED|KERNEL_CONSOLE_DRAW_REJECTED_PM")
 
 
 # ====== strip ======

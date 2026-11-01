@@ -49,7 +49,7 @@ int x86_vgpu_unbind(X86_VGPU_MAPPING *owner)
         if (!kernel_physical_release(owner->Window->Pool,lease)) return 0;
         --owner->Allocated;
     }
-    if (owner->Window->Pool->FreePages != owner->Budget) return 0;
+    if (!kernel_physical_budget_matches(owner->Window->Pool, owner->Budget)) return 0;
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte]=0;
     return 1;
 }
@@ -65,7 +65,7 @@ int x86_vgpu_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     volatile BOOT_U64 *root;
     if (!x86_vgpu_preflight(context,window,lapic,inventory,capture,owner,&cpu,&plan)) return 0;
     if (!plan.Count) return 1;
-    owner->Self=(BOOT_U64)owner; owner->Budget=window->Pool->FreePages;
+    owner->Self=(BOOT_U64)owner; if (!kernel_physical_budget_read(window->Pool, &owner->Budget)) return 0;
     owner->Context=context; owner->Window=window; owner->Lapic=lapic; owner->Inventory=inventory; owner->Capture=capture;
     owner->Authority.Self=(BOOT_U64)&owner->Authority; owner->Authority.Root=cpu.Root;
     owner->Authority.Pat=cpu.Pat; owner->Authority.PhysicalBits=cpu.PhysicalBits;

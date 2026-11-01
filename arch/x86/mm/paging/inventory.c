@@ -1,6 +1,7 @@
 #include "inventory.h"
 #include "arch/x86/configs/layout.h"
 #include "authorization/validation.h"
+#include "authorization/table_aliases.h"
 #include "gpu/validation.h"
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/mm/devices/lapic.h"
@@ -40,26 +41,6 @@ static int append_table(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICA
     return 1;
 }
 
-// ====== nessuna foglia ordinaria puo esporre una pagina di paging come dati ===== //
-
-static int leaf_aliases_absent(const X86_PAGING_INVENTORY *draft)
-{
-    BOOT_U32 index, slot, other;
-    for (index = 0; index < draft->Count; ++index) {
-        const volatile BOOT_U64 *entries;
-        if (draft->Tables[index].Level != 3) continue;
-        entries = x86_paging_view(draft->Tables[index].View);
-        if (!entries) return 0;
-        for (slot = 0; slot < 512; ++slot) {
-            BOOT_U64 entry = entries[slot];
-            if (!entry) continue;
-            for (other = 0; other < draft->Count; ++other)
-                if ((entry & PAGING_ADDRESS) == draft->Tables[other].Physical) return 0;
-        }
-    }
-    return 1;
-}
-
 // ====== visita iterativa senza seguire il ciclo intenzionale del PML4 ===== //
 
 static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCATOR *pool,
@@ -70,7 +51,8 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     BOOT_U32 surface_seen=0;
     BOOT_U64 surface_leaves=0;
     BOOT_U32 iommu_seen=0, iommu_leaves=0, dma_seen=0, heap_seen=0;
-    BOOT_U64 dma_leaves=0, heap_leaves=0;
+    BOOT_U64 dma_leaves=0, heap_leaves=0, ap_leaves=0;
+    BOOT_U32 ap_seen=0;
     const X86_PAGING_GPU_AUTH *gpu=x86_paging_gpu_owner();
     for (index = 0; index < sizeof(*draft); ++index) ((volatile unsigned char *)draft)[index] = 0;
     draft->Root = context->Info.PageTableRoot;
@@ -79,6 +61,7 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     if (!x86_iommu_inputs(context,pool,(BOOT_U64)draft,sizeof(*draft),&draft->Iommu)) return 0;
     if (!x86_dma_inputs(pool,draft->Root,(BOOT_U64)draft,sizeof(*draft),&draft->Dma)) return 0;
     if (!x86_heap_inputs(pool,draft->Root,(BOOT_U64)draft,sizeof(*draft),&draft->Heap)) return 0;
+    if (!x86_ap_inputs(pool,draft->Root,(BOOT_U64)draft,sizeof(*draft),&draft->Ap)) return 0;
     if (gpu) draft->Gpu=*gpu;
     if (video) {
         draft->Video = video->Region;
@@ -92,7 +75,11 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     if ((draft->Root & 4095) || !append_table(context, pool, video, draft, draft->Root, PAGING_ROOT_VIEW, 0)) return 0;
     for (index = 0; index < draft->Count; ++index) {
         const X86_PAGING_RESOURCE *record = &draft->Tables[index];
-        if (record->Reserved>=X86_HEAP_TAG) {
+        if (record->Reserved>=X86_AP_TAG) {
+            if (!x86_ap_record(&draft->Ap,record->Physical,record->View,record->Level,record->Reserved) ||
+                (ap_seen & (1U << (record->Reserved-X86_AP_TAG)))) return 0;
+            ap_seen |= 1U << (record->Reserved-X86_AP_TAG);
+        } else if (record->Reserved>=X86_HEAP_TAG) {
             if (!x86_heap_record(&draft->Heap,record->Physical,record->View,record->Level,record->Reserved) ||
                 (heap_seen&(1U<<(record->Reserved-X86_HEAP_TAG)))) return 0;
             heap_seen|=1U<<(record->Reserved-X86_HEAP_TAG);
@@ -121,7 +108,9 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
                 BOOT_U32 kind;
                 if (!entry) continue;
                 BOOT_U64 address = x86_paging_leaf_virtual(record->View,slot);
-                kind = x86_iommu_leaf(entry,address);
+                kind = x86_ap_leaf(entry,address);
+                if (kind==10) { ++draft->RamPages; ++draft->LeafPages; ++ap_leaves; continue; }
+                if (kind==1) kind = x86_iommu_leaf(entry,address);
                 if (kind==7) { ++draft->MmioPages; ++draft->LeafPages; ++iommu_leaves; continue; }
                 if (kind==1) kind = x86_heap_leaf(entry,address);
                 if (kind==9) { ++draft->RamPages; ++draft->LeafPages; ++heap_leaves; continue; }
@@ -146,11 +135,11 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
                                 x86_paging_child_view(record->View, record->Level, slot), record->Level + 1)) return 0;
         }
     }
-    if (!leaf_aliases_absent(draft) || draft->MmioPages != (owner ? 1U : 0U) +
+    if (!x86_paging_leaf_aliases_absent(draft, PAGING_ADDRESS) || draft->MmioPages != (owner ? 1U : 0U) +
         (video ? video->Region.Pages : 0) + (gpu ? gpu->Plan.Count : 0) + draft->Iommu.Count || !x86_paging_gpu_complete(draft)) return 0;
     if (!x86_iommu_complete(&draft->Iommu,iommu_seen,iommu_leaves)) return 0;
     if (!x86_dma_complete(&draft->Dma,dma_seen,dma_leaves)) return 0;
-    if (!x86_heap_complete(&draft->Heap,heap_seen,heap_leaves)) return 0;
+    if (!x86_heap_complete(&draft->Heap,heap_seen,heap_leaves) || !x86_ap_complete(&draft->Ap,ap_seen,ap_leaves)) return 0;
     if (!x86_surface_complete(&draft->Surface,surface_seen,surface_leaves) ||
         (video && !x86_paging_video_tables_complete(video, draft))) return 0;
     draft->Ready = 1;
@@ -206,6 +195,7 @@ static int snapshot_valid(const X86_PAGING_INVENTORY *inventory, BOOT_U32 bits)
             !x86_iommu_record(&inventory->Iommu,record->Physical,record->View,record->Level,record->Reserved) &&
             !x86_dma_record(&inventory->Dma,record->Physical,record->View,record->Level,record->Reserved) &&
             !x86_heap_record(&inventory->Heap,record->Physical,record->View,record->Level,record->Reserved) &&
+            !x86_ap_record(&inventory->Ap,record->Physical,record->View,record->Level,record->Reserved) &&
             !x86_surface_record(&inventory->Surface,record->Physical,record->View,record->Level,record->Reserved)) ||
             record->Level > 3 || (index && !record->Level) ||
             (record->Physical & 4095) || !x86_paging_entry_valid(record->Physical | 3, 0, bits) ||
@@ -248,12 +238,7 @@ static int device_reserved(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYS
             owner->Physical-region.Base > (region.Pages-1)*4096 || ++found != 1) return 0;
     }
     // LAPIC identificato dal MSR corrente puo essere omesso dalla mappa firmware.
-    for (index = 0; index < pool->Count; ++index)
-        if (kernel_regions_overlap(owner->Physical,1,pool->Free[index].Base,pool->Free[index].Pages)) return 0;
-    for (index = 0; index < KERNEL_PHYSICAL_LEASES; ++index)
-        if (pool->Live[index].Id && kernel_regions_overlap(owner->Physical,1,
-            pool->Live[index].Base,pool->Live[index].Pages)) return 0;
-    return 1;
+    return kernel_physical_range_unowned(pool, owner->Physical, 1);
 }
 
 // ====== owner live e output disgiunti prima di una scansione mista ===== //

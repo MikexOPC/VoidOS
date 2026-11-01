@@ -16,9 +16,9 @@ int x86_watchdog_budget_valid(void)
     const X86_HPET_WATCHDOG *owner = x86_watchdog_state();
     const KERNEL_PHYSICAL_ALLOCATOR *pool;
     if (!owner->Env.Window || !(pool = owner->Env.Window->Pool)) return 0;
-    if (!loan_pool) return pool->FreePages == owner->Budget;
+    if (!loan_pool) return kernel_physical_budget_matches(pool, owner->Budget);
     if (loan_count < 2 || loan_count > 4 || pool != loan_pool ||
-        owner->Budget < 16 * loan_count || pool->FreePages != owner->Budget - 16 * loan_count ||
+        owner->Budget < 16 * loan_count || !kernel_physical_budget_matches(pool, owner->Budget - 16 * loan_count) ||
         !kernel_physical_validate(pool)) return 0;
     for (uint32_t index = 0; index < loan_count; ++index)
         if (kernel_physical_is_pinned(pool,&loans[index]) != 1) return 0;
@@ -61,7 +61,7 @@ int x86_watchdog_budget_begin_four(const KERNEL_PHYSICAL_LEASE *first, const KER
     if (loan_pool || !first || !second || first == second || !owner->Ready || owner->Closed ||
         owner->Armed || owner->Error || !owner->Env.Window || !(pool = owner->Env.Window->Pool) ||
         (fourth && !third) || owner->Budget < 16 * count ||
-        pool->FreePages != owner->Budget - 16 * count || !kernel_physical_validate(pool)) return 0;
+        !kernel_physical_budget_matches(pool, owner->Budget - 16 * count) || !kernel_physical_validate(pool)) return 0;
     for (uint32_t index = 0; index < count; ++index) {
         if (inputs[index]->Pages != 16 || kernel_physical_is_pinned(pool,inputs[index]) != 1) return 0;
         for (uint32_t other = 0; other < index; ++other)

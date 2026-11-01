@@ -29,14 +29,22 @@ try {
     }
     $sources = @('kernel/drivers/video/virtio/mapping/plan.c',
         'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
-        'lib/memory/address_ranges.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
-        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+        'lib/memory/address_ranges.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/kernel/cpu/percpu/resources/paging/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
         'arch/x86/kernel/drivers/video/virtio/preflight.c','arch/x86/kernel/drivers/video/virtio/construction.c',
         'arch/x86/kernel/drivers/video/virtio/lifecycle.c','test/arch/x86/kernel/drivers/video/virtio/mapping/mock.c')
     $paths = @($sources | ForEach-Object {"$project/$_"})
-    Invoke-Checked "$bin/cl.exe" (@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2',"/I$project")+$paths+@("$project/test/arch/x86/kernel/drivers/video/virtio/mapping/cases.c",
-        "/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no',"$out/gateway.obj","$out/pages.obj","$out/regions.obj","$out/placement.obj"))
+    . (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+    $syncObjects = @(New-PhysicalHostSync $project $out)
+    $compiled = @()
+    foreach ($source in ($paths + @("$project/test/arch/x86/kernel/drivers/video/virtio/mapping/cases.c"))) {
+        $object = "$out/" + (($source.Substring($project.Length + 1) -replace '[\\/]','-') -replace '\.c$','.obj')
+        Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+            '/MD','/O2','/c',"/I$project",$source,"/Fo$object","/Fd$out/host.pdb")
+        $compiled += $object
+    }
+    Invoke-Checked "$bin/cl.exe" (@('/nologo','/MD','/fsanitize=address',"/Fe$out/host.exe") + $compiled +
+        @('/link','/incremental:no','/DEBUG','/WX',"$out/gateway.obj","$out/pages.obj","$out/regions.obj","$out/placement.obj") + $syncObjects)
     Invoke-Checked "$out/host.exe" @()
     $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     $arguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',

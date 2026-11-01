@@ -44,20 +44,7 @@ static int loader_mapping(BOOT_U64 physical, BOOT_U32 bits)
 
 static int reserved_backing(const KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 physical)
 {
-    BOOT_U32 index;
-    for (index = 0; index < pool->Count; ++index) {
-        if (os_address_ranges_overlap(pool->Free[index].Base, pool->Free[index].Pages*4096,
-            physical, 65536)) {
-            return 0;
-        }
-    }
-    for (index = 0; index < KERNEL_PHYSICAL_LEASES; ++index) {
-        if (pool->Live[index].Id && os_address_ranges_overlap(pool->Live[index].Base,
-            pool->Live[index].Pages*4096, physical, 65536)) {
-            return 0;
-        }
-    }
-    return 1;
+    return kernel_physical_range_unowned(pool, physical, 16);
 }
 
 // ====== owner vergine separato dal pool e dalla copia statica del contratto ===== //
@@ -90,7 +77,7 @@ int x86_kernel_main_prepare(X86_KERNEL_MAIN_STACK *owner, KERNEL_PHYSICAL_ALLOCA
     if (!loader_mapping(physical, pool->PhysicalBits) || !reserved_backing(pool, physical)) {
         return 0;
     }
-    budget = pool->FreePages;
+    if (!kernel_physical_budget_read(pool, &budget)) return 0;
     if (!x86_kernel_stacks_acquire_for(&owner->Storage, pool, info->PageTableRoot, 2)) {
         return 0;
     }
@@ -108,7 +95,7 @@ static int valid(const X86_KERNEL_MAIN_STACK *owner, BOOT_U32 phase)
         owner->Phase != phase || owner->Reserved || owner->Storage.Profile != 2 ||
         owner->Storage.Committed != (phase >= 2 ? 1U : 0U) ||
         !x86_kernel_stacks_validate(&owner->Storage) || owner->Budget < 16 ||
-        owner->Storage.Pool->FreePages != owner->Budget - 16) {
+        !kernel_physical_budget_matches(owner->Storage.Pool, owner->Budget - 16)) {
         return 0;
     }
     return x86_stack_frame(2, owner->LoaderPhysical, owner->Storage.Pool->PhysicalBits) &&

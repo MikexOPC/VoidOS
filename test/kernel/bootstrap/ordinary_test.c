@@ -1,6 +1,7 @@
 #include "kernel/bootstrap/memory.h"
 #include "kernel/diagnostics/log.h"
 #include "arch/x86/kernel/platform.h"
+#include "kernel/sync/lock.h"
 #include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@ static KERNEL_BOOTSTRAP_MEMORY memory;
 __declspec(align(4096)) static unsigned char arena_bytes[65536];
 static jmp_buf terminal;
 static unsigned int checks, calls, fail_call, physical_claims, allocations;
+static unsigned int binding_ready;
 static const char *panic_message;
 
 // ====== check_private ======
@@ -23,6 +25,15 @@ static void check_private(int condition)
 
 static int step_private(void) { return ++calls != fail_call; }
 
+// ====== kernel_lock_bootstrap_initialize_mock ======
+
+int kernel_lock_bootstrap_initialize(void) {
+    check_private(!binding_ready);
+    if (!step_private()) return 0;
+    binding_ready = 1;
+    return 1;
+}
+
 // ====== existing_api_mocks ======
 
 // ====== x86_physical_bits_mock ======
@@ -33,15 +44,39 @@ BOOT_U32 x86_physical_bits(void) { return 40; }
 int kernel_physical_initialize(KERNEL_PHYSICAL_ALLOCATOR *owner, const unsigned char *map,
     BOOT_U64 bytes, BOOT_U64 stride, BOOT_U32 bits)
 {
-    check_private(owner == &memory.Physical && map == memory.Context.MemoryMap &&
+    check_private(binding_ready && owner == &memory.Physical && map == memory.Context.MemoryMap &&
         bytes == 48 && stride == 48 && bits == 40);
     if (!step_private()) return 0;
     owner->FreePages = 1024; return 1;
 }
+// ====== kernel_physical_budget_read_mock ======
+
+int kernel_physical_budget_read(const KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 *output)
+{
+    check_private(owner == &memory.Physical && output != NULL);
+    if (!step_private()) return 0;
+    *output = owner->FreePages;
+    return 1;
+}
+
 // ====== kernel_physical_validate_mock ======
 
 int kernel_physical_validate(const KERNEL_PHYSICAL_ALLOCATOR *owner)
 { check_private(owner == &memory.Physical); return step_private(); }
+// ====== x86_ap_low_start_mock ======
+
+int x86_ap_low_start(KERNEL_PHYSICAL_ALLOCATOR *pool) {
+    check_private(pool == &memory.Physical && !memory.Window.Ready && !allocations);
+    return step_private();
+}
+
+// ====== x86_ap_transition_early_mock ======
+
+int x86_ap_transition_early(KERNEL_PHYSICAL_ALLOCATOR *pool) {
+    check_private(pool == &memory.Physical && !memory.Window.Ready && !allocations);
+    return step_private();
+}
+
 // ====== x86_page_window_initialize_mock ======
 
 int x86_page_window_initialize(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
@@ -137,7 +172,7 @@ static void reset_private(void)
     memory.Context.MemoryMap = arena_bytes; memory.Context.Info.PageTableRoot = 0x1000;
     memory.Context.Info.MemoryMapBytes = 48; memory.Context.Info.MemoryDescriptorBytes = 48;
     memory.Inventory.ConventionalPages = 1024;
-    calls = physical_claims = allocations = 0; panic_message = NULL;
+    calls = physical_claims = allocations = binding_ready = 0; panic_message = NULL;
 }
 
 // ====== main ======

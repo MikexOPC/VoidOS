@@ -1,634 +1,335 @@
-# Stato corrente — 22 ottobre 2026
+# Stato corrente — 1 novembre 2026
 
-Questo e il riferimento breve dello stato reale. I checkpoint in
-`docs/review/` e i report di modulo restano evidenza del blocco in cui
-sono stati scritti; se una frase al presente li contraddice, vale questo
-file.
+Questo è il riferimento breve. I checkpoint storici conservano le prove
+relative alle proprie immagini; non certificano automaticamente la working tree.
+Lo [snapshot del 22 ottobre](review/status-2026-10-22.md) è conservato separatamente.
 
-Gli interventi rinviati e i relativi prerequisiti sono raccolti nel
-[registro degli interventi futuri](future-work.md). IOMMU e in sviluppo;
-la traduzione DMA non e ancora attiva e
-l'eccezione DMA riguarda soltanto il diagnostico QEMU fidato senza passthrough.
+## Funzionalità presenti
 
-I test sono centralizzati in `test/kernel/`, `test/arch/x86/` e `test/lib/`.
-Il runner `scripts/test/run.ps1` richiama le suite originali in processi
-separati; i gate QEMU restano distinti dai test host. Vedere
-[organizzazione ed esecuzione](../test/README.md).
+Boot UEFI x86-64, ELF e contratto v5, paging NX/WP, allocatore fisico,
+finestre/arena, heap slab e page-run, GDT/TSS/IST, eccezioni e IRQ.
+Scheduler cooperativo BSP con stack reali; tastiera e mouse PS/2, shell,
+console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
+Non ci sono ancora SMP operativo, processi utente, syscall, VFS o driver disco.
+La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
-Priorita concordata il20 ottobre: IOMMU prima della console VirtIO ordinaria,
-backend iniziale Intel VT-d su QEMU. Discovery DMAR nel kernel verificata:
-parser C e policy Rust, span registri dichiarato, scope bounded, duplicati
-rifiutati e output immutato su errore. Passano8100 verifiche C/ASan,3 test
-Rust debug/release, Clippy e cppcheck senza diagnostiche bloccanti.
-Trenta boot finali:10 con DMAR e confronto guest/host,10 assente,10 console
-ordinaria; un negativo atteso verifica DMAR duplicata e budget invariato.
-Il checkpoint discovery precede il mapping MMIO VT-d ora verificato.
-Nessun dominio o traduzione DMA attivo; nessuna estensione dell'eccezione
-IOMMU alla console interattiva.
-[Report discovery e limiti](../arch/x86/kernel/drivers/memory/iommu/intel/discovery/documentation/validation.md).
+## K3-F: backend panic, gate SMP ancora aperto
 
-Mapping VT-d posseduto: fino a otto pagine registri UC supervisor RO/NX,
-guardie e tre tabelle pinned, con revoca e rollback. L'inventario paging
-attuale misura 3840 byte (3832 nel checkpoint RO). C gestisce lifetime e letture VER/CAP/ECAP/GSTS;
-Rust puro valida PTE e capacita. Passano 95.776 controlli lifecycle/ASan,
-696.320 controlli accessor, Rust debug/release, Clippy e regressioni host.
-Dieci boot con VT-d e dieci senza, piu dieci console ordinaria, verificano
-letture indipendenti QTest e cleanup; due negativi rifiutano DMAR duplicata
-e RAM indicata come registri. Altri dieci boot verificano scanout VirtIO
-con confronto integrale di venti screenshot: 40 positivi finali in totale.
-ECAP.C=0 richiede progettare la coerenza
-delle future tabelle: il candidato coerente resta non autorizzato.
-[Report mapping, immagini e limiti](../arch/x86/kernel/drivers/memory/iommu/intel/registers/documentation/validation.md).
+K3-I/panic remoto: dopo il primo AP, il BSP ha provocato il panic reale
+e ricevuto l'ACK dell'AP tramite NMI/IDT/IST2 definitivi. Passati 10/10
+panic remoti e 10/10 avvii senza panic; suite host C/ASan e Rust passata,
+audit degli oggetti d'emergenza senza dipendenze FP/SIMD rilevate.
+Online BSP+un AP, targets=ACK=2, nessun core mancante. Restano altri AP,
+origine panic da AP e integrazione ordinaria; scheduler sempre BSP.
+[Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-remote-panic-validation.md).
 
-La preparazione privata del dominio GPU e ora implementata e verificata:
-root/context legacy, quattro livelli, IOVA distinti dai fisici, fino a
-16 intervalli e 4.100 pagine, R/RW espliciti e guardie. C gestisce lease,
-pinning e rollback; Rust puro prepara geometria ed entry. Passano 925.362
-controlli C/ASan, un walk indipendente, Rust debug/release, Clippy e le
-regressioni host del mapper registri. Quaranta boot finali: dieci dominio,
-dieci senza GPU, dieci senza IOMMU e dieci console ordinaria; due negativi
-rifiutano i metadati firmware prima del costruttore. Le tabelle vengono
-verificate e rilasciate senza pubblicarle all'hardware. ECAP.C=0 rimane
-un gate: nessuna protezione DMA attiva o console VirtIO persistente.
-[Report dominio privato e limiti](../arch/x86/kernel/drivers/memory/iommu/intel/domains/documentation/validation.md).
+K3-I/primo AP: il diagnostico INIT/SIPI/NMI ha ora eseguito davvero
+l'ammissione C e il ritorno sul core 1: stack/GS/GDT/TSS/IDT privati,
+provider accettato e PARKED verificati nei registri reali. Passati 10/10
+boot dedicati, negativo senza NMI 1/1, 50 casi host e regressioni 10/10
+joint-panic e 10/10 ordinarie. Corrette una race del supervisore e la
+verifica dei bit A/D del test. È BSP+un AP parcheggiato, non quattro CPU
+operative; il boot ordinario resta BSP. Nel checkpoint restavano altri AP,
+panic remoto (ora provato sopra) e integrazione ordinaria.
+[Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-first-ap-validation.md).
 
-Coerenza CPU e coda hardware di invalidazione sono ora implementate nel
-diagnostico Intel: CPUID, CLFLUSH/MFENCE sulle pagine possedute, una coda
-con completion separata e un batch in volo. Il mapping RW e autorizzato
-esplicitamente; il bind precedente resta RO. Timeout o stop incerti
-trattengono pagine e mapping. Passano176349 controlli C/ASan,3 test Rust
-debug/release, Clippy e regressioni host. Il report raccoglie le campagne
-QEMU:70 positivi (dieci per ciascun profilo) e due rifiuti attesi;1280
-completion QI,20 screenshot scanout. Documenta inoltre la particolarita
-del readback IQA e i limiti delle prove.
-Le note ECAP.C=0 nei checkpoint precedenti sono storiche: ora esiste cache
-maintenance, ma non pubblicazione del dominio. RTADDR e TE restano zero;
-isolamento DMA, fault DMA e console VirtIO persistente non sono attivi.
-[Report coerenza e invalidazioni](../arch/x86/kernel/drivers/memory/iommu/intel/invalidation/documentation/validation.md).
+I paragrafi seguenti sono checkpoint precedenti: le frasi «nessun AP
+avviato» descrivono le rispettive campagne, superate dalla prova sopra.
 
-Scelta successiva: topologia PCI con bridge e piu unita, tramite lettore
-nativo MCFG/ECAM nel kernel. Il primo modulo di accesso e implementato:
-32 finestre/8 segmenti bounded, calcolo con bus effettivo, letture DWORD
-standard e prestito temporaneo UC RO/NX della page window posseduta.
-Passano540760 controlli host C/ASan,3 test Rust debug/release, Clippy,
-cppcheck senza diagnostiche bloccanti e regressioni host. Cinquanta boot
-Q35 positivi, inclusi10 di assenza filtrata dichiarata, piu un duplicato
-rifiutato; GPU provata su bus0 e dietro root port su bus1. Lo smoke
-i440fx ha invece un panic timer dopo l'assenza MCFG: non e un PASS e
-la piattaforma non viene dichiarata supportata. Il lettore e il prerequisito
-del blocco snapshot descritto sotto; resolver e attivazione restano separati.
-[Report ECAM, immagini e limiti](../arch/x86/kernel/drivers/bus/pci/ecam/documentation/validation.md).
+K3-I/contesti: provider AP con binding ID/GS e stato atomico, getter PREPARED
+e scansioni dell'arena chiusi prima dell'ingresso. Catena alta Assembly/C
+compilata con piano/IDT/panic e PRIVATE/PARKED; non ancora selezionata dal
+record installato o avviata tramite INIT/SIPI. Passati 120 casi host clock/
+runtime, 50 BSP e 20 identità, 17 prove CPU del ponte con callback modellati,
+10/10 UEFI dedicati e 10/10 ordinari. Nessun AP avviato; ammissione C positiva
+su AP ancora da provare. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-context-validation.md).
 
-Snapshot PCI bounded implementato: C acquisisce due scansioni concordanti,
-Rust puro verifica BDF, parent, profondita, intervalli e multifunction.
-Massimo512 funzioni/64 bridge/profondita8; output precedente invariato su
-errore, workspace posseduto e nessuna allocazione aggiuntiva. Passano255769
-controlli C/ASan,4 test Rust debug/release, Clippy e cppcheck senza errori
-bloccanti. Sessanta boot finali:10 GPU radice,10 dietro root port,10 dietro
-tre bridge, piu10 ECAM,10 QI e10 console ordinaria. Snapshot binari, grafo
-QMP, registri PCI, hash ESP, revoca e budget confrontati indipendentemente.
-Il profilo resta diagnostico: scansione esaustiva costosa, esclusa dal
-kernel ordinario. Segmenti distinti e piu radici sono prove host; QEMU
-certifica segmento0. Resolver multi-DRHD, requester alias, pubblicazione
-e isolamento DMA non sono impliciti in questo risultato.
-[Report snapshot, costi e limiti](../arch/x86/kernel/drivers/bus/pci/topology/documentation/validation.md).
+K3-I/gruppo CPU: scelta acquisita e descrittore unico implementato nel
+diagnostico joint-panic, con pubblicazione release/acquire dopo sigillo e
+preparazione panic. Passati 5 casi Rust debug/release, 20 processi host con
+4 lettori concorrenti ciascuno, 10/10 UEFI dedicati e 10/10 ordinari.
+Monitor verifica snapshot e binding reali; nessun AP avviato, nessuna
+promozione ACTIVE o abilitazione dei provider AP in quel checkpoint.
+Il blocco contesti sopra aggiorna il codice, senza ancora provarlo su AP.
+[Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-group-validation.md).
 
-Direzione video concordata: framebuffer firmware per bootstrap/fallback e
-driver VirtIO GPU specifico per QEMU. Il primo blocco e il
-[parser della configurazione PCI](../kernel/drivers/video/virtio/discovery/documentation/design.md),
-con C per traversal e Rust per i limiti scalari. Ora e linkato nel loader e
-nel kernel: il [contratto v5 da536 byte](../arch/x86/boot/uefi/pci/documentation/design.md)
-trasporta snapshot PCI, posizione e dimensioni BAR raccolte tramite UEFI.
-Il kernel li copia e rivalida, senza conservare protocolli firmware.
-Il mapping MMIO posseduto e implementato: una GPU, massimo16 pagine UC,
-supervisor RW/NX, guardie e tre tabelle da lease pinned. L'inventario
-verifica GPU, framebuffer e LAPIC; il renderer include le nuove tabelle
-nel budget senza saltare la scansione. Rust costruisce il piano pagine
-senza unsafe o allocazioni, C gestisce pubblicazione e rollback.
-La lettura PCI e selettiva: non tocca la finestra indiretta PCI_CFG.
-Passano 477.762 verifiche del parser,230 del lettore selettivo,
-13.024 dell'acquisizione UEFI,12.315 del piano ABI C/Rust e793.400
-del mapper host. ASan C, accounting, Rust debug/release e Clippy passano.
-Passano30 boot finali:10 diagnostici con unbind/rebind,10 ordinari e10
-fallback VGA, con input mouse/tastiera, guardie/PTE e cleanup verificati.
-Tre tabelle GPU restano pinned durante l'uso ordinario; il budget restituito
-a exit riguarda le risorse temporanee delle task. Le campagne e i limiti sono nel
-[report mapping](../kernel/drivers/video/virtio/mapping/documentation/validation.md).
-Reset e feature negotiation sono ora implementati nel profilo diagnostico
-separato: selezione minima VERSION_1, conferma FEATURES_OK, poi reset e
-rilascio del mapping. Nessun DRIVER_OK o DMA. Rust puro valida registri e
-feature; C gestisce stati e attese finite sul clock PM esistente.
-Passano89300 controlli host del protocollo e61900 del trasporto, con
-ASan C, Rust debug/release, Clippy e cppcheck. Il runner passa anche con5.1.
-Passano10 boot diagnostici e10 senza GPU; un rifiuto intenzionale delle
-feature richiede FAILED/reset e conferma il cleanup. Passano anche10 boot
-ordinari con mouse e tastiera:30 positivi finali, piu un negativo intenzionale.
-Il MAP ordinario esclude il protocollo/probe di inizializzazione.
-[Prove, immagini e limiti](../kernel/drivers/video/virtio/initialization/documentation/validation.md).
-Code e buffer DMA sono ora verificati nel solo diagnostico QEMU fidato:
-due code da8 descrittori, una richiesta fenced in volo, quattro pagine pinned
-dalla finestra esistente; Rust valida completion e geometria, C gestisce
-ownership, MMIO e ordering. Passano789417 controlli C/ASan delle nuove suite,
-4 test Rust debug/release e le regressioni host inizializzazione.
-Trenta boot finali:10 diagnostici con2560 richieste reali totali e verifica
-esterna della RAM DMA,10 senza GPU e10 console ordinaria; piu un rifiuto
-intenzionale prima delle code. Reset confermato prima del rilascio, buffer
-trattenuti se incerto nei test mock; budget diagnostico ripristinato in QEMU.
-Il MAP ordinario esclude le nuove code; nessuna installazione nella ESP.
-[Prove, hash e limiti DMA](../kernel/drivers/video/virtio/queues/documentation/validation.md).
-Risorsa2D a risoluzione display ora verificata nel diagnostico: backing
-contiguo pinned fino a16MiB, mapping WB supervisor RW/NX con guardie,
-CREATE/ATTACH/TRANSFER/DETACH/UNREF fenced e reset prima del rilascio.
-Rust valida geometria, PTE e transizioni; C gestisce ownership e protocollo.
-L'inventario paging include una superficie RAM e passa da3600 a3720 byte;
-il contratto di boot v5 resta invariato. A1280x800:4096000 byte e4 tabelle.
-Passano8200 verifiche protocollo,6300 mapper,3 test Rust in debug e release,
-ASan, Clippy e cppcheck senza diagnostiche bloccanti; stile/info nel report.
-Quaranta boot positivi finali:10 risorse2D,10 GPU assente,10 code precedenti,
-10 console ordinaria con input e cleanup. Due negativi attesi confermano
-reset/rilascio su feature non supportata e trasferimento con ID errato.
-[Prove, hash e limiti delle risorse2D](../kernel/drivers/video/virtio/resources/documentation/validation.md).
-SET_SCANOUT e RESOURCE_FLUSH sono ora verificati nel diagnostico visivo:
-selezione del primo display attivo con indice esplicito, immagine intera,
-update parziale con offset/stride controllato da Rust, disassociazione
-prima di detach/unref. Stato incerto blocca altri comandi; reset confermato
-prima del rilascio. Il nuovo blocco passa19900 verifiche presentazione,
-le regressioni risorse/mapper e646122 verifiche protocollo code.
-Dieci boot visivi finali confrontano20 screenshot1280x800 integralmente;
-altri30 boot verificano GPU assente, risorse senza scanout e console
-ordinaria. Due negativi attesi coprono mancata conferma host e feature
-non supportata, con reset e budget ripristinato.
-[Prove visive, hash e limiti](../kernel/drivers/video/virtio/resources/documentation/presentation-validation.md).
-Cursore VirtIO e sessione video ordinaria persistente restano da fare.
-La console continua sul framebuffer firmware; nessuna nuova garanzia di fluidita.
-Le [prove dell'integrazione PCI](../arch/x86/boot/uefi/pci/documentation/validation.md)
-e del [primo parser](../kernel/drivers/video/virtio/discovery/documentation/validation.md)
-restano checkpoint delle rispettive immagini, precedenti al mapping.
+K3-I/prerequisiti ammissione: corretto il controllo degli alias degli stack
+di emergenza nei validator ingresso/ritorno, incluso overflow del top IST.
+Host C/Rust/ASan e regressioni joint passati; 17/17 esperimenti CPU del
+ritorno, 10/10 UEFI joint-panic e 10/10 ordinari aggiornati. Nessun AP
+avviato. Progetto del descrittore d'ammissione preparato; scelta sulla
+pubblicazione allora pendente, ora acquisita nel blocco gruppo CPU sopra;
+nessuna promozione runtime implementata.
+[Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-admission-validation.md).
 
-Ultimo blocco input completato: Esc annulla la riga UTF-8 e il flag di troncamento, senza
-modificare i modificatori o inviare il testo alla shell. Pressione ripetuta idempotente;
-rilascio senza nuova cancellazione. Il comando exit conserva lo stop con cleanup.
-[Comportamento del consumer](../arch/x86/kernel/drivers/input/ps2/documentation/runtime.md).
-Passano 277 scenari host per variante seriale/video e dieci boot consecutivi
-sull'immagine finale `92C5095EE3BB43B0DF8994B8520AA42F0374BB55BA11E7C0C0DD47D2B3E4EAA9`:
-130 scene corrette, inclusi mouse/video dopo Esc, help successivo e cleanup tramite exit.
-Passano anche i due smoke solo tastiera e l'ESP preparata dal launcher.
-Il renderer resta invariato: cinque catture parziali su 158 durante il movimento,
-nessuna assente; nessuna nuova garanzia di fluidita o aggiornamento atomico.
+K3-I/ritorno: piano C/Rust e helper IRETQ con controlli GS ACTIVE, GDT/TSS
+e gate/IST. 17/17 esperimenti CPU isolati, inclusi NMI pendente e IRET
+faulting. Collegata anche la preparazione panic dopo il sigillo, senza
+secondo commit: 10/10 UEFI nuovi, 10/10 panic precedente e 10/10 ordinari.
+Restano ammissione C degli AP e collegamento del ritorno al runtime; nessun
+AP avviato. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-return-validation.md).
 
+K3-I/commit congiunto: barriera irreversibile del gruppo, sigillo di blob e
+tabelle, arena e contesti; errori successivi portano ad arresto diagnostico
+con risorse trattenute. Verifica finale: 53 scenari host, 10/10 boot UEFI del
+sigillo, due arresti intenzionali e 10/10 ordinari. SEALED non autorizza
+ancora INIT/SIPI: nessun AP avviato e ingresso runtime ancora da completare.
+[Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-joint-validation.md).
 
-Checkpoint del consolidamento precedente: B1 elimina il limite di durata della sessione input,
-conservando le deadline delle singole attese. B2 recupera i guasti tastiera isolati:
-un guasto ISR scarta i byte incerti prima di azzerare decoder, modificatori e riga;
-262 scenari host per variante seriale/video e dieci boot QEMU passano.
-[Politica, prove e limiti](../arch/x86/kernel/drivers/input/ps2/documentation/keyboard-recovery.md).
-B6 separa il probe di preservazione dei registri dal percorso ordinario;
-[audit e checkpoint](../arch/x86/kernel/scheduler/documentation/production-image.md).
+K3-I/installazione inattiva: blob e record scritti nelle lease fisiche vere
+e riletti integralmente. Prestito esclusivo impedisce cleanup/ricostruzione
+finché il contenuto non è cancellato e verificato. Revisione v3: 10/10 boot
+UEFI installazione, 10/10 cancellazione, 10/10 ordinari; host con 26 failure
+point d'installazione, 22 di cancellazione e 8192 corruzioni byte. Nessun
+AP avviato o collegamento del prefisso alto. Il commit del gruppo è ora
+verificato nel solo diagnostico descritto sopra.
+[Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-installation.md).
 
-Lo scheduler resta cooperativo, BSP, con task kernel fidate nello stesso spazio
-indirizzi. Non ci sono ancora userspace, syscall, filesystem o un compositore GUI.
-Il launcher ora ricompila per default e verifica l'assenza di codice test nel MAP;
-`-Image` resta la scelta esplicita di un binario gia costruito.
-[Avvio e comportamento di Esc/exit](../kernel/console/video/documentation/pointer-manual.md).
+K3-I/ingresso alto: prefisso Assembly con copia sullo stack privato, IDT/GDT
+intermedie alte, passaggio al CR3 operativo, TSS e GS, inizializzazione
+x87/SSE. Dieci prove consecutive e tre negativi passati sul BSP SeaBIOS,
+con stato SIMD inizialmente alterato; non ancora collegato al
+kernel. Restano ammissione runtime e collegamento al trasporto di avvio;
+IRETQ e preparazione panic/IST hanno ora le prove distinte descritte sopra.
+Installazione e sigillo sono verificati nei diagnostici
+descritti sopra. Nessun AP avviato.
+[Contratto e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-private-entry.md).
 
-Verifica finale del consolidamento: dieci boot consecutivi della nuova immagine
-interattiva `758206602CEE9E5B7ABAA828CA195036810CD56496B200ADB05B4EA6C13A3507`,
-120 scene assestate corrette e cleanup/budget verificati; passa anche l'ESP del launcher.
-Audit delle catture durante il movimento: 188 complete, 5 parziali, nessuna assente.
-Le cinque catture parziali precedono scene corrette; il framebuffer visibile non viene
-aggiornato atomicamente. Fluidita SDL e presentazione senza artefatti non certificate.
-Evidenze: `kernel/build/pointer-interactive-check-a94ea60ef9a549d2b0ef8b1cb8f802f7/`
-e `kernel/build/consolidation-launcher-smoke.log`.
+K3-I/blob: template rilocabile 16/32/64 bit e packer C/Rust verificati su
+host e in 14 esperimenti CPU (dieci avvii consecutivi, due posizioni e
+quattro negativi, inclusi NX/WP). Sono prove isolate SeaBIOS sul BSP,
+non AP del kernel. Il blob viene ora installato soltanto nel diagnostico
+inattivo descritto sopra; restano ingresso alto definitivo e collegamento
+del sigillo al protocollo di avvio.
+[Prove e limiti del blob](../arch/x86/kernel/cpu/percpu/documentation/k3i-protocol.md).
 
-Refactor verificato: integrazione scheduler 398 righe, build 358 righe, adattatore
-switch e validazione profili separati. Suite backend host, 17 combinazioni di build,
-audit dei simboli ordinario/diagnostico e controlli di struttura passano.
-Esc ora annulla la riga senza chiudere input e mouse; solo exit richiede lo stop.
-Il rendering transitorio resta un blocco dedicato prima di promettere una GUI fluida.
+K3-I/durata: congelamento irreversibile delle risorse inattive collegato
+al kernel e verificato nella revisione v2 con 10/10 boot UEFI dedicati e
+10/10 ordinari. Il registro del prestito impedisce rilascio e ricostruzione
+anche con State alterato; ASan host e cppcheck passati. Non è ancora il
+sigillo del blob o il commit congiunto AP se considerato da solo; queste
+garanzie sono ora verificate dal diagnostico congiunto. Nessun AP avviato.
+[Prove finali e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-protocol.md).
 
-Checkpoint 16 ottobre: console con cella 10x20 (102x38 a 1024x768) e puntatore 18x18
-nitido nero con contorno bianco, da immagine di riferimento. Mouse PS/2 tollerante a
-perdite, header errati e overflow; scansione dirty a byte e contatori di tempo dei flush.
-10 boot mouse+puntatore+shell, stress, senza video, diagnostici framebuffer/console e
-ordinario passano. La fluidita non e certificata e il limite del display QEMU e solo
-un'ipotesi: [cella](../kernel/console/video/documentation/font-cell.md),
-[puntatore](../kernel/console/video/documentation/pointer-sharp.md),
-[costo dei flush](../kernel/console/video/documentation/flush-cost.md),
-[mouse](../kernel/drivers/input/ps2/mouse/documentation/resync.md).
+K3-I/trasporto: sequenza INIT/SIPI collegata al coordinatore Rust e verificata
+in 41/41 scenari host con ASan sul C e cppcheck. Deadline, errori APIC e
+guasti dopo invio parziale portano a quarantena. I/O ancora modellato:
+nessun backend MMIO nativo o avvio AP del kernel. [Dettagli e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-protocol.md).
 
-Checkpoint grafico del 16 ottobre: presentazione cursore composta in RAM, copia delle sole
-sequenze cambiate e profilo interattivo senza tracce per movimento/frame.
-Sagoma SVG e testo antialias invariati. Passano dieci boot diagnostici e
-dieci interattivi finali;135 catture controllate, nessuna sagoma parziale o
-assente nel campione finale. Passano scroll/riga piena, fallback e launcher.
-Le catture non certificano ogni fotogramma o la fluidita SDL. Un precedente
-tentativo con scarto di un pixel resta documentato, senza attribuzione certa.
-[Design, tentativi, prove e limiti](../kernel/console/video/documentation/pointer-presentation.md).
+K3-I/NMI: approvato il passaggio dentro un vero handler NMI. Esperimento
+CPU isolato SeaBIOS/TCG passato: dieci avvii consecutivi più tre controlli,
+secondo NMI trattenuto attraverso il cambio di modalità e consegnato dopo
+IRETQ. Non è il kernel UEFI e non avvia AP. [Report e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-nmi-validation.md).
 
-Checkpoint precedente: cursore 18×18 dal SVG utente, nero con bordo bianco e
-antialiasing; testo Cascadia Mono 9×18 con 16 livelli di copertura.
-Nessun parser font nel kernel o nuova allocazione; tabella fissa da15.696 byte.
-Dieci boot consecutivi verificano60 scene e6000 invii continui, senza perdite
-o panic e con budget20.411 ripristinato. Passano anche scroll/riga piena,
-fallback senza video e avvio dell'ESP interattiva; suite C/ASan, Rust e
-cppcheck passate. Nessuna garanzia di60FPS o prova su hardware fisico.
-[Design, hash e prove](../kernel/console/video/documentation/visual-quality.md).
+K3-I: scelto il diagnostico AP dedicato prima del boot ordinario.
+Implementato il coordinatore Rust di avvio sequenziale, generazioni,
+rollback pre-commit e quarantena terminale. Record d'ingresso C/Rust e
+conferma legata a identità/token verificati: 16/16 casi Rust in debug e
+release, due eseguibili C/Rust con ASan sul C e cppcheck passati. Non ancora collegato al
+kernel: nessun AP avviato o gate SMP chiuso. [Prove e lavoro restante](../arch/x86/kernel/cpu/percpu/documentation/k3i-protocol.md).
 
-Checkpoint precedente: transazione save/restore del cursore approvata,
-backup fisso24x24, verifica completa e tre rettangoli autorizzati.
-Movimenti attivano una sola cella; il vecchio sfondo viene ripristinato
-dal backup e il nuovo salvato dopo il testo. Pacchetti senza spostamento
-non richiedono ridisegno. Revoca e transazioni annidate sono negate mentre
-il mapping e occupato; dopo scritture fallite resta trattenuto.
-Passano dieci boot consecutivi,6000 invii continui e60 scene, zero perdite
-e zero gruppi oltre100ms; passano scroll e fallback, con budget ripristinato.
-Fluidita manuale e60FPS non certificati; nessun nuovo driver GPU.
-[Contratto](../kernel/console/video/documentation/cursor-transaction-design.md)
-e [prove](../kernel/console/video/documentation/cursor-transaction-validation.md).
+K3-H: root AP condivisa preparata e ancora inattiva. Dati bassi separati
+dal codice, quattro frame sotto 4 GiB, riferimenti kernel alti e nessun
+ricorsivo nella nuova root; CR3 del BSP invariato. Revisione finale v5:
+10/10 preparazioni, rollback 1/1, 10/10 ordinari e 10/10 sessioni console
+VirtIO/VT-d passati, insieme a host C/Rust, ASan, differenziali e stress
+allocatore. Risolta la scadenza console senza cambiare i 600 s o ridurre
+ownership/bounds. Lo startup resta lento: osservazioni host circa 201–511 s,
+non un benchmark controllato. Nessun AP avviato o nuovo CR3 attivato.
+[Prove K3-H e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3h-validation.md).
 
-Checkpoint precedente: una seconda prova manuale ha riprodotto
-perdita e scomparsa dopo557 eventi. Il precedente test non copriva
-adeguatamente il carico. Nuovo consumo a raffiche di32 pacchetti,
-priorita alla posizione corrente e freccia arrotondata antialias concordati.
-Passano10 boot consecutivi con6000 invii continui, zero perdite e60 scene
-confrontate; passano stress con scroll e fallback. Le scansioni paging
-restano costose: due boot segnalano un gruppo lento. La fluidita nella
-finestra SDL non e certificata dai test automatici.
-[Implementazione e nuove prove](../kernel/console/video/documentation/pointer-burst.md).
+Aggiornamento K3-G: prenotata nel kernel, prima delle allocazioni generiche,
+una pagina sotto 1 MiB per il futuro ingresso AP. Prima lease pinned,
+selezionata dalla RAM ammessa; assenza gestita come indisponibilità SMP
+senza fermare il BSP. Nessun mapping basso aggiunto al CR3 operativo del BSP; il codice di avvio manca ancora.
+Dieci boot dedicati, dieci ordinari, negativo iniettato e console VirtIO/VT-d
+passati; suite host e stress allocatore isolato passati.
+[Evidenze K3-G e limite dello stress parallelo](../arch/x86/kernel/cpu/percpu/documentation/k3g-validation.md).
 
-Checkpoint precedente: la prova manuale del puntatore ha prodotto
-perdita mouse e panic, non coperti dai movimenti distanziati del checkpoint.
-Corretti consumo per pacchetto, polling1ms, idle HPET5ms e budget dei risvegli;
-sagoma con contorno piu regolare. Dieci boot consecutivi finali passano,
-con1500 movimenti continui,60 scene controllate, zero perdite e budget
-ripristinato. Passano stress con scroll, fallback senza video e smoke
-dell'ESP interattiva e regressione della console con sola tastiera.
-Un gruppo ha superato100ms ed emesso il WARN previsto:
-resta un costo del paging e non e dimostrato un framerate costante.
-[Cause, prove e limiti](../kernel/console/video/documentation/pointer-latency.md).
+Implementato il protocollo scelto con NMI diretti: record privati,
+coordinatore atomico Rust, cattura Assembly, trasporto LAPIC e seriale
+d'emergenza con attese limitate. Attivazione per ora nei diagnostici;
+il boot ordinario mantiene il precedente panic locale.
 
-Checkpoint precedente: puntatore bianco a contorno nero24x24 nel profilo
-`-Ps2Mouse -ConsoleShell`. Rust valida movimento e clamp; un solo worker
-compone testo/caret e maschera, ricostruendo lo sfondo dalla griglia RAM.
-Dieci boot consecutivi passano con50 scene live confrontate tramite screenshot
-e pixel fisici,51 eventi mouse per boot, nessuna perdita e budget ripristinato.
-Passano anche stress da812 tasti con scroll, fallback senza video e console
-senza mouse:13 boot finali positivi, oltre al primo collaudo.
-C/ASan, Rust debug/release/Clippy, test Python e cppcheck passati. Bitmap fissa
-nell'area della console; nessuna azione GUI dei pulsanti, finestre o compositore.
-[Design](../kernel/console/video/documentation/pointer-design.md) e
-[prove, hash e limiti](../kernel/console/video/documentation/pointer-validation.md).
-Disponibile l'[avvio interattivo](../kernel/console/video/documentation/pointer-manual.md)
-per provare il cursore nella finestra QEMU; ESP isolata, log seriale e opzione
-di ricompilazione. Preparazione e smoke input/cleanup verificati; nessuna
-sessione desktop permanente o prova manuale umana automatizzata dichiarata.
+Immagini finali: 21/21 scenari diagnostici (dieci preparazioni consecutive
+incluse), 10/10 boot ordinari e 1/1 console VirtIO/VT-d con input, pixel e
+cleanup. Suite host panic e regressioni kernel/bootstrap/risorse passate;
+verificato anche il percorso senza FP/SIMD. Un solo core OS operativo.
+[Report K3-F e limiti delle prove](../arch/x86/kernel/cpu/percpu/documentation/k3f-validation.md).
 
-Checkpoint completato: integrazione `-Ps2Mouse -ConsoleShell`, quattro
-task e un solo worker video. La prima campagna passa otto boot e fallisce
-nel nono nel watchdog idle. Corretto il rifiuto di IRQ input pendenti con
-token live; regressione host prima/dopo e revoca negata fino a quiescenza
-passate. Dieci boot consecutivi finali, stress da812 tasti, fallback senza
-video e regressione console senza mouse passano (13 boot finali totali).
-Pixel, IRQ e budget fisico ripristinato verificati; suite C/ASan, Rust,
-Python e cppcheck passate. Il puntatore grafico e nel blocco successivo sopra.
-[Contratto, debug e prove](../kernel/console/video/documentation/mouse-integration.md).
+Riserva bassa e tabelle inattive sono predisposte; il gate di integrazione
+video K3-H è passato sulla revisione v5. Mancano trampolino e ingresso AP, poi prova coordinata con
+quattro core realmente avviati. NMI remoto e ramo AP di ammissione non sono
+ancora verificati in guest; quattro vCPU configurate non chiudono K3-F.
 
-La shell ha ora anche un percorso video nel profilo esplicito `-ConsoleShell`:
-prompt, editor italiano UTF-8, risposte di help/echo/status/exit, wrap/scroll,
-riga corrente conservata durante le risposte e fallback seriale se il video
-manca. Un servizio RAM serializzato alimenta il worker esistente; gruppi
-di massimo otto celle con controllo completo delle risorse live.
-[Contratto della console](../kernel/console/video/documentation/shell-design.md).
-Il cursore di testo è ora una sottolineatura fissa separata dai caratteri:
-Rust valida la posizione, il worker ripristina la vecchia cella e disegna
-la nuova, senza timer o task aggiuntive. Corretto anche un panic intermittente
-allo stop PS/2, con regressione host prima/dopo e gestione limitata dei byte
-residui prima dell'ACK. Suite console/PS2/framebuffer con ASan e cppcheck,
-22 boot finali:10 video,10 ordinari, uno senza video e uno stress da812 tasti.
-Budget fisico ripristinato; immagini e limiti nel
-[report corrente](../kernel/console/video/documentation/caret-validation.md).
-Le descrizioni "shell solo seriale" nei checkpoint sotto valgono per quelle
-immagini storiche. Il profilo ordinario rimane distinto; GUI, hardware fisico
-e sessione senza le guardie diagnostiche v0 non sono completati.
-Checkpoint mouse PS/2 collegato al kernel nel profilo separato `-Ps2Mouse`:
-movimento e tre pulsanti, decoder Rust, task3, IRQ12/vettore42h, due code
-con source/token distinti e quattro stack pinned. Dieci boot consecutivi
-dell'ultima immagine verificano35 eventi mouse per boot insieme alla
-tastiera, IRQ durante il worker, idle, stop e budget20.460 ripristinato.
-Passa anche un boot con mouse e shell seriale italiana (98 tasti,10 comandi).
-Host C/ASan e Rust, registry/frame, accounting quattro lease e mock EOI passano.
-Nessun puntatore grafico, rotella o certificazione hardware fisico introdotti.
-[Contratto](../kernel/drivers/input/ps2/mouse/documentation/runtime-design.md) e
-[prove, hash e limiti](../kernel/drivers/input/ps2/mouse/documentation/runtime-validation.md).
+Il vecchio stato «DMA inattivo» riguarda i checkpoint precedenti. La
+console VirtIO/VT-d persistente è stata verificata nella campagna V2c
+`qemu-run-0e1e80c861594423ab6e9e7e662e7e17` (10/10) sulla tappa 5b.
+Non dimostra compatibilità con hardware fisico.
 
-Corretto il fail-stop temporale del worker video, riprodotto con rallentamento
-TCG dopo l'avvio: il disegno era valido, ma una misura oltre100ms marcava il
-servizio Failed. Scelta utente: nella console operativa WARN e contatore dei
-gruppi lenti; nelle API diagnostiche il limite rimane terminale. Errori di
-draw, ownership, clock e accounting restano terminali; nessuna soglia alzata.
-La prova prima/dopo verifica WARN, progresso input, pixel, cleanup e memoria.
-Dieci boot finali consecutivi e un boot stress da812 tasti passano con
-budget20.419 ripristinato, pixel e cleanup verificati sulla stessa immagine.
-La suite include ora anche19 test Python dei runner, oltre a C/ASan, Rust
-e cppcheck. Il vecchio dump concorrente non conteneva lo stato del misuratore:
-e compatibile con questa causa, senza attribuzione retroattiva certa.
-[Correzione e limiti](../kernel/console/video/documentation/latency-fix.md);
-[checkpoint diagnostico](../kernel/console/video/documentation/worker-diagnostics.md).
+## K1: metà alta e revoca del loader
 
-Checkpoint mouse precedenti: decoder host e preparazione AUX senza
-streaming; le frasi "mouse non operativo" valgono per quelle immagini.
-[Preparazione](../kernel/drivers/input/ps2/mouse/documentation/controller-validation.md),
-[decoder](../kernel/drivers/input/ps2/mouse/documentation/validation.md).
+Le tappe 1–5 del layout sono già nel repository (tappa 5: `b3eb7e2`).
+La tappa 5b rimuove PML4[0] soltanto dopo avere verificato stack e
+GDT/TSS/IDT del kernel. Le pagine del loader rimangono riservate.
 
-Checkpoint precedente: corretto il rollover one-shot32 HPET riprodotto nel ramo idle.
-Contatore fermo fra le attese; un IRQ di rollover anticipato non consuma la
-deadline; il match maturato durante W1C viene riconosciuto senza risveglio
-perso. Status/config estranei, duplicati e MMIO fallita restano errori.
-Test prima/dopo, suite host C/ASan e Rust, cppcheck e 32 boot finali passano:
-10 stress/fallback, 10 video, 10 ordinari, una sessione da 812 eventi tastiera
-e un idle prolungato con 837 scadenze e attraversamento reale del contatore.
-Budget fisico ripristinato; review APPROVE per il fix nel profilo QEMU,
-senza certificare hardware fisico o assenza di altri bug futuri.
-Le campagne storiche fallite e quelle intermedie interrotte restano conservate.
-[Correzione, hash e prove](../arch/x86/kernel/timer/hpet/watchdog/documentation/idle/rollover.md).
+Il nuovo test dedicato ha verificato dieci boot consecutivi con lettura
+fisica indipendente di tutte le voci PML4 basse. Il negativo scalda la
+traduzione della capsula prima della revoca e verifica #PF dopo MOV CR3.
+K1 è chiuso nel profilo QEMU: 23/23 scenari kernel, 12/12 campagne brevi
+e 10/10 console VirtIO con VT-d. Tutte le 37 suite host sono coperte e
+passate tramite run generale e riesecuzione mirata del controllo di formato.
+La formattazione finale non cambia codice/layout: il confronto degli ELF
+bootstrap e VirtIO rileva soltanto il timestamp della directory debug PE.
 
-## Cosa e oggi
+[Contratto 5b](../arch/x86/mm/paging/retirement/documentation/design.md) e
+[prove, immagini e limiti](../arch/x86/mm/paging/retirement/documentation/validation.md).
+[Roadmap K1–K6](design/k1-higher-half.md).
 
-Nucleo x86-64 UEFI su QEMU/OVMF (q35/TCG, BSP). Il loader consegna un
-ELF, esce dai Boot Services e lascia paging con NX. Il kernel verifica
-il contratto, possiede allocatore fisico, mapping RW/NX, descrittori,
-IDT, ACPI/MADT, APIC, UART, HPET/LAPIC e uno scheduler cooperativo a
-capacita fissa. Si arresta su `KERNEL_READY` oppure su un ciclo timer
-continuo con stop esterno. Non e un sistema permanente di servizi:
-userspace, syscall, filesystem e hardware fisico restano fuori.
+## Verifiche e limiti
 
-## Verificato, con limiti dichiarati
+Test in `test/`, script in `scripts/`, artefatti in `build/`.
+`./scripts/test/run.ps1` esegue le suite host; `./scripts/test/qemu.ps1`
+esegue le campagne registrate, incluse `paging-retirement` e
+`paging-retirement-fault`. Coverage di linee/branch non misurata.
 
-- IRQ hardware 0x41 durante una task worker con IF=1 nel frame; entry
-  Assembly, stop della source ed EOI prima della notifica. Le mutazioni
-  Owner e coda Rust vengono mutati con IF=0 nei rispettivi contesti verificati. Non e preemption.
-- Wait/epoca, idle supervisionato (STI/HLT/CLI sul dispatcher), stop
-  cooperativo e due sessioni idle riusate. Report: [dispatcher](../kernel/scheduler/idle/documentation/dispatcher-validation.md).
-- Ciclo timer continuo con stop esterno e cleanup. Il profilo ordinario
-  resta una sequenza finita di carichi fidati; non equivale a un runtime
-  operativo permanente. Zero/riuso e probe memoria sono ora nel profilo
-  esplicito `-TestBootstrapMemory`, escluso dall'immagine ordinaria.
-- Rust possiede stati, generazioni, coda, wait/stop e pending IRQ.
-  C possiede lease, mapping e integrazione. Assembly possiede switch e
-  entry IRQ. La toolchain e MSVC x64 + rustc `x86_64-pc-windows-msvc` +
-  MASM; la complessita e un costo da misurare, non un vantaggio a priori.
+L'errore di formato preesistente in `configuration/read.c` è risolto:
+sono stati tolti solo i due spazi finali autorizzati dall'utente. Il
+report iniziale fallito resta conservato; il riepilogo cita il retry.
+ASan riguarda i test host; non certifica assenza di leak dell'intero kernel.
+Le pagine del loader non vengono ancora recuperate. Nessuna prova fisica.
 
-Immagine dispatcher verificata (8 ottobre): SHA256
-`1DEBCDD6548522F51C93BD417D2F6BC30C2D37199CABEC8FED57A29A971DBC47`.
-Dieci boot positivi e nove negativi isolati; ciclo continuo distinto.
-Coverage linee/branch N/D; Valgrind non eseguito; SMEP/SMAP/KPTI non
-implementati.
+## K2: sincronizzazione
 
-## Confermato in questa verifica
+K2-A è implementato e verificato: ticket lock C, atomiche Rust e backend
+IF/PAUSE x86, con attesa sorvegliata, guard, ranghi e release LIFO.
+Test: 3 Rust in debug/release, C ASan, 140.000 acquisizioni FIFO su 2/4/8
+thread host, sette fail-stop attesi; dieci boot diagnostici positivi,
+dieci ordinari e due negativi QEMU. I core AP non sono avviati.
+[Prove e limiti](../kernel/sync/documentation/validation.md).
 
-- Prima della separazione `kernel/main.c` aveva 400 righe; ora ne ha 193.
-  Inizializzazione in `kernel/bootstrap/`, prove in `test/kernel/bootstrap/`.
-  Ownership/NX restano nel percorso ordinario. [Verifica della separazione](../kernel/bootstrap/documentation/memory.md):
-  dieci boot consecutivi per profilo e matrice diagnostica di 23 scenari.
-- Contraddizioni al presente, ora etichettate o corrette: [verified-state](review/verified-state.md)
-  (2 ottobre: il kernel non veniva eseguito), [bootstrap](kernel/bootstrap.md),
-  [core scheduler](../kernel/scheduler/documentation/core.md),
-  [integrazione v0](../arch/x86/kernel/scheduler/documentation/integration.md),
-  [README boot](boot/README.md).
+Il runtime sync è collegato al kernel ordinario dal 28 ottobre, con
+contesto BSP inizializzato prima della memoria. K2-B adotta ora lock per
+owner nell’allocatore fisico, query coerenti piccole per budget/range/lease
+e rilascio dopo unmapping con pin conservato se manca capacità. I lettori
+dei metadati nei chiamanti sono migrati alle query; nessuna operazione
+hardware o callback sotto il lock. Anche il core heap adotta ora lock e
+prenotazioni durante il fill; holdings e lifecycle dei mapper restano BSP. **K2 è verificato nel profilo concordato
+dal 29 ottobre:** smoke completo 17/17 e dieci boot aggiuntivi dell’ELF heap
+ricompilato. [Chiusura e limiti K2](../kernel/sync/documentation/k2-integration.md).
+Gli AP non predisposti sono rifiutati;
+GS/per-CPU sul BSP è ora verificato in K3-A. Contesa verificata con thread host, non SMP guest.
+[Contratto approvato](../kernel/mm/physical/documentation/k2-design.md).
+[Prove del pool e limiti](../kernel/mm/physical/documentation/k2-pool-validation.md).
+La [preparazione precedente](../kernel/mm/physical/documentation/k2-core-validation.md)
+resta uno snapshot storico. Nel blocco pool le 39 suite host sono verificate
+in aggregato, incluse le ripetizioni dei tre adattatori mock corretti; sulle
+immagini di quel blocco passano dieci sessioni GOP e una VirtIO/IOMMU, con
+input, pixel e cleanup verificati. Il blocco heap successivo passa ASan, 200.000
+operazioni casuali, 14.000 cicli concorrenti host, 40 trasferimenti sospesi
+e dieci boot diagnostici; [prove heap](../kernel/mm/heap/documentation/k2-validation.md).
+Prossimo blocco: completamento K3 per AP, dati e clock di contesa per CPU.
+Nessun AP è ancora avviato.
 
-## Fuori dal perimetro attuale
+Riscontro storico dell’integrazione K2-A: un boot terminava in LAPIC_TIMER_INVALID dopo
+il probe lock riuscito. Aggiunta diagnostica timer con autorizzazione;
+i successivi 30 boot passarono senza isolare la causa. Questi retry
+non erano una correzione; il fix successivo e il limite dell’attribuzione
+sono distinti sotto. Dettagli nel report di sincronizzazione.
 
-Preemption, ring 3, syscall, user copy, SMP/AP, input ordinario illimitato,
-seconda toolchain Linux, `reuse/`. La coda payload IRQ a 256 byte e verificata
-con dati diagnostici: [report](../kernel/scheduler/payload/documentation/validation.md).
-Il primo parser PS/2 scan set 2 e ora implementato in Rust, con ABI C
-senza puntatori e prove sintetiche host/kernel. Il controller ha discovery
-ACPI e negoziazione verificata nel profilo isolato `-TestPs2Controller`,
-con scanning/IRQ disabilitati alla fine. Il profilo `-Ps2Input` collega ora
-IRQ1, coda Rust e task consumer fino a Esc, con idle HPET e cleanup:
-[contratto runtime](../arch/x86/kernel/drivers/input/ps2/documentation/runtime.md),
-[verifica del collegamento](../arch/x86/kernel/drivers/input/ps2/documentation/validation.md).
-Il layout italiano aggiunge modificatori Rust, accenti, AltGr e UTF-8;
-L'editor raccoglie fino a256 byte UTF-8, cancella scalar completi con
-Backspace e consegna la riga alla task su Enter; Tab resta un evento.
-Buffer pieno: rifiuto del nuovo carattere, con avviso. La task shell separata
-riceve righe tramite FIFO4, con backpressure e rifiuto dei comandi troncati.
-Builtin help/echo/status/exit, output seriale; exit chiude la sessione.
-[Contratto shell](../kernel/shell/documentation/shell.md).
-Shell verificata:24 test Rust sia debug sia release, C/ASan, accounting
-di tre stack, dieci boot shell finali e dieci ordinari; stress612 press.
-[Contratto editor](../kernel/console/line/documentation/editor.md);
-[snapshot testo](../kernel/input/keyboard/documentation/text.md).
-Editor verificato con20 test Rust sia debug sia release, test C/ASan,
-dieci boot input finali, dieci ordinari e stress di559 press:
-overflow rifiutato, righe da256 byte e budget ripristinato.
-Resta una sessione BSP con guardie di budget.
-Il contratto del parser resta in
-[contratto](../kernel/drivers/input/ps2/documentation/design.md).
-[Verifica controller](../kernel/drivers/input/ps2/documentation/controller-validation.md):
-snapshot del blocco controller, precedente al collegamento input.
+Su scelta dell'utente è corretto un errore concreto della misura:
+arm→IRQ e ritorno del watchdog sono separati, con soglie invariate.
+Passano dieci boot K2, dieci ordinari, ciclo continuo, negativo IRQ perso,
+regressioni C/Rust e ASan. La causa esatta del vecchio panic resta non
+attribuita: questo fix non è una prova retroattiva.
+[Implementazione e risultati](../arch/x86/kernel/timer/lapic/documentation/wait/k2-failure.md).
 
-## Sequenza di lavoro
+Restano K3 AP/dati per CPU, K4 shootdown/preemption, K5
+syscall/user copy e K6 ELF utente. Nessuna di queste funzionalità viene
+indicata come già implementata.
 
-La pipeline input e ora separata per responsabilita: protocollo e decoder
-in `kernel/drivers/input/ps2/`, layout in `kernel/input/keyboard/`, editor in
-`kernel/console/line/`, comandi/coda in `kernel/shell/`. Backend IRQ e
-orchestrazione restano in `arch/x86/kernel/drivers/input/ps2/`; gateway ABI Rust
-in `kernel/input/integration/`. [Struttura e verifica corrente](../kernel/drivers/input/ps2/documentation/structure.md):
-24 test Rust debug/release, C/ASan, 10.000 cicli controller mock,
-10 boot input e 10 ordinari, stress612 pressioni. Hardware fisico,
-riavvio dopo guasto e sessione ordinaria illimitata non sono completati.
+## K3-A: contesto BSP tramite GS
 
-1. Consolidamento documentale completato.
-2. Separazione bootstrap memoria/diagnostica completata, con i controlli
-   di sicurezza nel percorso ordinario.
-3. Primo input PS/2 collegato nel profilo esplicito:
-   IRQ → coda → decoder → layout italiano → output UTF-8 osservabile.
-   Editor e shell separata nel profilo esplicito. Integrazione ordinaria e sessione senza guardie
-   diagnostiche restano lavoro successivo.
-4. Percorso minimo verso ring 3: spazio utente, stack, ingresso/uscita,
-   una syscall, fault.
+Passaggio early → runtime implementato dopo GDT e ritiro dello stack iniziale,
+con lock rilasciati e IF preservato. Il vecchio contesto viene azzerato;
+contatore dei token e binding del clock sono conservati. Il reader valida
+la base GS prima di dereferenziarla, senza fallback allo stato ritirato.
+Passano 50 esecuzioni host con ASan, dieci boot diagnostici, dieci ordinari
+e due negativi; passa anche una regressione interattiva VirtIO/VT-d.
+Il monitor verifica GSBASE e memoria dei due contesti.
+Quattro vCPU configurate non significano quattro core avviati: solo BSP.
+K3 resta aperto per completamento delle risorse per CPU, ingresso e avvio AP.
+[Report K3-A](../arch/x86/kernel/cpu/percpu/documentation/k3-validation.md).
 
-Il limite di file serve a separare responsabilita, non a spezzare un
-modulo in pezzi artificiali. Una toolchain Linux e una task dedicata
-successiva, scelta esplicita, non un adattamento silenzioso.
+## K3-B: clock sorvegliato per i lock BSP
 
-## Framebuffer: handoff v4 collegato
+Collegata la sorgente ACPI PM esistente dopo la discovery, con descrittore
+e dati copiati in memoria persistente del modulo per-CPU. Verifica del
+progresso con IF=0; bind unico e quiescente, rollback prima della pubblicazione.
+Nessun lock o allocazione nel callback. Policy di bring-up: 100 ms oppure
+un milione di controlli, al primo limite; non un benchmark dei driver.
 
-Scelta utente: cercare e impostare un modo video supportato.
-Prima fase: selezione/validazione in C e Rust nel probe EFI separato,
-4 test Rust debug/release, test C con ASan e accounting, dieci boot
-QEMU consecutivi positivi e un caso senza video.
-[Snapshot della prima fase](../kernel/drivers/video/framebuffer/documentation/validation.md).
-Il framebuffer del vecchio OS e stato letto senza modificarlo:
-[parti recuperabili e correzioni](../kernel/drivers/video/framebuffer/documentation/reuse-assessment.md).
+Passano 50 esecuzioni della nuova suite host e le regressioni percpu, sync,
+clock e bootstrap; C ASan e analisi statica pertinenti. Sul kernel finale:
+dieci boot diagnostici, dieci ordinari, due negativi e una sessione completa
+console VirtIO/VT-d con pixel, input e cleanup. Coverage N/D, nessuna prova
+fisica. [Report K3-B](../arch/x86/kernel/cpu/percpu/documentation/k3b-validation.md).
 
-Blocco pixel: offset validati senza accettare padding come pixel, buffer
-corti respinti e colori RGB/BGR con byte riservato zero. Otto casi Rust
-distinti debug/release, ABI C con ASan, dieci boot probe positivi e un
-caso senza video sull'immagine di quel blocco.
-[Snapshot pixel](../kernel/drivers/video/framebuffer/documentation/pixel-validation.md).
-Handoff v4 collegato al loader e al kernel:208 byte, descrittore opzionale
-da40 byte all'offset168. Validazione, esclusione della RAM, conservazione
-nei retry ExitBootServices e ripristino video nell'abbandono del boot.
-Dieci boot finali con video e dieci senza raggiungono KERNEL_READY.
-Dieci boot della shell PS/2 verificano la regressione sullo stesso loader.
-[Prove del blocco handoff](../kernel/drivers/video/framebuffer/documentation/handoff-validation.md).
-Il servizio GUI futuro richiedera video valido. Mapping live, singoli pixel,
-rettangoli e testo dal kernel sono descritti nei blocchi sotto; una console
-video operativa completa resta il passo successivo.
+Solo BSP collegato. Prima degli AP restano identità, risorse/contesti
+completi, protocollo di ingresso e avvio, più le prove SMP reali della roadmap.
 
-Preflight del mapping collegato: Rust calcola pagine, offset e budget;
-C pubblica solo un risultato valido. Il kernel usa i limiti fisici reali.
-Cinque nuovi casi Rust debug/release,41398 controlli C ASan; campagne
-finali in serie10/10 con video e10/10 senza. Nessuna PTE o store video.
-Durante una coppia di campagne concorrenti era stato osservato un panic
-del watchdog in fase ARM. Il fix del9 ottobre ferma il contatore HPET
-posseduto durante la programmazione e lo riavvia dopo le verifiche.
-Riproduzione host prima/dopo,30 boot finali positivi (20 con due VM
-contemporanee) e10 con IRQ LAPIC perso/cleanup atteso verificati.
-La ESP ordinaria contiene ora il kernel corretto gia testato e il preflight;
-backup del kernel precedente conservato. Il backend video live era ancora
-da fare in quel blocco; ora e verificato come descritto sotto.
-[Correzione e prove](../arch/x86/kernel/timer/hpet/watchdog/documentation/arm-race.md).
-[Risultati e fallimento osservato](../kernel/drivers/video/framebuffer/documentation/mapping/validation.md).
+## K3-C: registro delle identità CPU
 
-Inventario esteso in sola lettura per un framebuffer e LAPIC, con tabelle
-kernel da lease pinned, guardie, esclusione degli alias su Capacity e ID
-dei lease conservati nello snapshot. Test host del contratto e regressione
-ordinaria di quel blocco restano distinti dal riscontro video live successivo.
-Sei casi Rust debug/release, otto gruppi C ripetuti100 volte con ASan,
-suite host kernel e20 boot finali ordinari (10 video,10 assente) passano.
-[Contratto e verifiche](../arch/x86/mm/paging/documentation/video-resources.md).
-Il gate del mapper live e chiuso nel profilo QEMU BSP; anche la scrittura
-dei singoli pixel e ora verificata nel successivo blocco sotto.
+Implementato lo snapshot di boot posseduto: indice logico distinto da ID
+APIC e UID ACPI, BSP verificato all’indice zero, capacità 64, CPU offline
+contate separatamente. Rust valida i campi e le identità; C pubblica solo
+il piano completo e rifiuta doppia inizializzazione e alias.
 
-Mapping framebuffer reale collegato al kernel: ramo dedicato PML4[225],
-guardie, UC forte, supervisor RW/NX, tabelle da lease pinned. Rust costruisce
-le entry; C possiede pubblicazione e rollback. CR3 resta lo stesso, con
-invalidation delle traduzioni e delle viste ricorsive prima del rilascio.
-Revoca incompleta: pagine trattenute, errore e cleanup ritentabile.
-Sette gruppi C x100 con ASan/accounting, tre casi Rust debug/release,
-Clippy, cppcheck senza diagnostiche bloccanti e suite host kernel passano.
-Trenta boot finali:10 diagnostici con unbind/budget/rebind,10 ordinari con
-video live,10 senza display. Il monitor legge fisicamente tutte le768
-foglie video e le guardie; CR3 e policy UC sono verificati indipendentemente.
-Nessuno store pixel del kernel era provato nel blocco mapping; la prova
-pixel successiva e descritta sotto. Hardware fisico non testato.
-La ESP contiene l'immagine ordinaria live gia verificata; hash della copia
-confrontato, backup del kernel precedente conservato in kernel/build/.
-[Contratto](../arch/x86/kernel/drivers/video/framebuffer/documentation/mapping.md)
-e [prove finali](../arch/x86/kernel/drivers/video/framebuffer/documentation/validation.md).
+Passano due test Rust in debug/release, 20 esecuzioni C ASan con tutti i
+64 posizionamenti del BSP e tre suite host di regressione. Sul kernel
+finale: dieci boot diagnostici, dieci ordinari, due negativi e una console
+VirtIO/VT-d completa. Il monitor confronta lo snapshot con i record MADT
+e il contesto GS reali. [Report K3-C](../arch/x86/kernel/cpu/percpu/documentation/k3c-validation.md).
 
-Scrittura pixel collegata al mapping kernel: controlli Rust su coordinate,
-stride, Used e colori; C richiede owner originale, lease pinned, CPU e
-inventario validi prima dello store UC volatile32 bit e del readback.
-Offset fisico non allineato alla pagina e padding verificati host; nessuna
-allocazione aggiunta. Il probe dei cinque colori gira soltanto nel profilo
-diagnostico, non nel boot ordinario. Il renderer batch del blocco successivo
-e descritto sotto; nessuna GUI ancora.
-Undici casi Rust per profilo debug/release e Clippy; tre gruppi pixel C
-ASan oltre ai sette gruppi lifecycle x100, cppcheck senza errori bloccanti.
-Trenta boot finali:10 con cinque pixel verificati fisicamente e nel PPM,
-10 ordinari e10 senza display. RGB e BGR coperti host; QEMU usa BGR.
-[Contratto, prove e riproduzione](../arch/x86/kernel/drivers/video/framebuffer/documentation/pixels.md).
+Gli AP non sono avviati. Hotplug e backend x2APIC operativo restano fuori
+perimetro. Il pianificatore sa ignorare Flags=0, ma il parser MADT esistente
+li rifiuta prima della cattura: questa compatibilità nativa resta da
+rivedere. Prossimo blocco K3: risorse private e ingresso AP, non ancora SMP.
 
-Rettangoli e testo UTF-8 ora usano una sola verifica completa del mapping
-per operazione, con readback scalare UC e autorita finale. Rust valida
-geometria, limite4096 pixel e scalar Unicode; C prepara fino a64 celle8x8
-da un font del chiamante e le scrive. Accenti italiani precomposti coperti,
-glifi assenti sostituiti da un bitmap visibile. Input malformato, font errato
-e coordinate fuori schermo vengono respinti prima degli store. Non e ancora
-la console della shell: il font di dieci glifi e i disegni restano diagnostici.
-Nessuna nuova allocazione o modifica del vecchio OS.
-Quindici casi Rust per profilo debug/release e Clippy, tre gruppi drawing
-x100 con ASan oltre alla regressione pixel/lifecycle, cppcheck13 TU senza
-diagnostiche bloccanti. Trenta boot finali:10 diagnostici con2245 pixel
-verificati fisicamente e nel PPM,10 ordinari,10 senza display. Font completo,
-console operativa, hardware fisico e latenza IRQ restano da verificare.
-[Contratto e prove del renderer](../arch/x86/kernel/drivers/video/framebuffer/documentation/drawing.md).
+## K3-D: risorse private AP predisposte
 
-Font MikeSW Console derivato offline da Cascadia Mono v2407.24, con
-copyright/licenza OFL e sorgente TTF preservati.109 glifi8x16: ASCII,
-accenti italiani maiuscoli/minuscoli, euro e fallback. Il renderer accetta
-Height8/16 esplicita e mantiene il budget4096 pixel (32 celle8x16).
-Nessun parser TTF nel kernel; il collegamento alla console shell resta
-successivo.16 test Rust per profilo, quattro gruppi drawing x100 con ASan
-e regressioni pixel/lifecycle, cppcheck14 TU.30 boot finali:10 diagnostici
-con16837 pixel fisici/visibili verificati,10 ordinari,10 senza display.
-[Contratto font](../arch/x86/kernel/drivers/video/framebuffer/documentation/font.md).
+Arena dedicata con una lease dati e una tabelle, pinned; per AP stack
+64 KiB, tre IST da 16 KiB, guardie e pagina GDT/TSS privata. RW/NX,
+supervisor, con validazione Rust della geometria e riconoscimento esplicito
+nell’inventario paging, video e GPU. Con tre AP: 348 KiB dati + 12 KiB tabelle.
+Il solo BSP non prenota risorse AP. Nessun descrittore AP viene caricato.
 
-Nucleo console video in kernel/console/video/: griglia RAM posseduta da un
-solo chiamante, cursore Rust, wrap differito, LF/CR, Backspace, scroll e
-dirty peek/ack. Massimo240x67, riserva66360 byte, nessuna allocazione.
-Quattro casi Rust debug/release e Clippy,374635 CHECK C/ASan con10000 riusi,
-quattro test del wrapper Python e regressione host framebuffer passano.
-30 boot completati:10 diagnostici con probe griglia/raster font precedente,
-10 ordinari e10 senza display. Un primo tentativo senza display ha fallito
-per timeout di chiusura QEMU dopo KERNEL_READY; archiviato separatamente,
-timeout host reso esplicito e misurato, nuova campagna10/10 passata.
-Questo nucleo e compilato soltanto nel diagnostico: output grafico della
-shell, gateway restore IF e misura latenza IRQ restano il prossimo blocco.
-[Contratto](../kernel/console/video/documentation/design.md) e
-[prove e limiti](../kernel/console/video/documentation/validation.md).
+Passano la nuova suite C ASan/Rust (101 failure point, 64 geometrie,
+63 sweep dei descrittori, cleanup e pin conservati su rifiuto) e dieci
+suite host di regressione pertinenti. Immagini finali: dieci boot
+diagnostici, dieci ordinari, due fault guard/NX attesi e una sessione
+VirtIO/VT-d con quattro vCPU configurate, pixel/input/cleanup verificati.
+Le prime regressioni video/GPU sono state corrette e restano documentate;
+i risultati finali non riusano le loro immagini. [Report K3-D](../arch/x86/kernel/cpu/percpu/documentation/k3d-validation.md).
 
-Gateway console per cella ora collegato nel diagnostico: owner framebuffer
-privato, restore IF originale, flusher con budget massimo16 e dirty confermato
-soltanto dopo successo.72 celle disegnate,56 con IF iniziale1; nuovi test host
-su retry/rientro/overflow e2228226 casi scalar con IRQ/clock mock passano.
-30 boot finali:10 diagnostici con26053 pixel fisici/visibili verificati,
-10 ordinari e10 senza display. Il limite precedente sul gateway e superato;
-A quel checkpoint restavano output shell e prova di latenza con sorgenti PS/2/watchdog attive.
-I tick TSC grezzi non sono una deadline o una misura esatta del tempo IF0.
-La console rimane diagnostica, la shell seriale; ESP invariata in questo blocco.
-[Contratto](../kernel/console/video/documentation/rendering.md) e
-[verifica finale](../kernel/console/video/documentation/rendering-validation.md).
+Al termine di K3-D restavano commit, contesti/clock/GS degli AP e percorso
+di ingresso. Le risorse PREPARED non dimostrano SMP.
 
-Convivenza risorse console verificata nel profilo isolato TestConsoleActive:
-video inizializzato prima del watchdog, validatore dell'owner privato usato
-dalle sole interfacce necessarie, senza modificare le API paging precedenti.
-HPET esclude tutta l'apertura video; lease pinned verificati anche durante
-input/idle/cleanup.576 controlli gateway e1100 policy HPET C/ASan passano,
-con regressioni console/framebuffer/watchdog e wrapper Python.
-40 boot finali:10 combinati con tastiera italiana e shell seriale,10 grafici,
-10 ordinari,10 senza display. Il profilo TestConsoleActive non disegna;
-quel checkpoint precede la verifica del rendering descritta sotto. La finestra IRQ delle
-task rimane quella Assembly gia verificata, senza ampliamento a C arbitrario.
-[Piano](../kernel/console/video/documentation/active-design.md) e
-[prove finali](../kernel/console/video/documentation/active-validation.md).
+## K3-E: contesti AP e risorse non rilasciabili dopo commit
 
-Rendering con input ora verificato nel profilo isolato TestConsoleDraw:
-una cella per passo, clock PM e policy Rust; snapshot diagnostico derivato
-dai soli48 frame dei tre stack originali/pinned, scansione completa del
-renderer e ripristino dell'inventario baseline. Dieci boot finali con
-3548 celle totali,128 pixel fisici/visibili finali verificati per boot,
-zero perdite osservate, ack HPET tra aggiornamenti e budget20438 ripristinato.
-Altri10 boot ordinari e10 senza video passano sull'immagine di regressione.
+Contesti lock privati e attese PM predisposti per gli AP registrati, senza
+copiare token o frame del BSP. Il boot ordinario conserva il rollback.
+La nuova API di commit verifica i contesti e blocca rilascio delle lease,
+azzeramento dei contesti e delle attese prima del futuro tentativo di avvio.
+Nessuna nuova allocazione heap, istruzione privilegiata o attivazione AP.
 
-L'obiettivo10ms è fallito e rimane aperto:17 celle oltre10ms, massimo53,37ms
-per flush nella campagna finale. Gate diagnostico100ms, coerente col poll
-input v0; non certifica latenza end-to-end né protegge da uno stallo C IF0.
-Il rendering resta diagnostico; shell seriale. Prima di aumentare il lavoro
-video serve ridurre il costo senza perdere ownership; le misure per fase
-sono ora disponibili nel checkpoint sotto.
-[Design](../kernel/console/video/documentation/measured-design.md) e
-[prove, tentativi falliti e limiti](../kernel/console/video/documentation/measured-validation.md).
+Passano sei suite host pertinenti: clock (70 esecuzioni), risorse C/Rust,
+provider GS, identita, kernel e bootstrap. Dieci boot finali diagnostici
+con quattro vCPU e dieci ordinari alternando una/quattro vCPU; monitor
+dei contesti e delle lease. Passa anche una sessione console VirtIO/VT-d
+con quattro vCPU, pixel/movimento/cleanup verificati.
+[Report K3-E](../arch/x86/kernel/cpu/percpu/documentation/k3e-validation.md).
 
-Profilazione completata: 3543 celle in dieci boot finali; inventario 94,34%
-del tempo profilato, massimo flush 7,31ms in questa campagna. Altri dieci
-boot ordinari e dieci senza video passano. Nessuna ottimizzazione applicata
-né risoluzione dimostrata dei picchi precedenti. Scelta utente per il prossimo
-blocco: gruppi fino a8 celle adiacenti, controlli completi per gruppo; ora
-implementati nel checkpoint successivo.
-[Prove e limiti](../kernel/console/video/documentation/profile-validation.md).
-
-Batch fino a8 celle implementato, con una scansione completa per gruppo,
-verifica finale e ack solo dopo successo. Quaranta boot finali:10 batch,
-10 singoli,10 ordinari e10 senza video. Batch:28480 celle,3560 gruppi,
-zero perdite input osservate,1024 pixel fisici/visibili finali verificati per
-boot e budget20436 ripristinato. Costo medio profilato per cella:0,302ms
-contro2,018ms nel singolo; confronto QEMU non controllato, non garanzia hardware.
-Quattro gruppi oltre10ms, massimo15,10ms; gate diagnostico100ms passa.
-Shell ancora seriale e nessuna estensione IRQ a C arbitrario.
-[Contratto](../kernel/console/video/documentation/batch-design.md) e
-[prove finali](../kernel/console/video/documentation/batch-validation.md).
+Resta un solo core OS attivo. Mancano compatibilita fault/NMI per CPU,
+riserva bassa prima delle allocazioni generiche, trampolino/CR3 di
+transizione, ingresso e INIT/SIPI, poi prove di piu core realmente pronti.

@@ -54,9 +54,9 @@ static void framebuffer_private(KERNEL_BOOTSTRAP_MEMORY *memory)
 static void plan_private(KERNEL_BOOTSTRAP_MEMORY *memory)
 {
     FB_MAPPING_GEOMETRY geometry;
-    BOOT_U64 budget = memory->Physical.FreePages;
+    BOOT_U64 budget; if (!kernel_physical_budget_read(&memory->Physical, &budget)) kernel_panic("PHYSICAL_BUDGET_QUERY_FAILED");
     if (!fb_mapping_geometry(&memory->Context.Info.Framebuffer,memory->Physical.PhysicalBits,&geometry) ||
-        geometry.TablePages > memory->Physical.FreePages || memory->Physical.FreePages != budget)
+        !kernel_physical_budget_at_least(&memory->Physical, geometry.TablePages) || !kernel_physical_budget_matches(&memory->Physical, budget))
         kernel_panic("FRAMEBUFFER_PLAN_INVALID");
     if (!kernel_text("KERNEL_FB_PLAN_PAGES: ") || !kernel_number(geometry.Pages) ||
         !kernel_text("\nKERNEL_FB_PLAN_TABLES: ") || !kernel_number(geometry.TablePages) ||

@@ -119,6 +119,7 @@ try {
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
         '/MD','/O2','/Gy',("/I$project"),"$project/kernel/drivers/input/ps2/controller/discovery.c","$project/test/kernel/drivers/input/ps2/controller/discovery_test.c",
         "$project/test/kernel/drivers/input/ps2/controller/platform.c",
+        "$project/test/kernel/mm/physical/synchronization/reader_model.c",
         "$project/kernel/firmware/acpi/root.c","$project/lib/firmware/acpi/rsdp.c", "$project/lib/memory/address_ranges.c",
         ("/Fo$out/"),("/Fd$out/discovery.pdb"),("/Fe$out/discovery.exe"),'/link','/incremental:no','/opt:ref',
         "$out/kernel-firmware-acpi-rust-root-layout.obj","$out/lib-firmware-acpi-rust-rsdp-validation.obj")
@@ -134,6 +135,7 @@ try {
         "$project/arch/x86/kernel/drivers/input/ps2/runtime/interrupt.c",
         "$project/arch/x86/kernel/drivers/input/ps2/runtime/consumer/recovery.c", "$project/test/arch/x86/kernel/drivers/input/ps2/runtime/runtime_test.c",
         "$project/test/kernel/drivers/input/ps2/controller/platform.c", "$project/kernel/firmware/acpi/madt/records.c",
+        "$project/test/kernel/mm/physical/synchronization/reader_model.c",
         "$project/kernel/firmware/acpi/root.c","$project/lib/firmware/acpi/rsdp.c", "$project/lib/memory/address_ranges.c",
         ("/Fo$out/"),("/Fd$out/runtime.pdb"),("/Fe$out/runtime.exe"),'/link','/incremental:no','/opt:ref',
         "$out/kernel-firmware-acpi-rust-root-layout.obj","$out/lib-firmware-acpi-rust-rsdp-validation.obj",
@@ -144,6 +146,7 @@ try {
         "$project/arch/x86/kernel/drivers/input/ps2/runtime/interrupt.c",
         "$project/arch/x86/kernel/drivers/input/ps2/runtime/consumer/recovery.c", "$project/test/arch/x86/kernel/drivers/input/ps2/runtime/runtime_test.c",
         "$project/test/kernel/drivers/input/ps2/controller/platform.c", "$project/kernel/firmware/acpi/madt/records.c",
+        "$project/test/kernel/mm/physical/synchronization/reader_model.c",
         "$project/kernel/firmware/acpi/root.c","$project/lib/firmware/acpi/rsdp.c", "$project/lib/memory/address_ranges.c",
         ("/Fo$out/"),("/Fd$out/runtime.pdb"),("/Fe$out/runtime-mouse.exe"),'/link','/incremental:no','/opt:ref',
         "$out/kernel-firmware-acpi-rust-root-layout.obj","$out/lib-firmware-acpi-rust-rsdp-validation.obj",

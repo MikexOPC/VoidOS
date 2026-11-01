@@ -16,6 +16,8 @@ kernel/build/
 
 # ====== Build files and directory ====== #
 build/
+!/kernel/scripts/build/
+!/kernel/scripts/build/**
 
 *.o
 *.out

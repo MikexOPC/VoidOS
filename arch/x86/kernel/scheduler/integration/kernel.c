@@ -112,7 +112,7 @@ static void prepare_private(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root)
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT == 5
         {
             static uint32_t retried;
-            if (!retried && x86_scheduler_zero_fault_used() == 1 && pool->FreePages == budget) {
+            if (!retried && x86_scheduler_zero_fault_used() == 1 && kernel_physical_budget_matches(pool, budget)) {
                 retried = 1;
                 for (uint32_t slot = 320; slot < 464; ++slot)
                     if (x86_stack_entries(3)[slot]) kernel_panic("SCHEDULER_ROLLBACK_MAPPING_REMAINS");
@@ -248,7 +248,7 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     active_profile = x86_scheduler_profile(irq_profile);
     if (phase || !pool || !active_profile || !kernel_section("scheduler cooperativo BSP") ||
         !x86_scheduler_bind(stacks, contexts, pool, root)) return 0;
-    phase = 1; budget = pool->FreePages;
+    phase = 1; if (!kernel_physical_budget_read(pool, &budget)) return 0;
     if (!x86_scheduler_fp_template(fx)) return 0;
     x86_scheduler_machine_mask = (uint32_t)fx[28] | ((uint32_t)fx[29] << 8) |
         ((uint32_t)fx[30] << 16) | ((uint32_t)fx[31] << 24);
@@ -290,10 +290,10 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     }
     reply = kernel_scheduler_apply(KERNEL_SCHEDULER_SELECT, KERNEL_SCHEDULER_NONE, 0);
     if (reply.status != KERNEL_SCHEDULER_EMPTY || !x86_scheduler_profile_complete(irq_profile,&stats) || !kernel_physical_validate(pool) ||
-        pool->FreePages != budget) return 0;
+        !kernel_physical_budget_matches(pool, budget)) return 0;
     for (uint32_t index = 0; index < 8; ++index) if (stacks[index].self) return 0;
     for (uint32_t index = 320; index < 464; ++index) if (x86_stack_entries(3)[index]) return 0;
-    if (!x86_scheduler_report(root,budget,pool->FreePages,stats.steps,irq_profile)) return 0;
+    if (!x86_scheduler_report(root,budget,pool,stats.steps,irq_profile)) return 0;
     if (!kernel_log(0, "KERNEL_SCHEDULER_WAIT_OK") || !kernel_log(0, "KERNEL_SCHEDULER_SWITCH_OK") ||
         !kernel_log(0, "KERNEL_SCHEDULER_CLEANUP_OK")) return 0;
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT < 5
@@ -353,7 +353,7 @@ int x86_scheduler_retained_valid(void)
     if (phase != 1 || current != KERNEL_SCHEDULER_NONE || stats.completed || !active_profile ||
         !kernel_scheduler_context_valid() || !kernel_physical_validate(saved_pool) ||
         active_profile->task_count < 2 || active_profile->task_count > 8 ||
-        budget < 16 * active_profile->task_count || saved_pool->FreePages != budget - 16 * active_profile->task_count) return 0;
+        budget < 16 * active_profile->task_count || !kernel_physical_budget_matches(saved_pool, budget - 16 * active_profile->task_count)) return 0;
     for (uint32_t index = 0; index < active_profile->task_count; ++index)
         if (!x86_task_stack_validate(&stacks[index])) return 0;
     return 1;
@@ -376,7 +376,7 @@ int x86_scheduler_irq_timeout_valid(void)
 {
     if (!irq_profile || phase != 2 || current != 1 || stats.waiting_count != 1 || stats.completed ||
         !x86_scheduler_task_valid() || !kernel_physical_validate(saved_pool) ||
-        saved_pool->FreePages != budget - 32) return 0;
+        !kernel_physical_budget_matches(saved_pool, budget - 32)) return 0;
     // Validate retained leases from a task without invoking dispatcher-only APIs.
     for (uint32_t index = 0; index < 2; ++index) {
         if (stacks[index].self != (uint64_t)(uintptr_t)&stacks[index] || stacks[index].index != index ||

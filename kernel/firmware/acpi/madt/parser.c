@@ -114,10 +114,10 @@ int kernel_madt_initialize(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *
     if (!directory || directory_object->Bytes != sizeof(*directory)) {
         return 0;
     }
-    budget = window->Pool->FreePages;
+    if (!kernel_physical_budget_read(window->Pool, &budget)) return 0;
     if (!kernel_section("discovery topologia MADT") ||
         !kernel_madt_capture(directory, window->Pool->PhysicalBits, read_physical, &reader, &draft) ||
-        window->Pool->FreePages != budget || window->Active || window->Lease.Id) return 0;
+        !kernel_physical_budget_matches(window->Pool, budget) || window->Active || window->Lease.Id) return 0;
     for (index = 0; index < sizeof(object); ++index) {
         ((volatile unsigned char *)&object)[index] = 0;
     }

@@ -24,11 +24,13 @@ static const BOOT_U32 loop_mode = 0;
 
 int x86_timer_service(X86_LAPIC_TIMER *state)
 {
-    BOOT_U32 value;
+    BOOT_U32 value, observed;
     if (!x86_timer_owner_valid(state) || !x86_exception_environment() || state->Active != 1 || state->Error ||
         !state->Reload || state->Phase != X86_TIMER_ARMED || !x86_lapic_validate(state->Mapping)) {
         return 0;
     }
+    // ACPI 6.5 4.8.3.3: PM_TMR is read-only, dword; bits 23:0 or 31:0 from validated FADT.
+    observed = x86_pm_read((unsigned short)state->Clock.Port) & state->Clock.Mask;
     if (!x86_timer_read(state->Mapping,0x320,&value) || value != 0x41 ||
         !x86_timer_read(state->Mapping,0x3e0,&value) || value != 3 ||
         !x86_timer_read(state->Mapping,0x380,&value) || value != state->Reload ||
@@ -42,6 +44,9 @@ int x86_timer_service(X86_LAPIC_TIMER *state)
         state->Error = 2;
         return 0;
     }
+    if (state->Count < 3)
+        state->DeadlinePm[state->Count] = x86_pm_elapsed(state->ArmedPm,observed,state->Clock.Mask);
+    state->ArmedPm = 0;
     ++state->Count;
     state->Phase = X86_TIMER_PENDING;
 #ifdef KERNEL_SCHEDULER_IRQ
@@ -83,6 +88,12 @@ static int read_firmware(void *context, BOOT_U64 physical, BOOT_U32 bytes, unsig
 
 static int report(BOOT_U64 deliveries)
 {
+    for (BOOT_U32 index = 0; index < 3; ++index) {
+        if (!kernel_text("KERNEL_TIMER_TIMING_GOAL: ") || !kernel_number(index + 1) ||
+            !kernel_text("\nKERNEL_TIMER_IRQ_PM: ") || !kernel_number(timer.DeadlinePm[index]) ||
+            !kernel_text("\nKERNEL_TIMER_WAIT_PM: ") || !kernel_number(timer.WaitPm[index]) ||
+            !kernel_text("\n")) return 0;
+    }
     return kernel_section("timer LAPIC calibrato su reference ACPI") &&
         kernel_text("KERNEL_TIMER_OWNER: ") && kernel_number((BOOT_U64)&timer) &&
         kernel_text("\nKERNEL_TIMER_PM_PORT: ") && kernel_number(timer.Clock.Port) &&
@@ -103,22 +114,30 @@ static int report(BOOT_U64 deliveries)
 
 // ====== elapsed PM della singola scadenza senza confonderlo con un timestamp globale ===== //
 
-static int record_deadline(BOOT_U32 goal, BOOT_U32 start)
+static int deadline_failure(BOOT_U32 goal, BOOT_U32 step, BOOT_U32 observed)
+{
+    kernel_text("KERNEL_TIMER_FAILED_GOAL: "); kernel_number(goal);
+    kernel_text("\nKERNEL_TIMER_FAILED_STEP: "); kernel_number(step);
+    kernel_text("\nKERNEL_TIMER_FAILED_OBSERVED: "); kernel_number(observed);
+    kernel_text("\nKERNEL_TIMER_FAILED_COUNT: "); kernel_number(timer.Count);
+    kernel_text("\nKERNEL_TIMER_FAILED_PHASE: "); kernel_number(timer.Phase);
+    kernel_text("\nKERNEL_TIMER_FAILED_CONSUMED: "); kernel_number(timer.Consumed);
+    kernel_text("\n");
+    return 0;
+}
+
+// ====== record_deadline ======
+
+static int record_deadline(BOOT_U32 goal)
 {
     BOOT_U32 elapsed;
     if (!goal || goal > 3) {
         return 0;
     }
-    elapsed = x86_pm_elapsed(start,
-        x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask,timer.Clock.Mask);
-#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
-    // Measurements inside scheduler sessions exclude stack preparation/collection.
-    // Idle measurements include the supervised HPET wait; compute IRQ does not.
-    if (goal <= 3) elapsed = timer.DeadlinePm[goal-1];
-#endif
+    elapsed = timer.DeadlinePm[goal-1];
     // Intervallo ampio per diagnostica: non definisce ancora garanzie scheduler.
-    if (elapsed < X86_PM_SAMPLE_TICKS/2 || elapsed > X86_PM_SAMPLE_TICKS*20) {
-        return 0;
+    if (!x86_timer_deadline_valid(elapsed)) {
+        return deadline_failure(goal,7,elapsed);
     }
     timer.DeadlinePm[goal-1] = elapsed;
     return 1;
@@ -134,44 +153,52 @@ static int deadlines(void)
     }
     for (goal = 1; goal <= 3; ++goal) {
         if (!x86_irq_ready() || !quiet()) {
-            return 0;
+            return deadline_failure(goal,1,0);
         }
-        start = x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask;
 #if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
         if (goal == 1) {
-            if (!x86_scheduler_timer_tasks(&timer)) return 0;
+            if (!x86_scheduler_timer_tasks(&timer)) return deadline_failure(goal,2,0);
         } else if (goal == 2) {
-            if (!x86_scheduler_timer_idle_tasks(&timer)) return 0;
+            if (!x86_scheduler_timer_idle_tasks(&timer)) return deadline_failure(goal,2,0);
         } else if (goal == 3) {
-            if (!x86_scheduler_timer_idle_repeat(&timer)) return 0;
+            if (!x86_scheduler_timer_idle_repeat(&timer)) return deadline_failure(goal,2,0);
         } else
 #endif
         if (!x86_timer_arm(&timer)) {
-            return 0;
+            return deadline_failure(goal,3,0);
         }
 #ifdef KERNEL_TEST_WATCHDOG_LOST_LAPIC
         if (!x86_timer_confirm_write(timer.Mapping,0x320,0x10041)) { return 0; }
 #endif
 #if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+        start = goal == 1 ? x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask : 0;
         waited = goal >= 2 ? x86_scheduler_idle_slept() : x86_watchdog_wait(&timer.Count,goal,NULL);
 #else
+        start = x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask;
         waited = x86_watchdog_wait(&timer.Count,goal,NULL);
+#endif
+#if !defined(KERNEL_SCHEDULER_IRQ) || defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+        timer.WaitPm[goal-1] = x86_pm_elapsed(start,
+            x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask,timer.Clock.Mask);
+#else
+        if (goal == 1) timer.WaitPm[0] = x86_pm_elapsed(start,
+            x86_pm_read((unsigned short)timer.Clock.Port) & timer.Clock.Mask,timer.Clock.Mask);
 #endif
         if (!x86_timer_wait_result(waited,X86_WATCHDOG_WAKE_BUDGET,timer.Count,timer.Error,goal) ||
             timer.Count != goal || timer.Error || !x86_lapic_idle(timer.Mapping)) {
-            return 0;
+            return deadline_failure(goal,4,waited);
         }
         if (x86_timer_arm(&timer) || !x86_timer_take(&timer,&event) ||
             event != goal || x86_timer_take(&timer,&event)) {
-            return 0;
+            return deadline_failure(goal,5,0);
         }
         timer.SleepWakes[goal-1] = waited-1;
         // Una consegna gia osservata deve ritornare subito senza HLT aggiuntivi.
         if (x86_irq_sleep(&timer.Count,goal,8) != 1) {
-            return 0;
+            return deadline_failure(goal,6,0);
         }
         ++timer.PendingProbe;
-        if (!record_deadline(goal,start)) {
+        if (!record_deadline(goal)) {
             return 0;
         }
     }
@@ -248,6 +275,7 @@ cleanup:
     timer.Active = 0;
     if (!result && timer.Phase == X86_TIMER_ARMED && timer.Count == timer.Consumed) {
         timer.Phase = X86_TIMER_READY;
+        timer.ArmedPm = 0;
     }
     if (timer.Token.Id) {
         delivered = x86_irq_registry_deliveries(x86_irq_registry(),&timer.Token);

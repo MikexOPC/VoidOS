@@ -8,8 +8,22 @@ $suites = [ordered]@{
     boot = 'arch/x86/boot/uefi/scripts/build.ps1'
     kernel = 'test/kernel/host.ps1'
     bootstrap = 'test/kernel/bootstrap/scripts/host.ps1'
+    sync = 'kernel/sync/scripts/test.ps1'
+    percpu = 'arch/x86/kernel/cpu/percpu/scripts/test.ps1'
+    'ap-resources' = 'arch/x86/kernel/cpu/percpu/scripts/test-resources.ps1'
+    'percpu-identity' = 'arch/x86/kernel/cpu/percpu/scripts/test-identity.ps1'
+    'percpu-clock' = 'arch/x86/kernel/cpu/percpu/scripts/test-clock.ps1'
+    'percpu-panic' = 'arch/x86/kernel/cpu/percpu/scripts/test-panic.ps1'
+    'percpu-low' = 'arch/x86/kernel/cpu/percpu/lowmemory/scripts/test.ps1'
+    'percpu-transition' = 'arch/x86/kernel/cpu/percpu/transition/scripts/test.ps1'
+    'ap-admission' = 'arch/x86/kernel/cpu/percpu/admission/scripts/test.ps1'
+    'ap-blob' = 'arch/x86/kernel/cpu/percpu/startup/blob/scripts/test.ps1'
+    'ap-startup' = 'arch/x86/kernel/cpu/percpu/startup/scripts/test.ps1'
+    'ap-native' = 'arch/x86/kernel/cpu/percpu/startup/transport/native/scripts/test.ps1'
+    physical = 'kernel/mm/physical/scripts/test.ps1'
     scheduler = 'kernel/scheduler/scripts/test.ps1'
     'x86-scheduler' = 'arch/x86/kernel/scheduler/scripts/test.ps1'
+    'paging-retirement' = 'arch/x86/mm/paging/retirement/scripts/test.ps1'
     paging = 'arch/x86/mm/paging/scripts/test.ps1'
     ps2 = 'kernel/drivers/input/ps2/scripts/test.ps1'
     framebuffer = 'kernel/drivers/video/framebuffer/scripts/test.ps1'
@@ -46,7 +60,8 @@ $suites = [ordered]@{
 # does not start the kernel and breaks every later QEMU campaign. The suite keeps the boot loader.
 $arguments = @{ boot = @('-BootKernel') }
 # FW-012: QEMU campaigns run separately; every other test.ps1 must be listed above.
-$excluded = @('test/arch/x86/kernel/drivers/memory/iommu/intel/dma/scripts/test.ps1')
+$excluded = @('test/arch/x86/kernel/drivers/memory/iommu/intel/dma/scripts/test.ps1',
+    'arch/x86/kernel/cpu/percpu/startup/private/scripts/test.ps1')
 
 # ============ resolve supported suite shell ============
 
@@ -72,7 +87,10 @@ function Invoke-IsolatedSuite([string]$Shell, [string]$Script, [string]$Log, [st
         -RedirectStandardOutput $Log -RedirectStandardError $ErrorLog
     try {
         $null = $process.Handle
-        $process.WaitForExit()
+        if (!$process.WaitForExit(600000)) {
+            if (!$process.HasExited) { $process.Kill() }
+            throw 'Suite exceeded the ten-minute host deadline.'
+        }
         if ($null -eq $process.ExitCode) { throw 'Child exit code unavailable.' }
         return $process.ExitCode
     } finally {

@@ -77,7 +77,7 @@ int x86_scheduler_idle_wait(void)
     // No exclusive Rust owner reference is held over this call.
     failure = 3; // Wait/ack independent watchdog.
     slept = x86_watchdog_wait(&idle_source->Count,goal,NULL);
-    idle_source->DeadlinePm[goal-1] = x86_pm_elapsed(start,
+    idle_source->WaitPm[goal-1] = x86_pm_elapsed(start,
         x86_pm_read((unsigned short)idle_source->Clock.Port) & idle_source->Clock.Mask,idle_source->Clock.Mask);
     if (!slept || slept > X86_WATCHDOG_WAKE_LIMIT || x86_watchdog_result() != X86_WATCHDOG_EVENT) return 0;
     failure = 4; // Verified delivery and dispatcher context.

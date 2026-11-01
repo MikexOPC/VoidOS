@@ -1,3 +1,22 @@
+# ============ isolated synchronization profile ============
+
+if ($TestKernelSyncFault -ne 'none') { $TestKernelSync = $true }
+if ($TestKernelSync) {
+    foreach ($key in $PSBoundParameters.Keys) {
+        if ($key -notin @('TestKernelSync','TestKernelSyncFault','TestBootstrapMemory','OutputDirectory','ToolchainBin')) {
+            throw 'Synchronization probes require an isolated diagnostic image.'
+        }
+    }
+}
+# ============ isolated loader retirement fault ============
+
+if ($TestLoaderRetired) {
+    foreach ($key in $PSBoundParameters.Keys) {
+        if ($key -notin @('TestLoaderRetired','TestBootstrapMemory','OutputDirectory','ToolchainBin')) {
+            throw 'Loader retirement fault requires an isolated diagnostic image.'
+        }
+    }
+}
 # ============ profile validation and derived options ============
 
 if ($TestIommuDma) { $TestIommuActivation=$true }

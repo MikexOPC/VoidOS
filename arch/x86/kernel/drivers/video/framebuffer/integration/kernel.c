@@ -97,7 +97,7 @@ int x86_fb_kernel_cell(BOOT_U32 column, BOOT_U32 row, BOOT_U32 scalar,
 static int pixel_probe(const KERNEL_BOOT_CONTEXT *context)
 {
     const OS_FRAMEBUFFER *fb = &context->Info.Framebuffer;
-    BOOT_U64 budget = mapping.Window->Pool->FreePages;
+    BOOT_U64 budget; if (!kernel_physical_budget_read(mapping.Window->Pool, &budget)) return 0;
     if (fb->Width < 2 || fb->Height < 2 ||
         !x86_fb_pixel(&mapping, 0, 0, 255, 0, 0) ||
         !x86_fb_pixel(&mapping, fb->Width - 1, 0, 0, 255, 0) ||
@@ -106,7 +106,7 @@ static int pixel_probe(const KERNEL_BOOT_CONTEXT *context)
         !x86_fb_pixel(&mapping, fb->Width / 2, fb->Height / 2, 17, 34, 51) ||
         x86_fb_pixel(&mapping, fb->Width, 0, 255, 255, 255) ||
         x86_fb_pixel(&mapping, 0, fb->Height, 255, 255, 255) ||
-        mapping.Window->Pool->FreePages != budget) return 0;
+        !kernel_physical_budget_matches(mapping.Window->Pool, budget)) return 0;
     return kernel_log(0, "KERNEL_FB_PIXELS_OK");
 }
 #endif
@@ -125,7 +125,7 @@ int x86_fb_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *win
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
     {
         BOOT_U64 budget = mapping.Budget;
-        if (!x86_fb_unbind(&mapping) || window->Pool->FreePages != budget ||
+        if (!x86_fb_unbind(&mapping) || !kernel_physical_budget_matches(window->Pool, budget) ||
             !x86_paging_inventory_verify_lapic(context, window->Pool, lapic, inventory) ||
             !kernel_log(0, "KERNEL_FB_ROLLBACK_OK") ||
             !x86_fb_bind(context, window, lapic, inventory, &mapping)) return 0;
@@ -136,6 +136,8 @@ int x86_fb_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *win
 #ifdef KERNEL_TEST_FRAMEBUFFER_MAPPING
     if (!pixel_probe(context) || !x86_fb_drawing_probe(&mapping) || !kernel_console_render_probe()) return 0;
 #endif
+    BOOT_U64 live_budget;
+    if (!kernel_physical_budget_read(window->Pool, &live_budget)) return 0;
     return kernel_text("KERNEL_FB_ROOT: ") && kernel_number(mapping.Authority.Root) &&
         kernel_text("\nKERNEL_FB_OWNER: ") && kernel_number((BOOT_U64)&mapping) &&
         kernel_text("\nKERNEL_FB_VIRTUAL: ") && kernel_number(X86_FB_VIRTUAL) &&
@@ -144,7 +146,7 @@ int x86_fb_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *win
         kernel_text("\nKERNEL_FB_CACHE: ") && kernel_number(mapping.Authority.Region.Cache) &&
         kernel_text("\nKERNEL_FB_PAT: ") && kernel_number(mapping.Authority.Region.Pat) &&
         kernel_text("\nKERNEL_FB_BUDGET_BEFORE: ") && kernel_number(mapping.Budget) &&
-        kernel_text("\nKERNEL_FB_BUDGET_LIVE: ") && kernel_number(window->Pool->FreePages) &&
+        kernel_text("\nKERNEL_FB_BUDGET_LIVE: ") && kernel_number(live_budget) &&
         kernel_text("\nKERNEL_FB_MAPPING_INVENTORY: ") && kernel_number((BOOT_U64)inventory) &&
         kernel_text("\n") && kernel_log(0, "KERNEL_FB_MAPPING_LIVE");
 }
