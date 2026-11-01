@@ -1,16 +1,28 @@
-# Test del progetto
+#                                   VoidOS — Test
 
-I test sono raccolti qui e rispecchiano i percorsi dei sorgenti:
+## Cos'è?
 
-- `test/kernel/`: core, memoria, scheduler, servizi e driver comuni.
-- `test/arch/x86/`: boot UEFI e backend specifici x86.
-- `test/lib/`: librerie condivise.
+Questa cartella raccoglie test unitari, test di integrazione e diagnostici.
+I percorsi rispecchiano i moduli sorgenti, così è possibile trovare le prove
+accanto alla stessa suddivisione funzionale del progetto.
 
-I test diagnostici collegati nelle immagini kernel sono inclusi in questa
-struttura; gli script di build ne selezionano i nuovi percorsi. Le suite non
-sono state unite e mantengono i propri criteri di accettazione.
+# #=======================================================================================================================================# #
 
-Prove della migrazione: [report di validazione](../docs/review/test-layout/validation.md).
+## Struttura
+
+| Cartella | Contenuto |
+|---|---|
+| [kernel/](kernel/) | Memoria, scheduler, servizi e driver comuni. |
+| [arch/](arch/) | Test dei backend hardware; `arch/x86/` include boot UEFI e CPU x86. |
+| [lib/](lib/) | Test delle librerie condivise. |
+| [scripts/](scripts/) | Test degli strumenti comuni, tra cui la lettura dei log. |
+| [tooling/](tooling/) | Verifiche degli strumenti e dei runner di test. |
+
+Esempio: i test di `kernel/drivers/input/ps2/` si trovano in
+`test/kernel/drivers/input/ps2/`. I diagnostici selezionati dalle immagini
+kernel appartengono a questa struttura, anche quando vengono collegati nel guest.
+
+# #=======================================================================================================================================# #
 
 ## Esecuzione
 
@@ -20,32 +32,25 @@ Dalla radice del repository, in PowerShell:
 ./scripts/test/run.ps1 -List
 ./scripts/test/run.ps1 -Suite console
 ./scripts/test/run.ps1 -Suite all
+./scripts/test/qemu.ps1 -List
 ```
 
-Il runner richiama gli script esistenti in processi separati, conserva i log
-in `kernel/build/test-run-*` e interrompe la sequenza al primo errore.
-Il terminale puo essere Windows PowerShell 5.1: le suite vengono eseguite
-con PowerShell 7, cercato nel PATH, nell'installazione standard o nel runtime
-locale di Codex. Se nessuno e disponibile, il runner lo segnala. Stdout e stderr sono
-salvati separatamente; il successo richiede codice di uscita zero, non
-l'assenza di testo su stderr. Il runner attende direttamente il processo
-della suite con WaitForExit, senza l'attesa dell'intero albero di processi
-di Start-Process -Wait. Con PowerShell 5.1 l'XML di cppcheck su stderr
-puo essere convertito in `NativeCommandError`, anche senza un errore di analisi.
-MSVC, Windows SDK, Rust e gli strumenti richiesti dalle singole suite restano
-prerequisiti. La suite `boot` usa il builder UEFI, che esegue anche i test host
-del bootloader e rigenera gli artefatti EFI/ESP in `arch/x86/boot/uefi/build/`.
-Non avvia QEMU; usa il profilo diagnostico predefinito del builder.
+Le suite host girano in processi PowerShell 7 separati. Il runner continua
+dopo un errore e restituisce un esito finale negativo se una suite fallisce.
+Ogni suite ha una deadline host di dieci minuti. Log ed esiti vengono
+salvati in `kernel/build/test-run-*`, con stdout e stderr separati.
 
-Le campagne QEMU restano esplicite: il successo delle suite host non dimostra
-dieci boot superati. Esempio per la console diagnostica a gruppi:
+Le campagne QEMU sono distinte: un PASS host non dimostra un boot riuscito.
+Alcune prove CPU richiedono immagini o pacchetti preparati e non appartengono
+al comando host `all`. MSVC, Windows SDK, Rust e gli strumenti specifici
+restano prerequisiti; per le campagne servono anche QEMU e il firmware previsto.
 
-```powershell
-./arch/x86/boot/uefi/scripts/build.ps1 -BootKernel
-./kernel/scripts/build.ps1 -TestConsoleBatch -OutputDirectory D:/OS/kernel/build/console-batch
-python ./kernel/console/video/scripts/active.py --kernel D:/OS/kernel/build/console-batch/kernel.elf --boots 10 --draw
-```
+# #=======================================================================================================================================# #
 
-Gli script del componente restano in `scripts/`; quelli gia associati a un
-gruppo di test restano nella sua sottocartella `scripts/`. Gli artefatti non
-vanno in `test/`. `reuse/` non partecipa alla migrazione.
+## Convenzioni
+
+I test sono qui; gli script specifici restano nelle rispettive cartelle
+`scripts/`. Gli artefatti vanno nelle directory `build/`, non tra i sorgenti.
+Le suite mantengono criteri distinti per casi positivi, fault intenzionali,
+ownership e cleanup. La migrazione alla struttura centralizzata è descritta
+nel [report dedicato](../docs/review/test-layout/validation.md).
