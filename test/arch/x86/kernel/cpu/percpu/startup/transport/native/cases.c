@@ -60,7 +60,7 @@ uint64_t xp_panic_value(uint32_t field) {
 int main(int argc, char **argv) {
     assert(argc == 2); mode = argv[1];
     group.Cpus[1].ApicId = 1; group.Header.Count = 4;
-    image.Record.Code = 0x8000;
+    image.Record.Code = 0x8000; image.Record.Index = 1;
     assert(xs_configure(4));
     owner.Token = xs_reserve(1);
     owner.State = 1; owner.Group = &group; owner.Image = &image;

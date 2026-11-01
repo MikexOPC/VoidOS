@@ -46,5 +46,21 @@ int xn_probe(const XJ_GROUP *joint, int send_nmi) {
         xp_panic_voluntary(UINT64_C(0x41505f50414e4943));
     }
 #endif
+#ifdef KERNEL_TEST_AP_SEQUENCE
+    if (ready) {
+        for (uint32_t index = 2; index < launch.Group->Header.Count; ++index) {
+            if (!xn_next(&launch) || !xn_run(&launch, 1)) {
+                (void)number_private("KERNEL_AP_SEQUENCE_ERROR: ", launch.Error);
+                (void)number_private("KERNEL_AP_SEQUENCE_STATE: ", xs_snapshot());
+                return kernel_log(3, "KERNEL_AP_SEQUENCE_FAILED") && 0;
+            }
+            if (!kernel_log(0, "KERNEL_AP_SEQUENCE_PARKED")) return 0;
+        }
+        if (!xt_verify_live_tables(launch.Image->Transition) ||
+            !number_private("KERNEL_AP_GROUP_STATE: ", xs_snapshot()) ||
+            !number_private("KERNEL_AP_GROUP_ONLINE: ", xp_panic_value(XP_PANIC_ONLINE)) ||
+            !kernel_log(0, "KERNEL_AP_GROUP_PARKED")) return 0;
+    }
+#endif
     return ready;
 }

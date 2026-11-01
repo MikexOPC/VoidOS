@@ -50,7 +50,7 @@ Non è contata fra le dieci prove finali.
 
 Il runner legge stato atomico, due record completi, stack NMI e registri
 reali di entrambi i core. Richiede terminali BSP DONE e AP STOP, IF=0,
-stesso CR3, GS/GDT/TR/IDT privati AP, frame NMI in IST2 e RSP interrotto
+stesso CR3, GS/GDT/TR privati AP e IDT finale condivisa, frame NMI in IST2 e RSP interrotto
 nel suo stack principale. Verifica anche record non usati, pinning, budget,
 guardie, tabelle, codice e dati immutabili della transizione.
 Il rapporto seriale deve concordare con la memoria e arrivare completo

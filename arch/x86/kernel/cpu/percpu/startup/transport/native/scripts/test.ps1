@@ -30,5 +30,8 @@ try {
     }
     Invoke-Cppcheck $project $out @($sources | ForEach-Object {"$project/$_"})
 } finally {Restore-Msvc $saved}
+& (Join-Path $PSScriptRoot 'rearm.ps1') -OutputDirectory "$out/rearm"
+$python = "$env:USERPROFILE/AppData/Local/Programs/Python/Python312/python.exe"
+Invoke-OsChecked $python @('-B',"$project/test/arch/x86/kernel/cpu/percpu/startup/transport/registers_test.py") -Log "$out/registers.log"
 "PASS: native AP controller host evidence $out"
 if ($MyInvocation.InvocationName -ne '.') {exit 0}

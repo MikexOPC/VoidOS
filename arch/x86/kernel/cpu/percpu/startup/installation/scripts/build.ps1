@@ -15,6 +15,7 @@ if ($TestApLaunch) {
         'arch/x86/kernel/cpu/percpu/startup/transport/native/prepare.c',
         'arch/x86/kernel/cpu/percpu/startup/transport/native/io.c',
         'arch/x86/kernel/cpu/percpu/startup/transport/native/run.c',
+        'arch/x86/kernel/cpu/percpu/startup/transport/native/rearm.c',
         'test/arch/x86/kernel/cpu/percpu/startup/commit/probe/launch.c')) {
         $object = Join-Path $output (($source -replace '/','-') -replace '\.c$','.obj')
         Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$project/$source","/Fo$object"))

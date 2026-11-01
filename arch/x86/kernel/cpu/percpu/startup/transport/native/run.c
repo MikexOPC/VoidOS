@@ -39,7 +39,7 @@ static int idle_private(XN_LAUNCH *m) {
 static int nmi_private(XN_LAUNCH *m) {
     uint32_t errors;
     return idle_private(m) && xn_write(m, 0x280, 0) && xn_read(m, 0x280, &errors) && !errors &&
-        xn_write(m, 0x310, m->Group->Cpus[1].ApicId << 24) && xn_write(m, 0x300, 0x4400) &&
+        xn_write(m, 0x310, m->Group->Cpus[m->Image->Record.Index].ApicId << 24) && xn_write(m, 0x300, 0x4400) &&
         idle_private(m) && xn_write(m, 0x280, 0) && xn_read(m, 0x280, &errors) && !errors;
 }
 
@@ -50,14 +50,14 @@ int xn_run(XN_LAUNCH *m, int send_nmi) {
         !kernel_clock_now(&m->Clock, &m->Last) || !xs_advance(m->Token, XS_PREPARED)) return 0;
     m->State = 2;
     XW_TRANSPORT transport = {xn_read, xn_write, xn_safe, xn_ready, xn_pause, m, m->Clock, 1000000, 1000000};
-    if (!xw_wake(&transport, m->Token, m->Image->Record.Code, m->Group->Cpus[1].ApicId,
+    if (!xw_wake(&transport, m->Token, m->Image->Record.Code, m->Group->Cpus[m->Image->Record.Index].ApicId,
         m->Group->Cpus[0].ApicId, &m->Wake)) return failed_private(m, 1);
     if (send_nmi && !nmi_private(m)) return failed_private(m, 2);
     while (poll_private(m)) {
-        uint64_t phase = x86_percpu_ap_phase(1);
+        uint64_t phase = x86_percpu_ap_phase(m->Image->Record.Index);
         if (phase == 3) return failed_private(m, 3);
         if (xs_snapshot() == (m->Token | XS_PARKED)) {
-            if (!send_nmi || x86_percpu_ap_phase(1) != 2 || xp_panic_value(XP_PANIC_ONLINE) != 3)
+            if (!send_nmi || x86_percpu_ap_phase(m->Image->Record.Index) != 2 || xp_panic_value(XP_PANIC_ONLINE) != (UINT64_MAX >> (63 - m->Image->Record.Index)))
                 return failed_private(m, 4);
             m->State = 4;
             return 1;

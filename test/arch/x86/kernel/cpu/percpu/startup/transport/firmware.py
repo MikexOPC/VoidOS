@@ -20,7 +20,8 @@ cpu, qemu, transition = joint.cpu, joint.qemu, joint.transition
 def registers(vm, index):
     vm.command(f"cpu {index}")
     try:
-        return cpu.monitor_read(vm, "info registers", lambda t: t if "HLT=" in t and "CR0=" in t else None)
+        return cpu.monitor_read(vm, "info registers", lambda t: t if "HLT=" in t and "CR0=" in t and
+            re.search(r"\bEFER=[0-9a-fA-F]{16}\b", t) else None)
     finally:
         vm.command("cpu 0")
 
@@ -36,7 +37,8 @@ def value(text, name):
 
 # ====== verify ======
 
-def verify(vm, log, no_nmi, remote_panic=False):
+def verify(vm, log, no_nmi, remote_panic=False, sequence=False):
+    target = 3 if sequence else 1
     expected_marker = "KERNEL_AP_NO_NMI_QUARANTINED" if no_nmi else "KERNEL_AP_NATIVE_PARKED"
     expected_failures = ["KERNEL_SMP_PANIC"] if remote_panic else []
     if log.count(expected_marker, "OK") != 1 or log.has("KERNEL_READY") or log.failures() != expected_failures:
@@ -53,13 +55,13 @@ def verify(vm, log, no_nmi, remote_panic=False):
         raise RuntimeError("Unexpected INIT/SIPI count")
     deadline = time.monotonic() + 2
     while True:
-        text = registers(vm, 1)
+        text = registers(vm, target)
         if "HLT=1" in text:
             break
         if time.monotonic() >= deadline:
             raise RuntimeError("Target AP did not reach actual HLT")
         vm.command("cont"); time.sleep(0.005); vm.command("stop")
-    (vm.directory / "ap1-registers.txt").write_text(text)
+    (vm.directory / f"ap{target}-registers.txt").write_text(text)
     root, data, tables = (log.number("KERNEL_AP_TRANSITION_" + x) for x in ("ROOT", "DATA", "TABLES"))
     code = int(transition.low.verify(vm, log, False, expected_failures)["Base"], 16)
     active = vm.physical(root, 512)
@@ -85,7 +87,7 @@ def verify(vm, log, no_nmi, remote_panic=False):
         raise RuntimeError("Immutable low record/metadata changed")
     if actual_data[13] != (1 if no_nmi else 3):
         raise RuntimeError("Low gate/error differs from actual AP progress")
-    arena = cpu.ap_monitor.verify(vm, log, cpu.memory, 4, True, 0 if no_nmi else 1)
+    arena = cpu.ap_monitor.verify(vm, log, cpu.memory, 4, True, 0 if no_nmi else target)
     transition_owner = cpu.memory(vm, log.number("KERNEL_AP_TRANSITION_OWNER"), 19)
     pool = log.number("KERNEL_AP_LOW_POOL")
     live = cpu.memory(vm, pool + 4144, 256)
@@ -99,18 +101,18 @@ def verify(vm, log, no_nmi, remote_panic=False):
     first = log.number("KERNEL_AP_CONTEXTS")
     for index in range(1, 4):
         owner = cpu.memory(vm, first + (index - 1) * 448, 56)
-        state = 2 if index == 1 and not no_nmi else 1
+        state = 2 if index <= target and not no_nmi else 1
         if owner[0] != first + (index - 1) * 448 or owner[2] != index | (state << 32) or owner[4] != 1 or owner[6] or any(owner[7:]):
             raise RuntimeError("AP owner/state/lock data mismatch")
     panic = cpu.memory(vm, log.number("KERNEL_PANIC_STATE"), 10)
-    if panic[:3] != [2, 15, 1 if no_nmi else 3] or panic[3] != int(remote_panic):
+    if panic[:3] != [2, 15, 1 if no_nmi else (1 << (target + 1)) - 1] or panic[3] != int(remote_panic):
         raise RuntimeError("Panic admission/election differs")
     if no_nmi:
         if value(text, "CR0") & 1:
             raise RuntimeError("No-NMI AP left real mode")
     else:
-        top = log.number("KERNEL_AP_BASE") + 0x40000 + 17 * 4096
-        if value(text, "CR3") != root or cpu.gs_base(text) != first:
+        top = log.number("KERNEL_AP_BASE") + target * 0x40000 + 17 * 4096
+        if value(text, "CR3") != root or cpu.gs_base(text) != first + (target - 1) * 448:
             raise RuntimeError("Actual AP root/stack/GS differs")
         if not remote_panic and value(text, "RSP") != top - 1024:
             raise RuntimeError("Parked AP stack differs")
@@ -130,8 +132,50 @@ def verify(vm, log, no_nmi, remote_panic=False):
             raise RuntimeError("Actual AP final IDT differs")
         if remote_panic:
             verify_remote(vm, log, text, root, top, panic)
-    return dict(OsCpusReady=1 if no_nmi else 2, StartedAps=1, AdmittedAps=0 if no_nmi else 1,
-        NoNmi=no_nmi, RemotePanic=remote_panic, Token=520, Root=hex(root), Context=hex(first), Arena=arena)
+    if sequence:
+        verify_sequence(vm, log, root, first)
+    return dict(OsCpusReady=1 if no_nmi else target + 1, StartedAps=target, AdmittedAps=0 if no_nmi else target,
+        NoNmi=no_nmi, RemotePanic=remote_panic, Sequence=sequence, Token=520, Root=hex(root), Context=hex(first), Arena=arena)
+
+
+# ====== verify_sequence ======
+
+def verify_sequence(vm, log, root, first):
+    if log.count("KERNEL_AP_GROUP_PARKED", "OK") != 1 or log.count("KERNEL_AP_SEQUENCE_PARKED", "OK") != 2:
+        raise RuntimeError("Group outcome markers missing")
+    if log.number("KERNEL_AP_GROUP_STATE") != (3 << 9) | (3 << 3) | 6 or log.number("KERNEL_AP_GROUP_ONLINE") != 15:
+        raise RuntimeError("Final group token or online mask mismatch")
+    final_record = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
+    for index in range(1, 4):
+        text = registers(vm, index)
+        (vm.directory / f"sequence-cpu-{index}.txt").write_text(text)
+        top = log.number("KERNEL_AP_BASE") + index * 0x40000 + 17 * 4096
+        frame = cpu.memory(vm, top - 1024, 128)
+        expected = final_record[:]
+        expected[1] = index | (index << 32)
+        expected[2] = (index << 9) | (index << 3)
+        expected[7] = top
+        expected[8] = top + 31 * 4096
+        expected[9] = first + (index - 1) * 448
+        if frame[:13] != expected:
+            raise RuntimeError("Group private record changed outside its per-CPU fields")
+        if "HLT=1" not in text or value(text, "CR3") != root or value(text, "RSP") != top - 1024:
+            raise RuntimeError("Group CPU not parked on its private stack/root")
+        if cpu.gs_base(text) != first + (index - 1) * 448 or value(text, "RFL") & 0x7600:
+            raise RuntimeError("Group private GS or flags mismatch")
+        if frame[0] != 1 | (104 << 32) or frame[1] != index | (index << 32) or frame[2] != (index << 9) | (index << 3):
+            raise RuntimeError("Group private record identity/token changed")
+        if frame[6] != root or frame[7] != top or frame[9] != first + (index - 1) * 448 or frame[83] != 6:
+            raise RuntimeError("Group private record geometry/phase mismatch")
+        idtr = b"".join(w.to_bytes(8, "little") for w in cpu.memory(vm, log.number("KERNEL_AP_PANIC_IDTR"), 2))
+        idt = int.from_bytes(idtr[2:10], "little")
+        if not re.search(rf"IDT=\s*{idt:016x}\s+000001ff", text, re.I):
+            raise RuntimeError("Group final IDT mismatch")
+        if value(text, "CR0") & 0x80010001 != 0x80010001 or value(text, "EFER") & 0xd00 != 0xd00 or value(text, "CR4") & 0x620 != 0x620:
+            raise RuntimeError("Group paging/WP/NX/SSE prerequisites missing")
+        meta = top + 31 * 4096
+        if not re.search(rf"GDT=\s*{meta:016x}\s+00000027", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
+            raise RuntimeError("Group private GDT/TR mismatch")
 
 
 # ====== verify_remote ======
@@ -199,7 +243,10 @@ def main():
     parser.add_argument("--boots", type=int, default=10, choices=range(1, 21))
     parser.add_argument("--no-nmi", action="store_true")
     parser.add_argument("--remote-panic", action="store_true")
+    parser.add_argument("--sequence", action="store_true")
     args = parser.parse_args()
+    if args.sequence and (args.remote_panic or args.no_nmi):
+        parser.error("Sequence requires positive launch without panic")
     if args.remote_panic and args.no_nmi:
         parser.error("Remote panic requires the positive AP launch")
     out = transition.ROOT / "kernel/build" / ("first-ap-firmware-" + uuid.uuid4().hex)
@@ -211,13 +258,13 @@ def main():
                 try:
                     log = wait_remote(vm) if args.remote_panic else joint.wait_terminal(vm, False)
                     vm.command("stop")
-                    rows.append(verify(vm, log, args.no_nmi, args.remote_panic))
+                    rows.append(verify(vm, log, args.no_nmi, args.remote_panic, args.sequence))
                 except BaseException:
                     vm.command("stop")
                     for target in range(4):
                         (vm.directory / f"failure-cpu-{target}.txt").write_text(registers(vm, target))
                     raise
-                print(f"PASS: native AP {index}/{args.boots}; admitted={int(not args.no_nmi)}", flush=True)
+                print(f"PASS: native AP {index}/{args.boots}; admitted={3 if args.sequence else int(not args.no_nmi)}", flush=True)
     except Exception as error:
         rows.append(dict(Failure=str(error)))
         qemu.finish(out, "first-ap", args.image, rows, len(rows) - 1, args.boots)
