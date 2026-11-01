@@ -12,6 +12,14 @@ kernel/build/
 
 .idea/
 .vs/
+.vscode/
+
+# ====== Build files and directory ====== #
+build/
+
+*.o
+*.out
+*.elf
 
 # ====== Other ====== #
 
@@ -28,6 +36,9 @@ reuse/
 
 __pycache__/
 *.pyc
+
+# ====== Agents Files ====== #
+
 direttive-locali
 direttive-locali
 SKILL.md
