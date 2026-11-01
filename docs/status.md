@@ -1,4 +1,4 @@
-# Stato corrente — 1 novembre 2026
+# Stato corrente — 2 novembre 2026
 
 Questo è il riferimento breve. I checkpoint storici conservano le prove
 relative alle proprie immagini; non certificano automaticamente la working tree.
@@ -15,12 +15,21 @@ La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
 ## K3-F: backend panic, gate SMP ancora aperto
 
+K3-I/panic sul gruppo: il diagnostico ora verifica anche l'arresto di tutti
+e quattro i core, con origine volontaria BSP oppure eccezione NMI su AP3.
+Passati 10/10 boot per origine: un reporter, tre ACK, nessun core mancante,
+quattro record completi e stack/IST/root reali verificati. Suite host C/ASan
+e Rust passata; nessuna nuova modifica al backend panic di produzione.
+Restano integrazione nel boot ordinario e stress finale; gli AP non
+eseguono ancora task. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-group-panic-validation.md).
+
 K3-I/sequenziale: riarmo della sola pagina dati dopo PARKED implementato.
 Il diagnostico inizializza e parcheggia BSP+tre AP reali: 10/10 boot del
 gruppo, negativo dopo scrittura 1/1, 31 scenari host C/Rust con ASan e due
 test del monitor passati. Regressioni primo AP e ordinario 10/10 ciascuna.
 Codice, tabelle e risorse restano trattenuti. Boot ordinario e scheduler
-ancora BSP; restano panic da AP/gruppo, integrazione ordinaria e stress.
+ancora BSP; panic da AP/gruppo ora provato sopra, integrazione ordinaria
+e stress ancora da completare.
 [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-sequential-validation.md).
 
 K3-I/panic remoto: dopo il primo AP, il BSP ha provocato il panic reale
@@ -28,8 +37,8 @@ e ricevuto l'ACK dell'AP tramite NMI/IDT/IST2 definitivi. Passati 10/10
 panic remoti e 10/10 avvii senza panic; suite host C/ASan e Rust passata,
 audit degli oggetti d'emergenza senza dipendenze FP/SIMD rilevate.
 In quel checkpoint: online BSP+un AP, targets=ACK=2, nessun core mancante.
-L'avvio degli altri AP è ora provato sopra; restano origine panic da AP
-e integrazione ordinaria, con scheduler sempre BSP.
+L'avvio degli altri AP e l'origine panic da AP sono ora provati sopra;
+resta integrazione ordinaria, con scheduler sempre BSP.
 [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-remote-panic-validation.md).
 
 K3-I/primo AP: il diagnostico INIT/SIPI/NMI ha ora eseguito davvero

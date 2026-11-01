@@ -3,6 +3,10 @@
 $flags = @('/nologo','/TC','/std:c11','/W4','/WX','/GS-','/Zl','/O2','/c',('/I' + $project),
     ('/I' + (Join-Path $ToolchainBin '../../../include')),('/I' + (Join-Path $sdk.FullName 'ucrt')), '/DKERNEL_SCHEDULER_IRQ=1')
 if ($TestApNoNmi -and !$TestApLaunch) { throw 'NoNmi requires the AP launch diagnostic.' }
+if ($TestApGroupPanic -ne 'none') {
+    if (!$TestApSequence -or $TestApSequenceFault) { throw 'Group panic requires a healthy sequential diagnostic.' }
+    $flags += $(if ($TestApGroupPanic -eq 'bsp') {'/DKERNEL_TEST_AP_GROUP_PANIC=0'} else {'/DKERNEL_TEST_AP_GROUP_PANIC=3'})
+}
 if ($TestApSequenceFault) {
     if (!$TestApSequence) { throw 'Sequence fault requires the sequence diagnostic.' }
     $flags += '/DKERNEL_TEST_AP_SEQUENCE_FAULT=1'

@@ -130,6 +130,8 @@ ASan non strumenta Rust, Assembly o RAM guest; Valgrind, TSan e coverage
 linee/branch N/D. Profilo fidato QEMU/TCG/OVMF, quattro vCPU; nessuna
 certificazione hardware reale, hotplug o avvio parallelo.
 
-Restano panic originato da AP e sul gruppo completo, integrazione ordinaria
-e stress finale. Gli AP non eseguono ancora task dello scheduler.
+Nel checkpoint restavano panic originato da AP e sul gruppo completo:
+ora verificati nel [blocco successivo](k3i-group-panic-validation.md).
+Restano integrazione ordinaria e stress finale. Gli AP non eseguono ancora
+task dello scheduler.
 Manifest immagini e sorgenti: `kernel/build/k3i-sequence-manifest.json`.

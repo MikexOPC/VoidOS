@@ -11,6 +11,12 @@ foreach ($source in @('arch/x86/kernel/cpu/percpu/startup/assembly/template/imag
     $objects += $object
 }
 if ($TestApLaunch) {
+    if ($TestApGroupPanic -ne 'none') {
+        $source = 'test/arch/x86/kernel/cpu/percpu/panic/integration/group.c'
+        $object = Join-Path $output 'ap-group-panic-probe.obj'
+        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$project/$source","/Fo$object"))
+        $objects += $object
+    }
     foreach ($source in @('arch/x86/kernel/cpu/percpu/startup/transport/wake.c',
         'arch/x86/kernel/cpu/percpu/startup/transport/native/prepare.c',
         'arch/x86/kernel/cpu/percpu/startup/transport/native/io.c',

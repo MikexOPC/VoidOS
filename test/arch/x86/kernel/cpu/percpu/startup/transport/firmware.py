@@ -35,6 +35,52 @@ def value(text, name):
     return int(match[1], 16)
 
 
+# ====== verify_memory ======
+
+def verify_memory(vm, log, expected_failures, executing):
+    root, data, tables = (log.number("KERNEL_AP_TRANSITION_" + x) for x in ("ROOT", "DATA", "TABLES"))
+    code = int(transition.low.verify(vm, log, False, expected_failures)["Base"], 16)
+    active = vm.physical(root, 512)
+    source = cpu.memory(vm, log.number("KERNEL_AP_TRANSITION_SOURCE"), 512)
+    if any(active[:256]) or any((a & ~0x60) != (b & ~0x60) for a, b in zip(active, source)):
+        raise RuntimeError("BSP operational root changed")
+    for table in range(4):
+        expected = [0] * 512
+        if table == 0:
+            expected[0] = tables + 4096 | 3; expected[256:] = source[256:]; expected[510] = 0
+        elif table < 3:
+            expected[0] = tables + (table + 1) * 4096 | 3
+        else:
+            expected[code >> 12] = code | 1; expected[data >> 12] = data | (1 << 63) | 3
+        actual = vm.physical(tables + table * 4096, 512)
+        if any((a ^ b) & ~0x60 for a, b in zip(actual, expected)):
+            raise RuntimeError("AP transition permissions or extra leaf")
+    actual_code, actual_data = vm.physical(code, 512), vm.physical(data, 512)
+    if actual_code != cpu.memory(vm, log.number("KERNEL_AP_IMAGE_CODE_EXPECTED"), 512):
+        raise RuntimeError("Frozen physical code changed")
+    expected_data = cpu.memory(vm, log.number("KERNEL_AP_IMAGE_DATA_EXPECTED"), 512)
+    if actual_data[:13] != expected_data[:13] or actual_data[14:136] != expected_data[14:136]:
+        raise RuntimeError("Immutable low record/metadata changed")
+    arena = cpu.ap_monitor.verify(vm, log, cpu.memory, 4, True, executing)
+    transition_owner = cpu.memory(vm, log.number("KERNEL_AP_TRANSITION_OWNER"), 19)
+    pool = log.number("KERNEL_AP_LOW_POOL")
+    live = cpu.memory(vm, pool + 4144, 256)
+    pins = cpu.memory(vm, pool + 6192, 32)
+    if transition_owner[17:] != [4 | (1 << 32), 1] or cpu.memory(vm, pool, 3)[2] != transition_owner[13] - 4:
+        raise RuntimeError("Frozen transition state or physical budget changed")
+    for physical, pages, ident in ((data, 1, transition_owner[5]), (tables, 4, transition_owner[9])):
+        matches = [i for i in range(64) if live[i * 4:i * 4 + 4] == [physical, pages, ident, pool]]
+        if len(matches) != 1 or (pins[matches[0] // 2] >> (32 * (matches[0] % 2))) & 0xffffffff != 1:
+            raise RuntimeError("Live transition lease lost or no longer pinned")
+    first = log.number("KERNEL_AP_CONTEXTS")
+    for index in range(1, 4):
+        owner = cpu.memory(vm, first + (index - 1) * 448, 56)
+        state = 2 if index <= executing else 1
+        if owner[0] != first + (index - 1) * 448 or owner[2] != index | (state << 32) or owner[4] != 1 or owner[6] or any(owner[7:]):
+            raise RuntimeError("AP owner/state/lock data mismatch")
+    return root, actual_data, arena, first
+
+
 # ====== verify ======
 
 def verify(vm, log, no_nmi, remote_panic=False, sequence=False):
@@ -62,48 +108,9 @@ def verify(vm, log, no_nmi, remote_panic=False, sequence=False):
             raise RuntimeError("Target AP did not reach actual HLT")
         vm.command("cont"); time.sleep(0.005); vm.command("stop")
     (vm.directory / f"ap{target}-registers.txt").write_text(text)
-    root, data, tables = (log.number("KERNEL_AP_TRANSITION_" + x) for x in ("ROOT", "DATA", "TABLES"))
-    code = int(transition.low.verify(vm, log, False, expected_failures)["Base"], 16)
-    active = vm.physical(root, 512)
-    source = cpu.memory(vm, log.number("KERNEL_AP_TRANSITION_SOURCE"), 512)
-    if any(active[:256]) or any((a & ~0x60) != (b & ~0x60) for a, b in zip(active, source)):
-        raise RuntimeError("BSP operational root changed")
-    for table in range(4):
-        expected = [0] * 512
-        if table == 0:
-            expected[0] = tables + 4096 | 3; expected[256:] = source[256:]; expected[510] = 0
-        elif table < 3:
-            expected[0] = tables + (table + 1) * 4096 | 3
-        else:
-            expected[code >> 12] = code | 1; expected[data >> 12] = data | (1 << 63) | 3
-        actual = vm.physical(tables + table * 4096, 512)
-        if any((a ^ b) & ~0x60 for a, b in zip(actual, expected)):
-            raise RuntimeError("AP transition permissions or extra leaf")
-    actual_code, actual_data = vm.physical(code, 512), vm.physical(data, 512)
-    if actual_code != cpu.memory(vm, log.number("KERNEL_AP_IMAGE_CODE_EXPECTED"), 512):
-        raise RuntimeError("Frozen physical code changed")
-    expected_data = cpu.memory(vm, log.number("KERNEL_AP_IMAGE_DATA_EXPECTED"), 512)
-    if actual_data[:13] != expected_data[:13] or actual_data[14:136] != expected_data[14:136]:
-        raise RuntimeError("Immutable low record/metadata changed")
+    root, actual_data, arena, first = verify_memory(vm, log, expected_failures, 0 if no_nmi else target)
     if actual_data[13] != (1 if no_nmi else 3):
         raise RuntimeError("Low gate/error differs from actual AP progress")
-    arena = cpu.ap_monitor.verify(vm, log, cpu.memory, 4, True, 0 if no_nmi else target)
-    transition_owner = cpu.memory(vm, log.number("KERNEL_AP_TRANSITION_OWNER"), 19)
-    pool = log.number("KERNEL_AP_LOW_POOL")
-    live = cpu.memory(vm, pool + 4144, 256)
-    pins = cpu.memory(vm, pool + 6192, 32)
-    if transition_owner[17:] != [4 | (1 << 32), 1] or cpu.memory(vm, pool, 3)[2] != transition_owner[13] - 4:
-        raise RuntimeError("Frozen transition state or physical budget changed")
-    for physical, pages, ident in ((data, 1, transition_owner[5]), (tables, 4, transition_owner[9])):
-        matches = [i for i in range(64) if live[i * 4:i * 4 + 4] == [physical, pages, ident, pool]]
-        if len(matches) != 1 or (pins[matches[0] // 2] >> (32 * (matches[0] % 2))) & 0xffffffff != 1:
-            raise RuntimeError("Live transition lease lost or no longer pinned")
-    first = log.number("KERNEL_AP_CONTEXTS")
-    for index in range(1, 4):
-        owner = cpu.memory(vm, first + (index - 1) * 448, 56)
-        state = 2 if index <= target and not no_nmi else 1
-        if owner[0] != first + (index - 1) * 448 or owner[2] != index | (state << 32) or owner[4] != 1 or owner[6] or any(owner[7:]):
-            raise RuntimeError("AP owner/state/lock data mismatch")
     panic = cpu.memory(vm, log.number("KERNEL_PANIC_STATE"), 10)
     if panic[:3] != [2, 15, 1 if no_nmi else (1 << (target + 1)) - 1] or panic[3] != int(remote_panic):
         raise RuntimeError("Panic admission/election differs")

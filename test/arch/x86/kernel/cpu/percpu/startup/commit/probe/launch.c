@@ -3,6 +3,9 @@
 #include "arch/x86/kernel/cpu/percpu/internal.h"
 #include "arch/x86/kernel/cpu/percpu/startup/private/frame.h"
 #include "kernel/diagnostics/log.h"
+#ifdef KERNEL_TEST_AP_GROUP_PANIC
+#include "test/arch/x86/kernel/cpu/percpu/panic/integration/group.h"
+#endif
 static XN_LAUNCH launch;
 
 // ====== number_private ======
@@ -60,6 +63,9 @@ int xn_probe(const XJ_GROUP *joint, int send_nmi) {
             !number_private("KERNEL_AP_GROUP_STATE: ", xs_snapshot()) ||
             !number_private("KERNEL_AP_GROUP_ONLINE: ", xp_panic_value(XP_PANIC_ONLINE)) ||
             !kernel_log(0, "KERNEL_AP_GROUP_PARKED")) return 0;
+#ifdef KERNEL_TEST_AP_GROUP_PANIC
+        return xp_group_probe(&launch, KERNEL_TEST_AP_GROUP_PANIC);
+#endif
     }
 #endif
     return ready;
