@@ -1,4 +1,4 @@
-param([switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic,
+param([switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic, [switch]$TestApSequence, [switch]$TestApSequenceFault,
     [ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [ValidateSet('none','guard','nx')][string]$TestApResourceFault = 'none',
     [ValidateSet('none','prepare','voluntary','opcode','page','nmi','double','no-simd','recursive','lock-held','prepare-rollback','no-simd-call')][string]$TestSmpPanic = 'none',

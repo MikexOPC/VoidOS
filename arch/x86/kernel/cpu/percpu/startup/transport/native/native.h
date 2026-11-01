@@ -5,7 +5,7 @@
 #include "../../../admission/group.h"
 #include "../../../panic/native/runtime.h"
 
-// ====== one_ap_launch_owner ======
+// ====== sequential_launch_owner ======
 
 typedef struct {
     uint64_t  Self, Token;
@@ -20,6 +20,8 @@ typedef struct {
 } XN_LAUNCH;
 int xn_prepare(XN_LAUNCH *owner, const XJ_GROUP *joint);
 int xn_run(XN_LAUNCH *owner, int send_nmi);
+int xn_next(XN_LAUNCH *owner);
+int xn_private_parked(XN_LAUNCH *owner);
 int xn_safe(void *context);
 int xn_read(void *context, uint32_t offset, uint32_t *value);
 int xn_write(void *context, uint32_t offset, uint32_t value);

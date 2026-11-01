@@ -1,5 +1,20 @@
 #include "native.h"
 #include "arch/x86/mm/window/access.h"
+#include "../../private/frame.h"
+
+// ====== xn_private_parked ======
+
+int xn_private_parked(XN_LAUNCH *m) {
+    if (!xn_safe(m) || m->State != 4 || xs_snapshot() != (m->Token | XS_PARKED)) return 0;
+    const XS_ENTRY_RECORD *record = &m->Image->Record;
+    if (record->Entry != (uint64_t)xs_private_entry ||
+        record->StackTop != X86_AP_BASE + record->Index * X86_AP_STRIDE + 17 * 4096) return 0;
+    const XS_PRIVATE_FRAME *frame = (const XS_PRIVATE_FRAME *)(record->StackTop - 1024);
+    if (frame->Phase != 6 || frame->Error) return 0;
+    const unsigned char *a = (const unsigned char *)&frame->Record, *b = (const unsigned char *)record;
+    for (size_t i = 0; i < sizeof(*record); ++i) if (a[i] != b[i]) return 0;
+    return 1;
+}
 
 // ====== xn_read ======
 
@@ -16,7 +31,7 @@ int xn_read(void *context, uint32_t offset, uint32_t *value) {
 int xn_write(void *context, uint32_t offset, uint32_t value) {
     XN_LAUNCH *m = context;
     if (!xn_safe(m)) return 0;
-    uint32_t id = m->Group->Cpus[1].ApicId;
+    uint32_t id = m->Group->Cpus[m->Image->Record.Index].ApicId;
     if (offset == 0x280) { if (value) return 0; }
     else if (offset == 0x310) { if (value != id << 24) return 0; }
     else if (offset == 0x300) {

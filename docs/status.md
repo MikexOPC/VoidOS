@@ -15,23 +15,25 @@ La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
 ## K3-F: backend panic, gate SMP ancora aperto
 
-K3-I/sequenziale: approvato il riarmo della sola pagina dati dopo PARKED.
-Primo prerequisito completato: verifica delle tabelle già usate dall'AP,
-distinta dal confronto rigoroso delle tabelle inattive. Host C/ASan/Rust,
-regressione joint, 10/10 primi AP e 10/10 ordinari passati. Il canale di
-scrittura e gli altri AP restano da collegare.
+K3-I/sequenziale: riarmo della sola pagina dati dopo PARKED implementato.
+Il diagnostico inizializza e parcheggia BSP+tre AP reali: 10/10 boot del
+gruppo, negativo dopo scrittura 1/1, 31 scenari host C/Rust con ASan e due
+test del monitor passati. Regressioni primo AP e ordinario 10/10 ciascuna.
+Codice, tabelle e risorse restano trattenuti. Boot ordinario e scheduler
+ancora BSP; restano panic da AP/gruppo, integrazione ordinaria e stress.
 [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-sequential-validation.md).
 
 K3-I/panic remoto: dopo il primo AP, il BSP ha provocato il panic reale
 e ricevuto l'ACK dell'AP tramite NMI/IDT/IST2 definitivi. Passati 10/10
 panic remoti e 10/10 avvii senza panic; suite host C/ASan e Rust passata,
 audit degli oggetti d'emergenza senza dipendenze FP/SIMD rilevate.
-Online BSP+un AP, targets=ACK=2, nessun core mancante. Restano altri AP,
-origine panic da AP e integrazione ordinaria; scheduler sempre BSP.
+In quel checkpoint: online BSP+un AP, targets=ACK=2, nessun core mancante.
+L'avvio degli altri AP è ora provato sopra; restano origine panic da AP
+e integrazione ordinaria, con scheduler sempre BSP.
 [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-remote-panic-validation.md).
 
 K3-I/primo AP: il diagnostico INIT/SIPI/NMI ha ora eseguito davvero
-l'ammissione C e il ritorno sul core 1: stack/GS/GDT/TSS/IDT privati,
+l'ammissione C e il ritorno sul core 1: stack/GS/GDT/TSS privati e IDT finale condivisa,
 provider accettato e PARKED verificati nei registri reali. Passati 10/10
 boot dedicati, negativo senza NMI 1/1, 50 casi host e regressioni 10/10
 joint-panic e 10/10 ordinarie. Corrette una race del supervisore e la

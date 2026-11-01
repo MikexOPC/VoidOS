@@ -8,7 +8,10 @@ int xn_safe(void *context) {
     const XN_LAUNCH *m = context;
     if (!m || m->Self != (uint64_t)m || !ks_boot_cpu() || ks_irq_state()) return 0;
     KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
-    return locks && !locks->Depth && xag_group() == m->Group &&
+    return locks && !locks->Depth && m->Group && m->Image &&
+        m->Group->Header.Count >= 2 && m->Group->Header.Count <= 64 &&
+        m->Image->Record.Index >= 1 && m->Image->Record.Index < m->Group->Header.Count &&
+        !xp_panic_value(XP_PANIC_OWNER) && xag_group() == m->Group &&
         x86_percpu_ap_closed() == m->Group->Header.Count && xj_phase(m->Joint) == 2 &&
         xj_retained(m->Image) && xj_retained(m->Image->Transition) &&
         m->Image->State == 4 && m->Image->Transition->State == 4 &&
