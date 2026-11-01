@@ -30,6 +30,7 @@ int xt_early(KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_AP_LOW_MEMORY *code, X86
 int xt_prepare(X86_AP_TRANSITION *owner, BOOT_U64 root, BOOT_U64 pat, const XT_IO *io);
 int xt_verify(X86_AP_TRANSITION *owner);
 int xt_verify_tables(X86_AP_TRANSITION *owner);
+int xt_verify_live_tables(X86_AP_TRANSITION *owner);
 int xt_cancel(X86_AP_TRANSITION *owner);
 int xt_build(X86_AP_TRANSITION *owner);
 int xt_freeze(X86_AP_TRANSITION *owner);
