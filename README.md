@@ -10,7 +10,7 @@ applicazioni isolate e un'interfaccia grafica.
 Il progetto usa principalmente C, con Rust per validazioni e gestione
 degli stati e Assembly per le operazioni a basso livello.
 
-# ======================================================================================================================================= #
+# #=======================================================================================================================================# #
 
 ## Stato del progetto
 
@@ -23,7 +23,7 @@ restano obiettivi futuri.
 
 Per i risultati verificati e i limiti attuali consultare [docs/status.md](docs/status.md).
 
-# ======================================================================================================================================= #
+# #=======================================================================================================================================# #
 
 ## Struttura
 
@@ -40,7 +40,7 @@ Gli script specifici dei moduli si trovano nelle rispettive sottocartelle
 `scripts/`. Gli artefatti generati nelle directory `build/` sono esclusi
 dal versionamento.
 
-# ======================================================================================================================================= #
+# #=======================================================================================================================================# #
 
 ## Licenza
 
