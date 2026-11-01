@@ -15,6 +15,13 @@ La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
 ## K3-F: backend panic, gate SMP ancora aperto
 
+K3-I/sequenziale: approvato il riarmo della sola pagina dati dopo PARKED.
+Primo prerequisito completato: verifica delle tabelle già usate dall'AP,
+distinta dal confronto rigoroso delle tabelle inattive. Host C/ASan/Rust,
+regressione joint, 10/10 primi AP e 10/10 ordinari passati. Il canale di
+scrittura e gli altri AP restano da collegare.
+[Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-sequential-validation.md).
+
 K3-I/panic remoto: dopo il primo AP, il BSP ha provocato il panic reale
 e ricevuto l'ACK dell'AP tramite NMI/IDT/IST2 definitivi. Passati 10/10
 panic remoti e 10/10 avvii senza panic; suite host C/ASan e Rust passata,

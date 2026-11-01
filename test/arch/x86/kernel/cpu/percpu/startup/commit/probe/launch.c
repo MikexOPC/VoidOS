@@ -38,6 +38,8 @@ int xn_probe(const XJ_GROUP *joint, int send_nmi) {
     int ready = started && launch.State == 4 && xs_snapshot() == (launch.Token | XS_PARKED) &&
         x86_percpu_ap_phase(1) == 2 && xp_panic_value(XP_PANIC_ONLINE) == 3 &&
         kernel_log(0, "KERNEL_AP_NATIVE_PARKED");
+    if (ready && (!xt_verify_live_tables(launch.Image->Transition) ||
+        !kernel_log(0, "KERNEL_AP_LIVE_TABLES_VERIFIED"))) return 0;
 #ifdef KERNEL_TEST_AP_REMOTE_PANIC
     if (ready) {
         if (!kernel_log(1, "KERNEL_AP_REMOTE_PANIC_STARTING")) return 0;

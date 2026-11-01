@@ -182,7 +182,9 @@ static void freeze_private(void) {
     assert(x86_ap_low_reserve(&pool, &code) && xt_early(&pool, &code, &owner));
     XT_IO io = {transfer_private, safe_private, &pool};
     assert(!xt_freeze(&owner));
+    assert(!xt_verify_live_tables(NULL) && !xt_verify_live_tables(&owner));
     assert(xt_prepare(&owner, ROOT, 6, &io) == 1);
+    assert(!xt_verify_live_tables(&owner));
     xt_is_bsp = 0;
     assert(!xt_freeze(&owner) && owner.State == 3);
     xt_is_bsp = 1;
@@ -213,6 +215,36 @@ static void freeze_private(void) {
     assert(kernel_physical_lease_state(&pool, &code.Lease, 1));
     assert(kernel_physical_lease_state(&pool, &owner.Data, 1));
     assert(kernel_physical_lease_state(&pool, &owner.Tables, 1));
+    assert(xt_verify_live_tables(&owner));
+    for (unsigned int table = 0; table < 4; ++table) {
+        BOOT_U64 *entry = &pages[owner.Tables.Base / 4096 + table][table == 3 ? code.Lease.Base / 4096 : 0];
+        *entry ^= 1ULL << 5;
+        assert(!xt_verify_tables(&owner) && xt_verify_live_tables(&owner));
+        *entry ^= 1ULL << 5;
+        *entry ^= 1ULL << 6;
+        assert(xt_verify_live_tables(&owner) == (table == 3));
+        *entry ^= 1ULL << 6;
+        for (unsigned int bit = 0; bit < 64; ++bit) {
+            if (bit == 5 || (table == 3 && bit == 6)) continue;
+            *entry ^= 1ULL << bit;
+            assert(!xt_verify_live_tables(&owner));
+            *entry ^= 1ULL << bit;
+        }
+        BOOT_U64 *empty = &pages[owner.Tables.Base / 4096 + table][table == 3 ? 511 : 1];
+        assert(!*empty);
+        for (unsigned int bit = 0; bit < 64; ++bit) {
+            *empty = 1ULL << bit;
+            assert(!xt_verify_live_tables(&owner));
+        }
+        *empty = 0;
+    }
+    for (unsigned int failure = 1; failure <= 5; ++failure) {
+        calls = 0; fail_at = failure;
+        assert(!xt_verify_live_tables(&owner));
+        fail_at = 0;
+    }
+    assert(xt_verify_tables(&owner) && xt_verify_live_tables(&owner));
+    puts("PASS: live tables accept only hardware A/D; all other bit mutations and empty entries rejected");
     pages[owner.Tables.Base / 4096][0] ^= 4;
     assert(!xt_verify(&owner) && !xt_cancel(&owner) && !x86_ap_low_unhold(&code, &owner));
     ks_irq_restore(saved_if);
