@@ -45,17 +45,12 @@ static int identity_private(const X86_TASK_STACK *owner)
 
 static int lease_private(const X86_TASK_STACK *owner)
 {
-    uint32_t index, matches = 0, bits = owner->pool->PhysicalBits;
+    uint32_t bits = owner->pool->PhysicalBits;
     const KERNEL_PHYSICAL_LEASE *lease = &owner->lease;
     if (bits < 32 || bits > 52 || !lease->Id || lease->Owner != owner->pool->Self ||
         !lease->Base || (lease->Base & 4095) || lease->Pages != X86_TASK_STACK_PAGES ||
         lease->Base > (UINT64_C(1) << bits) - X86_TASK_STACK_BYTES) return 0;
-    for (index = 0; index < KERNEL_PHYSICAL_LEASES; ++index) {
-        const KERNEL_PHYSICAL_LEASE *live = &owner->pool->Live[index];
-        if (live->Id == lease->Id && live->Owner == lease->Owner &&
-            live->Base == lease->Base && live->Pages == lease->Pages) ++matches;
-    }
-    return matches == 1;
+    return kernel_physical_lease_state(owner->pool, lease, 0) || kernel_physical_lease_state(owner->pool, lease, 1);
 }
 
 // ====== x86_task_stack_validate ======

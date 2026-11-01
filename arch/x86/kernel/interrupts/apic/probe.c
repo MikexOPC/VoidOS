@@ -77,7 +77,7 @@ int x86_apic_borrow(X86_PAGE_WINDOW *window, BOOT_U64 physical, BOOT_U64 cache,
     entries = x86_window_entries(3);
     if (!entries) return 0;
     expected = physical | NX | cache | (writable ? 3 : 1);
-    budget = window->Pool->FreePages;
+    if (!kernel_physical_budget_read(window->Pool, &budget)) return 0;
     window->Active = 2;
     entries[WINDOW_LEAF] = expected;
     x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
@@ -87,7 +87,7 @@ int x86_apic_borrow(X86_PAGE_WINDOW *window, BOOT_U64 physical, BOOT_U64 cache,
     entries[WINDOW_LEAF] = 0;
     x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
     window->Active = 0;
-    return result && budget == window->Pool->FreePages && x86_page_window_idle_valid(window);
+    return result && kernel_physical_budget_matches(window->Pool, budget) && x86_page_window_idle_valid(window);
 }
 
 // ====== sole letture dei registri con ripristino del selettore ===== //
@@ -246,9 +246,9 @@ int x86_apic_probe(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     if (!output_valid(context, window, inventory, topology, profile, output) ||
         !x86_apic_mapping_ready(context, window, inventory, topology, profile)) return 0;
     for (index = 0; index < sizeof(draft); ++index) ((volatile unsigned char *)&draft)[index] = 0;
-    budget = window->Pool->FreePages;
+    if (!kernel_physical_budget_read(window->Pool, &budget)) return 0;
     if (!collect(window, topology, profile, &draft) || !routes_covered(topology, &draft) ||
-        budget != window->Pool->FreePages || !x86_page_window_idle_valid(window) ||
+        !kernel_physical_budget_matches(window->Pool, budget) || !x86_page_window_idle_valid(window) ||
         !cpu_current(topology, profile) || !x86_paging_inventory_verify(context, window->Pool, inventory)) return 0;
     draft.Ready = 1;
     for (index = 0; index < sizeof(draft); ++index)

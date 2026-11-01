@@ -1,4 +1,6 @@
 #include "startup.h"
+#include "arch/x86/kernel/cpu/percpu/identity/identity.h"
+#include "arch/x86/kernel/cpu/percpu/clock/clock.h"
 #include "../scheduler/kernel.h"
 #include "../diagnostics/log.h"
 #include "../firmware/acpi/platform.h"
@@ -9,6 +11,11 @@
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
+#include "arch/x86/mm/paging/retirement/retire.h"
+
+#ifdef KERNEL_TEST_SYNC
+#include "test/kernel/sync/integration/probe.h"
+#endif
 
 // ====== acpi_root_private ======
 
@@ -46,7 +53,7 @@ static X86_PAGING_INVENTORY *paging_private(const KERNEL_STARTUP *startup, const
 {
     KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
     X86_PAGING_INVENTORY *paging;
-    BOOT_U64 budget = memory->Physical.FreePages;
+    BOOT_U64 budget; if (!kernel_physical_budget_read(&memory->Physical, &budget)) kernel_panic("PHYSICAL_BUDGET_QUERY_FAILED");
 
     if (!context || !kernel_section("risorse paging attive") ||
         !x86_object_arena_allocate(&memory->Arena, sizeof(*paging), 8, startup->Paging)
@@ -57,7 +64,7 @@ static X86_PAGING_INVENTORY *paging_private(const KERNEL_STARTUP *startup, const
 
     if (!paging || !x86_paging_inventory_capture(context, &memory->Physical, paging) ||
         !x86_paging_inventory_verify(context, &memory->Physical, paging) ||
-        memory->Physical.FreePages != budget ||
+        !kernel_physical_budget_matches(&memory->Physical, budget) ||
         memory->Arena.Objects.Used != sizeof(memory->Context) + sizeof(memory->Inventory) + sizeof(*paging)
     )
     kernel_panic("PAGING_INVENTORY_INVALID");
@@ -78,6 +85,7 @@ static X86_PAGING_INVENTORY *paging_private(const KERNEL_STARTUP *startup, const
 void kernel_startup_platform(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT **context_out, X86_PAGING_INVENTORY **paging_out)
 {
     KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
+    if (!x86_paging_retire_loader(&memory->Context, &memory->Physical)) kernel_panic("LOADER_RETIRE_FAILED");
     acpi_root_private(memory);
     const KERNEL_BOOT_CONTEXT *context = (const KERNEL_BOOT_CONTEXT *)x86_object_arena_data(&memory->Arena, &memory->ContextObject);
     X86_PAGING_INVENTORY *paging = paging_private(startup, context);
@@ -86,6 +94,10 @@ void kernel_startup_platform(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CO
         !x86_paging_inventory_verify(context, &memory->Physical, paging)
     )
     kernel_panic("ACPI_DIRECTORY_INVALID");
+    if (context->Info.Acpi.Source &&
+        (!x86_percpu_wait_initialize(context, &memory->Window,
+            (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory->Arena, startup->Acpi)) ||
+        !x86_percpu_wait_report())) kernel_panic("PERCPU_WAIT_INITIALIZATION_FAILED");
     kernel_profile_after_acpi(startup, context, paging);
 
     if (context->Info.Acpi.Source && !x86_hpet_kernel_initialize(context, &memory->Window,
@@ -110,6 +122,10 @@ void kernel_startup_platform(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CO
     kernel_panic("APIC_PREFLIGHT_INVALID");
 
     if (context->Info.Acpi.Source &&
+        (!x86_cpu_identity_initialize(madt, startup->ApicProfile, memory->Physical.PhysicalBits) ||
+        !x86_cpu_identity_report())) kernel_panic("CPU_IDENTITY_INVALID");
+
+    if (context->Info.Acpi.Source &&
         !x86_apic_probe(context, &memory->Window, paging, madt, startup->ApicProfile, startup->ApicCapabilities)
     )
     kernel_panic("APIC_MMIO_INVALID");
@@ -127,5 +143,8 @@ void kernel_startup_platform(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CO
     )
     kernel_panic("UART_IRQ_INVALID");
 
+#ifdef KERNEL_TEST_SYNC
+    kernel_sync_probe();
+#endif
     *context_out = context; *paging_out = paging;
 }

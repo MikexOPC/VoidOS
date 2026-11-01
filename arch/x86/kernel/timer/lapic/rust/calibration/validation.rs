@@ -96,3 +96,11 @@ pub extern "C" fn x86_timer_reload(start: u32, end: u32, elapsed: u32) -> u32 {
     let result = (u64::from(start - end) * 35795).div_ceil(u64::from(elapsed));
     u32::try_from(result).unwrap_or(0)
 }
+
+// ====== x86_timer_deadline_valid ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_timer_deadline_valid(elapsed: u32) -> u32 {
+    const SAMPLE: u32 = 3_579_545 / 100;
+    u32::from((SAMPLE / 2..=SAMPLE * 20).contains(&elapsed))
+}

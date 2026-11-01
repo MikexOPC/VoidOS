@@ -34,11 +34,13 @@ try {
         Invoke-Checked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort','-C','opt-level=2',"$project/$($entry[0])",'-o',"$out/$($entry[1]).obj")
     }
     $sources=@("$module/table.c","$module/find.c","$module/reader.c","$module/validation.c","$module/backend/access.c",
-        "$test/mock.c","$test/cases.c","$test/finder.c",'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','lib/memory/address_ranges.c')
+        "$test/mock.c","$test/cases.c","$test/finder.c",'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c','lib/memory/address_ranges.c')
     $paths=@($sources | ForEach-Object {"$project/$_"})
     $flags=@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',"/I$project")
+    . (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+    $syncObjects = @(New-PhysicalHostSync $project $out)
     Invoke-Checked "$bin/cl.exe" ($flags+$paths+@("/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no','/DEBUG','/WX',
-        "$out/policy.obj","$out/regions.obj","$out/placement.obj"))
+        "$out/policy.obj","$out/regions.obj","$out/placement.obj") + $syncObjects)
     Invoke-Checked "$out/host.exe" @()
     $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',

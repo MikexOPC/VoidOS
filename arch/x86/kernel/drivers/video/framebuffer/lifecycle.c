@@ -51,19 +51,20 @@ int x86_fb_unbind(X86_FB_MAPPING *owner)
         if (!kernel_physical_release(owner->Window->Pool, lease)) return 0;
         --owner->Allocated;
     }
-    if (owner->Window->Pool->FreePages != owner->Budget) return 0;
+    if (!kernel_physical_budget_matches(owner->Window->Pool, owner->Budget)) return 0;
     clear_owner(owner);
     return 1;
 }
 
 // ====== adopt_plan ======
 
-static void adopt_plan(X86_FB_MAPPING *owner, const KERNEL_BOOT_CONTEXT *context,
+static int adopt_plan(X86_FB_MAPPING *owner, const KERNEL_BOOT_CONTEXT *context,
     X86_PAGE_WINDOW *window, const X86_LAPIC_MAPPING *lapic, X86_PAGING_INVENTORY *inventory,
     const FB_MAPPING_GEOMETRY *geometry, const X86_FB_CPU *cpu)
 {
     X86_PAGING_VIDEO_AUTH *auth = &owner->Authority;
-    owner->Self = (BOOT_U64)owner; owner->Budget = window->Pool->FreePages;
+    if (!kernel_physical_budget_read(window->Pool, &owner->Budget)) return 0;
+    owner->Self = (BOOT_U64)owner;
     owner->Context = context; owner->Window = window; owner->Lapic = lapic; owner->Inventory = inventory;
     owner->Ready = 1;
     auth->Self = (BOOT_U64)auth; auth->Root = cpu->Root; auth->PhysicalBits = cpu->PhysicalBits;
@@ -72,6 +73,7 @@ static void adopt_plan(X86_FB_MAPPING *owner, const KERNEL_BOOT_CONTEXT *context
     auth->Region.AperturePages = (geometry->Offset + context->Info.Framebuffer.Capacity + 4095) / 4096;
     auth->Region.Cache = x86_apic_cache_bits(x86_apic_uc_slot(cpu->Pat) - 1);
     auth->Region.Pat = cpu->Pat; auth->Region.Owner = (BOOT_U64)auth;
+    return 1;
 }
 
 // ====== prepare_owned ======
@@ -97,7 +99,7 @@ static int prepare_owned(X86_FB_MAPPING *owner)
         !x86_paging_inventory_capture_video(owner->Context, owner->Window->Pool, owner->Lapic,
             &owner->Authority, x86_fb_authority, owner->Inventory)) return 0;
     return owner->Budget >= owner->Allocated &&
-        owner->Window->Pool->FreePages == owner->Budget - owner->Allocated;
+        kernel_physical_budget_matches(owner->Window->Pool, owner->Budget - owner->Allocated);
 }
 
 // ====== x86_fb_bind ======
@@ -109,7 +111,7 @@ int x86_fb_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     X86_FB_CPU cpu;
     if (!x86_fb_preflight(context, window, lapic, inventory, owner, &geometry, &cpu)) return 0;
     if (!geometry.Pages) return 1;
-    adopt_plan(owner, context, window, lapic, inventory, &geometry, &cpu);
+    if (!adopt_plan(owner, context, window, lapic, inventory, &geometry, &cpu)) return 0;
     if (!prepare_owned(owner)) {
         (void)x86_fb_unbind(owner);
         return 0;

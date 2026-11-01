@@ -139,7 +139,7 @@ int x86_kernel_stacks_release(X86_KERNEL_STACKS *owner)
     BOOT_U32 count, first;
     volatile BOOT_U64 *entries;
     if (!x86_kernel_stacks_validate(owner) || owner->Committed ||
-        owner->Pool->Count == KERNEL_PHYSICAL_EXTENTS) {
+        !kernel_physical_release_fits(owner->Pool, &owner->Lease)) {
         return 0;
     }
     entries = x86_stack_entries(3);
@@ -151,8 +151,7 @@ int x86_kernel_stacks_release(X86_KERNEL_STACKS *owner)
         }
     }
     invalidate(owner->Profile);
-    if (!kernel_physical_pin(owner->Pool, &owner->Lease, 0) ||
-        !kernel_physical_release(owner->Pool, &owner->Lease)) return 0;
+    if (!kernel_physical_release_after_unmap(owner->Pool, &owner->Lease)) return 0;
     forget(owner);
     return 1;
 }

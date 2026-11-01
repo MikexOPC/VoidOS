@@ -43,7 +43,7 @@ try {
         "$intel/invalidation/lifecycle.c","$intel/invalidation/validation.c","$intel/invalidation/queue.c","$intel/invalidation/memory.c",
         "$intel/registers/lifecycle.c","$intel/registers/preflight.c","$intel/registers/tables.c","$intel/registers/access.c",
         "$intel/domains/lifecycle.c","$intel/domains/planning.c","$intel/domains/construction.c","$intel/domains/verification.c",
-        'arch/x86/mm/paging/iommu/iommu_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','lib/memory/address_ranges.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c','lib/memory/address_ranges.c',
         "test/$intel/registers/mock.c","test/$intel/invalidation/model.c","$test/model.c","$test/cases.c")
     $flags=@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',"/I$project")
     $compiled=@()
@@ -53,6 +53,8 @@ try {
         Invoke-Checked "$bin/cl.exe" ($flags+@($define,'/c',"$project/$source","/Fo$object","/Fd$out/host.pdb"))
         $compiled+=$object
     }
+    . (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+    $compiled += @(New-PhysicalHostSync $project $out)
     Invoke-Checked "$bin/cl.exe" (@('/nologo','/MD')+$compiled+@("/Fe$out/host.exe",'/link','/incremental:no','/DEBUG','/WX',
         "$out/activation-policy.obj","$out/qi-policy.obj","$out/regions.obj","$out/placement.obj","$out/register-policy.obj","$out/domain-policy.obj"))
     Invoke-Checked "$out/host.exe" @()

@@ -19,15 +19,8 @@ int x86_qi_valid(const X86_QI *owner)
     for (BOOT_U32 index=0; index<owner->Allocated; ++index) {
         const KERNEL_PHYSICAL_LEASE *lease=&owner->Pages[index];
         if (lease->Pages!=1 || lease->Base>=(1ULL<<owner->PhysicalBits)) return 0;
-        BOOT_U32 found=0;
-        for (BOOT_U32 slot=0; slot<KERNEL_PHYSICAL_LEASES; ++slot) {
-            const KERNEL_PHYSICAL_LEASE *live=&owner->Mapping->Window->Pool->Live[slot];
-            if (live->Id && live->Id==lease->Id && live->Base==lease->Base && live->Pages==1 && live->Owner==lease->Owner) {
-                if (owner->Mapping->Window->Pool->Pins[slot]!=((owner->Pins>>index)&1)) return 0;
-                ++found;
-            }
-        }
-        if (found!=1 || (index && lease->Base==owner->Pages[0].Base)) return 0;
+        if (!kernel_physical_lease_state(owner->Mapping->Window->Pool, lease, (owner->Pins >> index) & 1) ||
+            (index && lease->Base == owner->Pages[0].Base)) return 0;
         for (BOOT_U32 table=0; table<owner->Mapping->Inventory->Count; ++table)
             if (lease->Base==owner->Mapping->Inventory->Tables[table].Physical) return 0;
     }

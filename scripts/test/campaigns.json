@@ -1,6 +1,83 @@
 {
   "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
+    "percpu-joint-panic": {
+      "build": ["-TestApTransition", "joint-panic"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/commit/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "panic"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "Prepare panic records and AP IST IDT after joint resource seal, without duplicate commit; BSP alone admitted"
+    },
+    "percpu-joint": {
+      "build": ["-TestApTransition", "joint"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/commit/firmware.py", "--image", "{image}", "--boots", "{boots}"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "Joint inactive resource seal: owned blob/tables, private arena and contexts retained; no AP started"
+    },
+    "percpu-joint-fail-before": {
+      "build": ["-TestApTransition", "joint-fail-before"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/commit/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "before"],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "Expected joint fail-stop before private seal: arena/context release blocked by retention barrier"
+    },
+    "percpu-joint-fail-after": {
+      "build": ["-TestApTransition", "joint-fail-after"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/commit/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "after"],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "Expected joint fail-stop after private seal: no SEALED success, no resource release"
+    },
+    "percpu-image": {
+      "build": ["-TestApTransition", "image"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/transition/firmware.py", "--image", "{image}", "--boots", "{boots}", "--image-installed"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "Inactive blob installed in owned physical code/data: full readback, identity, tables and unchanged BSP CR3; no AP launched"
+    },
+    "percpu-image-erase": {
+      "build": ["-TestApTransition", "image-rollback"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/transition/firmware.py", "--image", "{image}", "--boots", "{boots}", "--image-erased"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "Inactive blob erased and read back as zero before releasing content ownership; pinned lease budget unchanged"
+    },
+    "percpu-transition-freeze": {
+      "build": ["-TestApTransition", "freeze"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/transition/firmware.py", "--image", "{image}", "--boots", "{boots}", "--freeze"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "Inactive AP lifetime frozen: pinned leases retained, rebuild/cleanup refused, unchanged BSP CR3; no AP launched"
+    },
+    "percpu-transition": {
+      "build": ["-TestApTransition", "prepare"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/transition/firmware.py", "--image", "{image}", "--boots", "{boots}"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "Inactive shared AP root: four owned tables, RO/X code, RW/NX data, unchanged BSP CR3"
+    },
+    "percpu-transition-rollback": {
+      "build": ["-TestApTransition", "rollback"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/transition/firmware.py", "--image", "{image}", "--boots", "{boots}", "--rollback"],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "Injected transition write failure: table rollback, retained early data, successful retry"
+    },
+    "percpu-low": {
+      "build": ["-TestKernelSync"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/lowmemory/firmware.py", "--image", "{image}", "--boots", "{boots}"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "Early pinned SIPI page: first lease, source map, free ranges and empty low half; APs stopped"
+    },
+    "percpu-low-absent": {
+      "build": ["-TestApLowAbsent"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/lowmemory/firmware.py", "--image", "{image}", "--boots", "{boots}", "--absent"],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "Injected low-page unavailability: BSP continues without a startup lease"
+    },
     "kernel-boot": {
       "build": null,
       "runner": [
@@ -64,11 +141,13 @@
         "{image}",
         "--boots",
         "{boots}",
-        "--iommu"
+        "--iommu",
+        "--smp",
+        "4"
       ],
       "boots": 10,
       "smoke": 1,
-      "summary": "console through the translated VirtIO GPU"
+      "summary": "console through translated VirtIO GPU, four configured CPUs with AP resources inactive"
     },
     "fallback": {
       "heavy": true,
@@ -230,6 +309,167 @@
       "boots": 3,
       "smoke": 1,
       "summary": "PS/2 shell without a video device"
+    },
+    "paging-retirement": {
+      "build": [
+        "-TestBootstrapMemory"
+      ],
+      "runner": [
+        "python",
+        "test/arch/x86/mm/paging/retirement/firmware.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}"
+      ],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "K1 5b: retire loader identity, independent PML4 and descriptor checks"
+    },
+    "paging-retirement-fault": {
+      "build": [
+        "-TestLoaderRetired"
+      ],
+      "runner": [
+        "python",
+        "test/arch/x86/mm/paging/retirement/firmware.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}",
+        "--negative"
+      ],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "K1 5b: warmed retired capsule read must fault after CR3 reload"
+    },
+    "sync": {
+      "build": [
+        "-TestKernelSync"
+      ],
+      "runner": [
+        "python",
+        "test/kernel/sync/scripts/firmware.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}",
+        "--case",
+        "positive"
+      ],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "K2-A synchronization: positive; real BSP IF, no guest SMP claim"
+    },
+    "sync-wait": {
+      "build": [
+        "-TestKernelSyncFault",
+        "wait"
+      ],
+      "runner": [
+        "python",
+        "test/kernel/sync/scripts/firmware.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}",
+        "--case",
+        "wait"
+      ],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "K2-A synchronization: wait; real BSP IF, no guest SMP claim"
+    },
+    "sync-irq": {
+      "build": [
+        "-TestKernelSyncFault",
+        "irq-enabled"
+      ],
+      "runner": [
+        "python",
+        "test/kernel/sync/scripts/firmware.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}",
+        "--case",
+        "irq-enabled"
+      ],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "K2-A synchronization: irq-enabled; real BSP IF, no guest SMP claim"
+    },
+    "percpu-panic": {
+      "heavy": true,
+      "build": ["-TestSmpPanic", "prepare"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/panic/matrix.py", "--image", "{image}", "--boots", "{boots}"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "BSP panic: repeated prepare plus expected faults, self NMI, SIMD guard, recursion and rollback; not SMP execution"
+    },
+    "percpu-ap-commit": {
+      "build": ["-TestKernelSync", "-TestApCommit"],
+      "runner": [
+        "python", "test/arch/x86/kernel/cpu/percpu/firmware.py",
+        "--image", "{image}", "--boots", "{boots}", "--committed", "--smp", "4"
+      ],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "inactive AP contexts and irrevocable resource retention; four configured CPUs, BSP only"
+    },
+    "percpu": {
+      "build": [
+        "-TestKernelSync"
+      ],
+      "runner": [
+        "python",
+        "test/arch/x86/kernel/cpu/percpu/firmware.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}"
+      ],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "K3-A/B/C/D: BSP GS, PM clock, identities and inactive AP arena with owned guards/TSS"
+    },
+    "ap-guard": {
+      "build": [
+        "-TestApResourceFault",
+        "guard"
+      ],
+      "runner": [
+        "python",
+        "test/arch/x86/kernel/cpu/percpu/resources/fault.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}",
+        "--case",
+        "guard"
+      ],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "K3-D AP arena expected guard page fault; BSP injection"
+    },
+    "ap-nx": {
+      "build": [
+        "-TestApResourceFault",
+        "nx"
+      ],
+      "runner": [
+        "python",
+        "test/arch/x86/kernel/cpu/percpu/resources/fault.py",
+        "--image",
+        "{image}",
+        "--boots",
+        "{boots}",
+        "--case",
+        "nx"
+      ],
+      "boots": 1,
+      "smoke": 1,
+      "summary": "K3-D AP arena expected nx page fault; BSP injection"
     }
   }
 }

@@ -69,7 +69,7 @@ int x86_fb_preflight(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
     if (!geometry->Pages) return 1;
     aperture = (geometry->Offset + context->Info.Framebuffer.Capacity + 4095) / 4096;
     index = x86_apic_uc_slot(cpu->Pat);
-    return index && geometry->TablePages <= window->Pool->FreePages &&
+    return index && kernel_physical_budget_at_least(window->Pool, geometry->TablePages) &&
         x86_paging_video_policy(X86_FB_VIRTUAL, geometry->Physical, geometry->Pages,
             aperture, x86_apic_cache_bits(index - 1), cpu->Pat, cpu->PhysicalBits) &&
         aperture_aliases_absent(inventory, geometry->Physical, aperture);

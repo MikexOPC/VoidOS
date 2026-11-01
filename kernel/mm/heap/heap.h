@@ -3,11 +3,12 @@
 
 #include <stdint.h>
 #include "lib/containers/bitmap.h"
+#include "kernel/sync/lock.h"
 
 // G3 H2-A: kernel heap core over one page-aligned virtual range, independent of paging (the x86
 // part maps the range, see arch/x86/mm/heap). Small objects come from size-class slabs, larger
 // ones from contiguous page runs (first fit). Fixed metadata, no allocation of its own.
-// Not synchronized: one core, cooperative scheduler, never from interrupt context.
+// Metadata serialized per owner; backing remains pinned. Never from NMI/fault or IRQ context.
 #define KERNEL_HEAP_MAX_PAGES   4096U       // 16 MiB
 #define KERNEL_HEAP_SLAB_PAGES  256U        // at most 1 MiB of small objects
 #define KERNEL_HEAP_CLASSES     8U          // 16, 32, ... 2048 bytes
@@ -26,6 +27,7 @@ typedef struct {
     uint64_t  SlabPages;
     uint64_t  Objects;
     uint64_t  Rejected;       // invalid or double free, corrupted canary
+    uint64_t  Pending;        // reserved objects being cleared or retired
 } KERNEL_HEAP_STATS;
 
 typedef struct {
@@ -43,6 +45,8 @@ typedef struct {
     uint16_t    SlabFree[KERNEL_HEAP_SLAB_PAGES];     // free slots
     uint64_t    SlotWords[KERNEL_HEAP_SLAB_PAGES][4]; // 1 = slot in use (up to 256 slots)
     KERNEL_HEAP_STATS  Stats;
+    uint64_t    BusyWords[KERNEL_HEAP_SLAB_PAGES][4];
+    KERNEL_LOCK Gate;
 } KERNEL_HEAP;
 
 int       kernel_heap_init(KERNEL_HEAP *heap, void *base, uint32_t pages);

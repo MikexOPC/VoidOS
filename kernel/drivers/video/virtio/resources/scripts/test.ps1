@@ -47,12 +47,14 @@ try {
         Invoke-Checked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort','-C','opt-level=2',"$project/$($entry[0])",'-o',"$out/$($entry[1]).obj")
     }
     $native=@('arch/x86/kernel/drivers/video/virtio/resources/mapping.c','arch/x86/kernel/drivers/video/virtio/resources/construction.c',
-        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/kernel/cpu/percpu/resources/paging/registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c',
         'test/arch/x86/kernel/drivers/video/virtio/resources/mock.c','test/arch/x86/kernel/drivers/video/virtio/resources/cases.c',
         'lib/memory/address_ranges.c')
     $nativePaths=@($native | ForEach-Object {"$project/$_"})
+    . (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+    $syncObjects = @(New-PhysicalHostSync $project $out)
     Invoke-Checked "$bin/cl.exe" ($flags+$nativePaths+@("/Fo$out/","/Fd$out/native.pdb","/Fe$out/native.exe",'/link','/incremental:no',
-        "$out/policy.obj","$out/regions.obj","$out/placement.obj"))
+        "$out/policy.obj","$out/regions.obj","$out/placement.obj") + $syncObjects)
     Invoke-Checked "$out/native.exe" @()
     $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     $paths+=$nativePaths+$presentation+@("$project/test/arch/x86/kernel/drivers/video/virtio/resources/probe.c",

@@ -63,8 +63,14 @@ int x86_timer_arm(X86_LAPIC_TIMER *state)
     }
     state->Active = 1;
     state->Phase = X86_TIMER_ARMED;
+    // ACPI 6.5 4.8.3.3: read-only PM_TMR, dword; low 24/32 bits selected by FADT.
+    state->ArmedPm = x86_pm_read((unsigned short)state->Clock.Port) & state->Clock.Mask;
     if (!x86_timer_confirm_write(state->Mapping,0x320,0x41) || !x86_timer_confirm_write(state->Mapping,0x380,state->Reload)) {
-        if (x86_timer_stop(state->Mapping)) { state->Active = 0; state->Phase = X86_TIMER_READY; }
+        if (x86_timer_stop(state->Mapping)) {
+            state->Active = 0;
+            state->Phase = X86_TIMER_READY;
+            state->ArmedPm = 0;
+        }
         state->Error = 3;
         return 0;
     }
@@ -142,7 +148,7 @@ static int announce(const X86_LAPIC_TIMER *state)
 
 static int step(X86_LAPIC_TIMER *state)
 {
-    BOOT_U32 goal, waited, event;
+    BOOT_U32 goal, waited, event, start = 0;
     if (!x86_irq_ready() || !x86_timer_owner_valid(state) || !control_valid(state) ||
         state->Phase != X86_TIMER_READY || state->Count == ~0U || control.Sleeps == ~0U) return 0;
     goal = state->Count+1;
@@ -160,13 +166,22 @@ static int step(X86_LAPIC_TIMER *state)
     if (!x86_timer_confirm_write(state->Mapping,0x320,0x10041)) { return 0; }
 #endif
 #if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+    if (goal == 1) start = x86_pm_read((unsigned short)state->Clock.Port) & state->Clock.Mask;
     waited = (goal == 2 || goal == 3) ? x86_scheduler_idle_slept() : x86_watchdog_wait(&state->Count,goal,&control.StopRequest);
 #else
+    if (goal <= 3) start = x86_pm_read((unsigned short)state->Clock.Port) & state->Clock.Mask;
     waited = x86_watchdog_wait(&state->Count,goal,&control.StopRequest);
 #endif
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+    if (goal == 1)
+#else
+    if (goal <= 3)
+#endif
+        state->WaitPm[goal-1] = x86_pm_elapsed(start,
+            x86_pm_read((unsigned short)state->Clock.Port) & state->Clock.Mask,state->Clock.Mask);
     if (x86_watchdog_result() == X86_WATCHDOG_STOP && state->Count == state->Consumed) {
         if (!x86_timer_stop(state->Mapping)) { return 0; }
-        state->Active = 0; state->Phase = X86_TIMER_READY;
+        state->Active = 0; state->Phase = X86_TIMER_READY; state->ArmedPm = 0;
         return 2;
     }
     if (!waited || waited > X86_WATCHDOG_WAKE_LIMIT || state->Count != goal || state->Error ||

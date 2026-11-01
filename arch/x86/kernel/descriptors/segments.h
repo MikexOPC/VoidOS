@@ -22,6 +22,7 @@ int x86_kernel_segments_verify(const X86_KERNEL_SEGMENTS *owner, BOOT_U32 busy);
 int x86_kernel_segments_initialize(KERNEL_PHYSICAL_ALLOCATOR *pool);
 int x86_kernel_segments_retarget(X86_KERNEL_SEGMENTS *owner);
 int x86_kernel_segments_bind_main(const X86_KERNEL_STACKS *main);
+int x86_kernel_segments_retire_ready(void);
 void x86_kernel_segments_activate(const X86_GDT_POINTER *pointer);
 void x86_kernel_segments_read(X86_GDT_POINTER *pointer);
 #endif

@@ -3,7 +3,10 @@
 25 ottobre 2026. Documento di design, senza codice. Serve a fissare le scelte prima di rifare i
 driver come oggetti (G6), perché lock, ownership e contesti dipendono da qui.
 
-## 1. Stato attuale (verificato nel codice)
+## 1. Snapshot storico del 25 ottobre (prima di K1/K2)
+
+Questa sezione conserva le premesse del progetto originale. Per il layout,
+i lock e i dati per CPU implementati successivamente vale [lo stato corrente](../status.md).
 
 - **Un solo core.** Il BSP esegue tutto. La MADT viene letta (la campagna di boot la prova con 1 e
   4 CPU), ma gli AP non vengono avviati.

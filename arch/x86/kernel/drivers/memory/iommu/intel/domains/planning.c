@@ -41,16 +41,8 @@ int x86_vtd_domain_inputs(const X86_VTD_DOMAIN *owner)
         !x86_page_window_idle_valid(owner->Window) || !request_valid_private(&owner->Request,owner->Window->Pool)) return 0;
     for (BOOT_U32 table=0; table<owner->Allocated; ++table) {
         const KERNEL_PHYSICAL_LEASE *lease=&owner->Tables[table];
-        BOOT_U32 found=0;
         if (lease->Pages!=1 || lease->Base>=(1ULL<<owner->Request.PhysicalBits)) return 0;
-        for (BOOT_U32 index=0; index<KERNEL_PHYSICAL_LEASES; ++index) {
-            const KERNEL_PHYSICAL_LEASE *live=&owner->Window->Pool->Live[index];
-            if (live->Id==lease->Id && live->Base==lease->Base && live->Pages==lease->Pages && live->Owner==lease->Owner && lease->Id) {
-                if (owner->Window->Pool->Pins[index]!=((owner->Pins>>table)&1)) return 0;
-                ++found;
-            }
-        }
-        if (found!=1) return 0;
+        if (!kernel_physical_lease_state(owner->Window->Pool, lease, (owner->Pins >> table) & 1)) return 0;
         for (BOOT_U32 other=0; other<table; ++other)
             if (lease->Id==owner->Tables[other].Id || lease->Base==owner->Tables[other].Base) return 0;
         for (BOOT_U32 range=0; range<owner->Request.Count; ++range)

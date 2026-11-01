@@ -70,7 +70,7 @@ int main(void) {
 '@
     [IO.File]::WriteAllText("$out/runner.c",$runner,[Text.UTF8Encoding]::new($false))
     $objects = @()
-    foreach ($source in @('core.c','device.c','route.c','wait.c','accounting/budget.c','compatibility/select.c','../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/platform.c','../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/state_test.c',
+    foreach ($source in @('../../../../../../test/kernel/mm/physical/synchronization/reader_model.c','core.c','device.c','route.c','wait.c','accounting/budget.c','compatibility/select.c','../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/platform.c','../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/state_test.c',
         '../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/compatibility/selection_test.c',
         '../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/diagnostics/failure_test.c',
         'recovery/control.c','../../../../../../test/arch/x86/kernel/timer/hpet/watchdog/recovery/control_test.c',

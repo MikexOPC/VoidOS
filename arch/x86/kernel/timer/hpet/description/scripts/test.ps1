@@ -64,7 +64,7 @@ int main(void) {
 '@
     [IO.File]::WriteAllText("$out/runner.c", $runner, [Text.UTF8Encoding]::new($false))
     $objects = @()
-    foreach ($source in @('table.c', 'scan.c', 'integration/kernel.c',
+    foreach ($source in @('../../../../../../test/kernel/mm/physical/synchronization/reader_model.c', 'table.c', 'scan.c', 'integration/kernel.c',
         '../../../../../../test/arch/x86/kernel/timer/hpet/description/table_test.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/scan_test.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/integration/kernel_test.c')) {
         $object = Join-Path $out ($source.Replace('/', '-') + '-asan.obj')
         Invoke-Checked $compiler @('/nologo', '/std:c11', '/W4', '/WX', '/TC', '/c',
@@ -93,7 +93,7 @@ int main(void) {
 '@
     [IO.File]::WriteAllText("$out/probe-runner.c", $probeRunner, [Text.UTF8Encoding]::new($false))
     $probeObjects = @()
-    foreach ($source in @('probe/policy.c', 'probe/hardware.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/probe/probe_test.c')) {
+    foreach ($source in @('../../../../../../test/kernel/mm/physical/synchronization/reader_model.c', 'probe/policy.c', 'probe/hardware.c', '../../../../../../test/arch/x86/kernel/timer/hpet/description/probe/probe_test.c')) {
         $object = Join-Path $out ($source.Replace('/', '-') + '-asan.obj')
         Invoke-Checked $compiler @('/nologo', '/std:c11', '/W4', '/WX', '/TC', '/c',
             '/fsanitize=address', '/Zi', '/MD', '/Od', ("/I" + $project), "/Fd$out/asan.pdb", "/Fo$object",

@@ -72,7 +72,7 @@ try {
     $extended = Get-ChildItem $out -Filter '*.disasm' | Select-String -Pattern $pattern
     if ($extended) { throw 'Instruction outside SSE/x87 profile; inspect disassembly' }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
-        '/fsanitize=address',('/I' + $project),(Join-Path $module 'stacks.c'),
+        '/fsanitize=address',('/I' + $project),(Join-Path $project 'test/kernel/mm/physical/synchronization/reader_model.c'),(Join-Path $module 'stacks.c'),
         (Join-Path $module '../../../../test/arch/x86/kernel/scheduler/stacks/resources_test.c'),("/Fo$out/"),("/Fd$out/resources.pdb"),
         ("/Fe$out/resources.exe"),'/link','/incremental:no')
     foreach ($object in @('stacks','resources_test')) {
@@ -89,7 +89,7 @@ try {
         Copy-Item "$out/resources.stderr" "$out/resources-$repetition.stderr"
     }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
-        '/fsanitize=address',('/I' + $project),(Join-Path $module 'stacks.c'),
+        '/fsanitize=address',('/I' + $project),(Join-Path $project 'test/kernel/mm/physical/synchronization/reader_model.c'),(Join-Path $module 'stacks.c'),
         (Join-Path $module 'capabilities.c'),(Join-Path $module 'mapping/native.c'),
         (Join-Path $module '../../../../test/arch/x86/kernel/scheduler/mapping/native_test.c'),("/Fo$out/"),("/Fd$out/native.pdb"),
         ("/Fe$out/native.exe"),'/link','/incremental:no')
@@ -112,6 +112,7 @@ try {
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
         '/fsanitize=address',('/I' + $project),
         (Join-Path $project 'arch/x86/kernel/timer/hpet/watchdog/accounting/budget.c'),
+        (Join-Path $project 'test/kernel/mm/physical/synchronization/reader_model.c'),
         (Join-Path $project 'lib/memory/address_ranges.c'),(Join-Path $module '../../../../test/arch/x86/kernel/scheduler/idle/budget_test.c'),
         ("/Fo$out/"),("/Fd$out/budget.pdb"),("/Fe$out/budget.exe"),'/link','/incremental:no')
     foreach ($repetition in 1..10) { Invoke-Test 'budget' }

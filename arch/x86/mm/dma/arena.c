@@ -186,7 +186,7 @@ int x86_dma_arena_unbind(X86_DMA_ARENA *owner)
         owner->DataAllocated = 0;
     }
 
-    if (pool->FreePages != owner->Budget) return 0;
+    if (!kernel_physical_budget_matches(pool, owner->Budget)) return 0;
 
     for (BOOT_U32 byte = 0; byte < sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte] = 0;
 
@@ -226,13 +226,13 @@ int x86_dma_arena_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *wind
 
     if (!inputs_private(context, window, inventory, capture, pages, owner) || !x86_fb_cpu(&cpu) || (cpu.Pat & 255) != 6 ||
         cpu.Root != context->Info.PageTableRoot || !x86_fb_root() || x86_fb_root()[X86_DMA_SLOT] ||
-        !capture(context, window->Pool, lapic, inventory) || window->Pool->FreePages < pages + 3
+        !capture(context, window->Pool, lapic, inventory) || !kernel_physical_budget_at_least(window->Pool, pages + 3)
     )
     return 0;
 
     KERNEL_PHYSICAL_ALLOCATOR *pool = window->Pool;
 
-    owner->Self = (BOOT_U64)owner; owner->Budget = pool->FreePages;
+    owner->Self = (BOOT_U64)owner; if (!kernel_physical_budget_read(pool, &owner->Budget)) return 0;
     owner->Context = context; owner->Window = window; owner->Lapic = lapic; owner->Inventory = inventory; owner->Capture = capture;
     owner->Authority.Self = (BOOT_U64)&owner->Authority; owner->Authority.Root = cpu.Root;
     owner->Authority.Pat = cpu.Pat; owner->Authority.PhysicalBits = cpu.PhysicalBits;

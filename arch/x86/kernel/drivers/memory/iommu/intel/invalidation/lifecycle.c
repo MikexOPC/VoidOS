@@ -25,7 +25,7 @@ int x86_qi_prepare(X86_VTD_MAPPING *mapping,const X86_PM_CLOCK *clock,BOOT_U32 b
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
     owner->Self=(BOOT_U64)owner; owner->Mapping=mapping; owner->Clock=*clock; owner->PhysicalBits=bits;
     owner->Cap=caps.Cap; owner->IotlbOffset=caps.IotlbOffset; owner->State=1;
-    owner->Budget=mapping->Window->Pool->FreePages; mapping->Consumer=(BOOT_U64)owner;
+    if (!kernel_physical_budget_read(mapping->Window->Pool, &owner->Budget)) return 0; mapping->Consumer=(BOOT_U64)owner;
     if (x86_qi_read(owner,0x20,8) || x86_qi_read(owner,0x28,8) || x86_qi_read(owner,owner->IotlbOffset+8,8) ||
         x86_qi_read(owner,0x34,4) || x86_qi_read(owner,0x80,8) || x86_qi_read(owner,0x88,8)) goto failure;
     BOOT_U64 old_iqa=x86_qi_read(owner,0x90,8);
@@ -84,7 +84,7 @@ int x86_qi_stop(X86_QI *owner)
         if (!kernel_physical_release(owner->Mapping->Window->Pool,&owner->Pages[count-1])) return 0;
         --owner->Allocated;
     }
-    if (owner->Mapping->Window->Pool->FreePages!=owner->Budget || !x86_vtd_inventory_verify(owner->Mapping)) return 0;
+    if (!kernel_physical_budget_matches(owner->Mapping->Window->Pool, owner->Budget) || !x86_vtd_inventory_verify(owner->Mapping)) return 0;
     owner->Mapping->Consumer=0;
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte]=0;
     return 1;

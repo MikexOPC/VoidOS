@@ -161,7 +161,7 @@ static int activated(BOOT_U64 budget)
     return loaded() &&
         x86_kernel_segments_verify(&kernel_segments, 1) &&
         x86_kernel_stacks_validate(&kernel_stacks) &&
-        budget >= 12 && kernel_stacks.Pool->FreePages == budget - 12;
+        budget >= 12 && kernel_physical_budget_matches(kernel_stacks.Pool, budget - 12);
 }
 
 // ====== aggiornamento RSP0 in memoria senza ripetere LTR su un descrittore busy ===== //
@@ -187,7 +187,15 @@ int x86_kernel_segments_bind_main(const X86_KERNEL_STACKS *main)
     return field("KERNEL_RSP0: ", X86_KERNEL_MAIN_TOP) && kernel_log(0, "KERNEL_RSP0_OK");
 }
 
-// ====== indirizzi osservabili senza dipendenza dal layout del loader ===== //
+// ====== x86_kernel_segments_retire_ready ======
+
+int x86_kernel_segments_retire_ready(void) {
+    return X86_KERNEL_IMAGE_CONTAINS((BOOT_U64)&kernel_segments, sizeof(kernel_segments)) &&
+        loaded() && x86_kernel_segments_verify(&kernel_segments, 1) && main_rsp0(&kernel_segments.Task) &&
+        x86_kernel_stacks_validate(&kernel_stacks) && kernel_stacks.Committed;
+}
+
+// ====== describe ======
 
 static int describe(void)
 {
@@ -215,7 +223,7 @@ int x86_kernel_segments_initialize(KERNEL_PHYSICAL_ALLOCATOR *pool)
     if (!pool || !kernel_physical_validate(pool) || !x86_exception_environment()) {
         return 0;
     }
-    budget = pool->FreePages;
+    if (!kernel_physical_budget_read(pool, &budget)) return 0;
     // Il blocco unico evita frammenti e rende esatto il consumo di dodici pagine.
     // L'owner statico resta alla stessa posizione fino all'arresto del bootstrap.
     if (!x86_kernel_stacks_acquire(&kernel_stacks, pool, x86_kernel_root())) {

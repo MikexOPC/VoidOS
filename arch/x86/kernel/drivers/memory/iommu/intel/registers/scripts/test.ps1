@@ -36,12 +36,14 @@ try {
         Invoke-Checked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings','-C','panic=abort','-C','opt-level=2',"$project/$($entry[0])",'-o',"$out/$($entry[1]).obj")
     }
     $sources=@("$module/lifecycle.c","$module/preflight.c","$module/tables.c","$module/access.c",
-        'arch/x86/mm/paging/iommu/iommu_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c',
         'lib/memory/address_ranges.c',"$test/mock.c","$test/cases.c")
     $paths=@($sources | ForEach-Object {"$project/$_"})
     $flags=@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',"/I$project")
+    . (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+    $syncObjects = @(New-PhysicalHostSync $project $out)
     Invoke-Checked "$bin/cl.exe" ($flags+$paths+@("/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no',
-        "$out/policy.obj","$out/regions.obj","$out/placement.obj"))
+        "$out/policy.obj","$out/regions.obj","$out/placement.obj") + $syncObjects)
     Invoke-Checked "$out/host.exe" @()
     $view=@("$project/$module/hardware/view.c","$project/$test/view_test.c")
     Invoke-Checked "$bin/cl.exe" ($flags+$view+@("/Fo$out/","/Fd$out/view.pdb","/Fe$out/view.exe",'/link','/incremental:no'))

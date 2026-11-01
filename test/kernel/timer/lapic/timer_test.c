@@ -47,7 +47,11 @@ int x86_timer_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *ou
 }
 int x86_timer_write(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 value)
 {
-    if (owner != &mapping || fail_write) return 0;
+    if (owner != &mapping) return 0;
+    if (fail_write) {
+        if (fail_write == 2) fail_write = 0;
+        return 0;
+    }
     if (offset == 0x320) lvt = value;
     else if (offset == 0x380) {
         if (value == ~0U) { ++measurement_starts; measurement_reads = 0; }
@@ -225,6 +229,12 @@ static int event_cycles(void)
     if (!x86_timer_events_initialize(&timer)) return 9;
     timer.Token.Id = 2; timer.Token.Vector = 0x41; fail_write = 1;
     if (x86_timer_arm(&timer) || timer.Error != 3 || x86_timer_take(&timer,&event)) return 10;
+    if (timer.Phase != X86_TIMER_ARMED || !timer.ArmedPm) return 15;
+    reset(); timer.Reload = 100; lvt = 0x10041; divide = 3;
+    if (!x86_timer_events_initialize(&timer)) return 16;
+    timer.Token.Id = 2; timer.Token.Vector = 0x41; fail_write = 2;
+    if (x86_timer_arm(&timer) || timer.Error != 3 || timer.ArmedPm || timer.Active ||
+        timer.Phase != X86_TIMER_READY || initial || current) return 17;
     reset(); timer.Phase = X86_TIMER_READY; timer.Count = timer.Consumed = ~0U;
     lvt = 0x10041; divide = 3;
     timer.Reload = 100; timer.Token.Id = 2; timer.Token.Vector = 0x41;
@@ -238,6 +248,44 @@ static int event_cycles(void)
 }
 
 // ====== owner alias e calibrazione su contatore vivo vengono rifiutati ===== //
+
+static int timing(void) {
+    const BOOT_U32 masks[2] = {0xffffff, ~0U};
+    const BOOT_U32 delays[2] = {X86_PM_SAMPLE_TICKS, X86_PM_SAMPLE_TICKS * 20 + 1};
+    for (BOOT_U32 width = 0; width < 2; ++width) {
+        for (BOOT_U32 late = 0; late < 2; ++late) {
+            BOOT_U32 event, start, irq_elapsed, wait_elapsed;
+            reset(); timer.Clock.Mask = masks[width];
+            timer.Reload = 100; lvt = 0x10041; divide = 3;
+            if (!x86_timer_events_initialize(&timer)) return 1;
+            timer.Token.Id = 2; timer.Token.Vector = 0x41;
+            pm = masks[width] - 2000;
+            if (!x86_timer_arm(&timer)) return 2;
+            start = timer.ArmedPm;
+            pm = start + delays[late] - 1000;
+            current = 0;
+            if (!x86_timer_service(&timer) || timer.ArmedPm || timer.Count != 1) return 3;
+            irq_elapsed = timer.DeadlinePm[0];
+            if (irq_elapsed != delays[late] || x86_timer_deadline_valid(irq_elapsed) != (late ? 0U : 1U)) return 4;
+            pm += X86_PM_CLOCK_HZ;
+            wait_elapsed = x86_pm_elapsed(start,x86_pm_read(0x408) & masks[width],masks[width]);
+            if (x86_timer_deadline_valid(wait_elapsed) || timer.DeadlinePm[0] != irq_elapsed) return 5;
+            if (x86_timer_service(&timer) || timer.DeadlinePm[0] != irq_elapsed) return 6;
+            if (!x86_timer_take(&timer,&event) || event != 1 || timer.ArmedPm) return 7;
+            pm = masks[width] - 999;
+            if (!x86_timer_arm(&timer) || timer.ArmedPm) return 8;
+            pm = delays[late] - 1000;
+            current = 0;
+            if (!x86_timer_service(&timer) || timer.DeadlinePm[1] != delays[late]) return 9;
+            if (!x86_timer_take(&timer,&event) || event != 2) return 10;
+            timer.Token.Id = timer.Token.Vector = 0;
+            if (!x86_timer_events_close(&timer)) return 11;
+        }
+    }
+    return 0;
+}
+
+// ====== lifetimes ======
 
 static int lifetimes(void)
 {
@@ -255,6 +303,10 @@ static int lifetimes(void)
     if (x86_timer_owner_valid(&timer)) return 6;
     reset(); timer.Clock.Mask = 0xffff;
     if (x86_timer_owner_valid(&timer)) return 7;
+    reset(); timer.ArmedPm = 1;
+    if (x86_timer_owner_valid(&timer)) return 8;
+    reset(); timer.Active = 1; timer.Phase = X86_TIMER_ARMED; timer.ArmedPm = 0x1000000;
+    if (x86_timer_owner_valid(&timer)) return 9;
     return 0;
 }
 
@@ -270,6 +322,8 @@ __declspec(dllexport) int run_lapic_timer_tests(void)
     if (result) return 500+result;
     result = event_cycles();
     if (result) return 600+result;
+    result = timing();
+    if (result) return 800+result;
     if (x86_timer_loop_request_stop() || x86_timer_loop_closed(0) ||
         x86_timer_loop_run(0,0,0)) return 701;
     reset();

@@ -40,8 +40,13 @@ try {
     $paths=@($sources | ForEach-Object {"$project/$_"})
     $flags=@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',"/I$project")
     Invoke-Checked "$bin/cl.exe" ($flags+@('/c','/Dkernel_physical_pin=domain_real_pin',"$project/kernel/mm/physical/allocator.c","/Fo$out/allocator.obj","/Fd$out/allocator.pdb"))
+    Invoke-Checked "$bin/cl.exe" ($flags+@('/c',"$project/kernel/mm/physical/allocation/state.c","/Fo$out/physical-core.obj","/Fd$out/physical-core.pdb"))
+    Invoke-Checked "$bin/cl.exe" ($flags+@('/c',"$project/kernel/mm/physical/allocation/guard.c","/Fo$out/physical-access.obj","/Fd$out/physical-access.pdb"))
+    Invoke-Checked "$bin/cl.exe" ($flags+@('/c',"$project/kernel/mm/physical/allocation/queries.c","/Fo$out/physical-queries.obj","/Fd$out/physical-queries.pdb"))
+    . (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+    $syncObjects = @(New-PhysicalHostSync $project $out)
     Invoke-Checked "$bin/cl.exe" ($flags+$paths+@("/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no',
-        "$out/policy.obj","$out/regions.obj","$out/placement.obj","$out/allocator.obj"))
+        "$out/policy.obj","$out/regions.obj","$out/placement.obj","$out/allocator.obj","$out/physical-core.obj","$out/physical-access.obj","$out/physical-queries.obj") + $syncObjects)
     Invoke-Checked "$out/host.exe" @()
     $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',

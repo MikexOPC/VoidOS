@@ -104,14 +104,16 @@ try {
         ("/Fo$out/"),("/Fd$out/snapshot.pdb"),("/Fe$out/snapshot.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/snapshot.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
-        ("/I$project"),"$project/arch/x86/kernel/scheduler/stacks.c",
+        ("/I$project"),"$project/test/kernel/mm/physical/synchronization/reader_model.c",
+        "$project/arch/x86/kernel/scheduler/stacks.c",
         "$project/arch/x86/kernel/scheduler/capabilities.c",
         "$project/arch/x86/kernel/scheduler/mapping/native.c",
         "$project/test/arch/x86/kernel/scheduler/mapping/native_test.c",
         ("/Fo$out/"),("/Fd$out/native.pdb"),("/Fe$out/native.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/native.exe" @()
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
-        ("/I$project"),"$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c",
+        ("/I$project"),"$project/test/kernel/mm/physical/synchronization/reader_model.c",
+        "$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c",
         "$project/test/arch/x86/kernel/drivers/video/framebuffer/live/cases.c","$project/kernel/mm/physical/holdings.c",
         ("/Fo$out/"),("/Fd$out/live.pdb"),("/Fe$out/live.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/live.exe" @()
@@ -156,6 +158,7 @@ try {
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
         '/DKERNEL_TEST_CONSOLE_ACTIVE=1',("/I$project"),
         "$project/test/kernel/console/video/host/hpet_policy.c",
+        "$project/test/kernel/mm/physical/synchronization/reader_model.c",
         "$project/arch/x86/kernel/timer/hpet/description/probe/policy.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"),("/Fe$out/hpet-policy.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/hpet-policy.exe" @()

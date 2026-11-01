@@ -62,11 +62,7 @@ static int loader_table_reserved(const KERNEL_BOOT_CONTEXT *context,
         ++matches;
     }
     if (matches != 1) return 0;
-    for (index = 0; index < pool->Count; ++index)
-        if (kernel_regions_overlap(physical, 1, pool->Free[index].Base, pool->Free[index].Pages)) return 0;
-    for (index = 0; index < KERNEL_PHYSICAL_LEASES; ++index)
-        if (pool->Live[index].Id && kernel_regions_overlap(physical, 1, pool->Live[index].Base, pool->Live[index].Pages)) return 0;
-    return 1;
+    return kernel_physical_range_unowned(pool, physical, 1);
 }
 
 // ====== x86_paging_table_source ======
@@ -81,6 +77,8 @@ BOOT_U32 x86_paging_table_source(const KERNEL_BOOT_CONTEXT *context,
     if (iommu) return iommu;
     BOOT_U32 dma=x86_dma_source(pool,physical);
     if (dma) return dma;
+    BOOT_U32 ap=x86_ap_source(pool,physical);
+    if (ap) return ap;
     BOOT_U32 heap=x86_heap_source(pool,physical);
     if (heap) return heap;
     BOOT_U32 index;
@@ -108,13 +106,7 @@ static int video_aperture_reserved(const KERNEL_BOOT_CONTEXT *context,
         if (kernel_regions_overlap(video->Physical, video->AperturePages, region.Base, region.Pages) &&
             ((region.Type != 0 && region.Type != 11) || (region.Attributes & 0x3000))) return 0;
     }
-    for (index = 0; index < pool->Count; ++index)
-        if (kernel_regions_overlap(video->Physical, video->AperturePages,
-            pool->Free[index].Base, pool->Free[index].Pages)) return 0;
-    for (index = 0; index < KERNEL_PHYSICAL_LEASES; ++index)
-        if (pool->Live[index].Id && kernel_regions_overlap(video->Physical, video->AperturePages,
-            pool->Live[index].Base, pool->Live[index].Pages)) return 0;
-    return 1;
+    return kernel_physical_range_unowned(pool, video->Physical, video->AperturePages);
 }
 
 // ====== x86_paging_video_inputs ======
@@ -186,7 +178,8 @@ int x86_paging_video_tables_complete(const X86_PAGING_VIDEO_AUTH *video,
             !x86_iommu_record(&inventory->Iommu,record->Physical,record->View,record->Level,record->Reserved) &&
             !x86_surface_record(&inventory->Surface,record->Physical,record->View,record->Level,record->Reserved) &&
             !x86_dma_record(&inventory->Dma,record->Physical,record->View,record->Level,record->Reserved) &&
-            !x86_heap_record(&inventory->Heap,record->Physical,record->View,record->Level,record->Reserved)) return 0;
+            !x86_heap_record(&inventory->Heap,record->Physical,record->View,record->Level,record->Reserved) &&
+            !x86_ap_record(&inventory->Ap,record->Physical,record->View,record->Level,record->Reserved)) return 0;
     }
     return seen == (1U << video->Region.TableCount) - 1;
 }

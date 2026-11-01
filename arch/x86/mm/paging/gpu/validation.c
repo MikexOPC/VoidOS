@@ -16,11 +16,7 @@ static int reserved_private(const KERNEL_BOOT_CONTEXT *context,
         if (kernel_regions_overlap(physical,1,region.Base,region.Pages) &&
             ((region.Type != 0 && region.Type != 11) || (region.Attributes & 0x3000))) return 0;
     }
-    for (BOOT_U32 index=0; index<pool->Count; ++index)
-        if (kernel_regions_overlap(physical,1,pool->Free[index].Base,pool->Free[index].Pages)) return 0;
-    for (BOOT_U32 index=0; index<KERNEL_PHYSICAL_LEASES; ++index)
-        if (pool->Live[index].Id && kernel_regions_overlap(physical,1,pool->Live[index].Base,pool->Live[index].Pages)) return 0;
-    return 1;
+    return kernel_physical_range_unowned(pool, physical, 1);
 }
 
 // ====== x86_paging_gpu_inputs ======
@@ -110,6 +106,10 @@ int x86_paging_gpu_complete(const X86_PAGING_INVENTORY *snapshot)
         if (((const unsigned char *)owner)[byte] != ((const unsigned char *)&snapshot->Gpu)[byte]) return 0;
     for (BOOT_U32 index=0; index<snapshot->Count; ++index) {
         const X86_PAGING_RESOURCE *record=&snapshot->Tables[index];
+        if (record->Reserved>=X86_AP_TAG) {
+            if (!x86_ap_record(&snapshot->Ap,record->Physical,record->View,record->Level,record->Reserved)) return 0;
+            continue;
+        }
         if (record->Reserved>=X86_HEAP_TAG) {
             if (!x86_heap_record(&snapshot->Heap,record->Physical,record->View,record->Level,record->Reserved)) return 0;
             continue;

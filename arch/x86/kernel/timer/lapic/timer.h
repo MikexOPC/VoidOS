@@ -23,8 +23,9 @@ typedef struct {
     BOOT_U32 DeadlinePm[3], Reserved;
     BOOT_U32 SleepWakes[3], PendingProbe;
     BOOT_U32 Consumed, Phase;
+    BOOT_U32 ArmedPm, WaitPm[3];
 } X86_LAPIC_TIMER;
-_Static_assert(sizeof(X86_LAPIC_TIMER) == 144, "Owner timer e ABI wait");
+_Static_assert(sizeof(X86_LAPIC_TIMER) == 160, "Owner timer e misure separate");
 _Static_assert(offsetof(X86_LAPIC_TIMER, Error) == 4, "Prefisso attesa IRQ");
 BOOT_U32 x86_pm_clock_port(BOOT_U64 port, BOOT_U32 flags, BOOT_U32 length);
 BOOT_U32 x86_pm_elapsed(BOOT_U32 start, BOOT_U32 end, BOOT_U32 mask);
@@ -32,6 +33,7 @@ BOOT_U32 x86_timer_reload(BOOT_U32 start, BOOT_U32 end, BOOT_U32 elapsed);
 BOOT_U32 x86_timer_sample_elapsed(BOOT_U32 start_before, BOOT_U32 start_after,
     BOOT_U32 end_before, BOOT_U32 end_after, BOOT_U32 mask);
 BOOT_U32 x86_timer_sample_consensus(BOOT_U32 first, BOOT_U32 second);
+BOOT_U32 x86_timer_deadline_valid(BOOT_U32 elapsed);
 BOOT_U32 x86_timer_previous_valid(BOOT_U32 lvt, BOOT_U32 divide, BOOT_U32 current);
 BOOT_U32 x86_timer_wait_result(BOOT_U32 result, BOOT_U32 budget, BOOT_U32 count, BOOT_U32 error, BOOT_U32 goal);
 BOOT_U32 x86_timer_event_fields(BOOT_U32 count, BOOT_U32 consumed, BOOT_U32 phase, BOOT_U32 active);

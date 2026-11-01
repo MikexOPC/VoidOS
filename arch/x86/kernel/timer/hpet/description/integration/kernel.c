@@ -60,14 +60,14 @@ static int capture(const KERNEL_BOOT_CONTEXT *context,
     if (!kernel_acpi_directory_valid(directory, pool->PhysicalBits)) {
         return 0;
     }
-    free_pages = pool->FreePages;
+    if (!kernel_physical_budget_read(pool, &free_pages)) return 0;
     root = window->Root;
     status = x86_hpet_description_find(directory->Entries, directory->Count,
         pool->PhysicalBits, read_firmware, &reader, &draft);
     /* Verify cleanup even on read failure before any result is published.
      * These checks are resource accounting, not a leak detector for hardware. */
     if (window->Pool != pool || window->Root != root ||
-        pool->FreePages != free_pages || !x86_page_window_idle_valid(window)) {
+        !kernel_physical_budget_matches(pool, free_pages) || !x86_page_window_idle_valid(window)) {
         return 0;
     }
     if (status == X86_HPET_ABSENT) {

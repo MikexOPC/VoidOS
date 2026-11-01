@@ -60,7 +60,7 @@ int x86_vtd_mapping_unbind(X86_VTD_MAPPING *owner)
         if (!kernel_physical_release(owner->Window->Pool,lease)) return 0;
         --owner->Allocated;
     }
-    if (owner->Window->Pool->FreePages!=owner->Budget) return 0;
+    if (!kernel_physical_budget_matches(owner->Window->Pool, owner->Budget)) return 0;
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte]=0;
     return 1;
 }
@@ -73,7 +73,7 @@ int x86_vtd_mapping_bind_access(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WIND
     X86_FB_CPU cpu;
     if (writable>1 || (writable && (!description || description->Units!=1))) return 0;
     if (!x86_vtd_mapping_preflight(context,window,lapic,description,inventory,owner,&cpu)) return 0;
-    owner->Self=(BOOT_U64)owner; owner->Budget=window->Pool->FreePages;
+    owner->Self=(BOOT_U64)owner; if (!kernel_physical_budget_read(window->Pool, &owner->Budget)) return 0;
     owner->Context=context; owner->Window=window; owner->Inventory=inventory; owner->Lapic=lapic;
     owner->Authority.Self=(BOOT_U64)&owner->Authority; owner->Authority.Root=cpu.Root;
     owner->Authority.Pat=cpu.Pat; owner->Authority.PhysicalBits=cpu.PhysicalBits; owner->Authority.Count=description->Units;

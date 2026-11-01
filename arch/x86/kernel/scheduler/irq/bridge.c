@@ -57,9 +57,6 @@ void x86_scheduler_irq_task(uint32_t index)
             kernel_scheduler_payload_pop(2,(uint64_t)(uintptr_t)timer_source,binding_generation,
                 index,x86_scheduler_generation()) != KERNEL_PAYLOAD_EMPTY) kernel_scheduler_fail_stop();
     } else if (index == 1) {
-#if !defined(KERNEL_TEST_SCHEDULER_FAULT) || KERNEL_TEST_SCHEDULER_FAULT != 7
-        uint32_t start;
-#endif
         int received;
         // Trusted owner/port/clock from the existing calibrated driver, no new MMIO.
         if (!x86_timer_owner_valid(timer_source) || !x86_irq_ready() || timer_source->Count ||
@@ -67,9 +64,6 @@ void x86_scheduler_irq_task(uint32_t index)
             timer_source->Error || !timer_source->Clock.Port || timer_source->Clock.Port > 65535 ||
             (timer_source->Clock.Mask != 0xFFFFFF && timer_source->Clock.Mask != UINT32_MAX))
             kernel_scheduler_fail_stop();
-#if !defined(KERNEL_TEST_SCHEDULER_FAULT) || KERNEL_TEST_SCHEDULER_FAULT != 7
-        start = x86_pm_read((unsigned short)timer_source->Clock.Port) & timer_source->Clock.Mask;
-#endif
         if (!x86_timer_arm(timer_source)) kernel_scheduler_fail_stop();
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT == 7
         // Isolated missing-source injection through the driver's verified stop API.
@@ -86,9 +80,6 @@ void x86_scheduler_irq_task(uint32_t index)
 #else
         if (!received || !posted || timer_source->Error)
             kernel_scheduler_fail_stop();
-        timer_source->DeadlinePm[0] = x86_pm_elapsed(start,
-            x86_pm_read((unsigned short)timer_source->Clock.Port) & timer_source->Clock.Mask,
-            timer_source->Clock.Mask);
         finished = 1;
 #endif
     } else kernel_scheduler_fail_stop();

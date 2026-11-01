@@ -178,17 +178,11 @@ int x86_scheduler_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base
     if (base == X86_KERNEL_MAIN_BASE && x86_scheduler_dispatcher_context_is(context) == 1) {
         volatile BOOT_U64 *entries;
         uint64_t physical;
-        uint32_t matches = 0;
         if (!x86_scheduler_native_gate() || !kernel_physical_validate(bound_pool)) return 0;
         entries = x86_stack_entries(3);
         physical = entries[X86_KERNEL_MAIN_LEAF + 1] & TASK_ADDRESS;
         if (!physical || physical > (UINT64_C(1) << bound_pool->PhysicalBits) - 65536) return 0;
-        for (uint32_t index = 0; index < KERNEL_PHYSICAL_LEASES; ++index) {
-            const KERNEL_PHYSICAL_LEASE *lease = &bound_pool->Live[index];
-            if (lease->Base == physical && lease->Pages == 16 && lease->Id &&
-                lease->Owner == bound_pool->Self && bound_pool->Pins[index] == 1) ++matches;
-        }
-        if (matches != 1) return 0;
+        if (!kernel_physical_range_pinned(bound_pool, physical, 16)) return 0;
         for (uint32_t offset = 0; offset < 18; ++offset) {
             uint64_t actual = entries[X86_KERNEL_MAIN_LEAF + offset];
             uint64_t expected = offset && offset < 17 ? (physical + (offset - 1) * 4096ULL) | 3 | TASK_XD : 0;

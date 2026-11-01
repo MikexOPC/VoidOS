@@ -1,5 +1,7 @@
 option casemap:none
 EXTERN x86_exception_terminal:PROC
+EXTERN xp_panic_fault_entry:PROC
+EXTERN xp_panic_armed:QWORD
 .code
 
 ; ====== lettura IDTR e caricamento sullo stack gia validato dal loader ===== ;
@@ -65,6 +67,8 @@ ENDM
 ; ====== terminale senza ritorno shadow space e allineamento Microsoft x64 ===== ;
 
 x86_kernel_fault_common LABEL BYTE
+    cmp QWORD PTR [xp_panic_armed], 0
+    jne NEAR PTR xp_panic_fault_entry
     mov al, 1
     xchg al, BYTE PTR [x86_kernel_fault_entered]
     test al, al

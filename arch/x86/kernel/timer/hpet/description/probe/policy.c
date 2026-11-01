@@ -34,14 +34,7 @@ int x86_hpet_owned_preflight(const KERNEL_BOOT_CONTEXT *context,
             (region.Attributes && !(region.Attributes & 1)) || physical < region.Base ||
             physical - region.Base > (region.Pages - 1) * 4096 || ++found != 1) { return 0; }
     }
-    for (index = 0; index < pool->Count; ++index) {
-        if (kernel_regions_overlap(physical, 1, pool->Free[index].Base,
-            pool->Free[index].Pages)) { return 0; }
-    }
-    for (index = 0; index < KERNEL_PHYSICAL_LEASES; ++index) {
-        if (pool->Live[index].Id && kernel_regions_overlap(physical, 1,
-            pool->Live[index].Base, pool->Live[index].Pages)) { return 0; }
-    }
+    if (!kernel_physical_range_unowned(pool, physical, 1)) return 0;
     for (index = 0; index < inventory->Count; ++index) {
         const X86_PAGING_RESOURCE *record = &inventory->Tables[index];
         const volatile BOOT_U64 *entries;

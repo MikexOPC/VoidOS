@@ -1,6 +1,20 @@
 #[path = "../../../../../../arch/x86/kernel/timer/lapic/rust/calibration/validation.rs"]
 mod validation;
 
+// ====== diagnostic_irq_deadline_bounds ======
+
+#[test]
+fn diagnostic_irq_deadline_bounds() {
+    let minimum = 35_795 / 2;
+    let maximum = 35_795 * 20;
+    for ticks in [minimum, minimum + 1, 35_795, maximum] {
+        assert_eq!(validation::x86_timer_deadline_valid(ticks), 1);
+    }
+    for ticks in [0, minimum - 1, maximum + 1, u32::MAX] {
+        assert_eq!(validation::x86_timer_deadline_valid(ticks), 0);
+    }
+}
+
 // ====== bracket_quality_and_order ======
 
 #[test]

@@ -14,7 +14,7 @@ int x86_vtd_domain_release(X86_VTD_DOMAIN *owner)
         if (!kernel_physical_release(owner->Window->Pool,lease)) return 0;
         --owner->Allocated;
     }
-    if (owner->Window->Pool->FreePages!=owner->Budget) return 0;
+    if (!kernel_physical_budget_matches(owner->Window->Pool, owner->Budget)) return 0;
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte]=0;
     return 1;
 }
@@ -27,7 +27,7 @@ int x86_vtd_domain_prepare(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WINDOW *w
     if (!x86_vtd_domain_preflight(context,window,lapic,inventory,request,owner)) return 0;
     owner->Self=(BOOT_U64)owner; owner->Context=context; owner->Window=window;
     owner->Lapic=lapic; owner->Inventory=inventory; owner->Request=*request;
-    owner->Root=context->Info.PageTableRoot; owner->Budget=window->Pool->FreePages;
+    owner->Root=context->Info.PageTableRoot; if (!kernel_physical_budget_read(window->Pool, &owner->Budget)) return 0;
     BOOT_U64 total=0,cursor=X86_VTD_DMA_BASE+4096;
     for (BOOT_U32 index=0; index<request->Count; ++index) {
         owner->Iova[index]=cursor; total+=request->Buffers[index].Lease.Pages;

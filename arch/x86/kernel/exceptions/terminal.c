@@ -187,7 +187,28 @@ int x86_exception_split_ist(void)
     return 1;
 }
 
-// ====== campi diagnostici senza allocazione sullo stack selezionato ===== //
+// ====== x86_exception_retire_ready ======
+
+int x86_exception_retire_ready(void) {
+    X86_KERNEL_IDTR actual = {{0}};
+    if (!installed || !split_ist || !x86_exception_environment()) return 0;
+    x86_exception_read_idt(&actual);
+    for (BOOT_U32 byte = 0; byte < sizeof(actual); ++byte)
+        if (actual.Bytes[byte] != kernel_idtr.Bytes[byte]) return 0;
+    for (BOOT_U32 vector = 0; vector < 32; ++vector) {
+        for (BOOT_U32 byte = 0; byte < 16; ++byte) {
+            unsigned char expected = byte == 4 && vector == 2 ? 2 : byte == 4 && vector == 8 ? 3 :
+                gate_byte(x86_kernel_fault_targets[vector], byte);
+#ifdef KERNEL_TEST_DOUBLE_FAULT
+            if (vector == 13 && byte == 5) expected &= 0x7f;
+#endif
+            if (kernel_idt.Gates[vector][byte] != expected) return 0;
+        }
+    }
+    return 1;
+}
+
+// ====== fault_field ======
 
 static void fault_field(const char *name, BOOT_U64 value)
 {

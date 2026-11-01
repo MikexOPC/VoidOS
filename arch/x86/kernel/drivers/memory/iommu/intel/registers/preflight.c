@@ -23,7 +23,7 @@ int x86_vtd_mapping_preflight(const KERNEL_BOOT_CONTEXT *context,X86_PAGE_WINDOW
     for (BOOT_U32 byte=0; byte<sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
     if (!x86_page_window_idle_valid(window) || !x86_fb_cpu(cpu) || cpu->Root!=window->Root ||
         cpu->Root!=context->Info.PageTableRoot || cpu->PhysicalBits!=window->Pool->PhysicalBits || cpu->PhysicalBits<32 || cpu->PhysicalBits>52 ||
-        (cpu->Pat&255)!=6 || !x86_apic_uc_slot(cpu->Pat) || window->Pool->FreePages<3 ||
+        (cpu->Pat&255)!=6 || !x86_apic_uc_slot(cpu->Pat) || !kernel_physical_budget_at_least(window->Pool, 3) ||
         !x86_fb_root() || x86_fb_root()[X86_IOMMU_SLOT] ||
         !(lapic?x86_paging_inventory_capture_lapic(context,window->Pool,lapic,inventory):
             x86_paging_inventory_capture(context,window->Pool,inventory))) return 0;

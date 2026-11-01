@@ -197,7 +197,7 @@ int x86_watchdog_open(const X86_WATCHDOG_ENV *env)
     watchdog.Env.Capabilities = env->Capabilities; watchdog.Env.Description = env->Description;
     watchdog.Self = (BOOT_U64)&watchdog; watchdog.Physical = env->Description->Physical;
     watchdog.Id = env->Description->BlockId; watchdog.Cache = env->Profile->CacheBits;
-    watchdog.Budget = env->Window->Pool->FreePages;
+    if (!kernel_physical_budget_read(env->Window->Pool, &watchdog.Budget)) return reject_environment(X86_WATCHDOG_ENVIRONMENT);
     watchdog.IoAddress = io->Address; watchdog.IoId = io->Id; watchdog.IoVersion = io->Version;
     phase = X86_WATCHDOG_CAPTURE;
     if (!x86_watchdog_device(0)) { goto failed; }

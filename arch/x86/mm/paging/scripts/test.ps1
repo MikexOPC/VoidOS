@@ -55,24 +55,43 @@ try {
         $sdk+'/Include/'+$version.Name+'/um;'+$sdk+'/Include/'+$version.Name+'/shared'
     $env:LIB=$vc.FullName+'/lib/x64;'+$sdk+'/Lib/'+$version.Name+'/ucrt/x64;'+$sdk+'/Lib/'+$version.Name+'/um/x64'
     foreach ($source in @('arch/x86/mm/paging/inventory.c','arch/x86/mm/paging/authorization/validation.c',
-        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
+        'arch/x86/mm/paging/iommu/iommu_registry.c','arch/x86/mm/paging/surface/registry.c','arch/x86/mm/paging/dma/dma_registry.c','arch/x86/mm/paging/heap/heap_registry.c','arch/x86/kernel/cpu/percpu/resources/paging/registry.c','arch/x86/mm/paging/gpu/authority.c','arch/x86/mm/paging/gpu/validation.c',
         'kernel/drivers/video/virtio/discovery/pci.c','kernel/drivers/video/virtio/discovery/handoff.c',
         'kernel/drivers/video/virtio/mapping/plan.c',
-        'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','lib/memory/address_ranges.c',
-        'test/kernel/mm/paging/inventory_test.c','test/kernel/mm/paging/runner.c')) {
+        'kernel/mm/inventory.c','kernel/mm/physical/allocator.c','kernel/mm/physical/allocation/state.c','kernel/mm/physical/allocation/guard.c','kernel/mm/physical/allocation/queries.c','lib/memory/address_ranges.c',
+        'test/kernel/mm/paging/inventory_test.c','test/kernel/mm/paging/fixture.c','test/kernel/mm/paging/device_test.c','test/kernel/mm/paging/runner.c')) {
         $object = "$out/" + ($source -replace '/', '-') + '.obj'
         Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
             '/MD','/O2','/c',("/I$project"),"$project/$source",("/Fo$object"),("/Fd$out/host.pdb"))
         $objects += $object
     }
+    . (Join-Path $project 'kernel/mm/physical/scripts/host.ps1')
+    $objects += @(New-PhysicalHostSync $project $out)
     Invoke-Checked "$bin/cl.exe" (@('/nologo','/fsanitize=address','/MD',("/Fe$out/host.exe")) +
         $objects + @('/link','/incremental:no','/DEBUG','/WX'))
     Invoke-Checked "$out/host.exe" @()
+    $differentialObjects = @()
+    foreach ($source in @('kernel/mm/inventory.c','kernel/mm/physical/allocation/state.c',
+        'test/kernel/mm/physical/validation/reference.c','test/kernel/mm/physical/validation/differential.c',
+        'test/kernel/mm/inventory/reference.c',
+        'test/kernel/mm/inventory/differential.c','test/arch/x86/mm/paging/authorization/aliases.c')) {
+        $object = "$out/differential-" + ($source -replace '/', '-') + '.obj'
+        Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+            '/MD','/O2','/c',("/I$project"),"$project/$source",("/Fo$object"),("/Fd$out/differential.pdb"))
+        $differentialObjects += $object
+    }
+    $regions = "$out/kernel-mm-rust-regions-validation.rs.obj"
+    Invoke-Checked "$bin/cl.exe" (@('/nologo','/fsanitize=address','/MD',("/Fe$out/differential.exe")) +
+        $differentialObjects + @($regions,"$out/kernel-mm-physical-rust-alignment-placement.rs.obj",'/link','/incremental:no','/DEBUG','/WX'))
+    Invoke-Checked "$out/differential.exe" @()
     $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
     $arguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml','--xml-version=2',
         ('"-I'+$project+'"')) + @('arch/x86/mm/paging/inventory.c',
-        'arch/x86/mm/paging/authorization/validation.c','test/kernel/mm/paging/inventory_test.c',
-        'test/kernel/mm/paging/runner.c' | ForEach-Object {'"'+$project+'/'+$_+'"'})
+        'arch/x86/mm/paging/authorization/validation.c','test/kernel/mm/paging/inventory_test.c','test/kernel/mm/paging/fixture.c','test/kernel/mm/paging/device_test.c',
+        'test/kernel/mm/paging/runner.c','kernel/mm/inventory.c','kernel/mm/physical/allocation/state.c',
+        'test/kernel/mm/inventory/reference.c','test/kernel/mm/inventory/differential.c',
+        'test/kernel/mm/physical/validation/reference.c','test/kernel/mm/physical/validation/differential.c',
+        'test/arch/x86/mm/paging/authorization/aliases.c' | ForEach-Object {'"'+$project+'/'+$_+'"'})
     $checked = Start-Process $cppcheck -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
         -RedirectStandardError "$out/cppcheck.xml" -RedirectStandardOutput "$out/cppcheck.log"
     if ($checked.ExitCode) { throw 'Cppcheck failed' }

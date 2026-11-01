@@ -1,17 +1,22 @@
 #ifndef KERNEL_PS2_SHELL_H
 #define KERNEL_PS2_SHELL_H
+
 #include "kernel/console/line/line.h"
+
 typedef struct {
     KERNEL_PS2_LINE  Line;
     uint32_t        Truncated;
 } KERNEL_PS2_COMMAND;
+
 typedef struct {
     uint32_t            State;
     KERNEL_PS2_COMMAND  Slots[4];
 } KERNEL_PS2_COMMAND_QUEUE;
+
 typedef struct {
     uint32_t  Bytes, Keys, Lines;
 } KERNEL_PS2_SHELL_STATUS;
+
 #define KERNEL_PS2_QUEUE_OK 0U
 #define KERNEL_PS2_QUEUE_EMPTY 1U
 #define KERNEL_PS2_QUEUE_FULL 2U

@@ -20,7 +20,7 @@ spec.loader.exec_module(qemu)
 def boot(image, out, index):
     with qemu.Vm(out / f"boot-{index}", image, "std") as vm:
         log = vm.wait("KERNEL_READY", 120)
-        for marker in ("KERNEL_HEAP_SELFTEST_OK", "KERNEL_HEAP_READY"):
+        for marker in ("KERNEL_HEAP_SELFTEST_OK", "KERNEL_HEAP_SYNC_OK", "KERNEL_HEAP_READY"):
             if not log.has(marker, "OK"): raise RuntimeError("Missing " + marker)
         if not log.before("KERNEL_HEAP_READY", "KERNEL_READY"): raise RuntimeError("Heap not bound during boot")
         if log.failures(): raise RuntimeError("Failure markers: " + ", ".join(log.failures()))

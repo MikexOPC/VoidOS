@@ -36,7 +36,8 @@ int kernel_inventory_memory(const unsigned char *map, BOOT_U64 bytes, BOOT_U64 s
                             KERNEL_MEMORY_INVENTORY *output)
 {
     KERNEL_MEMORY_INVENTORY draft = {0};
-    BOOT_U64 count, index, previous;
+    BOOT_U64 count, index, previous, previous_end = 0;
+    int ordered = 1;
     if (!map || !output || !bytes || bytes > 1048576 || stride < 40 || stride > 4096 ||
         bytes % stride || bytes / stride > 4096) return 0;
     if ((BOOT_U64)map > ~0ULL - bytes || (BOOT_U64)output > ~0ULL - sizeof(*output) ||
@@ -49,10 +50,12 @@ int kernel_inventory_memory(const unsigned char *map, BOOT_U64 bytes, BOOT_U64 s
         BOOT_U64 attributes = read_number(region + 32, 8);
         BOOT_U64 *total;
         if (!kernel_region_valid(base, pages, attributes, type)) return 0;
-        for (previous = 0; previous < index; ++previous) {
+        if (base < previous_end) ordered = 0;
+        for (previous = 0; !ordered && previous < index; ++previous) {
             const unsigned char *other = map + previous * stride;
             if (kernel_regions_overlap(base, pages, read_number(other + 8, 8), read_number(other + 24, 8))) return 0;
         }
+        previous_end = base + pages * 4096;
         // B8 M2: in a conventional region at 0 only page zero is reserved.
         if (!base && kernel_region_candidate(attributes, type)) {
             if (draft.ReservedPages == ~0ULL) return 0;
