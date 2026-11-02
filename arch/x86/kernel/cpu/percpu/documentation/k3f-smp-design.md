@@ -1,5 +1,9 @@
 # K3-F — panic SMP coordinato
 
+Snapshot del progetto iniziale, 29–30 ottobre 2026. Le frasi sul boot BSP e
+sugli AP non avviati descrivono quel checkpoint; lo stato e le prove
+correnti sono in [k3i-runtime-validation.md](k3i-runtime-validation.md).
+
 29 ottobre 2026. L'utente ha scelto il sistema completo, opzione B di
 [k3f-design.md](k3f-design.md). Questo documento ne definisce il contratto
 concreto. Aggiornamento 30 ottobre: scelta confermata per NMI diretti;

@@ -3,6 +3,12 @@
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/stack/main.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
+#ifdef KERNEL_TEST_AP_STRESS_LOCK
+#include "test/arch/x86/kernel/cpu/percpu/panic/integration/hold.h"
+#endif
+#ifdef KERNEL_TEST_AP_STRESS_BARRIER
+#include "test/arch/x86/kernel/cpu/percpu/panic/concurrency/barrier.h"
+#endif
 
 #ifdef KERNEL_TEST_IOMMU_DISCOVERY
 #include "test/arch/x86/kernel/drivers/memory/iommu/intel/discovery/probe.h"
@@ -165,6 +171,10 @@ __declspec(noreturn) void kernel_profile_finish(const KERNEL_STARTUP *startup)
     #elif defined(KERNEL_TEST_CPU_FAULT)
         x86_cpu_fault(KERNEL_TEST_CPU_FAULT);
         kernel_panic("EXPECTED_CPU_FAULT_MISSING");
+    #elif defined(KERNEL_TEST_AP_STRESS_LOCK)
+        xp_panic_group_lock_probe();
+    #elif defined(KERNEL_TEST_AP_STRESS_BARRIER)
+        xp_stress_start();
     #elif defined(KERNEL_TEST_PANIC)
         kernel_panic("INTENTIONAL_TEST_PANIC");
     #else

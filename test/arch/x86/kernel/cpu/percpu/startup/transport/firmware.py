@@ -157,7 +157,7 @@ def verify_sequence(vm, log, root, first):
 
 # ====== verify_parked_cpus ======
 
-def verify_parked_cpus(vm, log, root, first, panic=False):
+def verify_parked_cpus(vm, log, root, first, panic=False, reporter=0):
     final_record = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
     for index in range(1, 4):
         text = registers(vm, index)
@@ -174,7 +174,7 @@ def verify_parked_cpus(vm, log, root, first, panic=False):
             raise RuntimeError("Group private record changed outside its per-CPU fields")
         rsp = value(text, "RSP")
         stack_valid = top + 8 * 4096 <= rsp < top + 12 * 4096 if panic else rsp == top - 1024
-        terminal_valid = not panic or value(text, "RAX") == 0x50414e494353544f
+        terminal_valid = not panic or value(text, "RAX") == (0x50414e4943444f4e if index == reporter else 0x50414e494353544f)
         if "HLT=1" not in text or value(text, "CR3") != root or not stack_valid or not terminal_valid:
             raise RuntimeError("Group CPU not parked on its private stack/root")
         if cpu.gs_base(text) != first + (index - 1) * 448 or value(text, "RFL") & 0x7600:

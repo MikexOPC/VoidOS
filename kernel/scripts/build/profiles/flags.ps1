@@ -92,3 +92,11 @@ if ($TestApResourceFault -ne 'none') {
 
 $ApRuntime = $TestApTransition -eq 'none' -and $TestSmpPanic -eq 'none' -and !$TestApCommit -and !$TestBootstrapMemory
 if ($ApRuntime) { $flags += '/DKERNEL_AP_RUNTIME=1' }
+if ($TestApStress -ne 'none') {
+    if (!$ApRuntime -or $TestPanic) { throw 'AP stress requires ordinary AP startup and its own panic trigger.' }
+    $flags += $(switch ($TestApStress) {
+        'withhold-ack' { '/DKERNEL_TEST_AP_STRESS_WITHHOLD_ACK=1' }
+        'lock-held' { '/DKERNEL_TEST_AP_STRESS_LOCK=1' }
+        'contended' { '/DKERNEL_TEST_AP_STRESS_BARRIER=1' }
+    })
+}

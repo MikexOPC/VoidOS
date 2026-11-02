@@ -72,7 +72,7 @@ def transition_memory(vm, log, root, pool, live, pins):
 
 # ====== verify ======
 
-def verify(vm, log, count, panic=False):
+def verify(vm, log, count, panic=False, reason=None):
     failures = ["KERNEL_SMP_PANIC"] if panic else []
     if log.failures() != failures or log.count("KERNEL_READY", "OK") != int(not panic):
         raise RuntimeError("Ordinary boot did not complete cleanly")
@@ -113,7 +113,7 @@ def verify(vm, log, count, panic=False):
             if local[0] != address or local[2] != index | (2 << 32) or local[4] != 1 or local[6] or any(local[7:]):
                 raise RuntimeError("Private parked AP context changed")
     if panic:
-        verify_panic(vm, log, count, root, texts)
+        verify_panic(vm, log, count, root, texts, reason)
     for index, text in enumerate(texts):
         (vm.directory / f"runtime-cpu-{index}.txt").write_text(text, encoding="utf-8")
     return dict(ConfiguredVcpus=count, OsCpusInitialized=count, ParkedAps=count - 1, SchedulerCpus=1, Panic=panic,
@@ -122,7 +122,7 @@ def verify(vm, log, count, panic=False):
 
 # ====== verify_panic ======
 
-def verify_panic(vm, log, count, root, texts):
+def verify_panic(vm, log, count, root, texts, expected_reason=None):
     mask = (1 << count) - 2
     for name, expected in (("OWNER", 0), ("TARGETS", mask), ("ACK", mask), ("MISSING", 0),
                            ("OUTCOME", 0), ("RECORD_COMPLETE", 1), ("KIND", 1), ("VECTOR", 0), ("ERROR", 0)):
@@ -147,11 +147,17 @@ def verify_panic(vm, log, count, root, texts):
             if not base + 4096 <= record[13] <= base + 17 * 4096 - 1024:
                 raise RuntimeError("Interrupted AP stack differs")
         else:
-            if record[3] != 1 or record[8:10] != [0, 0] or not 0xffffffff80000000 <= record[5] <= 0xffffffff80400000 - 24:
+            if record[3] != 1 or record[8:10] != [0, 0]:
                 raise RuntimeError("Continuation origin reason differs")
-            reason = b"".join(w.to_bytes(8, "little") for w in cpu.memory(vm, record[5], 3))
-            if not reason.startswith(b"INTENTIONAL_TEST_PANIC\0"):
-                raise RuntimeError("Unexpected kernel failure masquerading as intentional panic")
+            if expected_reason is not None:
+                if record[5] != expected_reason:
+                    raise RuntimeError("Unexpected numeric panic reason")
+            else:
+                if not 0xffffffff80000000 <= record[5] <= 0xffffffff80400000 - 24:
+                    raise RuntimeError("Continuation reason outside image")
+                reason = b"".join(w.to_bytes(8, "little") for w in cpu.memory(vm, record[5], 3))
+                if not reason.startswith(b"INTENTIONAL_TEST_PANIC\0"):
+                    raise RuntimeError("Unexpected kernel failure masquerading as intentional panic")
             if not 0xfffff40000061000 <= record[4] <= 0xfffff40000071000 - 136 or record[13] != record[4] + 136:
                 raise RuntimeError("Continuation BSP voluntary frame differs")
 

@@ -7,6 +7,9 @@ try {
     $objects = @('arch-x86-kernel-cpu-percpu-panic-records.obj','arch-x86-kernel-cpu-percpu-panic-transport-wait.obj',
         'arch-x86-kernel-cpu-percpu-panic-output-write.obj','arch-x86-kernel-cpu-percpu-panic-native-access.obj',
         'arch-x86-kernel-cpu-percpu-panic-native-dispatch.obj','panic-coordinator.obj','panic-capture.obj','sync-atomics.obj','apic-capture.obj','io.obj','pm-read.obj')
+    if (Test-Path -LiteralPath (Join-Path $ImageDirectory 'ap-stress-barrier.obj')) {
+        $objects += @('ap-stress-barrier.obj','ap-stress-trigger.obj')
+    }
     foreach ($object in $objects) {
         $path = Join-Path $ImageDirectory $object
         $listing = & "$($saved.Bin)/dumpbin.exe" /nologo /disasm $path

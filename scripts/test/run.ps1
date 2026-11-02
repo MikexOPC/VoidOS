@@ -14,6 +14,7 @@ $suites = [ordered]@{
     'percpu-identity' = 'arch/x86/kernel/cpu/percpu/scripts/test-identity.ps1'
     'percpu-clock' = 'arch/x86/kernel/cpu/percpu/scripts/test-clock.ps1'
     'percpu-panic' = 'arch/x86/kernel/cpu/percpu/scripts/test-panic.ps1'
+    'percpu-panic-stress' = 'arch/x86/kernel/cpu/percpu/panic/scripts/stress.ps1'
     'percpu-low' = 'arch/x86/kernel/cpu/percpu/lowmemory/scripts/test.ps1'
     'percpu-transition' = 'arch/x86/kernel/cpu/percpu/transition/scripts/test.ps1'
     'ap-admission' = 'arch/x86/kernel/cpu/percpu/admission/scripts/test.ps1'

@@ -147,7 +147,7 @@ def untranslated_check(log):
         raise RuntimeError('Translation claimed without a DMAR')
     return dict(Untranslated=True)
 
-def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=True, stall=False, smp=1):
+def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=True, stall=False, smp=1, soak_seconds=0):
     directory = out / f'boot-{index}'
     mouse_trace = directory/'mouse-trace.log'
     video = 'iommu' if iommu else 'virtio' if absent else 'std'
@@ -159,6 +159,8 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
         def delivered():
             packets = re.findall(packet_pattern,mouse_trace.read_text(errors='replace'))
             return sum(int(dx) for dx,dy in packets),sum(int(dy) for dx,dy in packets)
+        soak = (load('ap_soak','test/arch/x86/kernel/cpu/percpu/startup/runtime/soak.py').run(vm,delivered,soak_seconds)
+            if soak_seconds else None)
         baseline_x,baseline_y = delivered()
         width,height,stride,base,fmt = pointer.geometry(log.text)
         gop = (width,height,stride,fmt)
@@ -325,7 +327,7 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
         if vm.process.returncode: raise RuntimeError('QEMU exit failure')
         translation = (translation_check(log,mouse_trace.read_text(errors='replace'),fallbacks,presenting,stall) if iommu else
             untranslated_check(log) if absent else None)
-        return dict(ConfiguredVcpus=smp,OsCpusReady=ap_state['OsCpusInitialized'] if ap_state else 1,ApRuntime=ap_state,Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
+        return dict(ConfiguredVcpus=smp,OsCpusReady=ap_state['OsCpusInitialized'] if ap_state else 1,ApRuntime=ap_state,Soak=soak,Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
             EscCancelled=True,EscMouseProgress=True,CancelScenes=1,
             DrainSeconds=latencies,BudgetBefore=before,BudgetAfter=before,
             Flushes=log.number('KERNEL_CONSOLE_FLUSHES'),
@@ -362,6 +364,7 @@ def audit(directory):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--smp',type=int,choices=(1,4),default=1)
+    parser.add_argument('--soak-seconds',type=int,choices=(0,300),default=0)
     parser.add_argument('--image',type=Path)
     parser.add_argument('--audit',type=Path)
     parser.add_argument('--boots',type=int,choices=range(1,21),default=10)
@@ -381,7 +384,7 @@ def main():
     try:
         for index in range(1,args.boots+1):
             results.append(boot(args.image,out,index,args.iommu or args.present_fallback or args.iommu_nopresent or args.present_stall,
-                args.iommu_absent,1 if args.present_fallback or args.present_stall else 0,not args.iommu_nopresent,args.present_stall,args.smp))
+                args.iommu_absent,1 if args.present_fallback or args.present_stall else 0,not args.iommu_nopresent,args.present_stall,args.smp,args.soak_seconds))
             print(f'PASS: interactive cursor {index}/{args.boots}; pixels, movement, cleanup',flush=True)
     except Exception as failure:
         results.append(dict(Failure=str(failure)))

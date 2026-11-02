@@ -16,6 +16,18 @@ $object = Join-Path $output 'panic-capture.obj'
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $object),
     (Join-Path $project 'arch/x86/kernel/cpu/percpu/panic/assembly/entry/capture.asm'))
 $objects += $object
+if ($TestApStress -eq 'lock-held') {
+    $object = Join-Path $output 'ap-stress-lock.obj'
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$project/test/arch/x86/kernel/cpu/percpu/panic/integration/hold.c","/Fo$object"))
+    $objects += $object
+}
+if ($TestApStress -eq 'contended') {
+    foreach ($part in @('barrier','trigger')) {
+        $object = Join-Path $output ("ap-stress-$part.obj")
+        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($panicFlags + @("$project/test/arch/x86/kernel/cpu/percpu/panic/concurrency/$part.c","/Fo$object"))
+        $objects += $object
+    }
+}
 if ($TestSmpPanic -ne 'none') {
     $object = Join-Path $output 'panic-test.obj'
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'test/arch/x86/kernel/cpu/percpu/panic/integration/probe.c'),('/Fo' + $object)))

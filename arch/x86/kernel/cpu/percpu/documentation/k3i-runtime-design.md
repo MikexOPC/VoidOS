@@ -95,5 +95,49 @@ AP, hotplug e driver nuovi restano fuori da questo blocco.
 - Compilazione con warning come errori, ASan host pertinente, accounting
   guest, analisi statica e revisione del diff. Coverage non misurata N/D.
 
-Il completamento di questo blocco non certifica ancora K3: rimangono
-stress finale e revisione del gruppo, oltre ai limiti hardware dichiarati.
+Il solo blocco d'integrazione precede la chiusura K3. La campagna di stress
+seguente è ora verificata nel [rapporto](k3i-runtime-validation.md#chiusura-k3);
+restano i limiti hardware dichiarati.
+
+## Chiusura K3: campagna di stress
+
+Si riusa il protocollo approvato, con VM possedute e senza avviare task AP.
+Dieci prove per caso complesso: NMI esterno a tutti i core dopo READY,
+secondo NMI dopo l'arresto, ACK omesso intenzionalmente da un follower e
+UART con DLAB alterato. Gli hook guest omettono l'ACK o trattengono un
+vero ticket lock nel diagnostico, dove si prova anche il NMI ricorsivo;
+non modifica il comportamento delle immagini ordinarie. Il reporter può
+essere qualsiasi CPU: verificare il vincitore reale, tutti i record e i
+registri, mai assumere l'origine dal comando `cpu` del monitor.
+
+QEMU v11.1.0: [x86_nmi](https://github.com/qemu/qemu/blob/v11.1.0/hw/i386/x86.c#L139)
+itera tutte le CPU e ignora l'indice del monitor, ma
+[apic_external_nmi](https://github.com/qemu/qemu/blob/v11.1.0/hw/intc/apic.c#L193)
+passa attraverso LINT1: il mask degli AP impedisce ingressi indipendenti.
+Il caso esterno prova origine BSP e arresto remoto, non quattro origini.
+Il caso conteso usa invece quattro IPI NMI fisiche esplicite, AP prima e
+BSP ultimo, dopo bootstrap completo. Una barriera solo diagnostica, con
+atomiche Rust e attesa massima di un secondo/un milione di controlli,
+richiede quattro catture prima dell'elezione. Timeout o ingresso duplicato
+fermano la prova; nessun reset del coordinatore o modifica ai LVT.
+Intel SDM 078US §11.6.1, figura 11-12 e tabella 11-3: ICR high +310h con
+ID[31:24], low +300h=4400h, NMI fisico, edge/assert e nessuno shorthand.
+Non si usa lo shorthand all-including-self per NMI, che la tabella esclude.
+[UART serial.c](https://github.com/qemu/qemu/blob/v11.1.0/hw/char/serial.c#L38):
+LCR base COM1 +3, DLAB bit7. Il caso negativo conserva la configurazione
+8N1 e imposta DLAB; la prova primaria diventa la RAM, non la seriale.
+Questo riproduce una configurazione UART inaccettabile, non un guasto fisico.
+
+ACK mancante: il follower successivo al reporter si arresta senza conferma;
+il reporter deve terminare entro deadline/poll budget e conservare missing
+e outcome nonzero. Non è una simulazione di SMM o di CPU fisica bloccata.
+Controllare record completi, owner unico, risorse pinned e nessun riuso.
+I test concorrenti host completano le prove di elezione e ammissione; la
+consegna NMI broadcast non garantisce da sola una particolare interleaving.
+
+Console GOP: una sessione di 300 secondi con input mouse bidirezionale
+periodico, poi confronto pixel, Esc, shell e cleanup del collaudo esistente.
+Dieci boot ordinari finali, suite host pertinenti, accounting e audit degli
+oggetti completano la revisione. Gli scenari di fault atteso non sono
+conteggiati come boot ordinari positivi. TSan, hardware fisico, task AP e
+hotplug restano fuori dalle garanzie di questa milestone.
