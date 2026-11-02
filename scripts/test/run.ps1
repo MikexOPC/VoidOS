@@ -23,6 +23,7 @@ $suites = [ordered]@{
     'ap-native' = 'arch/x86/kernel/cpu/percpu/startup/transport/native/scripts/test.ps1'
     'ap-runtime' = 'arch/x86/kernel/cpu/percpu/startup/runtime/scripts/test.ps1'
     'ipi-service' = 'arch/x86/kernel/cpu/percpu/service/scripts/test.ps1'
+    'apic-icr' = 'arch/x86/kernel/interrupts/apic/icr/scripts/test.ps1'
     physical = 'kernel/mm/physical/scripts/test.ps1'
     scheduler = 'kernel/scheduler/scripts/test.ps1'
     'x86-scheduler' = 'arch/x86/kernel/scheduler/scripts/test.ps1'

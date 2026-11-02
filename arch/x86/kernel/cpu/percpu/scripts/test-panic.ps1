@@ -32,7 +32,7 @@ try {
     Invoke-Checked "$($saved.Bin)/cl.exe" (@('/nologo','/MD','/fsanitize=address',"/Fe$out/host.exe") +
         $objects + @('kernel32.lib','/link','/incremental:no','/DEBUG','/WX'))
     foreach ($run in 1..10) { Invoke-Checked "$out/host.exe" @() }
-    $transportSources = @('arch/x86/kernel/cpu/percpu/panic/transport/wait.c','test/arch/x86/kernel/cpu/percpu/panic/transport.c') |
+    $transportSources = @('arch/x86/kernel/cpu/percpu/panic/transport/wait.c','arch/x86/kernel/interrupts/apic/icr/icr.c','test/arch/x86/kernel/cpu/percpu/panic/transport.c') |
         ForEach-Object { Join-Path $project $_ }
     $transportObjects = @("$out/coordinator.obj")
     foreach ($source in $transportSources) {

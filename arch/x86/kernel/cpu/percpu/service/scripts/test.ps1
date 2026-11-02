@@ -46,6 +46,7 @@ try {
     Invoke-Checked "$out/native.exe" @()
     Invoke-Cppcheck $project $out @($source, $wait, $test, $native, $nativeTest,
         "$project/arch/x86/kernel/cpu/percpu/service/native/transport.c",
+        "$project/arch/x86/kernel/interrupts/apic/icr/icr.c",
         "$project/test/arch/x86/kernel/cpu/percpu/service/integration/probe.c")
 } finally { Restore-Msvc $saved }
 "PASS: IPI mailbox host evidence $out"

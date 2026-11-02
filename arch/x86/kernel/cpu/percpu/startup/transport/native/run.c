@@ -1,5 +1,6 @@
 #include "native.h"
 #include "../../../internal.h"
+#include "arch/x86/kernel/interrupts/apic/icr/icr.h"
 
 // ====== failed_private ======
 
@@ -21,26 +22,17 @@ static int poll_private(XN_LAUNCH *m) {
     return (state & ~7ULL) == m->Token && (state & 7) >= XS_ARMED && (state & 7) <= XS_PARKED;
 }
 
-// ====== idle_private ======
+// ====== budget_private ======
 
-static int idle_private(XN_LAUNCH *m) {
-    uint32_t value;
-    while (poll_private(m)) {
-        if (!xn_read(m, 0x300, &value)) return 0;
-        if (!(value & 0x1000)) return 1;
-        xn_pause(m);
-    }
-    return 0;
-}
+static int budget_private(void *budget) { return poll_private(budget); }
 
 // ====== nmi_private ======
 
-// SDM 078US 11.5.3/11.6.1: refresh ESR, idle ICR, then one physical NMI.
+// SDM 078US 11.5.3/11.6.1: refresh ESR, idle ICR, then one physical NMI (mode100, assert).
 static int nmi_private(XN_LAUNCH *m) {
-    uint32_t errors;
-    return idle_private(m) && xn_write(m, 0x280, 0) && xn_read(m, 0x280, &errors) && !errors &&
-        xn_write(m, 0x310, m->Group->Cpus[m->Image->Record.Index].ApicId << 24) && xn_write(m, 0x300, 0x4400) &&
-        idle_private(m) && xn_write(m, 0x280, 0) && xn_read(m, 0x280, &errors) && !errors;
+    X86_ICR_PORT port = {xn_read, xn_write, budget_private, xn_pause, m, m};
+    return x86_icr_send(&port, m->Group->Cpus[m->Image->Record.Index].ApicId, 0x4400,
+        X86_ICR_CHECK_ESR | X86_ICR_WAIT_SENT) == X86_ICR_OK;
 }
 
 // ====== xn_run ======
