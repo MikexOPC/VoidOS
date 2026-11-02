@@ -49,7 +49,7 @@ int x86_ap_inputs(const KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root, BOOT_U64
         !kernel_physical_is_pinned(pool, &owner->Data) || !kernel_physical_is_pinned(pool, &owner->Tables) ||
         !registered_check || !registered_check(owner) ||
         os_address_ranges_overlap(output, bytes, (BOOT_U64)owner, sizeof(*owner)) ||
-        os_address_ranges_overlap(output, bytes, X86_AP_BASE, 64ULL * X86_AP_STRIDE)
+        os_address_ranges_overlap(output, bytes, X86_AP_BASE, X86_AP_REGION_BYTES)
     )
     return 0;
 

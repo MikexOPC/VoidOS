@@ -70,8 +70,8 @@ __declspec(noreturn) void xp_panic_fault(const XP_PANIC_RAW *raw, uint64_t cr2, 
     uint32_t index = current_private(cr3), stack = 0;
     uint64_t address = (uint64_t)raw;
     for (uint32_t ist = 1; ist <= 3; ++ist) {
-        uint64_t base = index ? X86_AP_BASE + index * X86_AP_STRIDE + (ist == 1 ? 19ULL : ist == 2 ? 25ULL : 31ULL) * 4096 : x86_ist_base(ist);
-        if (!(address & 7) && address >= base && address <= base + 16384 - sizeof(*raw)) stack = ist;
+        uint64_t base = index ? X86_AP_IST_BASE(index, ist) : x86_ist_base(ist);
+        if (!(address & 7) && address >= base && address <= base + X86_AP_IST_BYTES - sizeof(*raw)) stack = ist;
     }
     if (!stack) xp_panic_quiet_stop(UINT64_C(0x50414e494353504e));
     const volatile X86_EXCEPTION_FRAME *frame = &raw->Frame;

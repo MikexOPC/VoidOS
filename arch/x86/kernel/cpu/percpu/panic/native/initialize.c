@@ -49,7 +49,7 @@ int xp_panic_native_prepare(const X86_LAPIC_MAPPING *lapic) {
         native->Ids[cpu] = identities->Cpus[cpu].Id;
         native->Contexts[cpu] = cpu ? x86_percpu_ap(cpu) : bsp;
         if (!native->Contexts[cpu]) return rollback_private(initialized);
-        native->Records[cpu] = cpu ? (XP_PANIC_RECORD *)(X86_AP_BASE + cpu * X86_AP_STRIDE + 48 * 4096 + 256) : &bsp_record;
+        native->Records[cpu] = cpu ? (XP_PANIC_RECORD *)(X86_AP_METADATA(cpu) + X86_AP_RECORD_OFFSET) : &bsp_record;
         if (!xp_panic_record_initialize(native->Records[cpu], cpu)) return rollback_private(initialized);
         ++initialized;
     }
@@ -81,7 +81,7 @@ int xp_panic_native_admit(uint32_t index) {
     x86_kernel_segments_read(&actual_gdt);
     const X86_GDT_POINTER *expected_gdt = &native->BspGdtr;
     if (index) {
-        const X86_KERNEL_SEGMENTS *segments = (const X86_KERNEL_SEGMENTS *)(X86_AP_BASE + index * X86_AP_STRIDE + 48 * 4096);
+        const X86_KERNEL_SEGMENTS *segments = (const X86_KERNEL_SEGMENTS *)X86_AP_METADATA(index);
         X86_KERNEL_SEGMENTS expected_segments;
         if (!x86_ap_descriptor_prepare(&expected_segments, index)) return 0;
         expected_segments.Descriptor.Bytes[5] = 0x8b;

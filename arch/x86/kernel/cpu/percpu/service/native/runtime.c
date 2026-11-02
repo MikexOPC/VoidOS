@@ -47,11 +47,10 @@ static int empty_private(void) {
 uint32_t xis_native_enter(void *private_frame) {
     if (ks_irq_state()) xis_native_abort(0x4b34495049494600ULL);
     uint32_t index = xis_native_index();
-    uint64_t base = X86_AP_BASE + index * X86_AP_STRIDE;
     const XS_PRIVATE_FRAME *frame = private_frame;
     uint64_t rsp = x86_kernel_stack_pointer();
-    if (!index || (uint64_t)frame != base + 17 * 4096 - 1024 || frame->Phase != 6 || frame->Error ||
-        rsp < base + 8192 || rsp >= (uint64_t)frame || !x86_irq_cpu_state() || !empty_private() ||
+    if (!index || (uint64_t)frame != X86_AP_FRAME(index) || frame->Phase != 6 || frame->Error ||
+        rsp < X86_AP_STACK_FLOOR(index) || rsp >= (uint64_t)frame || !x86_irq_cpu_state() || !empty_private() ||
         !x86_irq_verify(&xis_native.Idt, &xis_native.Idtr, &xp_panic_native.Idt,
             xis_irq_targets, (uint64_t)xis_irq_begin, (uint64_t)xis_irq_end)) xis_native_abort(0x4b34495049454e00ULL);
     uint32_t version = xis_mmio_read(0x30), maximum = (version >> 16) & 255;
@@ -77,9 +76,8 @@ uint32_t xis_native_enter(void *private_frame) {
 
 void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     uint32_t index = xis_native_index();
-    uint64_t base = X86_AP_BASE + index * X86_AP_STRIDE;
-    uint64_t top = base + 17 * 4096 - 1024, address = (uint64_t)frame;
-    if (!index || ks_irq_state() || (address & 7) || address < base + 8192 || address > top - sizeof(*frame) ||
+    uint64_t top = X86_AP_FRAME(index), address = (uint64_t)frame;
+    if (!index || ks_irq_state() || (address & 7) || address < X86_AP_STACK_FLOOR(index) || address > top - sizeof(*frame) ||
         frame->Cs != 8 || frame->Ss != 16 || frame->Rsp != top - 576 ||
         (frame->Flags & 0x7602) != 0x602 || !xp_image_contains(frame->Rip, 1))
         xis_native_abort(0x4b3449504946524dULL);
@@ -129,7 +127,7 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
 void xis_native_verified(const unsigned char *fx) {
     uint32_t index = xis_native_index();
     if (!index || ks_irq_state()) xis_native_abort(0x4b34495049565246ULL);
-    uint64_t top = X86_AP_BASE + index * X86_AP_STRIDE + 17 * 4096 - 1024;
+    uint64_t top = X86_AP_FRAME(index);
     if ((uint64_t)fx != top - 512) xis_native_abort(0x4b34495049565800ULL);
     for (uint32_t byte = 160; byte < 416; ++byte)
         if (fx[byte] != 255) xis_native_abort(0x4b34495049584d4dULL);
