@@ -5,6 +5,8 @@
 #include "arch/x86/kernel/interrupts/return/table.h"
 
 #define XIS_VECTOR 0xe1U
+// Stack bytes reserved by xis_service_loop (idle.asm: sub rsp, 576) below the private frame.
+#define XIS_IDLE_FRAME_BYTES 576ULL
 typedef struct {
     _Alignas(64) uint64_t Delivered;
     uint64_t  Verified, Spurious, FrameRsp, Eois, Entered, Reserved[2];

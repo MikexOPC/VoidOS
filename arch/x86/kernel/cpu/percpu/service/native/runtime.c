@@ -13,7 +13,7 @@ __declspec(noreturn) void xis_native_abort(uint64_t reason) { xp_panic_voluntary
 
 uint32_t xis_native_index(void) {
     if (!ks_atomic_load_acquire(&xis_native.Published) || !ks_atomic_load_acquire(&xp_panic_armed) ||
-        xis_native.Count != 4 || xp_panic_native.Count != 4 ||
+        xis_native.Count < 2 || xis_native.Count > 64 || xis_native.Count != xp_panic_native.Count ||
         x86_kernel_root() != xp_panic_native.Root) xis_native_abort(0x4b34495049494400ULL);
     const X86_CPU_LOCAL *owner = x86_percpu_current_local();
     if (!owner || owner->Index >= xis_native.Count || owner != xp_panic_native.Contexts[owner->Index] ||
@@ -25,11 +25,12 @@ uint32_t xis_native_index(void) {
 // ====== xis_native_prepare ======
 
 int xis_native_prepare(void) {
-    if (ks_irq_state() || !ks_boot_cpu() || ks_atomic_load_acquire(&xis_native.Published) || xp_panic_native.Count != 4 ||
+    if (ks_irq_state() || !ks_boot_cpu() || ks_atomic_load_acquire(&xis_native.Published) ||
+        xp_panic_native.Count < 2 || xp_panic_native.Count > 64 ||
         !ks_atomic_load_acquire(&xp_panic_armed) || !x86_lapic_authority(xp_panic_native.Lapic) ||
         !x86_irq_prepare(&xis_native.Idt, &xis_native.Idtr, &xp_panic_native.Idt,
-            xis_irq_targets, (uint64_t)xis_irq_begin, (uint64_t)xis_irq_end) || !xis_configure(4)) return 0;
-    xis_native.Count = 4;
+            xis_irq_targets, (uint64_t)xis_irq_begin, (uint64_t)xis_irq_end) || !xis_configure(xp_panic_native.Count)) return 0;
+    xis_native.Count = xp_panic_native.Count;
     ks_atomic_store_release(&xis_native.Published, 1);
     return 1;
 }
@@ -78,7 +79,7 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     uint32_t index = xis_native_index();
     uint64_t top = X86_AP_FRAME(index), address = (uint64_t)frame;
     if (!index || ks_irq_state() || (address & 7) || address < X86_AP_STACK_FLOOR(index) || address > top - sizeof(*frame) ||
-        frame->Cs != 8 || frame->Ss != 16 || frame->Rsp != top - 576 ||
+        frame->Cs != 8 || frame->Ss != 16 || frame->Rsp != top - XIS_IDLE_FRAME_BYTES ||
         (frame->Flags & 0x7602) != 0x602 || !xp_image_contains(frame->Rip, 1))
         xis_native_abort(0x4b3449504946524dULL);
     XIS_CPU *cpu = &xis_native.Cpus[index];

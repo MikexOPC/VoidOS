@@ -48,13 +48,14 @@ def await_terminal(vm, case):
 
 # ====== verify ======
 
-def verify(vm, log, case):
-    texts = [launch.registers(vm, index) for index in range(4)]
+def verify(vm, log, case, count):
+    texts = [launch.registers(vm, index) for index in range(count)]
+    mask = (1 << count) - 1
     root = launch.value(texts[0], "CR3")
-    if [log.number("KERNEL_AP_RUNTIME_" + item) for item in ("DISCOVERED", "PARKED", "ONLINE")] != [4, 3, 15]:
+    if [log.number("KERNEL_AP_RUNTIME_" + item) for item in ("DISCOVERED", "PARKED", "ONLINE")] != [count, count - 1, mask]:
         raise RuntimeError("Actual AP startup missing")
-    cpu.identity(vm, log, 4, log.number("KERNEL_PERCPU_CONTEXT"))
-    cpu.ap_monitor.verify(vm, log, cpu.memory, 4, True, 3)
+    cpu.identity(vm, log, count, log.number("KERNEL_PERCPU_CONTEXT"))
+    cpu.ap_monitor.verify(vm, log, cpu.memory, count, True, count - 1)
     pool, live, pins, free = runtime.allocator(vm, log)
     runtime.transition_memory(vm, log, root, pool, live, pins)
     address = log.number("KERNEL_IPI_NATIVE")
@@ -74,7 +75,7 @@ def verify(vm, log, case):
     first = log.number("KERNEL_AP_CONTEXTS")
     owner = log.number("PANIC_OWNER") if case != "ping" else None
     final = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
-    for index in range(4):
+    for index in range(count):
         text = texts[index]
         (vm.directory / f"cpu-{index}.txt").write_text(text, encoding="utf-8")
         if "HLT=1" not in text or launch.value(text, "CR3") != root:
@@ -112,18 +113,18 @@ def verify(vm, log, case):
                 raise RuntimeError("AP did not stop through private NMI IST")
     state = cpu.memory(vm, log.number("KERNEL_PANIC_STATE"), 80)
     if case == "ping":
-        if log.failures() or state != [2, 15, 15] + [0] * 77:
+        if log.failures() or state != [2, mask, mask] + [0] * 77:
             raise RuntimeError("Unexpected panic state")
     else:
         expected_owner = 1 if case == "stale-ack" else 0
-        targets = 15 & ~(1 << expected_owner)
-        if owner != expected_owner or state[:9] != [2, 15, 15, owner + 1, targets, targets, 0, 2, 0] or state[9:] != [2] * 4 + [0] * 67:
+        targets = mask & ~(1 << expected_owner)
+        if owner != expected_owner or state[:9] != [2, mask, mask, owner + 1, targets, targets, 0, 2, 0] or state[9:] != [2] * count + [0] * (71 - count):
             raise RuntimeError("SMP panic coordinator did not collect all CPUs")
         reason = {"missing-ack": 0x4b34495049544d4f, "stale-ack": 0x4b34495049424144,
                   "panic-idle": 0x4b344950494e4d34, "panic-handler": 0x4b344950494e4d35}[case]
         if log.number("PANIC_REASON_ADDRESS") != reason or log.number("PANIC_MISSING") != 0:
             raise RuntimeError("Different failure reason or missing panic ACK")
-        for index in range(4):
+        for index in range(count):
             base = log.number("KERNEL_AP_BASE") + index * 0x40000
             record_address = base + 48 * 4096 + 256 if index else log.number("KERNEL_PANIC_RECORD")
             record = cpu.memory(vm, record_address, 64)
@@ -144,7 +145,7 @@ def verify(vm, log, case):
             raise RuntimeError("Incomplete emergency report")
         if case == "missing-ack" and log.number("KERNEL_IPI_FAILED_PHASE") != 2:
             raise RuntimeError("Timed-out mailbox was reopened")
-    return dict(Case=case, RealCpus=4, Requests=300 if case in ("ping", "panic-idle") else 1,
+    return dict(Case=case, RealCpus=count, Requests=100 * (count - 1) if case in ("ping", "panic-idle") else 1,
                 PhysicalFree=free, Pinned=True)
 
 
@@ -155,6 +156,7 @@ def main():
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler"), default="ping")
     parser.add_argument("--boots", type=int, choices=range(1, 11), default=10)
+    parser.add_argument("--smp", type=int, choices=range(2, 65), default=4)
     args = parser.parse_args()
     out = transition.ROOT / "kernel/build" / ("ipi-service-" + uuid.uuid4().hex)
     out.mkdir()
@@ -162,7 +164,7 @@ def main():
     passed = 0
     try:
         for iteration in range(1, args.boots + 1):
-            with qemu.Vm(out / f"boot-{iteration}", args.image, "std", smp=4) as vm:
+            with qemu.Vm(out / f"boot-{iteration}", args.image, "std", smp=args.smp) as vm:
                 try:
                     log = await_terminal(vm, args.case)
                     vm.command("stop")
@@ -172,14 +174,14 @@ def main():
                         group_spec.loader.exec_module(group)
                         group.settle(vm, log.number("PANIC_OWNER"))
                         log = vm.log()
-                    results.append(verify(vm, log, args.case))
+                    results.append(verify(vm, log, args.case, args.smp))
                 except BaseException:
                     vm.command("stop")
-                    for index in range(4):
+                    for index in range(count):
                         (vm.directory / f"failure-cpu-{index}.txt").write_text(launch.registers(vm, index), encoding="utf-8")
                     raise
             passed += 1
-            print(f"PASS: IPI {args.case} {iteration}/{args.boots}; actual AP interrupt delivery", flush=True)
+            print(f"PASS: IPI {args.case} {iteration}/{args.boots}; {args.smp} CPUs, actual AP interrupt delivery", flush=True)
     except Exception as error:
         results.append(dict(Failure=str(error)))
         qemu.finish(out, "ipi-service", args.image, results, passed, args.boots)
