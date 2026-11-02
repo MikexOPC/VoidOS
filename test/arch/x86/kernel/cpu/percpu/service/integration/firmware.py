@@ -149,6 +149,14 @@ def verify(vm, log, case, count):
                 PhysicalFree=free, Pinned=True)
 
 
+# ====== capture_failure ======
+
+def capture_failure(vm, count):
+    vm.command("stop")
+    for index in range(count):
+        (vm.directory / f"failure-cpu-{index}.txt").write_text(launch.registers(vm, index), encoding="utf-8")
+
+
 # ====== main ======
 
 def main():
@@ -172,13 +180,14 @@ def main():
                         group_spec = importlib.util.spec_from_file_location("service_group", Path(__file__).parents[2] / "panic/integration/group.py")
                         group = importlib.util.module_from_spec(group_spec)
                         group_spec.loader.exec_module(group)
-                        group.settle(vm, log.number("PANIC_OWNER"))
+                        group.settle(vm, log.number("PANIC_OWNER"), args.smp)
                         log = vm.log()
                     results.append(verify(vm, log, args.case, args.smp))
-                except BaseException:
-                    vm.command("stop")
-                    for index in range(count):
-                        (vm.directory / f"failure-cpu-{index}.txt").write_text(launch.registers(vm, index), encoding="utf-8")
+                except BaseException as original:
+                    try:
+                        capture_failure(vm, args.smp)
+                    except Exception as capture_error:
+                        original.add_note(f"Diagnostic capture also failed: {capture_error}")
                     raise
             passed += 1
             print(f"PASS: IPI {args.case} {iteration}/{args.boots}; {args.smp} CPUs, actual AP interrupt delivery", flush=True)

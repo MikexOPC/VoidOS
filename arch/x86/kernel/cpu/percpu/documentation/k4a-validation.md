@@ -1,8 +1,9 @@
 # K4-A — Evidenze e lavoro rimanente
 
-2 novembre 2026. Diagnostico hardware K4-A verificato: tre AP ricevono
-IPI fixed a IF=1, completano richieste numerate e ripristinano il contesto.
-Campagna finale **70/70**: 30 boot positivi e 40 panic intenzionali previsti.
+2 novembre 2026. Verifica dopo i refactor K4 di `26044e4` e i fix della review:
+diagnostico IPI e panic con **2, 4 e 8 CPU**, boot ordinario con 1 e 4 CPU.
+Campagna **80/80**: 50 boot positivi e 30 panic intenzionali previsti.
+Il codice accetta gruppi di 2–64 CPU; non sono prove hardware su 64 CPU.
 Gli AP del boot ordinario mantengono il parcheggio K3 a IF=0.
 K4 non è chiusa: integrazione ordinaria, shootdown e preemption restano da fare.
 
@@ -20,18 +21,22 @@ Comando dalla root: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scr
   valore fuori maschera, wrap 24/32 bit, deadline e argomenti invalidi.
 - Backend C: preparazione e rifiuto di identità CPU, stato, profondità lock,
   frame/stack o puntatore FXSAVE non validi; dipendenze privilegiate modellate.
-- Python: 5/5 regressioni sul formato registri e sulle righe seriali incomplete.
+- Python: 10/10 test con sottocasi: formato registri, righe seriali incomplete,
+  raccolta dopo errore su 2/8 CPU, conservazione dell'errore originale,
+  attesa di tutti i core, default storico a quattro e argomenti invalidi.
+- Audit: cinque fixture COFF, senza eseguirle. Oggetto scalare accettato;
+  helper SIMD, FNINIT, VZEROUPPER e helper mancante rifiutati.
 - MSVC C11 `/W4 /WX`, ASan sui sorgenti C, Rust `-D warnings`;
-  cppcheck sui sette file C del servizio/test senza diagnostiche bloccanti.
-- Sette suite pertinenti PASS con exit 0: `ipi-service`, `ap-native`,
-  `ap-runtime`, `ap-admission`, `percpu-panic`, `ap-startup`, `layout`.
-- Limiti correnti 1.000 righe e 8 file diretti rispettati; nuovo sorgente
-  più lungo: runner QEMU, 192 righe.
+  cppcheck sugli otto file C del servizio/test, incluso ICR, senza diagnostiche bloccanti.
+- Sei suite pertinenti PASS con exit 0: `apic-icr`, `ipi-service`, `ap-native`,
+  `ap-runtime`, `percpu-panic`, `layout`.
+- Limiti correnti 1.000 righe e 8 file diretti rispettati.
 
 Log finale della suite:
-`kernel/build/test-run-01753d6919c84178abf10c2e0301d70c/ipi-service.log`.
+`kernel/build/test-run-3d1167f4a4cf4d918f5307f003d37c06/ipi-service.log`.
+Fixture audit: `kernel/build/test-run-7a4aaa40cdc64565bfeb6a5b9d7ad92c/apic-icr.log`.
 Il percorso `host evidence` nel log contiene oggetti, eseguibili e cppcheck.
-Le altre suite e gli hash sono raccolti in `kernel/build/k4a-manifest.json`.
+Le altre suite e gli hash sono raccolti in `kernel/build/k4-review-manifest.json`.
 
 ## QEMU finale: livello complesso, dieci boot per profilo
 
@@ -41,17 +46,18 @@ del loader. Ogni VM è posseduta dal test, con deadline e cleanup dedicati.
 
 | Profilo | Risultato | Directory in kernel/build/ |
 |---|---|---|
-| `ping`, 300 IPI per boot | 10/10 | `ipi-service-aad7a92099b84f1ab1b6fcd7d3f1922b` |
-| ACK mancante, canale FAILED e panic BSP | 10/10 | `ipi-service-2f73f158f927413c8d0fb9344cd44447` |
-| Generazione errata, panic AP1 | 10/10 | `ipi-service-b879c624d48949d0a8d93e01df9f4b20` |
-| NMI con AP in idle a IF=1/DF=1 | 10/10 | `ipi-service-9bda6c5af34f49e0902e38e363f43ee5` |
-| NMI con AP1 nell'handler a IF=0/DF=0 | 10/10 | `ipi-service-18d43a666d4849b7b47f32fd25eeac09` |
-| Boot ordinario, una CPU | 10/10 | `ap-runtime-030f74e9e90448c1921ba2bafaafec5d` |
-| Boot ordinario, quattro CPU | 10/10 | `ap-runtime-41fa960fe1a4479594013265cc94df46` |
+| `ping`, 2 CPU / 100 IPI per boot | 10/10 | `ipi-service-95a618ad414a49b1ba85bae0f660097e` |
+| `ping`, 4 CPU / 300 IPI per boot | 10/10 | `ipi-service-88fb0f6bc2f343f19f1dd77b8f300f06` |
+| `ping`, 8 CPU / 700 IPI per boot | 10/10 | `ipi-service-480462505f0b4792abc946e016c891d6` |
+| NMI dentro handler, 2 CPU | 10/10 | `ipi-service-e3a567f071d44d958403e9e0be6cd44c` |
+| NMI dentro handler, 4 CPU | 10/10 | `ipi-service-5f2b7ba867114dd78ae331a99783d04f` |
+| NMI dentro handler, 8 CPU | 10/10 | `ipi-service-7819008bec0a4cd0bc337b12ebccd40c` |
+| Boot ordinario, una CPU | 10/10 | `ap-runtime-1c065124d2954d40a30bb99cfb8b8d27` |
+| Boot ordinario, quattro CPU | 10/10 | `ap-runtime-0b4a05aaacea41659c1c1eede97f3957` |
 
-Le immagini sono in `kernel/build/k4a-release-<profilo>/kernel.elf`,
-con `<profilo>` fra `ping`, `missing-ack`, `stale-ack`, `panic-idle`,
-`panic-handler`, `ordinary`. I risultati ordinari usano la stessa immagine.
+Immagini nuove: `kernel/build/k4-review-<profilo>/kernel.elf`, con
+`<profilo>` fra `ping`, `panic-handler`, `ordinary`. Ogni immagine è usata
+per tutte le configurazioni CPU applicabili riportate sopra.
 
 Verificati: contatori ACK/ritorno/EOI, GPR distinti, x87/ST0 e XMM0–15,
 DF, GS, CR3, WP/NX e prerequisiti FXSAVE, IDTR completo, GDT/TR e stack
@@ -61,20 +67,26 @@ L'harness verifica accounting fisico, arena, pin e tabelle di transizione.
 Nei panic intenzionali tutti i core confermano lo stop; nessun ACK mancante,
 report completo e nessuna ricorsione inattesa.
 
-Audit emergenza: 11 oggetti per ognuna delle sei immagini, 66/66 senza
-dipendenze FP/SIMD. Il linker map ordinario non contiene simboli `xis_*`
-del servizio diagnostico. Il nuovo ingresso IRQ usa invece FXSAVE/FXRSTOR
-per contratto e non appartiene al percorso di emergenza.
+Audit emergenza: **12 oggetti per immagine, 36/36** senza dipendenze FP/SIMD
+rilevate nel disassemblato. Incluso `arch-x86-kernel-interrupts-apic-icr-icr.obj`.
+Il rilevatore controlla opcode e operandi, anche per istruzioni senza
+registri espliciti, e rifiuta output senza istruzioni riconosciute.
+Il nuovo ingresso IRQ usa invece FXSAVE/FXRSTOR per contratto e non
+appartiene al percorso di emergenza.
 
 ## Correzioni durante il collaudo
 
-Il lettore locale accetta il padding HMP (`R8 =`). Un secondo difetto del
-runner interpretava un prefisso ancora incompleto della riga FAIL come
-un errore diverso: ora valuta soltanto righe terminate. Entrambi hanno
-regressioni; dopo i fix è passata una nuova campagna completa.
-Alcune prime suite host hanno scritto PASS senza terminare nel contesto
-ristretto dell'agente: non sono state contate; le ripetizioni fuori da
-quelle restrizioni hanno restituito exit 0. Nessuna soglia guest è stata allentata.
+Il percorso di errore usa `args.smp` al posto di una variabile inesistente.
+L'attesa del panic riceve lo stesso conteggio e controlla anche l'ultimo core;
+il default a quattro resta per i chiamanti K3. Se la cattura diagnostica
+fallisce, l'errore originale resta quello riportato dal runner.
+L'audit copre ora anche l'helper ICR e riconosce FNINIT e VZEROUPPER.
+Restano le regressioni per padding HMP e righe seriali incomplete.
+Nessuna soglia guest è stata allentata.
+
+La precedente campagna 70/70 e l'audit 66/66 appartengono al checkpoint
+`16d16c1`, prima dei refactor K4. Restano evidenza storica in
+`kernel/build/k4a-manifest.json`, non certificazione del codice successivo.
 
 ## Limiti delle prove
 
@@ -83,8 +95,10 @@ QEMU esegue separatamente i veri accessi guest. Il modulo non alloca memoria
 dinamica: i suoi dati sono residenti, gli stack e il LAPIC restano posseduti
 e pinned da K3. Accounting guest e ASan non certificano tutto il kernel.
 Valgrind non eseguito su Windows. Coverage linee/branch: N/D.
-Profilo hardware limitato a quattro CPU QEMU xAPIC: nessuna certificazione
-su hardware fisico, x2APIC, hotplug, task AP o sorgenti IRQ spostate dal BSP.
+Profilo hardware verificato su 2/4/8 CPU QEMU xAPIC. In questo blocco i
+profili `missing-ack`, `stale-ack` e `panic-idle` non sono stati rieseguiti.
+Nessuna certificazione di 64 CPU, hardware fisico, x2APIC, hotplug,
+task AP o sorgenti IRQ spostate dal BSP.
 IDT immutabile tramite API, non nuova protezione PTE read-only.
 
 ## Prossimo incremento nello stesso modulo
