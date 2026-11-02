@@ -1,4 +1,5 @@
 #include "transport.h"
+#include "arch/x86/kernel/interrupts/apic/icr/icr.h"
 
 typedef struct {
     const XW_TRANSPORT *Transport;
@@ -33,52 +34,21 @@ static int poll_private(XW_WAIT *wait) {
     return 1;
 }
 
-// ====== read_private ======
+// ====== budget_private ======
 
-static int read_private(XW_WAIT *wait, uint32_t offset, uint32_t *value) {
-    const XW_TRANSPORT *t = wait->Transport;
-    if (!poll_private(wait)) return 0;
-    return t->Read(t->Context, offset, value) || fail_private(wait, XW_IO);
-}
-
-// ====== write_private ======
-
-static int write_private(XW_WAIT *wait, uint32_t offset, uint32_t value) {
-    const XW_TRANSPORT *t = wait->Transport;
-    if (!poll_private(wait)) return 0;
-    return t->Write(t->Context, offset, value) || fail_private(wait, XW_IO);
-}
-
-// ====== idle_private ======
-
-// Intel SDM 253668-078US 11.6.1: ICR low +300h, delivery status bit 12.
-static int idle_private(XW_WAIT *wait) {
-    uint32_t value;
-    do {
-        if (!read_private(wait, 0x300, &value)) return 0;
-        if (!(value & 0x1000)) return 1;
-        wait->Transport->Pause(wait->Transport->Context);
-    } while (wait->Result->Polls < wait->Transport->MaxPolls);
-    return fail_private(wait, XW_POLLS);
-}
-
-// ====== errors_private ======
-
-// Intel SDM 078US 11.5.3: ESR +280h must be written before reading its captured errors.
-static int errors_private(XW_WAIT *wait) {
-    uint32_t value;
-    if (!write_private(wait, 0x280, 0) || !read_private(wait, 0x280, &value)) return 0;
-    return !value || fail_private(wait, XW_APIC);
-}
+static int budget_private(void *budget) { return poll_private(budget); }
 
 // ====== send_private ======
 
-// Intel SDM 078US 11.6.1 Figure 11-12: destination [63:56], physical/no shorthand.
+// Intel SDM 078US 11.6.1 Figure 11-12: physical destination, no shorthand.
 // Level bit14=1, trigger bit15=0; INIT mode101, SIPI mode110; vector[7:0].
 static int send_private(XW_WAIT *wait, uint32_t id, uint32_t command) {
-    return idle_private(wait) && errors_private(wait) &&
-        write_private(wait, 0x310, id << 24) && write_private(wait, 0x300, command) &&
-        idle_private(wait) && errors_private(wait);
+    const XW_TRANSPORT *t = wait->Transport;
+    X86_ICR_PORT port = {t->Read, t->Write, budget_private, t->Pause, t->Context, wait};
+    uint32_t status = x86_icr_send(&port, id, command, X86_ICR_CHECK_ESR | X86_ICR_WAIT_SENT);
+    if (status == X86_ICR_OK) return 1;
+    if (status == X86_ICR_STOPPED) return 0;
+    return fail_private(wait, status == X86_ICR_IO ? XW_IO : status == X86_ICR_APIC ? XW_APIC : XW_INVALID);
 }
 
 // ====== delay_private ======

@@ -1,4 +1,5 @@
 #include "transport.h"
+#include "arch/x86/kernel/interrupts/apic/icr/icr.h"
 typedef struct { uint32_t Start, Last, Polls; uint64_t Outcome; } WAIT;
 
 // ====== poll_private ======
@@ -17,20 +18,27 @@ static int poll_private(const XP_PANIC_TRANSPORT *t, volatile WAIT *wait) {
     return 1;
 }
 
+// ====== budget_private ======
+
+typedef struct { const XP_PANIC_TRANSPORT *Transport; volatile WAIT *Wait; } BUDGET;
+
+static int budget_private(void *budget) {
+    const BUDGET *b = budget;
+    return poll_private(b->Transport, b->Wait);
+}
+
 // ====== send_private ======
 
+// No ESR access and no wait after the send: the panic path only needs the ICR idle
+// before each NMI, and the ACK mask (not the APIC) decides whether a CPU stopped.
 static int send_private(const XP_PANIC_TRANSPORT *t, volatile WAIT *wait, uint32_t id) {
-    uint32_t icr;
-    while (poll_private(t, wait)) {
-        if (!t->Read(t->Context, 0x300, &icr)) { wait->Outcome |= XP_PANIC_TRANSPORT_FAILED; return 0; }
-        if (!(icr & (1U << 12))) {
-            uint64_t bits = xp_panic_nmi_bits(id);
-            if (!t->Write(t->Context, 0x310, (uint32_t)(bits >> 32)) ||
-                !t->Write(t->Context, 0x300, (uint32_t)bits)) { wait->Outcome |= XP_PANIC_TRANSPORT_FAILED; return 0; }
-            return 1;
-        }
-        t->Pause(t->Context);
-    }
+    uint64_t bits = xp_panic_nmi_bits(id);
+    if (bits == UINT64_MAX) { wait->Outcome |= XP_PANIC_TRANSPORT_FAILED; return 0; }
+    BUDGET budget = {t, wait};
+    X86_ICR_PORT port = {t->Read, t->Write, budget_private, t->Pause, t->Context, &budget};
+    uint32_t status = x86_icr_send(&port, (uint32_t)(bits >> 56), (uint32_t)bits, 0);
+    if (status == X86_ICR_OK) return 1;
+    if (status != X86_ICR_STOPPED) wait->Outcome |= XP_PANIC_TRANSPORT_FAILED;
     return 0;
 }
 

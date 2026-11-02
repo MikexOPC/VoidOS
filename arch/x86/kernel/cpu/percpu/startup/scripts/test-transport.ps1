@@ -15,7 +15,7 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) {
 Invoke-Checked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
     '-C','panic=abort','-C','opt-level=2',"$project/arch/x86/kernel/cpu/percpu/startup/rust/protocol/api.rs",
     '-o',"$out/protocol.obj")
-$sources = @('arch/x86/kernel/cpu/percpu/startup/transport/wake.c','kernel/time/clock.c',
+$sources = @('arch/x86/kernel/cpu/percpu/startup/transport/wake.c','arch/x86/kernel/interrupts/apic/icr/icr.c','kernel/time/clock.c',
     'test/arch/x86/kernel/cpu/percpu/startup/transport/wake.c')
 $saved = Use-Msvc
 try {

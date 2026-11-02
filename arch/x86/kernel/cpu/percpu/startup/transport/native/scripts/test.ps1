@@ -14,7 +14,7 @@ Invoke-OsChecked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','
 $saved = Use-Msvc
 try {
     $sources = @('arch/x86/kernel/cpu/percpu/startup/transport/native/run.c',
-        'arch/x86/kernel/cpu/percpu/startup/transport/wake.c','kernel/time/clock.c',
+        'arch/x86/kernel/cpu/percpu/startup/transport/wake.c','arch/x86/kernel/interrupts/apic/icr/icr.c','kernel/time/clock.c',
         'test/arch/x86/kernel/cpu/percpu/startup/transport/native/cases.c')
     $objects = @("$out/protocol.obj")
     foreach ($source in $sources) {

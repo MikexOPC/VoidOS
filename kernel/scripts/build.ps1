@@ -112,7 +112,7 @@ foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sc
     'kernel/firmware/acpi/root.c',
     'kernel/firmware/acpi/madt/parser.c','kernel/firmware/acpi/madt/records.c',
     'arch/x86/kernel/interrupts/apic/profile.c',
-    'arch/x86/kernel/interrupts/apic/probe.c','arch/x86/kernel/interrupts/apic/access.c',
+    'arch/x86/kernel/interrupts/apic/probe.c','arch/x86/kernel/interrupts/apic/access.c','arch/x86/kernel/interrupts/apic/icr/icr.c',
     'arch/x86/kernel/interrupts/apic/control/masked.c','arch/x86/kernel/interrupts/apic/control/access.c',
     'arch/x86/kernel/interrupts/return/table.c','arch/x86/kernel/interrupts/registry/registry.c',
     'arch/x86/kernel/serial/interrupts/driver.c','arch/x86/kernel/serial/transmit/buffer.c','arch/x86/kernel/serial/queue/queue.c',
