@@ -15,13 +15,23 @@ La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
 ## K3-F: backend panic, gate SMP ancora aperto
 
+K3-I/boot ordinario: il BSP ora avvia e parcheggia i tre AP e prosegue
+fino alla console. Passati 10/10 avvii a quattro CPU, 10/10 della stessa
+immagine a una CPU, 10/10 panic dopo timer/scheduler, 10/10 sessioni console
+GOP con input/pixel/cleanup e controllo finale degli AP, più 10/10 del
+diagnostico sequenziale precedente. Lo scheduler resta BSP; K3 è aperto
+per stress e revisione finale. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-runtime-validation.md).
+
+I paragrafi seguenti descrivono i checkpoint precedenti; le indicazioni
+«boot ordinario BSP» sono superate dal risultato sopra.
+
 K3-I/panic sul gruppo: il diagnostico ora verifica anche l'arresto di tutti
 e quattro i core, con origine volontaria BSP oppure eccezione NMI su AP3.
 Passati 10/10 boot per origine: un reporter, tre ACK, nessun core mancante,
 quattro record completi e stack/IST/root reali verificati. Suite host C/ASan
 e Rust passata; nessuna nuova modifica al backend panic di produzione.
-Restano integrazione nel boot ordinario e stress finale; gli AP non
-eseguono ancora task. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-group-panic-validation.md).
+L'integrazione ordinaria è ora provata sopra; resta lo stress finale di K3.
+Le task AP non sono implementate. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-group-panic-validation.md).
 
 K3-I/sequenziale: riarmo della sola pagina dati dopo PARKED implementato.
 Il diagnostico inizializza e parcheggia BSP+tre AP reali: 10/10 boot del

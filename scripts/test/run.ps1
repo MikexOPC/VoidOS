@@ -20,6 +20,7 @@ $suites = [ordered]@{
     'ap-blob' = 'arch/x86/kernel/cpu/percpu/startup/blob/scripts/test.ps1'
     'ap-startup' = 'arch/x86/kernel/cpu/percpu/startup/scripts/test.ps1'
     'ap-native' = 'arch/x86/kernel/cpu/percpu/startup/transport/native/scripts/test.ps1'
+    'ap-runtime' = 'arch/x86/kernel/cpu/percpu/startup/runtime/scripts/test.ps1'
     physical = 'kernel/mm/physical/scripts/test.ps1'
     scheduler = 'kernel/scheduler/scripts/test.ps1'
     'x86-scheduler' = 'arch/x86/kernel/scheduler/scripts/test.ps1'

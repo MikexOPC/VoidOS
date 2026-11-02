@@ -87,3 +87,8 @@ if ($TestApResourceFault -ne 'none') {
     $mode = if ($TestApResourceFault -eq 'guard') { 1 } else { 2 }
     $flags += "/DKERNEL_TEST_AP_RESOURCE_FAULT=$mode"
 }
+
+# ============ parked APs in ordinary profiles ============
+
+$ApRuntime = $TestApTransition -eq 'none' -and $TestSmpPanic -eq 'none' -and !$TestApCommit -and !$TestBootstrapMemory
+if ($ApRuntime) { $flags += '/DKERNEL_AP_RUNTIME=1' }

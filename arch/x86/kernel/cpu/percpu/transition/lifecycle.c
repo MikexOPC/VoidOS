@@ -105,7 +105,7 @@ int xt_prepare(X86_AP_TRANSITION *owner, BOOT_U64 root, BOOT_U64 pat, const XT_I
         root < 4096 || (root & 4095) || root >= (1ULL << owner->Pool->PhysicalBits) ||
         !kernel_physical_budget_read(owner->Pool, &owner->Budget)) return 0;
     owner->Root = root; owner->Pat = pat; owner->Io = *io;
-    if (!kernel_physical_allocate_within(owner->Pool, 4, 1, 4096, 0x100000000ULL, &owner->Tables)) return 2;
+    if (!kernel_physical_allocate_within(owner->Pool, 4, 1, 4096, (BOOT_U64)UINT32_MAX + 1, &owner->Tables)) return 2;
     if (!kernel_physical_pin(owner->Pool, &owner->Tables, 1)) goto rollback;
     owner->TablesPinned = 1;
     if (!xt_geometry(owner->Code->Lease.Base, owner->Data.Base, owner->Tables.Base) ||

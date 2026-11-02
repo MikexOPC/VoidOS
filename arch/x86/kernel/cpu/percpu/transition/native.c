@@ -6,8 +6,12 @@
 #include "../internal.h"
 #include "kernel/diagnostics/log.h"
 #include "../startup/commit/retention.h"
+#include "../identity/identity.h"
 #ifdef KERNEL_TEST_AP_IMAGE
 #include "test/arch/x86/kernel/cpu/percpu/startup/installation/probe/probe.h"
+#endif
+#ifdef KERNEL_AP_RUNTIME
+#include "../startup/runtime/runtime.h"
 #endif
 static X86_AP_TRANSITION transition;
 #ifndef KERNEL_TEST_BOOTSTRAP_MEMORY
@@ -126,6 +130,11 @@ int x86_ap_transition_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW 
     return kernel_log(2, "KERNEL_AP_TRANSITION_DIAGNOSTIC_SKIPPED");
 #else
     if (native.Window || !window || transition.Self != (BOOT_U64)&transition || transition.Pool != window->Pool) return 0;
+#ifdef KERNEL_AP_RUNTIME
+    const X86_CPU_IDENTITIES *ids = x86_cpu_identities();
+    if (!ids) return 0;
+    if (ids->Count == 1) return x86_ap_runtime_start(&transition, lapic);
+#endif
     if (transition.State == 2) {
 #ifdef KERNEL_TEST_AP_TRANSITION
         return 0;
@@ -178,7 +187,11 @@ int x86_ap_transition_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW 
     if (!kernel_log(0, "KERNEL_AP_TRANSITION_TEST_READY")) return 0;
     x86_kernel_stop(0x5452414e53505245ULL);
 #else
+#ifdef KERNEL_AP_RUNTIME
+    return x86_ap_runtime_start(&transition, lapic);
+#else
     return 1;
+#endif
 #endif
 #endif
 }

@@ -1,4 +1,4 @@
-"""K3-A/B: BSP GS, retired early context and owned PM wait; APs remain stopped."""
+"""BSP GS, retired early context and owned PM wait; explicit parked AP verification when enabled."""
 import argparse
 import importlib.util
 import re
@@ -120,8 +120,18 @@ def boot(image, out, index, ordinary, committed, smp):
             raise RuntimeError("Per-CPU state outside kernel image window")
         vm.command("stop")
         actual = monitor_read(vm, "info registers", gs_base)
-        resources = ap_monitor.verify(vm, log, memory, configured, ordinary)
-        preparation = ap_preparation.verify(vm, log, memory, configured, ordinary, committed)
+        runtime = log.has("KERNEL_AP_RUNTIME_READY") or log.has("KERNEL_AP_RUNTIME_BSP_ONLY")
+        resources = ap_monitor.verify(vm, log, memory, configured, ordinary, configured - 1 if runtime else 0)
+        if runtime:
+            runtime_spec = importlib.util.spec_from_file_location("ordinary_ap_runtime", Path(__file__).parent / "startup/runtime/firmware.py")
+            runtime_module = importlib.util.module_from_spec(runtime_spec)
+            runtime_spec.loader.exec_module(runtime_module)
+            actual_runtime = runtime_module.verify(vm, log, configured)
+            if not ordinary and configured > 1 and log.count("KERNEL_AP_CONTEXT_ROLLBACK_OK", "OK") != 1:
+                raise RuntimeError("Missing AP context rollback evidence")
+            preparation = dict(Prepared=configured - 1, Executing=actual_runtime["ParkedAps"], Committed=configured > 1)
+        else:
+            preparation = ap_preparation.verify(vm, log, memory, configured, ordinary, committed)
         identities = identity(vm, log, configured, context)
         owner = memory(vm, base, 56)
         retired = memory(vm, early, 52)
@@ -142,7 +152,7 @@ def boot(image, out, index, ordinary, committed, smp):
             raise RuntimeError("Actual PM wait descriptor/source mismatch")
         if owner[4] <= 1 or owner[5] != wait or owner[6] or any(owner[7:]) or any(retired):
             raise RuntimeError("Context not quiescent, early context not retired or tokens reset")
-        return dict(ConfiguredVcpus=configured, OsContextsReady=1, GSBase=hex(actual),
+        return dict(ConfiguredVcpus=configured, OsContextsReady=configured if runtime else 1, GSBase=hex(actual),
                     Context=hex(context), Retired=hex(early), NextToken=owner[4], Ordinary=ordinary, Wait=hex(wait), PmPort=port, PmMask=hex(mask), Identities=identities, ApResources=resources, ApPreparation=preparation)
 
 
@@ -162,7 +172,7 @@ def main():
     try:
         for index in range(1, args.boots + 1):
             results.append(boot(args.image, out, index, args.ordinary, args.committed, args.smp))
-            print(f"PASS: BSP GS {index}/{args.boots}; monitor base, retired context, usable locks; APs not started", flush=True)
+            print(f"PASS: BSP GS {index}/{args.boots}; monitor base, retired context, usable locks; AP state verified independently", flush=True)
     except Exception as failure:
         results.append(dict(Failure=str(failure)))
         qemu.finish(out, "percpu", args.image, results, len(results) - 1, args.boots)

@@ -368,7 +368,7 @@ if ($TestPs2Decoder -or $Ps2Input) {
     $objects += $object
 }
 . (Join-Path $project 'kernel/sync/scripts/build.ps1')
-if ($TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) {
+if ($ApRuntime -or $TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) {
     . (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/installation/scripts/build.ps1')
 }
 Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') (@('/nologo','/machine:x64','/subsystem:native',
