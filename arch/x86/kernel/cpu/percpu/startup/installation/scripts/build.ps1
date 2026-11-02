@@ -53,9 +53,13 @@ if ($TestApTransition -eq 'joint-panic' -or $ApRuntime) {
         'arch/x86/kernel/cpu/percpu/startup/assembly/private/resume.asm',
         'arch/x86/kernel/cpu/percpu/admission/assembly/entry/bridge.asm')) {
         $object = Join-Path $output (($part -replace '/','-') -replace '\.asm$','.obj')
-        Invoke-Compiler $tool.Nasm @('-f','win64','-Wall','-Werror','-o',$object,"$project/$part")
+        $serviceDefines = if ($TestApService -ne 'none') { @('-DKERNEL_TEST_AP_SERVICE=1') } else { @() }
+        Invoke-Compiler $tool.Nasm (@('-f','win64','-Wall','-Werror','-o',$object,"$project/$part") + $serviceDefines)
         $objects += $object
     }
+}
+if ($TestApService -ne 'none') {
+    . (Join-Path $project 'arch/x86/kernel/cpu/percpu/service/scripts/build.ps1')
 }
 $installationSources = @('arch/x86/kernel/cpu/percpu/startup/entry.c',
     'arch/x86/kernel/cpu/percpu/startup/blob/package.c',

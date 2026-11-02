@@ -92,6 +92,11 @@ if ($TestApResourceFault -ne 'none') {
 
 $ApRuntime = $TestApTransition -eq 'none' -and $TestSmpPanic -eq 'none' -and !$TestApCommit -and !$TestBootstrapMemory
 if ($ApRuntime) { $flags += '/DKERNEL_AP_RUNTIME=1' }
+if ($TestApService -ne 'none') {
+    if (!$ApRuntime) { throw 'AP service requires ordinary AP admission.' }
+    $serviceMode = switch ($TestApService) { 'ping' {1} 'missing-ack' {2} 'stale-ack' {3} 'panic-idle' {4} 'panic-handler' {5} }
+    $flags += "/DKERNEL_TEST_AP_SERVICE=$serviceMode"
+}
 if ($TestApStress -ne 'none') {
     if (!$ApRuntime -or $TestPanic) { throw 'AP stress requires ordinary AP startup and its own panic trigger.' }
     $flags += $(switch ($TestApStress) {

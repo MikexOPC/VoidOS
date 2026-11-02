@@ -13,6 +13,19 @@ console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
 Non ci sono ancora SMP operativo, processi utente, syscall, VFS o driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
+## K4-A: servizio IPI verificato nel diagnostico
+
+Tre AP ricevono interrupt fixed, confermano richieste numerate e tornano
+con GPR/FPU/SIMD preservati. Campagna finale 70/70: dieci boot per ciascuno
+dei cinque profili IPI/panic e venti regressioni ordinarie con una/quattro CPU.
+Sette suite host pertinenti passate; verificati anche EOI, NMI dentro
+l'handler, stack privati, GS, paging e accounting.
+
+Il servizio è collegato solo al diagnostico `-TestApService`: il boot
+ordinario mantiene gli AP parcheggiati a IF=0 e lo scheduler BSP.
+Restano integrazione ordinaria, shootdown TLB e preemption per completare K4.
+Prove e limiti in [validazione K4-A](../arch/x86/kernel/cpu/percpu/documentation/k4a-validation.md).
+
 ## K3: base per-CPU chiusa sul profilo QEMU
 
 K3 completata per il profilo xAPIC QEMU/OVMF: BSP e tre AP inizializzati,

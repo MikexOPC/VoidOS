@@ -35,7 +35,20 @@ try {
     foreach ($case in @('ack','clock-error','stopped','backwards','mask','wrap','wrap32','timeout','invalid')) {
         Invoke-Checked "$out/wait.exe" @($case)
     }
-    Invoke-Cppcheck $project $out @($source, $wait, $test)
+    $native = "$project/arch/x86/kernel/cpu/percpu/service/native/runtime.c"
+    $nativeTest = "$project/test/arch/x86/kernel/cpu/percpu/service/native_test.c"
+    foreach ($part in @(@($native, 'native'), @($nativeTest, 'native-test'))) {
+        Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+            '/MD','/O2','/UNDEBUG','/c',"/I$project",$part[0],"/Fo$out/$($part[1]).obj","/Fd$out/native.pdb")
+    }
+    Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/MD','/fsanitize=address',"/Fe$out/native.exe",
+        "$out/native.obj","$out/native-test.obj","$out/mailbox.obj",'/link','/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/native.exe" @()
+    Invoke-Cppcheck $project $out @($source, $wait, $test, $native, $nativeTest,
+        "$project/arch/x86/kernel/cpu/percpu/service/native/transport.c",
+        "$project/test/arch/x86/kernel/cpu/percpu/service/integration/probe.c")
 } finally { Restore-Msvc $saved }
 "PASS: IPI mailbox host evidence $out"
+$python = "$env:USERPROFILE/AppData/Local/Programs/Python/Python312/python.exe"
+Invoke-Checked $python @('-B',"$project/test/arch/x86/kernel/cpu/percpu/service/integration/firmware_test.py")
 if ($MyInvocation.InvocationName -ne '.') { exit 0 }

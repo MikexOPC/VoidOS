@@ -1,0 +1,144 @@
+#include "native.h"
+#include "../../startup/private/frame.h"
+#include "arch/x86/kernel/interrupts/apic/control/masked.h"
+#include "arch/x86/kernel/stack/main.h"
+
+XIS_NATIVE xis_native;
+
+// ====== xis_native_abort ======
+
+__declspec(noreturn) void xis_native_abort(uint64_t reason) { xp_panic_voluntary(reason); }
+
+// ====== xis_native_index ======
+
+uint32_t xis_native_index(void) {
+    if (!ks_atomic_load_acquire(&xis_native.Published) || !ks_atomic_load_acquire(&xp_panic_armed) ||
+        xis_native.Count != 4 || xp_panic_native.Count != 4 ||
+        x86_kernel_root() != xp_panic_native.Root) xis_native_abort(0x4b34495049494400ULL);
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    if (!owner || owner->Index >= xis_native.Count || owner != xp_panic_native.Contexts[owner->Index] ||
+        owner->State != X86_PERCPU_ACTIVE || owner->Self != (uint64_t)owner || owner->Locks.Depth ||
+        xp_panic_apic_id() != xp_panic_native.Ids[owner->Index]) xis_native_abort(0x4b34495049494401ULL);
+    return owner->Index;
+}
+
+// ====== xis_native_prepare ======
+
+int xis_native_prepare(void) {
+    if (ks_irq_state() || !ks_boot_cpu() || ks_atomic_load_acquire(&xis_native.Published) || xp_panic_native.Count != 4 ||
+        !ks_atomic_load_acquire(&xp_panic_armed) || !x86_lapic_authority(xp_panic_native.Lapic) ||
+        !x86_irq_prepare(&xis_native.Idt, &xis_native.Idtr, &xp_panic_native.Idt,
+            xis_irq_targets, (uint64_t)xis_irq_begin, (uint64_t)xis_irq_end) || !xis_configure(4)) return 0;
+    xis_native.Count = 4;
+    ks_atomic_store_release(&xis_native.Published, 1);
+    return 1;
+}
+
+// ====== empty_private ======
+
+static int empty_private(void) {
+    for (uint32_t word = 0; word < 8; ++word)
+        if (xis_mmio_read(0x100 + word * 16) || xis_mmio_read(0x200 + word * 16)) return 0;
+    return 1;
+}
+
+// ====== xis_native_enter ======
+
+uint32_t xis_native_enter(void *private_frame) {
+    if (ks_irq_state()) xis_native_abort(0x4b34495049494600ULL);
+    uint32_t index = xis_native_index();
+    uint64_t base = X86_AP_BASE + index * X86_AP_STRIDE;
+    const XS_PRIVATE_FRAME *frame = private_frame;
+    uint64_t rsp = x86_kernel_stack_pointer();
+    if (!index || (uint64_t)frame != base + 17 * 4096 - 1024 || frame->Phase != 6 || frame->Error ||
+        rsp < base + 8192 || rsp >= (uint64_t)frame || !x86_irq_cpu_state() || !empty_private() ||
+        !x86_irq_verify(&xis_native.Idt, &xis_native.Idtr, &xp_panic_native.Idt,
+            xis_irq_targets, (uint64_t)xis_irq_begin, (uint64_t)xis_irq_end)) xis_native_abort(0x4b34495049454e00ULL);
+    uint32_t version = xis_mmio_read(0x30), maximum = (version >> 16) & 255;
+    if (!x86_apic_lapic_version(version)) xis_native_abort(0x4b344950494c5600ULL);
+    for (uint32_t lvt = 0; lvt <= maximum; ++lvt) {
+        uint32_t offset = x86_irq_lvt(maximum, lvt);
+        if (!offset) xis_native_abort(0x4b344950494c5601ULL);
+        xis_mmio_write(offset, 0x10040);
+        if (xis_mmio_read(offset) != 0x10040) xis_native_abort(0x4b344950494c5602ULL);
+    }
+    x86_exception_load_idt(&xis_native.Idtr);
+    X86_KERNEL_IDTR actual;
+    x86_exception_read_idt(&actual);
+    for (uint32_t byte = 0; byte < sizeof(actual); ++byte)
+        if (actual.Bytes[byte] != xis_native.Idtr.Bytes[byte]) xis_native_abort(0x4b34495049494454ULL);
+    xis_mmio_write(0x80, 0); xis_mmio_write(0xf0, 0x1ff);
+    if (xis_mmio_read(0x80) || xis_mmio_read(0xf0) != 0x1ff || !empty_private() ||
+        !xis_ready(index, index)) xis_native_abort(0x4b34495049524459ULL);
+    return 1;
+}
+
+// ====== xis_native_dispatch ======
+
+void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
+    uint32_t index = xis_native_index();
+    uint64_t base = X86_AP_BASE + index * X86_AP_STRIDE;
+    uint64_t top = base + 17 * 4096 - 1024, address = (uint64_t)frame;
+    if (!index || ks_irq_state() || (address & 7) || address < base + 8192 || address > top - sizeof(*frame) ||
+        frame->Cs != 8 || frame->Ss != 16 || frame->Rsp != top - 576 ||
+        (frame->Flags & 0x7602) != 0x602 || !xp_image_contains(frame->Rip, 1))
+        xis_native_abort(0x4b3449504946524dULL);
+    XIS_CPU *cpu = &xis_native.Cpus[index];
+    if (frame->Vector == 0xff) {
+        for (uint32_t word = 0; word < 8; ++word)
+            if (xis_mmio_read(0x100 + word * 16)) xis_native_abort(0x4b34495049535052ULL);
+        uint64_t previous = ks_atomic_load_relaxed(&cpu->Spurious);
+        if (previous == UINT64_MAX) xis_native_abort(0x4b34495049535752ULL);
+        ks_atomic_store_release(&cpu->Spurious, previous + 1);
+        return;
+    }
+    if (frame->Vector != XIS_VECTOR) xis_native_abort(0x4b34495049564543ULL);
+    for (uint32_t word = 0; word < 8; ++word)
+        if (xis_mmio_read(0x100 + word * 16) != (word == XIS_VECTOR / 32 ? 1U << (XIS_VECTOR % 32) : 0))
+            xis_native_abort(0x4b34495049495352ULL);
+    uint64_t generation = xis_claim(index, index);
+    if (!generation || generation == XIS_INVALID) xis_native_abort(0x4b34495049434c4dULL);
+    ks_atomic_store_release(&cpu->FrameRsp, frame->Rsp);
+    ks_atomic_store_release(&cpu->Entered, generation);
+#if KERNEL_TEST_AP_SERVICE == 3
+    if (index == 1 && !xis_complete(index, index, generation + 1)) xis_native_abort(0x4b34495049424144ULL);
+#elif KERNEL_TEST_AP_SERVICE == 5
+    if (index == 1) {
+        uint32_t start, now;
+        if (!xis_native_now(NULL, &start)) xis_native_abort(0x4b34495049434c4bULL);
+        for (uint32_t poll = 0; poll < 1000000; ++poll) {
+            if (!xis_native_now(NULL, &now) || ((now - start) & xp_panic_native.Source.Mask) >= KERNEL_PM_TIMER_HZ)
+                break;
+            ks_pause();
+        }
+        xis_native_abort(0x4b344950494e4d49ULL);
+    }
+#endif
+    xis_mmio_write(0xb0, 0);
+    if (xis_mmio_read(0x100 + (XIS_VECTOR / 32) * 16)) xis_native_abort(0x4b34495049454f49ULL);
+    ks_atomic_store_release(&cpu->Eois, generation);
+    ks_atomic_store_release(&cpu->Delivered, generation);
+#if KERNEL_TEST_AP_SERVICE == 2
+    if (index == 1) return;
+#endif
+    if (!xis_complete(index, index, generation)) xis_native_abort(0x4b3449504941434bULL);
+}
+
+// ====== xis_native_verified ======
+
+void xis_native_verified(const unsigned char *fx) {
+    uint32_t index = xis_native_index();
+    if (!index || ks_irq_state()) xis_native_abort(0x4b34495049565246ULL);
+    uint64_t top = X86_AP_BASE + index * X86_AP_STRIDE + 17 * 4096 - 1024;
+    if ((uint64_t)fx != top - 512) xis_native_abort(0x4b34495049565800ULL);
+    for (uint32_t byte = 160; byte < 416; ++byte)
+        if (fx[byte] != 255) xis_native_abort(0x4b34495049584d4dULL);
+    // Intel SDM 253666-089US Vol.2A FXSAVE, Table 3-48: FCW0, FSW2, FTW4, MXCSR24, ST0=32.
+    for (uint32_t byte = 32; byte < 39; ++byte)
+        if (fx[byte]) xis_native_abort(0x4b34495049463830ULL);
+    if (fx[0] != 0x7f || fx[1] != 3 || fx[2] != 0 || fx[3] != 0x38 || fx[4] != 0x80 ||
+        fx[24] != 0x80 || fx[25] != 0x1f || fx[26] || fx[27] ||
+        fx[32 + 7] != 0x80 || fx[32 + 8] != 0xff || fx[32 + 9] != 0x3f)
+        xis_native_abort(0x4b34495049463837ULL);
+    ks_atomic_store_release(&xis_native.Cpus[index].Verified, xis_value(index, XIS_ACK));
+}
