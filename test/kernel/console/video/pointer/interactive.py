@@ -318,12 +318,14 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
             raise RuntimeError('Physical allocation budget not restored')
         if 'Servicing hardware INT=0x42' not in mouse_trace.read_text(errors='replace'):
             raise RuntimeError('Missing hardware mouse IRQ evidence')
+        ap_state = (load('console_ap_runtime','test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py').attest_console(vm,log,smp)
+            if log.has('KERNEL_AP_RUNTIME_READY') or log.has('KERNEL_AP_RUNTIME_BSP_ONLY') else None)
         vm.command('quit')
         vm.process.wait(timeout=5)
         if vm.process.returncode: raise RuntimeError('QEMU exit failure')
         translation = (translation_check(log,mouse_trace.read_text(errors='replace'),fallbacks,presenting,stall) if iommu else
             untranslated_check(log) if absent else None)
-        return dict(ConfiguredVcpus=smp,OsCpusReady=1,Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
+        return dict(ConfiguredVcpus=smp,OsCpusReady=ap_state['OsCpusInitialized'] if ap_state else 1,ApRuntime=ap_state,Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
             EscCancelled=True,EscMouseProgress=True,CancelScenes=1,
             DrainSeconds=latencies,BudgetBefore=before,BudgetAfter=before,
             Flushes=log.number('KERNEL_CONSOLE_FLUSHES'),

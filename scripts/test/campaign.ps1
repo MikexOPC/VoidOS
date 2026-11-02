@@ -18,7 +18,7 @@ $code = 0
 # ============ build and run ============
 
 try {
-    if ($entry.build) {
+    if ($null -ne $entry.build) {
         $images = Join-Path $Output $Name
         $build = @{ OutputDirectory = $images }
         for ($index = 0; $index -lt $entry.build.Count; ++$index) {

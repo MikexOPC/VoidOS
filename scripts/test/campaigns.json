@@ -1,6 +1,27 @@
 {
   "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
+    "ap-runtime": {
+      "build": [],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "ordinary BSP continuation with three real parked APs and physical accounting"
+    },
+    "ap-runtime-bsp": {
+      "build": [],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "1"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "same ordinary image, one CPU and prepared BSP panic backend"
+    },
+    "ap-runtime-panic": {
+      "build": ["-TestPanic"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4", "--panic"],
+      "boots": 10,
+      "smoke": 1,
+      "summary": "intentional panic after ordinary BSP continuation, all three AP acknowledgements"
+    },
     "percpu-joint-panic": {
       "build": ["-TestApTransition", "joint-panic"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/commit/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "panic"],

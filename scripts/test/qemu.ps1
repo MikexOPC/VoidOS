@@ -64,12 +64,12 @@ function Complete-Campaign($job) {
 }
 
 # Shared-tree campaigns first and alone, then the others up to $Parallel at a time.
-$ordered = @($selected | Where-Object { !$registry.$_.build }) + @($selected | Where-Object { $registry.$_.build })
+$ordered = @($selected | Where-Object { $null -eq $registry.$_.build }) + @($selected | Where-Object { $null -ne $registry.$_.build })
 foreach ($name in $ordered) {
     $entry = $registry.$name
     $count = if ($Boots) { $Boots } elseif ($Smoke) { $entry.smoke } else { $entry.boots }
-    $limit = if ($entry.build) { [Math]::Max(1, $Parallel) } else { 1 }
-    while ($running.Count -ge $limit -or (!$entry.build -and $running.Count) -or
+    $limit = if ($null -ne $entry.build) { [Math]::Max(1, $Parallel) } else { 1 }
+    while ($running.Count -ge $limit -or ($null -eq $entry.build -and $running.Count) -or
         ($entry.heavy -and @($running | Where-Object { $registry.($_.Name).heavy }).Count)) {
         $done = @($running | Where-Object { $_.Process.HasExited })
         if (!$done) { Start-Sleep -Milliseconds 500; continue }

@@ -13,7 +13,7 @@ const NX: u64 = 1 << 63;
 pub extern "C" fn xt_geometry(code: u64, data: u64, tables: u64) -> u32 {
     let low = |p: u64| (0x1000..=0xff000).contains(&p) && p & 4095 == 0;
     u32::from(low(code) && low(data) && code != data && tables >= 4096 && tables & 4095 == 0
-        && tables <= 0x1_0000_0000 - 16384
+        && tables <= u32::MAX as u64 + 1 - 16384
         && !(tables..tables + 16384).contains(&code)
         && !(tables..tables + 16384).contains(&data))
 }

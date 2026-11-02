@@ -152,6 +152,12 @@ def verify_sequence(vm, log, root, first):
         raise RuntimeError("Group outcome markers missing")
     if log.number("KERNEL_AP_GROUP_STATE") != (3 << 9) | (3 << 3) | 6 or log.number("KERNEL_AP_GROUP_ONLINE") != 15:
         raise RuntimeError("Final group token or online mask mismatch")
+    verify_parked_cpus(vm, log, root, first)
+
+
+# ====== verify_parked_cpus ======
+
+def verify_parked_cpus(vm, log, root, first, panic=False):
     final_record = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
     for index in range(1, 4):
         text = registers(vm, index)
@@ -166,7 +172,10 @@ def verify_sequence(vm, log, root, first):
         expected[9] = first + (index - 1) * 448
         if frame[:13] != expected:
             raise RuntimeError("Group private record changed outside its per-CPU fields")
-        if "HLT=1" not in text or value(text, "CR3") != root or value(text, "RSP") != top - 1024:
+        rsp = value(text, "RSP")
+        stack_valid = top + 8 * 4096 <= rsp < top + 12 * 4096 if panic else rsp == top - 1024
+        terminal_valid = not panic or value(text, "RAX") == 0x50414e494353544f
+        if "HLT=1" not in text or value(text, "CR3") != root or not stack_valid or not terminal_valid:
             raise RuntimeError("Group CPU not parked on its private stack/root")
         if cpu.gs_base(text) != first + (index - 1) * 448 or value(text, "RFL") & 0x7600:
             raise RuntimeError("Group private GS or flags mismatch")
