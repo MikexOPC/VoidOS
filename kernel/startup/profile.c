@@ -3,6 +3,9 @@
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/stack/main.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
+#ifdef KERNEL_TEST_AP_SERVICE
+#include "test/arch/x86/kernel/cpu/percpu/service/integration/probe.h"
+#endif
 #ifdef KERNEL_TEST_AP_STRESS_LOCK
 #include "test/arch/x86/kernel/cpu/percpu/panic/integration/hold.h"
 #endif
@@ -171,6 +174,8 @@ __declspec(noreturn) void kernel_profile_finish(const KERNEL_STARTUP *startup)
     #elif defined(KERNEL_TEST_CPU_FAULT)
         x86_cpu_fault(KERNEL_TEST_CPU_FAULT);
         kernel_panic("EXPECTED_CPU_FAULT_MISSING");
+    #elif defined(KERNEL_TEST_AP_SERVICE)
+        xis_service_probe();
     #elif defined(KERNEL_TEST_AP_STRESS_LOCK)
         xp_panic_group_lock_probe();
     #elif defined(KERNEL_TEST_AP_STRESS_BARRIER)

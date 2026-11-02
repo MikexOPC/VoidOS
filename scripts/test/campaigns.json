@@ -1,6 +1,36 @@
 {
   "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
+    "ipi-service": {
+      "build": ["-TestApService", "ping"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ping"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "300 real AP fixed IPIs per boot, private IDT, GPR/FPU/SIMD return and EOI"
+    },
+    "ipi-missing-ack": {
+      "build": ["-TestApService", "missing-ack"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "missing-ack"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "Bounded missing IPI acknowledgement, terminal mailbox and coordinated panic"
+    },
+    "ipi-stale-ack": {
+      "build": ["-TestApService", "stale-ack"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "stale-ack"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "Reject wrong-generation completion inside real AP handler"
+    },
+    "ipi-panic-idle": {
+      "build": ["-TestApService", "panic-idle"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "panic-idle"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "NMI coordinated stop while APs idle with IF enabled"
+    },
+    "ipi-panic-handler": {
+      "build": ["-TestApService", "panic-handler"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "panic-handler"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "NMI coordinated stop while AP1 is inside a fixed-IPI handler at IF zero"
+    },
     "k3-contended": {
       "build": ["-TestApStress", "contended"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/panic/integration/stress.py", "--image", "{image}", "--case", "contended", "--boots", "{boots}"],

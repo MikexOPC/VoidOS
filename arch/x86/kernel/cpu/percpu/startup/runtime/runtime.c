@@ -5,6 +5,9 @@
 #include "../../identity/identity.h"
 #include "../../internal.h"
 #include "kernel/diagnostics/log.h"
+#ifdef KERNEL_TEST_AP_SERVICE
+#include "../../service/native/native.h"
+#endif
 
 static XB_INSTALLATION image;
 static XJ_GROUP group;
@@ -59,6 +62,9 @@ int x86_ap_runtime_start(X86_AP_TRANSITION *t, const X86_LAPIC_MAPPING *lapic) {
     if (!xp_panic_native_prepare(lapic) || !xag_native_publish(&group) || !xag_native_close() ||
         !number_private("KERNEL_AP_PANIC_IDTR: ", (uint64_t)&xp_panic_native.Idtr) ||
         !xn_prepare(&launch, &group)) return reject_private(t, "AP_RUNTIME_ADMISSION_FAILED");
+#ifdef KERNEL_TEST_AP_SERVICE
+    if (!xis_native_prepare()) return reject_private(t, "AP_SERVICE_PREPARE_FAILED");
+#endif
     for (uint32_t index = 1; index < ids->Count; ++index) {
         if ((index > 1 && !xn_next(&launch)) || !xn_run(&launch, 1) || !xn_private_parked(&launch))
             return reject_private(t, "AP_RUNTIME_START_FAILED");

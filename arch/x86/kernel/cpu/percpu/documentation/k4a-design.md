@@ -1,7 +1,8 @@
 # K4-A — Interrupt di servizio sugli AP
 
 Stato: contratto del 2 novembre 2026, approvato dall'utente per un diagnostico
-separato. Protocollo RAM e attesa implementati; collegamento hardware da fare.
+separato. Protocollo RAM, attesa e collegamento hardware implementati;
+le campagne applicabili sono riportate nel documento di validazione.
 K3 è chiusa nel commit `9f434b7`: gli AP sono avviati, ma restano
 parcheggiati con IF=0. Questo blocco prepara la comunicazione IPI;
 non introduce ancora TLB shootdown, preemption o task sugli AP.
@@ -43,7 +44,8 @@ anche le regressioni della console e dei profili dipendenti nello stesso blocco.
 - Prima di READY: verificare contesto GS, stack disponibile, IDTR, ambiente
   SIMD, LAPIC locale abilitato, priorità e sorgenti locali mascherate.
 - Solo dopo queste verifiche l'AP pubblica READY e può attendere con IF=1.
-  Il ciclo verifica il lavoro a IF=0 e usa STI/HLT contigui per dormire.
+  Il ciclo prepara a IF=0 lo stato da controllare al risveglio e usa
+  STI/HLT contigui per dormire; ogni richiesta pubblicata è seguita da un IPI.
   Attendere senza lavoro è normale; ogni richiesta ha invece attesa limitata.
 
 ### Richieste e sincronizzazione
@@ -137,7 +139,40 @@ Le query sono letture singole, non uno snapshot atomico di tutti i campi.
 L'attesa ha un solo chiamante BSP; non ammette pubblicazioni concorrenti
 sullo stesso mailbox mentre il BSP attende la conferma.
 
-Il modulo non è ancora linkato nel kernel. L'integrazione dovrà aggiungere
-IDT, ingresso Assembly, accesso LAPIC e profilo dedicato; non può dichiarare
-gli AP pronti per K4 sulla sola base dei test host. Evidenze e limiti in
+Il protocollo è linkato solo nel profilo diagnostico concordato. Evidenze e limiti in
 [k4a-validation.md](k4a-validation.md).
+
+## Collegamento hardware del diagnostico
+
+Il flag di build `-TestApService` accetta `ping`, `missing-ack`, `stale-ack`,
+`panic-idle` e `panic-handler`. È incompatibile con altri profili di prova.
+Richiede esattamente quattro CPU; il boot ordinario non collega questi oggetti.
+
+- Registro privato del servizio: vettore fixed **0xe1**, spurious **0xff**.
+  La IDT completa copia i 32 gate fault/NMI già verificati; gli altri ingressi
+  sono terminali se non assegnati al servizio. Il registro IRQ BSP resta separato.
+- Destinazione ICR high `ApicId << 24`, low **0x40e1**: fixed, fisico,
+  assert, edge, senza shorthand. Mapping UC permanente già posseduto da K3.
+- Ogni AP verifica GS, CR3, stack, capacità FXSAVE e IDTR, maschera i LVT
+  presenti secondo il registro versione, azzera TPR e imposta SVR=0x1ff.
+  Nessuna rotta I/O APIC viene spostata dal BSP.
+- Stato condiviso residente: mailbox Rust e `XIS_NATIVE`, senza allocazioni.
+  Il primo occupa circa 4 KiB, il secondo 8.256 byte; nessun
+  oggetto viene rilasciato dopo l'ammissione degli AP.
+- L'handler verifica il solo bit ISR del vettore, consuma la richiesta,
+  scrive EOI, ne controlla l'effetto e pubblica l'ACK. Il BSP attende anche
+  la verifica dei registri effettuata dall'AP dopo IRETQ.
+- Tutte le attese di richiesta/ICR hanno deadline ACPI PM di un secondo
+  e massimo 1.000.000 di controlli. L'idle senza lavoro usa STI/HLT.
+
+Il ciclo diagnostico controlla 15 GPR con valori distinti, DF, XMM0–15,
+MXCSR, controllo/tag/status x87 e ST0=1. L'ingresso altera appositamente
+x87 e XMM dopo FXSAVE64, prima di FXRSTOR64. Fonte formato:
+[Intel SDM 253666-089US, Vol. 2A, FXSAVE, tabella 3-48](https://cdrdv2-public.intel.com/868140/253666-089-sdm-vol-2a.pdf).
+
+`stale-ack` è il nome del profilo che inietta un ACK di generazione errata
+(g+1); il rifiuto di ACK precedenti è coperto anche dai test Rust.
+`missing-ack` omette soltanto la conferma dopo EOI; gli altri due profili
+provocano il panic coordinato dal BSP con AP in idle o AP1 dentro l'handler.
+L'IDT è immutabile tramite queste API, ma resta nei dati RW del kernel:
+questo blocco non introduce una nuova protezione PTE in sola lettura.

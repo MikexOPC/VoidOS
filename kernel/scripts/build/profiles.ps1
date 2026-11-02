@@ -1,5 +1,11 @@
 # ============ isolated synchronization profile ============
 
+if ($TestApService -ne 'none') {
+    foreach ($key in $PSBoundParameters.Keys) {
+        if ($key -notin @('TestApService','OutputDirectory','ToolchainBin')) { throw 'AP service requires an isolated diagnostic profile.' }
+    }
+}
+
 if ($TestApStress -ne 'none') {
     foreach ($key in $PSBoundParameters.Keys) {
         if ($key -notin @('TestApStress','OutputDirectory','ToolchainBin')) { throw 'AP stress requires an isolated ordinary-startup profile.' }
