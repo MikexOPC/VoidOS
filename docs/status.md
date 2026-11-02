@@ -13,14 +13,24 @@ console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
 Non ci sono ancora SMP operativo, processi utente, syscall, VFS o driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
-## K3-F: backend panic, gate SMP ancora aperto
+## K3: base per-CPU chiusa sul profilo QEMU
+
+K3 completata per il profilo xAPIC QEMU/OVMF: BSP e tre AP inizializzati,
+AP parcheggiati, contesti privati e panic coordinato verificati. Campagna
+finale 80/80: 30 boot ordinari/console e 50 panic intenzionali distinti.
+Nel caso conteso tutti e quattro i core hanno vinto almeno una volta.
+Passata anche una sessione continua di 300,953 secondi con 808 pacchetti
+mouse confermati, pixel, shell, cleanup e accounting. Sette suite host
+pertinenti passate; corretto un difetto di polling nel solo collaudo.
+Scheduler ancora BSP: task AP, hotplug e prove su hardware fisico restano
+fuori da questa chiusura. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-runtime-validation.md#chiusura-k3).
 
 K3-I/boot ordinario: il BSP ora avvia e parcheggia i tre AP e prosegue
 fino alla console. Passati 10/10 avvii a quattro CPU, 10/10 della stessa
 immagine a una CPU, 10/10 panic dopo timer/scheduler, 10/10 sessioni console
 GOP con input/pixel/cleanup e controllo finale degli AP, più 10/10 del
-diagnostico sequenziale precedente. Lo scheduler resta BSP; K3 è aperto
-per stress e revisione finale. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-runtime-validation.md).
+diagnostico sequenziale precedente. Il checkpoint precede la chiusura
+descritta sopra. [Prove e limiti](../arch/x86/kernel/cpu/percpu/documentation/k3i-runtime-validation.md).
 
 I paragrafi seguenti descrivono i checkpoint precedenti; le indicazioni
 «boot ordinario BSP» sono superate dal risultato sopra.

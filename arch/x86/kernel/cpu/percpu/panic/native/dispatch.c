@@ -1,5 +1,8 @@
 #include "runtime.h"
 #include "arch/x86/kernel/descriptors/stacks.h"
+#ifdef KERNEL_TEST_AP_STRESS_BARRIER
+#include "test/arch/x86/kernel/cpu/percpu/panic/concurrency/barrier.h"
+#endif
 
 // ====== current_private ======
 
@@ -30,6 +33,9 @@ static void registers_private(volatile XP_PANIC_INPUT *input, const volatile uin
 
 __declspec(noreturn) static void terminal_private(uint32_t index, const XP_PANIC_INPUT *input) {
     (void)xp_panic_record_capture(xp_panic_native.Records[index], input);
+#ifdef KERNEL_TEST_AP_STRESS_BARRIER
+    xp_stress_before_elect(index);
+#endif
     uint32_t role = xp_panic_elect(index);
     if (role == 3) {
         uint64_t value = ks_atomic_load_acquire(&xp_panic_recursion);
@@ -37,6 +43,10 @@ __declspec(noreturn) static void terminal_private(uint32_t index, const XP_PANIC
         xp_panic_quiet_stop(UINT64_C(0x50414e4943524543));
     }
     if (role == 2) {
+#ifdef KERNEL_TEST_AP_STRESS_WITHHOLD_ACK
+        if (index == xp_panic_value(XP_PANIC_OWNER) % xp_panic_native.Count)
+            xp_panic_quiet_stop(UINT64_C(0x50414e494353544f));
+#endif
         (void)xp_panic_acknowledge(index);
         xp_panic_quiet_stop(UINT64_C(0x50414e494353544f));
     }

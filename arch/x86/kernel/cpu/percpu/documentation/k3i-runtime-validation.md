@@ -15,7 +15,7 @@ Il profilo ordinario non linka i probe AP né il terminale Assembly dei test.
 I precedenti profili transizione/commit/panic e bootstrap memoria rimangono
 isolati dal collegamento ordinario.
 
-## Prove delle immagini finali
+## Checkpoint integrazione nel boot ordinario
 
 | Prova | Esito | Evidenza sotto `kernel/build/` |
 |---|---|---|
@@ -106,6 +106,79 @@ fisico. Valgrind, TSan, coverage linee/branch e hardware fisico N/D.
 Restano i limiti del protocollo iniziale IVT/NMI e del profilo xAPIC QEMU.
 La campagna interattiva qui è GOP, non una nuova certificazione VirtIO/VT-d.
 
-K3 resta aperto per stress e revisione finale: niente task AP, hotplug o
-certificazione su hardware fisico. Manifest immagini/sorgenti:
+Quel checkpoint precede lo stress finale riportato sotto. Manifest
+immagini/sorgenti dell'integrazione:
 `kernel/build/k3i-runtime-manifest.json`.
+
+## Chiusura K3
+
+2 novembre 2026: base K3 chiusa sul profilo xAPIC QEMU/OVMF, con BSP e tre
+AP reali nel kernel. Scheduler e dispositivi ordinari restano sul BSP;
+gli AP sono parcheggiati e partecipano al protocollo panic.
+
+| Campagna finale | Esito | Evidenza sotto `kernel/build/` |
+|---|---|---|
+| NMI esterno BSP e arresto remoto | 10/10 | `ap-panic-stress-035cbe67c820486182ea2fb0b56884f9/results.json` |
+| Quattro origini NMI prima dell'elezione | 10/10 | `ap-panic-stress-5d8312da66bc462cb1cdce7beca2c8dc/results.json` |
+| ACK intenzionalmente omesso | 10/10 | `ap-panic-stress-122bb1c97cbe4650a071959ae17a5fe4/results.json` |
+| UART con DLAB alterato, rapporto in RAM | 10/10 | `ap-panic-stress-849e150481204c8d91786a024974fd0e/results.json` |
+| Ticket lock reale trattenuto e NMI ricorsivo | 10/10 | `ap-panic-stress-ccdc0ae534054cba8adb47ffa6b87289/results.json` |
+| Boot ordinario, quattro CPU | 10/10 | `ap-runtime-8794f9bc64a24779a47a21fc0028f364/results.json` |
+| Stessa immagine, solo BSP | 10/10 | `ap-runtime-2cbda29563254e7094c28e900c43a2fe/results.json` |
+| Console GOP, input/pixel/cleanup e AP | 10/10 | `pointer-interactive-check-e63db3a956ca40a7b378f89f47f1e67f/results.json` |
+| Sessione continua da cinque minuti | 1/1 | `pointer-interactive-check-a77e2c6c015943298a18d4d537b75631/results.json` |
+
+Gli 80 collaudi distinguono 30 boot ordinari/console dai 50 panic voluti.
+Ogni scenario complesso usa dieci boot consecutivi sull'immagine finale,
+con ESP privata e hash controllati. Il soak separato dura 300,953 secondi:
+404 coppie di movimento, 808 pacchetti hardware confermati e spostamento
+netto nullo, poi pixel, Esc, `help`, `exit` e verifica di contesti/AP/lease.
+Nessuna perdita input o variazione inattesa del budget osservata.
+
+Il rendezvous diagnostico usa atomiche Rust e quattro catture complete
+prima dell'elezione. I vincitori effettivi sono BSP (1 prova), AP1 (2),
+AP2 (3), AP3 (4). Un solo reporter, tre ACK e missing=outcome=0.
+L'ACK omesso produce missing=2 e un'attesa limitata; il core è realmente
+arrestato, ma non pubblica la conferma. Il caso UART rileva DLAB e salva
+output=2 in RAM. Non riproducono SMM, CPU fisicamente bloccata o UART
+guasta: la condizione THRE bloccata resta coperta dal modello host.
+
+Nel test lock-held il monitor verifica lock, ticket, guardia e profondità
+reali nel contesto BSP. Il motivo UINTPTR_MAX resta dato numerico.
+Un NMI successivo porta il reporter all'arresto ricorsivo senza alterare
+il primo rapporto; gli altri core rimangono arrestati. Registri, stack/IST,
+CR3/NX/WP/IF, descrittori, record, pinning e accounting sono verificati.
+
+Sette suite host passate: panic-stress, panic, ap-native, ap-runtime,
+percpu-clock, sync e layout. Il nuovo rendezvous esegue 20 processi con
+quattro thread e quattro negativi C/ASan, con atomiche Rust reali e clock
+modellato. Tre test Python coprono il polling, inclusa la race corretta.
+Analisi statica senza diagnostiche bloccanti; 57 oggetti d'emergenza
+disassemblati sulle cinque immagini, inclusi i due helper diagnostici.
+I risultati e gli hash sono nel manifest `kernel/build/k3-close-manifest.json`.
+
+### Debug e limiti della prova
+
+Il primo tentativo conteso è fallito: il comando NMI di QEMU passa per
+LINT1, mascherato sugli AP. Corretto il solo innesco diagnostico usando
+IPI fisiche ai singoli ID, AP prima e BSP ultimo. Il protocollo ordinario
+resta quello approvato. Fonti e offset nel design e nel sorgente trigger.
+
+Una prima campagna contesa è stata interrotta a 3/10 dal lettore: due
+snapshot seriali separati potevano vedere prima l'assenza del marker e poi
+il panic già previsto. Il log conservato mostra il corretto arresto guest.
+Ora un solo snapshot governa entrambe le decisioni; aggiunta la regressione
+e ripetuta da zero la campagna. Nessun risultato preliminare fallito viene
+sommato ai dieci finali. /WX ha anche rifiutato una collocazione iniziale
+del probe lock-held che rendeva irraggiungibile il terminale ordinario;
+spostato nel ramo diagnostico corretto, senza sopprimere warning.
+
+I nuovi hook e i rendezvous sono compilati soltanto nei relativi profili
+di test. Le campagne sono registrate come `k3-*`; il soak è `k3-soak`.
+La suite host è `scripts/test/run.ps1 -Suite percpu-panic-stress`.
+
+La chiusura riguarda inizializzazione e parcheggio AP, contesti per CPU e
+panic coordinato su QEMU. Non certifica scheduler SMP, hotplug, userspace,
+hardware fisico o NMI prima della IVT iniziale. ASan copre il C host;
+Rust, Assembly e RAM guest non sono strumentati. Accounting e handles
+chiusi sono distinti da un leak detector. Valgrind, TSan e coverage N/D.

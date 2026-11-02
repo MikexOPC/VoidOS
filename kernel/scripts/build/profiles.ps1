@@ -1,5 +1,11 @@
 # ============ isolated synchronization profile ============
 
+if ($TestApStress -ne 'none') {
+    foreach ($key in $PSBoundParameters.Keys) {
+        if ($key -notin @('TestApStress','OutputDirectory','ToolchainBin')) { throw 'AP stress requires an isolated ordinary-startup profile.' }
+    }
+}
+
 if ($TestKernelSyncFault -ne 'none') { $TestKernelSync = $true }
 if ($TestKernelSync) {
     foreach ($key in $PSBoundParameters.Keys) {
