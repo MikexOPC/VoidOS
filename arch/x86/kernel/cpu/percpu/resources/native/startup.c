@@ -13,11 +13,11 @@ static int verify_private(void) {
     const X86_AP_AUTH *auth = &resources.Authority;
     if (!x86_ap_check(auth) || !resources.Capture(resources.Context, resources.Window->Pool, resources.Lapic, resources.Inventory)) return 0;
     for (BOOT_U32 cpu = 1; cpu < auth->Cpus; ++cpu) {
-        BOOT_U64 base = X86_AP_BASE + cpu * X86_AP_STRIDE;
-        if (!x86_ap_descriptor_verify((const X86_KERNEL_SEGMENTS *)(base + 48 * 4096), cpu)) return 0;
-        for (BOOT_U32 page = 0; page < 64; ++page) {
-            if (x86_ap_page(auth->Cpus, cpu * 64ULL + page) == UINT32_MAX) continue;
-            const volatile unsigned char *bytes = (const volatile unsigned char *)(base + page * 4096ULL);
+        BOOT_U64 base = X86_AP_CPU_BASE(cpu);
+        if (!x86_ap_descriptor_verify((const X86_KERNEL_SEGMENTS *)X86_AP_METADATA(cpu), cpu)) return 0;
+        for (BOOT_U32 page = 0; page < X86_AP_SLOT_PAGES; ++page) {
+            if (x86_ap_page(auth->Cpus, cpu * X86_AP_SLOT_PAGES + page) == UINT32_MAX) continue;
+            const volatile unsigned char *bytes = (const volatile unsigned char *)(base + page * X86_AP_PAGE);
             for (BOOT_U32 byte = page == 48 ? sizeof(X86_KERNEL_SEGMENTS) : 0; byte < 4096; ++byte)
                 if (bytes[byte]) return 0;
         }
@@ -150,10 +150,10 @@ static int start_private(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *wi
 #ifdef KERNEL_TEST_AP_RESOURCE_FAULT
     if (!kernel_log(1, "KERNEL_AP_FAULT_ARMED")) return 0;
 #if KERNEL_TEST_AP_RESOURCE_FAULT == 1
-    volatile unsigned char value = *(volatile unsigned char *)(X86_AP_BASE + X86_AP_STRIDE);
+    volatile unsigned char value = *(volatile unsigned char *)X86_AP_CPU_BASE(1);
     (void)value;
 #else
-    ((void (*)(void))(X86_AP_BASE + X86_AP_STRIDE + 4096))();
+    ((void (*)(void))X86_AP_STACK_BASE(1))();
 #endif
     ks_fail_stop("AP_EXPECTED_FAULT_MISSING");
 #else

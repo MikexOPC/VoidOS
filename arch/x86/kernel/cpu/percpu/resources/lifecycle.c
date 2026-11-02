@@ -108,7 +108,7 @@ int x86_ap_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window, con
 
     if (ks_irq_state() || !ks_boot_cpu() || cpus < 2 || cpus > 64 || !buffers_private(context,window,lapic,inventory,owner) || !capture || x86_ap_owner() ||
         os_address_ranges_overlap(self, sizeof(*owner), (BOOT_U64)inventory, sizeof(*inventory)) ||
-        os_address_ranges_overlap(self, sizeof(*owner), X86_AP_BASE, 64ULL * X86_AP_STRIDE) ||
+        os_address_ranges_overlap(self, sizeof(*owner), X86_AP_BASE, X86_AP_REGION_BYTES) ||
         !x86_page_window_idle_valid(window) || !x86_fb_cpu(&cpu) || (cpu.Pat & 255) != 6 ||
         cpu.Root != context->Info.PageTableRoot || !x86_fb_root() || x86_fb_root()[X86_AP_SLOT]
     )

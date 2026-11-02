@@ -8,8 +8,8 @@ int xn_private_parked(XN_LAUNCH *m) {
     if (!xn_safe(m) || m->State != 4 || xs_snapshot() != (m->Token | XS_PARKED)) return 0;
     const XS_ENTRY_RECORD *record = &m->Image->Record;
     if (record->Entry != (uint64_t)xs_private_entry ||
-        record->StackTop != X86_AP_BASE + record->Index * X86_AP_STRIDE + 17 * 4096) return 0;
-    const XS_PRIVATE_FRAME *frame = (const XS_PRIVATE_FRAME *)(record->StackTop - 1024);
+        record->StackTop != X86_AP_STACK_TOP(record->Index)) return 0;
+    const XS_PRIVATE_FRAME *frame = (const XS_PRIVATE_FRAME *)(record->StackTop - X86_AP_FRAME_BYTES);
     if (frame->Phase != 6 || frame->Error) return 0;
     const unsigned char *a = (const unsigned char *)&frame->Record, *b = (const unsigned char *)record;
     for (size_t i = 0; i < sizeof(*record); ++i) if (a[i] != b[i]) return 0;

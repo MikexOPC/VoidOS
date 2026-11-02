@@ -21,7 +21,7 @@ static const XAG_CPU *cpu_private(const XAG_GROUP *group, XS_PRIVATE_FRAME *fram
         x86_kernel_root() != group->Header.Root) return NULL;
     uint32_t id = xp_cpu_id();
     for (uint32_t index = 1; index < group->Header.Count; ++index) {
-        uint64_t top = X86_AP_BASE + index * X86_AP_STRIDE + 17 * 4096;
+        uint64_t top = X86_AP_STACK_TOP(index);
         if (group->Cpus[index].ApicId == id && (uint64_t)frame == top - sizeof(*frame)) return &group->Cpus[index];
     }
     return NULL;
@@ -67,7 +67,7 @@ static int wait_private(const XAG_CPU *cpu) {
 
 static uint32_t fail_private(XS_PRIVATE_FRAME *frame, uint64_t token, int claimed, uint32_t error) {
     frame->Error = error; frame->Phase = UINT32_MAX;
-    uint32_t index = (uint32_t)(((uint64_t)frame - X86_AP_BASE - 17 * 4096 + sizeof(*frame)) / X86_AP_STRIDE);
+    uint32_t index = (uint32_t)(((uint64_t)frame - X86_AP_STACK_TOP(0) + sizeof(*frame)) / X86_AP_STRIDE);
     (void)x86_percpu_ap_reject(index);
     if (claimed) (void)xs_quarantine(token);
     return error;
@@ -80,13 +80,13 @@ uint32_t xa_native_admit(XS_PRIVATE_FRAME *frame, uint64_t token) {
     const XAG_GROUP *group = xag_group();
     const XAG_CPU *cpu = cpu_private(group, frame);
     if (!cpu) return 2;
-    uint64_t top = X86_AP_BASE + cpu->Index * X86_AP_STRIDE + 17 * 4096;
+    uint64_t top = X86_AP_STACK_TOP(cpu->Index);
     uint64_t rsp = x86_kernel_stack_pointer();
     if (rsp < top - 65536 + 4096 || rsp >= (uint64_t)frame) return 2;
     XS_ENTRY_RECORD r = frame->Record;
     if (!xs_entry_valid(r, group->Header.PhysicalBits) || r.Index != cpu->Index || r.ApicId != cpu->ApicId ||
         r.Token != token || r.Local != cpu->Local || r.StackTop != top ||
-        r.Descriptors != X86_AP_BASE + cpu->Index * X86_AP_STRIDE + 48 * 4096 ||
+        r.Descriptors != X86_AP_METADATA(cpu->Index) ||
         r.Entry != (uint64_t)xs_private_entry || r.KernelRoot != group->Header.Root || r.Pat != group->Header.Pat ||
         frame->Phase != 2 || frame->Error)
         return fail_private(frame, token, 0, 3);
