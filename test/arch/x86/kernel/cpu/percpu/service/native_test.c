@@ -76,6 +76,9 @@ int main(void) {
         xp_panic_native.Ids[index] = index;
     }
     owner.Self = (uint64_t)&owner; owner.State = X86_PERCPU_ACTIVE;
+    xp_panic_native.Count = 1; assert(!xis_native_prepare());
+    xp_panic_native.Count = 65; assert(!xis_native_prepare());
+    xp_panic_native.Count = 4;
     irq = 1; assert(!xis_native_prepare()); irq = 0;
     bad_table = 1; assert(!xis_native_prepare()); bad_table = 0;
     assert(xis_native_prepare());
@@ -88,6 +91,8 @@ int main(void) {
     owner.Self = (uint64_t)&owner; owner.Locks.Depth = 1; rejected_private(0);
     owner.Locks.Depth = 0;
     xis_native.Count = 65; rejected_private(0); xis_native.Count = 4;
+    assert(xis_native.Count == xp_panic_native.Count);
+    xis_native.Count = 3; rejected_private(0); xis_native.Count = 1; rejected_private(0); xis_native.Count = 4;
     irq = 1; rejected_private(1); irq = 0;
     rejected_private(1);
     rejected_private(2);

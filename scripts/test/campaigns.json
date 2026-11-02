@@ -5,7 +5,19 @@
       "build": ["-TestApService", "ping"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ping"],
       "boots": 10, "smoke": 1, "heavy": true,
-      "summary": "300 real AP fixed IPIs per boot, private IDT, GPR/FPU/SIMD return and EOI"
+      "summary": "300 real AP fixed IPIs per boot (four CPUs), private IDT, GPR/FPU/SIMD return and EOI"
+    },
+    "ipi-service-smp2": {
+      "build": ["-TestApService", "ping"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ping", "--smp", "2"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "IPI service with one AP: 100 fixed IPIs per boot, CPU count from the started group"
+    },
+    "ipi-service-smp8": {
+      "build": ["-TestApService", "ping"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ping", "--smp", "8"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "IPI service with seven APs: 700 fixed IPIs per boot, CPU count from the started group"
     },
     "ipi-missing-ack": {
       "build": ["-TestApService", "missing-ack"],
