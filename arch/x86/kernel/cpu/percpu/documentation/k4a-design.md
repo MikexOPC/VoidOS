@@ -1,6 +1,7 @@
 # K4-A — Interrupt di servizio sugli AP
 
-Stato: proposta del 2 novembre 2026, da discutere prima del codice.
+Stato: contratto del 2 novembre 2026, approvato dall'utente per un diagnostico
+separato. Protocollo RAM e attesa implementati; collegamento hardware da fare.
 K3 è chiusa nel commit `9f434b7`: gli AP sono avviati, ma restano
 parcheggiati con IF=0. Questo blocco prepara la comunicazione IPI;
 non introduce ancora TLB shootdown, preemption o task sugli AP.
@@ -116,5 +117,27 @@ operazioni e concorrenza per rendere verificabile il primo percorso.
 - Dopo K4-A: integrazione ordinaria, quindi shootdown K4-B con protocollo
   dedicato; nessuna garanzia TLB deriva dal semplice successo del PING.
 
-Questo documento non è evidenza di implementazione o di test runtime.
-Per la presente proposta sono applicabili solo controlli di fonti, link e diff.
+Il design non sostituisce le evidenze: i test hardware elencati sopra
+restano criteri da soddisfare dopo il collegamento del servizio al kernel.
+
+## Primo incremento: protocollo RAM
+
+Implementato in `service/`, rispetto a `percpu/`: stato atomico Rust senza
+allocazioni, header C e attesa sorvegliata C. La generazione zero significa
+assenza di lavoro, UINT64_MAX errore: l'ultima generazione valida è 2^64-2.
+Nessun reset del servizio; dopo FAILED le risorse restano trattenute.
+Un ACK concorrente al timeout può ancora essere pubblicato, ma FAILED
+resta terminale e vieta ogni richiesta successiva.
+
+Gli indici caller sono un contratto interno, non credenziali: il futuro
+adattatore C dovrà derivarli dal contesto CPU verificato. Analogamente,
+`xis_complete` va chiamata solo dopo il vero servizio ed EOI; i test host
+non dimostrano né l'identità hardware né la consegna di un interrupt.
+Le query sono letture singole, non uno snapshot atomico di tutti i campi.
+L'attesa ha un solo chiamante BSP; non ammette pubblicazioni concorrenti
+sullo stesso mailbox mentre il BSP attende la conferma.
+
+Il modulo non è ancora linkato nel kernel. L'integrazione dovrà aggiungere
+IDT, ingresso Assembly, accesso LAPIC e profilo dedicato; non può dichiarare
+gli AP pronti per K4 sulla sola base dei test host. Evidenze e limiti in
+[k4a-validation.md](k4a-validation.md).
