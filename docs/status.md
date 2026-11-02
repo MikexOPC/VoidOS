@@ -15,11 +15,12 @@ La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
 ## K4-A: servizio IPI verificato nel diagnostico
 
-Tre AP ricevono interrupt fixed, confermano richieste numerate e tornano
-con GPR/FPU/SIMD preservati. Campagna finale 70/70: dieci boot per ciascuno
-dei cinque profili IPI/panic e venti regressioni ordinarie con una/quattro CPU.
-Sette suite host pertinenti passate; verificati anche EOI, NMI dentro
-l'handler, stack privati, GS, paging e accounting.
+Il servizio usa il conteggio del gruppo avviato, con limite 2–64 CPU.
+Verificato su 2/4/8 CPU: 30 boot IPI e 30 panic dentro l'handler, più
+20 regressioni ordinarie a una/quattro CPU, tutti passati. Sei suite host
+passate; audit esteso all'helper ICR, 36 oggetti e cinque fixture.
+Corretti anche cattura degli errori e attesa dello stop per gruppi diversi
+da quattro. Il limite 64 non equivale a una prova su 64 CPU.
 
 Il servizio è collegato solo al diagnostico `-TestApService`: il boot
 ordinario mantiene gli AP parcheggiati a IF=0 e lo scheduler BSP.

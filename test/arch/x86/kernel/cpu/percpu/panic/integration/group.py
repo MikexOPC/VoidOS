@@ -33,10 +33,12 @@ def wait(vm, origin):
 
 # ====== settle ======
 
-def settle(vm, origin):
+def settle(vm, origin, count=4):
+    if not 1 <= count <= 64 or not 0 <= origin < count:
+        raise ValueError("Invalid panic group size or origin")
     deadline = time.monotonic() + 2
     while True:
-        texts = [launch.registers(vm, i) for i in range(4)]
+        texts = [launch.registers(vm, i) for i in range(count)]
         if all("HLT=1" in t and launch.value(t, "RAX") == (DONE if i == origin else STOP)
                for i, t in enumerate(texts)):
             return texts

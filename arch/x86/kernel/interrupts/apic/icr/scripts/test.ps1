@@ -28,5 +28,6 @@ try {
     Invoke-Checked "$out/host.exe" @()
     Invoke-Cppcheck $project $out @($sources | ForEach-Object { "$project/$_" })
 } finally { Restore-Msvc $saved }
+& "$project/test/arch/x86/kernel/interrupts/apic/icr/audit.ps1" -OutputDirectory (Join-Path $out 'audit')
 "PASS: shared ICR host evidence $out"
 if ($MyInvocation.InvocationName -ne '.') { exit 0 }

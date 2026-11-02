@@ -3,13 +3,17 @@
 Stato: contratto del 2 novembre 2026, approvato dall'utente per un diagnostico
 separato. Protocollo RAM, attesa e collegamento hardware implementati;
 le campagne applicabili sono riportate nel documento di validazione.
-K3 è chiusa nel commit `9f434b7`: gli AP sono avviati, ma restano
-parcheggiati con IF=0. Questo blocco prepara la comunicazione IPI;
+Il servizio accetta gruppi di 2–64 CPU; il limite del formato non equivale
+a una prova hardware su 64 CPU. Le configurazioni collaudate sono elencate
+nella validazione, con la relativa revisione delle immagini.
+K3 è chiusa nel commit `9f434b7`: nel boot ordinario gli AP sono avviati,
+ma restano parcheggiati con IF=0. Questo blocco prepara la comunicazione IPI;
 non introduce ancora TLB shootdown, preemption o task sugli AP.
 
 ## Riscontro nel codice
 
-- `admission/assembly/entry/bridge.asm`: dopo l'ammissione termina in CLI/HLT.
+- `admission/assembly/entry/bridge.asm`: nel boot ordinario termina in CLI/HLT;
+  il diagnostico passa al servizio dopo l'ammissione e il ritorno privato.
 - `admission/entry/entry.c`: verifica e carica la IDT condivisa delle 32 eccezioni.
 - `startup/assembly/private/resume.asm`: verifica quel contratto prima di IRETQ.
 - `interrupts/return/table.c`, rispetto ad `arch/x86/kernel/`: dispone già di
@@ -146,7 +150,8 @@ Il protocollo è linkato solo nel profilo diagnostico concordato. Evidenze e lim
 
 Il flag di build `-TestApService` accetta `ping`, `missing-ack`, `stale-ack`,
 `panic-idle` e `panic-handler`. È incompatibile con altri profili di prova.
-Richiede esattamente quattro CPU; il boot ordinario non collega questi oggetti.
+Ricava il numero di CPU dal gruppo avviato, lo verifica contro quello del
+panic e accetta 2–64 CPU. Il boot ordinario non collega questi oggetti.
 
 - Registro privato del servizio: vettore fixed **0xe1**, spurious **0xff**.
   La IDT completa copia i 32 gate fault/NMI già verificati; gli altri ingressi
@@ -176,3 +181,20 @@ x87 e XMM dopo FXSAVE64, prima di FXRSTOR64. Fonte formato:
 provocano il panic coordinato dal BSP con AP in idle o AP1 dentro l'handler.
 L'IDT è immutabile tramite queste API, ma resta nei dati RW del kernel:
 questo blocco non introduce una nuova protezione PTE in sola lettura.
+
+## Preparazione K4 e correzioni della review
+
+Le formule C per stack, frame, IST e metadati usano `resources/geometry.h`.
+Rust e Assembly mantengono i propri vincoli di layout: gli assert C non
+sostituiscono i test che ne verificano l'accordo.
+
+`interrupts/apic/icr/x86_icr_send` centralizza l'ordine destinazione→comando.
+Accessi ai registri, budget, validazione del comando e serializzazione locale
+restano responsabilità del chiamante. Wake e servizio usano ESR e attesa
+post-invio; il panic conserva NMI senza ESR né attesa post-invio e controlla
+le conferme software. L'helper fa parte dell'audit di emergenza.
+
+Il runner passa il numero di CPU anche all'attesa dello stop coordinato,
+mantenendo quattro come default per i chiamanti storici. La raccolta dei
+registri dopo un errore usa lo stesso numero; se fallisce, aggiunge una nota
+senza sostituire l'errore che ha provocato il fallimento del test.
