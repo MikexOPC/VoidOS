@@ -163,3 +163,24 @@ VirtIO era ancora inizializzato dopo aver differito il mapping GOP.
 La campagna finale separa l'avvio video ordinario dal profilo IPI e
 riparte da zero. Evidenza iniziale:
 kernel/build/ipi-service-8b44d81387e84b34af0f233b266bffb5.
+
+## Rimozione dei mapping CPU VirtIO
+
+I teardown dei registri PCI e della superficie staccano il ramo e
+attendono gli AP prima di liberare le lease. Reset del dispositivo e
+revoca VT-d restano responsabilità del chiamante.
+
+- 10/10 boot QEMU a 4 CPU del profilo TestVgpuResources su VirtIO
+  emulato, con reset, rilascio delle risorse e ripristino del budget.
+  Evidenza: kernel/build/k4b-vgpu-resources-7fbb1ed9de3949b383b347556a02f7f2.
+- Host mapping VirtIO, x86-vgpu-present e layout passati. Evidenze:
+  kernel/build/k4b-vgpu-host,
+  kernel/build/test-run-8e5bfe52361a44c282bf7328c1ba4186 e
+  kernel/build/test-run-770fab1d24bc4a30b76dbeda8950b956.
+- Audit di emergenza passato sulle immagini risorse e interattiva.
+
+Il tentativo interattivo a quattro CPU ha completato il ciclo
+bind/unbind/rebind dei registri e si è fermato a KERNEL_VGPU_IOMMU_BEGIN,
+prima di avviare la console o raggiungere il teardown. La VM è stata
+terminata manualmente e la sessione VT-d resta da verificare.
+Evidenza: kernel/build/pointer-interactive-check-8060f506f06540cf8ee50df52a3e290e.
