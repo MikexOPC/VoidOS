@@ -184,3 +184,21 @@ bind/unbind/rebind dei registri e si è fermato a KERNEL_VGPU_IOMMU_BEGIN,
 prima di avviare la console o raggiungere il teardown. La VM è stata
 terminata manualmente e la sessione VT-d resta da verificare.
 Evidenza: kernel/build/pointer-interactive-check-8060f506f06540cf8ee50df52a3e290e.
+
+## Rilascio del mapping CPU VT-d
+
+- 10/10 boot QEMU a quattro CPU, due cicli bind/unbind per boot
+  con ripristino del budget e lettura coerente dei registri.
+  Evidenza: kernel/build/k4b-vtd-registers-e6a3043142ef4c3b87a3cf82774dcbd2.
+- Suite iommu-registers e layout passate. Evidenze:
+  kernel/build/test-run-13c38bbc85814c958b2c53bd266f2c6b e
+  kernel/build/test-run-edc65259aa06492aa2f01450c7cc71d7.
+- Audit di emergenza passato.
+
+Il profilo non attiva la traduzione del dispositivo. Nel profilo
+interattivo, sette campioni HMP del BSP dopo KERNEL_VGPU_IOMMU_BEGIN
+ricadono in verifiche ECAM, inventario e controlli di sovrapposizione.
+Il BSP stava eseguendo codice prima del teardown. I campioni non
+misurano la durata totale né escludono altri colli di bottiglia.
+Evidenza: kernel/build/k4b-vtd-startup-sample-c10ace20f57e4a92adbda9c3a047d1cb/monitor.log.
+La prova end-to-end della sessione VT-d resta aperta.
