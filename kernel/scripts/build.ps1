@@ -1,4 +1,4 @@
-param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-handler')][string]$TestApService = 'none', [ValidateSet('none','withhold-ack','lock-held','contended')][string]$TestApStress = 'none', [ValidateSet('none','bsp','ap')][string]$TestApGroupPanic = 'none', [switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic, [switch]$TestApSequence, [switch]$TestApSequenceFault,
+param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-handler','release-missing-ack')][string]$TestApService = 'none', [ValidateSet('none','withhold-ack','lock-held','contended')][string]$TestApStress = 'none', [ValidateSet('none','bsp','ap')][string]$TestApGroupPanic = 'none', [switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic, [switch]$TestApSequence, [switch]$TestApSequenceFault,
     [ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [ValidateSet('none','guard','nx')][string]$TestApResourceFault = 'none',
     [ValidateSet('none','prepare','voluntary','opcode','page','nmi','double','no-simd','recursive','lock-held','prepare-rollback','no-simd-call')][string]$TestSmpPanic = 'none',
@@ -371,10 +371,14 @@ if ($TestPs2Decoder -or $Ps2Input) {
 if ($ApRuntime -or $TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) {
     . (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/installation/scripts/build.ps1')
 }
-Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') (@('/nologo','/machine:x64','/subsystem:native',
+# Windows limits a command line to 32767 characters: the object list goes through a response file.
+$linkArguments = @('/nologo','/machine:x64','/subsystem:native',
     '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed',('/base:0x' + $OsImageBase.ToString('X')),
     ('/out:' + $output + '/kernel.exe'),('/map:' + $output + '/kernel.map'),($output + '/io.obj'),($output + '/validation.obj'),($output + '/window-layout.obj'),
-    ($output + '/object-bounds.obj')) + $objects)
+    ($output + '/object-bounds.obj')) + $objects
+$linkResponse = Join-Path $output 'kernel.link.rsp'
+Set-Content -LiteralPath $linkResponse -Encoding ascii -Value ($linkArguments | ForEach-Object { '"' + $_ + '"' })
+Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') @('@' + $linkResponse)
 & (Join-Path $PSScriptRoot 'convert-image.ps1') -Image ($output + '/kernel.exe') -Output ($output + '/kernel.elf')
 Write-BootStatus OK "Kernel ELF verificato e generato: $output/kernel.elf"
 if ($Install) {
