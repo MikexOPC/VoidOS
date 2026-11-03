@@ -113,3 +113,15 @@ sia pubblicato, si usa il reload locale esistente.
 
 Il diagnostico positivo costruisce un mapping GOP temporaneo dopo
 l'avvio degli AP. Il boot ordinario mantiene il mapping persistente.
+
+## Rilascio del mapping CPU dei registri VT-d
+
+Dopo lo scollegamento dello slot PML4 si attende lo shootdown
+prima di revocare i pin e restituire le tre tabelle. Il mapping
+rifiuta il teardown con un Consumer ancora associato. La barriera
+riguarda le traduzioni CPU, separatamente da TE e dalle invalidazioni
+IOTLB. Il diagnostico registri prova bind e unbind con VT-d inattivo.
+
+Il rollback delle risorse AP resta anteriore all'avvio. Dopo il
+commit le risorse sono trattenute, quindi quel rollback non è un
+percorso di riuso concorrente.
