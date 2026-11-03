@@ -84,3 +84,12 @@ Restano da verificare separatamente i percorsi che staccano un ramo
 intermedio e rilasciano le sue tabelle, come heap, arena DMA e
 framebuffer. Il flush della CPU non sostituisce lo stop del dispositivo
 o l'invalidazione del dominio DMA.
+
+## Rimozione del ramo heap
+
+Quando il ramo era pubblicato, il teardown azzera lo slot PML4 e
+attende il flush del gruppo prima di rimuovere l'autorità e liberare
+dati e tabelle. Prima della pubblicazione del servizio IPI usa il
+reload locale esistente. Il teardown richiede un heap senza utenti.
+Il diagnostico positivo crea un binding temporaneo dopo l'avvio AP
+e lo rimuove senza inizializzare l'allocatore heap sopra il binding.

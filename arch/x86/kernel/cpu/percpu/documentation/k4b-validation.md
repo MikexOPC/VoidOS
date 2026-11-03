@@ -97,3 +97,24 @@ dall'inventario finale. Il PT dell'arena resta residente.
 Le prove di ACK mancante e di generazione errata sopra riguardano
 la rimappatura diagnostica. Questa campagna copre il rilascio
 positivo delle regioni.
+
+## Rimozione del ramo heap
+
+Il diagnostico positivo monta un binding temporaneo dopo l'ammissione
+degli AP. Lo smonta senza utenti dell'heap. Verifica slot PML4 vuoto,
+autorità rimossa e budget fisico ripristinato. Il runner legge
+l'inventario e verifica che entrambe le lease siano state rilasciate.
+La richiesta 103 completa flush, EOI e ritorno IRETQ su ogni AP.
+
+- 10/10 boot diagnostici QEMU a 4 CPU.
+  Evidenza: kernel/build/ipi-service-e1eb5debac4c4ff1973fe37541813f85.
+- 10/10 boot ordinari QEMU a 4 CPU.
+  Evidenza: kernel/build/ap-runtime-d52044afba554831814e10a493eee6a2.
+- Suite kernel, ipi-service e layout superate. Log in
+  kernel/build/test-run-3d5966fb1635490b9f0e2cfa4a7db584,
+  kernel/build/test-run-d2db16b216c4417eb84a0c32beb71812 e
+  kernel/build/test-run-90a1b98d9ae34b6081648576b613dca2.
+- Audit di emergenza passato su immagine diagnostica e ordinaria.
+
+Questo test verifica il teardown di un ramo heap senza utenti.
+Le iniezioni ACK precedenti riguardano la rimappatura della finestra.

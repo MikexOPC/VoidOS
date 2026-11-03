@@ -1,4 +1,5 @@
 #include "probe.h"
+#include "arch/x86/mm/heap/binding.h"
 #include "arch/x86/configs/boot_profile.h"
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "kernel/diagnostics/log.h"
@@ -12,12 +13,11 @@ static void number_private(const char *name, uint64_t value) {
 
 // ====== xis_service_probe ======
 
-__declspec(noreturn) void xis_service_probe(X86_PAGE_WINDOW *window, X86_REGION_MAPPER *regions) {
-#if KERNEL_TEST_AP_SERVICE != 1
-    (void)regions;
-#endif
-#ifndef XIS_REMAP_TEST
-    (void)window;
+__declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
+#ifdef XIS_REMAP_TEST
+    X86_PAGE_WINDOW *window = &startup->Memory->Window;
+#else
+    (void)startup;
 #endif
     if (ks_irq_state() || xis_native_index() != 0 || xis_native.Count < 2) xis_native_abort(0x4b34495049425350ULL);
     number_private("KERNEL_IPI_NATIVE: ", (uint64_t)&xis_native);
@@ -75,6 +75,7 @@ __declspec(noreturn) void xis_service_probe(X86_PAGE_WINDOW *window, X86_REGION_
     for (uint32_t index = 1; index < xis_native.Count; ++index)
         if (!xis_native_wait(index, 1, XIS_READ_ROUND + 1)) xis_native_abort(0x4b34544c42444f4eULL);
 #if KERNEL_TEST_AP_SERVICE == 1
+    X86_REGION_MAPPER *regions = &startup->Memory->Regions;
     X86_REGION_HANDLE region = {0};
     if (!x86_region_acquire(regions, 2, 1, &region)) xis_native_abort(0x4b34544c42524731ULL);
     uint32_t slot = x86_region_slot(region.Virtual);
@@ -84,6 +85,19 @@ __declspec(noreturn) void xis_service_probe(X86_PAGE_WINDOW *window, X86_REGION_
         xis_native_abort(0x4b34544c42524733ULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
         if (!xis_native_wait(index, 1, XIS_READ_ROUND + 2)) xis_native_abort(0x4b34544c42524734ULL);
+    X86_HEAP_BINDING temporary = {0};
+    X86_PAGING_INVENTORY *inventory = (X86_PAGING_INVENTORY *)
+        x86_object_arena_data(&startup->Memory->Arena, startup->Paging);
+    const KERNEL_BOOT_CONTEXT *context = (const KERNEL_BOOT_CONTEXT *)
+        x86_object_arena_data(&startup->Memory->Arena, &startup->Memory->ContextObject);
+    if (!x86_heap_bind(context, window, xp_panic_native.Lapic, inventory,
+        x86_paging_inventory_capture_lapic, &temporary)) xis_native_abort(0x4b34544c42485031ULL);
+    number_private("KERNEL_IPI_HEAP_DATA: ", temporary.Authority.Data.Base);
+    number_private("KERNEL_IPI_HEAP_TABLES: ", temporary.Authority.Tables.Base);
+    if (!x86_heap_unbind(&temporary) || x86_heap_owner() || x86_fb_root()[X86_HEAP_SLOT])
+        xis_native_abort(0x4b34544c42485032ULL);
+    for (uint32_t index = 1; index < xis_native.Count; ++index)
+        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 3)) xis_native_abort(0x4b34544c42485033ULL);
 #endif
     if (!kernel_log(0, "KERNEL_IPI_REMAP_VERIFIED")) xis_native_abort(0x4b34544c4252454cULL);
 #endif

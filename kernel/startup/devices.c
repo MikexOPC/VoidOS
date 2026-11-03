@@ -43,10 +43,12 @@ void kernel_startup_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CON
 #ifdef KERNEL_TEST_SMP_PANIC
     xp_panic_integration_probe();
 #endif
+    #if KERNEL_TEST_AP_SERVICE != 1
     // G3: the kernel heap is bound first, in every profile, so the framebuffer and later budgets
     // already include it.
     if (context->Info.Acpi.Source && !x86_heap_kernel_start(context, &startup->Memory->Window,
         x86_uart_lapic_mapping(), paging)) kernel_panic("KERNEL_HEAP_FAILED");
+    #endif
 
     if (context->Info.Acpi.Source && !x86_ap_transition_start(context, &startup->Memory->Window,
         x86_uart_lapic_mapping(), paging)) kernel_panic("AP_TRANSITION_TABLES_FAILED");
