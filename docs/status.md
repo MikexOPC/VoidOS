@@ -1,4 +1,4 @@
-# Stato corrente — 2 novembre 2026
+# Stato corrente — 3 novembre 2026
 
 Questo è il riferimento breve. I checkpoint storici conservano le prove
 relative alle proprie immagini; non certificano automaticamente la working tree.
@@ -13,18 +13,15 @@ console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
 Non ci sono ancora SMP operativo, processi utente, syscall, VFS o driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
-## K4-A: servizio IPI verificato nel diagnostico
+## K4-A: PING agli AP nel boot ordinario
 
-Il servizio usa il conteggio del gruppo avviato, con limite 2–64 CPU.
-Verificato su 2/4/8 CPU: 30 boot IPI e 30 panic dentro l'handler, più
-20 regressioni ordinarie a una/quattro CPU, tutti passati. Sei suite host
-passate; audit esteso all'helper ICR, 36 oggetti e cinque fixture.
-Corretti anche cattura degli errori e attesa dello stop per gruppi diversi
-da quattro. Il limite 64 non equivale a una prova su 64 CPU.
+Il BSP invia un PING a ciascun AP e attende l'ACK dopo EOI prima
+di continuare. Gli AP attendono in HLT con gli interrupt abilitati.
+Su una CPU il servizio resta inattivo. Driver e scheduler restano sul BSP.
 
-Il servizio è collegato solo al diagnostico `-TestApService`: il boot
-ordinario mantiene gli AP parcheggiati a IF=0 e lo scheduler BSP.
-Restano integrazione ordinaria, shootdown TLB e preemption per completare K4.
+40 boot ordinari QEMU passati su 1/2/4/8 CPU, 10 per configurazione.
+Il diagnostico IPI conserva le prove di ripristino dei registri.
+Il limite del gruppo è 64 CPU. Restano shootdown TLB e preemption.
 Prove e limiti in [validazione K4-A](../arch/x86/kernel/cpu/percpu/documentation/k4a-validation.md).
 
 ## K3: base per-CPU chiusa sul profilo QEMU

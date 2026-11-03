@@ -78,9 +78,14 @@ uint32_t xis_native_enter(void *private_frame) {
 void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     uint32_t index = xis_native_index();
     uint64_t top = X86_AP_FRAME(index), address = (uint64_t)frame;
+#ifdef KERNEL_TEST_AP_SERVICE
+    const uint64_t idle_flags = 0x602;
+#else
+    const uint64_t idle_flags = 0x202;
+#endif
     if (!index || ks_irq_state() || (address & 7) || address < X86_AP_STACK_FLOOR(index) || address > top - sizeof(*frame) ||
         frame->Cs != 8 || frame->Ss != 16 || frame->Rsp != top - XIS_IDLE_FRAME_BYTES ||
-        (frame->Flags & 0x7602) != 0x602 || !xp_image_contains(frame->Rip, 1))
+        (frame->Flags & 0x7602) != idle_flags || !xp_image_contains(frame->Rip, 1))
         xis_native_abort(0x4b3449504946524dULL);
     XIS_CPU *cpu = &xis_native.Cpus[index];
     if (frame->Vector == 0xff) {
@@ -123,6 +128,7 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     if (!xis_complete(index, index, generation)) xis_native_abort(0x4b3449504941434bULL);
 }
 
+#ifdef KERNEL_TEST_AP_SERVICE
 // ====== xis_native_verified ======
 
 void xis_native_verified(const unsigned char *fx) {
@@ -141,3 +147,4 @@ void xis_native_verified(const unsigned char *fx) {
         xis_native_abort(0x4b34495049463837ULL);
     ks_atomic_store_release(&xis_native.Cpus[index].Verified, xis_value(index, XIS_ACK));
 }
+#endif

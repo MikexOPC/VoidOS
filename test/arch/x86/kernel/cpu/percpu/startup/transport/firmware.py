@@ -157,9 +157,9 @@ def verify_sequence(vm, log, root, first):
 
 # ====== verify_parked_cpus ======
 
-def verify_parked_cpus(vm, log, root, first, panic=False, reporter=0):
+def verify_parked_cpus(vm, log, root, first, panic=False, reporter=0, count=4, service=False):
     final_record = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
-    for index in range(1, 4):
+    for index in range(1, count):
         text = registers(vm, index)
         (vm.directory / f"sequence-cpu-{index}.txt").write_text(text)
         top = log.number("KERNEL_AP_BASE") + index * 0x40000 + 17 * 4096
@@ -173,19 +173,21 @@ def verify_parked_cpus(vm, log, root, first, panic=False, reporter=0):
         if frame[:13] != expected:
             raise RuntimeError("Group private record changed outside its per-CPU fields")
         rsp = value(text, "RSP")
-        stack_valid = top + 8 * 4096 <= rsp < top + 12 * 4096 if panic else rsp == top - 1024
+        stack_valid = top + 8 * 4096 <= rsp < top + 12 * 4096 if panic else rsp == top - 1024 - (576 if service else 0)
         terminal_valid = not panic or value(text, "RAX") == (0x50414e4943444f4e if index == reporter else 0x50414e494353544f)
         if "HLT=1" not in text or value(text, "CR3") != root or not stack_valid or not terminal_valid:
             raise RuntimeError("Group CPU not parked on its private stack/root")
-        if cpu.gs_base(text) != first + (index - 1) * 448 or value(text, "RFL") & 0x7600:
+        if cpu.gs_base(text) != first + (index - 1) * 448 or (value(text, "RFL") & 0x7600) != (0x200 if service and not panic else 0):
             raise RuntimeError("Group private GS or flags mismatch")
         if frame[0] != 1 | (104 << 32) or frame[1] != index | (index << 32) or frame[2] != (index << 9) | (index << 3):
             raise RuntimeError("Group private record identity/token changed")
         if frame[6] != root or frame[7] != top or frame[9] != first + (index - 1) * 448 or frame[83] != 6:
             raise RuntimeError("Group private record geometry/phase mismatch")
-        idtr = b"".join(w.to_bytes(8, "little") for w in cpu.memory(vm, log.number("KERNEL_AP_PANIC_IDTR"), 2))
+        idtr_name = "KERNEL_AP_RUNTIME_IPI_IDTR" if service else "KERNEL_AP_PANIC_IDTR"
+        idtr = b"".join(w.to_bytes(8, "little") for w in cpu.memory(vm, log.number(idtr_name), 2))
         idt = int.from_bytes(idtr[2:10], "little")
-        if not re.search(rf"IDT=\s*{idt:016x}\s+000001ff", text, re.I):
+        limit = 0xfff if service else 0x1ff
+        if not re.search(rf"IDT=\s*{idt:016x}\s+{limit:08x}", text, re.I):
             raise RuntimeError("Group final IDT mismatch")
         if value(text, "CR0") & 0x80010001 != 0x80010001 or value(text, "EFER") & 0xd00 != 0xd00 or value(text, "CR4") & 0x620 != 0x620:
             raise RuntimeError("Group paging/WP/NX/SSE prerequisites missing")

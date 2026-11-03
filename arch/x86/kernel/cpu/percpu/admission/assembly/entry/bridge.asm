@@ -10,7 +10,7 @@ default rel
 section .text
 global xs_private_arrive, xs_private_park
 extern xa_native_admit, xa_native_park, xs_private_resume
-%ifdef KERNEL_TEST_AP_SERVICE
+%ifdef KERNEL_AP_SERVICE
 extern xis_native_enter, xis_service_loop
 %endif
 %endif
@@ -54,7 +54,7 @@ xs_private_park:
     call xa_native_park
     [warning +reloc-rel-dword]
     mov rsp, r15
-%ifdef KERNEL_TEST_AP_SERVICE
+%ifdef KERNEL_AP_SERVICE
     test eax, eax
     jnz xa_stop
     mov rcx, r15

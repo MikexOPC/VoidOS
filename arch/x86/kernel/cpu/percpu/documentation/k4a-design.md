@@ -143,7 +143,7 @@ Le query sono letture singole, non uno snapshot atomico di tutti i campi.
 L'attesa ha un solo chiamante BSP; non ammette pubblicazioni concorrenti
 sullo stesso mailbox mentre il BSP attende la conferma.
 
-Il protocollo è linkato solo nel profilo diagnostico concordato. Evidenze e limiti in
+Il primo collegamento era limitato al profilo diagnostico. Evidenze e limiti in
 [k4a-validation.md](k4a-validation.md).
 
 ## Collegamento hardware del diagnostico
@@ -151,7 +151,8 @@ Il protocollo è linkato solo nel profilo diagnostico concordato. Evidenze e lim
 Il flag di build `-TestApService` accetta `ping`, `missing-ack`, `stale-ack`,
 `panic-idle` e `panic-handler`. È incompatibile con altri profili di prova.
 Ricava il numero di CPU dal gruppo avviato, lo verifica contro quello del
-panic e accetta 2–64 CPU. Il boot ordinario non collega questi oggetti.
+panic e accetta 2–64 CPU. La sonda e le iniezioni sono esclusive
+di questi profili.
 
 - Registro privato del servizio: vettore fixed **0xe1**, spurious **0xff**.
   La IDT completa copia i 32 gate fault/NMI già verificati; gli altri ingressi
@@ -198,3 +199,28 @@ Il runner passa il numero di CPU anche all'attesa dello stop coordinato,
 mantenendo quattro come default per i chiamanti storici. La raccolta dei
 registri dopo un errore usa lo stesso numero; se fallisce, aggiunge una nota
 senza sostituire l'errore che ha provocato il fallimento del test.
+
+## Integrazione nel boot ordinario
+
+Riutilizzare la IDT del servizio, la mailbox e la verifica EOI già
+collaudate. Pubblicare il servizio prima di avviare il primo AP, dopo
+la preparazione del panic coordinato. Con una sola CPU il servizio
+resta inattivo. Ogni AP installa la IDT del servizio dopo l'ammissione
+privata, verifica il LAPIC e pubblica READY prima dell'attesa STI/HLT.
+
+Nel profilo ordinario l'ingresso conserva e ripristina il contesto.
+Il ciclo con registri sentinella e l'iniezione di errori appartengono
+ai profili di prova. Driver e scheduler restano sul BSP. Gli AP
+accedono solo a stack, contesto, dati del servizio e mapping LAPIC
+stabili. Le modifiche alle traduzioni condivise usate dagli AP
+richiedono il protocollo di invalidazione K4-B.
+
+Decisione approvata: il BSP invia un PING per AP nel boot ordinario
+prima di proseguire. Il PING
+prova consegna e ACK dopo EOI; non prova da solo il ritorno IRETQ,
+che resta oggetto del diagnostico. Ogni attesa usa il budget esistente.
+Un errore dopo l'avvio degli AP attiva il panic coordinato.
+
+Accettazione: suite host e audit di emergenza, dieci boot per
+configurazione ordinaria a 1, 2, 4 e 8 CPU, regressione dei profili
+IPI e panic, e console operativa con gli AP in attesa.

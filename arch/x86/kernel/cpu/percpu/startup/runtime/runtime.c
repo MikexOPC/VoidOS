@@ -5,9 +5,7 @@
 #include "../../identity/identity.h"
 #include "../../internal.h"
 #include "kernel/diagnostics/log.h"
-#ifdef KERNEL_TEST_AP_SERVICE
 #include "../../service/native/native.h"
-#endif
 
 static XB_INSTALLATION image;
 static XJ_GROUP group;
@@ -62,13 +60,22 @@ int x86_ap_runtime_start(X86_AP_TRANSITION *t, const X86_LAPIC_MAPPING *lapic) {
     if (!xp_panic_native_prepare(lapic) || !xag_native_publish(&group) || !xag_native_close() ||
         !number_private("KERNEL_AP_PANIC_IDTR: ", (uint64_t)&xp_panic_native.Idtr) ||
         !xn_prepare(&launch, &group)) return reject_private(t, "AP_RUNTIME_ADMISSION_FAILED");
-#ifdef KERNEL_TEST_AP_SERVICE
     if (!xis_native_prepare()) return reject_private(t, "AP_SERVICE_PREPARE_FAILED");
-#endif
     for (uint32_t index = 1; index < ids->Count; ++index) {
         if ((index > 1 && !xn_next(&launch)) || !xn_run(&launch, 1) || !xn_private_parked(&launch))
             return reject_private(t, "AP_RUNTIME_START_FAILED");
     }
+#ifndef KERNEL_TEST_AP_SERVICE
+    for (uint32_t index = 1; index < ids->Count; ++index) {
+        XIS_WAIT wait = {xis_native_now, NULL, xp_panic_native.Source.Mask, KERNEL_PM_TIMER_HZ, 1000000, 0};
+        if (!xis_native_wait(index, 0, XIS_READY) || xis_publish(index, 0) != 1 ||
+            !xis_native_send(index) || xis_wait(index, 1, &wait) != XIS_WAIT_ACK)
+            xis_native_abort(0x4b3449504950494eULL);
+    }
+    if (!number_private("KERNEL_AP_RUNTIME_IPI_IDTR: ", (uint64_t)&xis_native.Idtr) ||
+        !number_private("KERNEL_AP_RUNTIME_IPI_ACKS: ", ids->Count - 1))
+        xis_native_abort(0x4b344950494c4f47ULL);
+#endif
     uint64_t expected = UINT64_MAX >> (64 - ids->Count);
     if (!xt_verify_live_tables(t) || launch.State != 4 || xs_snapshot() != (launch.Token | XS_PARKED) ||
         xp_panic_value(XP_PANIC_ONLINE) != expected || xp_panic_value(XP_PANIC_OWNER) ||
