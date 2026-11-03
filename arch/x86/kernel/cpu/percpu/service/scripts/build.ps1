@@ -8,6 +8,7 @@ if ($TestApService -ne 'none') {
     $serviceSources += 'test/arch/x86/kernel/cpu/percpu/service/integration/probe.c'
     $serviceDefines += '-DKERNEL_TEST_AP_SERVICE=1'
 }
+if ($TestApService -eq 'ping') { $serviceSources += 'arch/x86/mm/dma/arena.c' }
 foreach ($source in $serviceSources) {
     $object = Join-Path $output (($source -replace '/', '-') -replace '\.c$', '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$project/$source","/Fo$object"))

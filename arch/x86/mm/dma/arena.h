@@ -19,6 +19,7 @@ typedef struct {
 
 int x86_dma_arena_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window, const X86_LAPIC_MAPPING *lapic,
     X86_PAGING_INVENTORY *inventory, X86_DMA_CAPTURE capture, BOOT_U32 pages, X86_DMA_ARENA *owner);
+// The caller must quiesce the device and revoke any DMA translations before unbind.
 int x86_dma_arena_unbind(X86_DMA_ARENA *owner);
 int x86_dma_arena_check(const X86_DMA_AUTH *auth);
 // Zeroed when bound; 0 unless the arena is registered and its paging is current.
