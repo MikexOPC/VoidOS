@@ -1,4 +1,8 @@
 #include "mapping.h"
+#ifdef KERNEL_AP_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#include "arch/x86/mm/paging/inventory.h"
+#endif
 #include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/platform.h"
 #define NX (1ULL << 63)
@@ -128,7 +132,11 @@ static int remove_mapping(X86_REGION_MAPPER *owner, BOOT_U32 slot)
     KERNEL_PHYSICAL_LEASE *lease = &owner->Live[slot];
     if (!kernel_physical_release_fits(owner->Pool, lease)) return 0;
     for (entry = 0; entry < lease->Pages; ++entry) x86_region_entries(3)[128 + slot * 34 + 1 + entry] = 0;
-    invalidate(slot, lease->Pages);
+#ifdef KERNEL_AP_RUNTIME
+    if (xis_native_shootdown()) x86_paging_generation_bump();
+    else
+#endif
+        invalidate(slot, lease->Pages);
     return kernel_physical_release_after_unmap(owner->Pool, lease);
 }
 

@@ -75,3 +75,25 @@ e che l'inventario finale non contenga più nessuno dei due lease.
 
 Gli arresti da ACK mancante o errato sopra sono prove della rimappatura
 del blocco precedente. Non sono iniezioni nel rilascio finale.
+
+## Rilascio delle regioni
+
+Il diagnostico acquisisce una regione da due pagine dopo il test
+della page window e ne verifica il rilascio. Per ciascun AP, la
+richiesta 102 conferma il flush, l'EOI e il ritorno da IRETQ.
+Il runner controlla che il lease fisico della regione sia assente
+dall'inventario finale. Il PT dell'arena resta residente.
+
+- 10/10 boot diagnostici QEMU a 4 CPU.
+  Evidenza: kernel/build/ipi-service-bb279c97a26a40a0b3c7a015a4ebee15.
+- 10/10 boot ordinari QEMU a 4 CPU.
+  Evidenza: kernel/build/ap-runtime-29bfa67c01b64d1f9a66b933af176db4.
+- Suite kernel, ipi-service e layout passate. Log in
+  kernel/build/test-run-f73f2190f0834d3dbf11e4edba2ff90a,
+  kernel/build/test-run-05cf54e0a9eb4720b535d5f6070293b6 e
+  kernel/build/test-run-ad94eaa10167405d913067f88b9aa496.
+- Audit di emergenza superato su entrambe le immagini.
+
+Le prove di ACK mancante e di generazione errata sopra riguardano
+la rimappatura diagnostica. Questa campagna copre il rilascio
+positivo delle regioni.

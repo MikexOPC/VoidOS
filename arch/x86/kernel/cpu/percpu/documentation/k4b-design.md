@@ -71,3 +71,16 @@ Se la barriera fallisce, il panic trattiene il lease.
 Il diagnostico usa lo stesso percorso per smontare il frame sostitutivo
 dopo l'ultima lettura degli AP. Le altre API di mapping e la rimozione di
 tabelle intermedie richiedono ancora integrazione propria.
+
+## Rilascio delle regioni
+
+Le regioni della stessa arena usano la barriera già applicata alla
+page window. Un batch di PTE rimosse richiede un solo flush per CPU.
+L'API esclude i prestiti ancora associati alla regione. Il frame resta
+pinned durante la barriera e torna all'allocatore dopo gli ACK.
+Il PT condiviso con la finestra resta residente.
+
+Restano da verificare separatamente i percorsi che staccano un ramo
+intermedio e rilasciano le sue tabelle, come heap, arena DMA e
+framebuffer. Il flush della CPU non sostituisce lo stop del dispositivo
+o l'invalidazione del dominio DMA.
