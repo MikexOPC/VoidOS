@@ -47,3 +47,14 @@ timeout. Dieci boot diagnostici consecutivi e regressione del boot ordinario.
   per gli effetti del reload di CR3 e la propagazione tra CPU.
 - [Linux v6.12, arch/x86/mm/tlb.c](https://github.com/torvalds/linux/blob/v6.12/arch/x86/mm/tlb.c)
   come riferimento per la distinzione fra flush di intervallo e contesto.
+
+## Finestra della prova
+
+Il profilo IPI usa in esclusiva la page window esistente. Il BSP prepara
+due lease distinti, parcheggia il primo frame letto dagli AP e rimappa
+la stessa VA sul secondo. Le invalidazioni locali della finestra fanno
+parte dell'API esistente; la barriera che autorizza il rilascio del
+vecchio frame è invece l'ACK del flush remoto, seguito dalla rilettura
+su tutti gli AP. Il secondo frame resta pinned fino all'arresto
+diagnostico. Il paging ordinario richiederà una barriera propria prima
+di pubblicare la generazione condivisa.

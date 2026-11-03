@@ -4,6 +4,15 @@
 #include "../../panic/native/runtime.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 
+#if KERNEL_TEST_AP_SERVICE >= 1 && KERNEL_TEST_AP_SERVICE <= 3
+#define XIS_REMAP_TEST 1
+#define XIS_WARM_ROUND 98U
+#define XIS_FLUSH_ROUND 99U
+#define XIS_READ_ROUND 100U
+#define XIS_OLD_VALUE 0x31U
+#define XIS_NEW_VALUE 0xc7U
+#endif
+
 #define XIS_VECTOR 0xe1U
 // Stack bytes reserved by xis_service_loop (idle.asm: sub rsp, 576) below the private frame.
 #define XIS_IDLE_FRAME_BYTES 576ULL

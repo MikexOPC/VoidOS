@@ -36,6 +36,8 @@ def await_terminal(vm, case):
         if case == "ping" and log.failures():
             raise RuntimeError("Unexpected panic in positive service profile")
         ready = log.has("KERNEL_IPI_SERVICE_READY") if case == "ping" else "KERNEL_SMP_PANIC_HALTED" in log.text
+        if ready and case == "ping" and not log.before("KERNEL_IPI_REMAP_VERIFIED", "KERNEL_IPI_SERVICE_READY"):
+            raise RuntimeError("Missing AP remap and release evidence")
         if ready:
             owner = 0 if case == "ping" else log.number("PANIC_OWNER")
             text = launch.registers(vm, owner)
@@ -58,6 +60,20 @@ def verify(vm, log, case, count):
     cpu.ap_monitor.verify(vm, log, cpu.memory, count, True, count - 1)
     pool, live, pins, free = runtime.allocator(vm, log)
     runtime.transition_memory(vm, log, root, pool, live, pins)
+    if case in ("ping", "missing-ack", "stale-ack"):
+        old_frame = log.number("KERNEL_IPI_OLD_FRAME")
+        new_frame = log.number("KERNEL_IPI_NEW_FRAME")
+        if old_frame == new_frame:
+            raise RuntimeError("Diagnostic frames overlap")
+        for frame, expected in ((old_frame, case != "ping"), (new_frame, True)):
+            indices = [index for index in range(64)
+                       if live[4 * index] == frame and live[4 * index + 2]]
+            if len(indices) != int(expected):
+                raise RuntimeError("Diagnostic lease released or retained at the wrong time")
+            if expected:
+                index = indices[0]
+                if live[4 * index + 1] != 1 or (pins[index // 2] >> (32 * (index % 2))) & 0xffffffff != 1:
+                    raise RuntimeError("Diagnostic frame is not a pinned single-page lease")
     address = log.number("KERNEL_IPI_NATIVE")
     idtr = b"".join(word.to_bytes(8, "little") for word in cpu.memory(vm, log.number("KERNEL_IPI_IDTR"), 2))
     if int.from_bytes(idtr[:2], "little") != 4095 or int.from_bytes(idtr[2:10], "little") != address:
@@ -72,6 +88,8 @@ def verify(vm, log, case, count):
         if (low >> 16) & 0xffffffff != 0x8e000008 or high >> 32 or not 0xffffffff80000000 <= target < 0xffffffff80400000:
             raise RuntimeError("Invalid service gate or target")
     counters = cpu.memory(vm, address + 4160, 64 * 8)
+    if case in ("missing-ack", "stale-ack") and [counters[index] for index in (8, 12, 13)] != [99] * 3:
+        raise RuntimeError("AP1 did not enter and finish EOI for the flush request")
     first = log.number("KERNEL_AP_CONTEXTS")
     owner = log.number("PANIC_OWNER") if case != "ping" else None
     final = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
@@ -145,7 +163,10 @@ def verify(vm, log, case, count):
             raise RuntimeError("Incomplete emergency report")
         if case == "missing-ack" and log.number("KERNEL_IPI_FAILED_PHASE") != 2:
             raise RuntimeError("Timed-out mailbox was reopened")
-    return dict(Case=case, RealCpus=count, Requests=100 * (count - 1) if case in ("ping", "panic-idle") else 1,
+    requests = 100 * (count - 1) if case in ("ping", "panic-idle") else 1
+    if case in ("missing-ack", "stale-ack"):
+        requests += 98 * (count - 1)
+    return dict(Case=case, RealCpus=count, Requests=requests,
                 PhysicalFree=free, Pinned=True)
 
 

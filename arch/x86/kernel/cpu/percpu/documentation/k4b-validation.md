@@ -25,6 +25,33 @@ la scrittura di CR3 prima del completamento.
 - 10/10 boot ordinari QEMU a 4 CPU.
   Evidenza: kernel/build/ap-runtime-c36b70ed949a4be7b30abacd1da321e7.
 
-Il comando non modifica PTE né rilascia frame. Restano la prova di
-rimappatura con due frame, l'iniezione degli errori durante tale prova
-e il collegamento al paging ordinario. Coverage non misurata.
+Il comando IPI si occupa del flush. Il collaudo della rimappatura è
+riportato sotto. Coverage non misurata.
+
+## Rimappatura diagnostica
+
+Il giro 98 legge il valore del vecchio frame su ogni AP. Il BSP
+rimappa la stessa VA e il giro 99 invalida l'intero contesto. Il giro
+100 legge il valore del nuovo frame su ogni AP. Il BSP rilascia il
+vecchio frame dopo gli ACK e le letture.
+
+Nei due profili di errore, AP1 esegue il flush e completa EOI al giro
+99, poi omette l'ACK oppure tenta di confermare la generazione
+successiva. Il runner verifica il motivo del panic e legge l'inventario
+dell'allocatore a VM ferma. Entrambi i frame risultano ancora pinned
+nei casi di errore. Nel caso positivo resta il frame sostitutivo,
+mantenuto fino all'arresto del diagnostico.
+
+| Profilo QEMU a 4 CPU | Esito | Evidenza in kernel/build |
+| --- | --- | --- |
+| Rimappatura e rilascio | 10/10 | ipi-service-996483a1576f4c30b8bf6ae730956347 |
+| ACK mancante | 3/3 arresti attesi | ipi-service-0aea57d0a60e40bdb09800a1a3320bc1 |
+| ACK di generazione errata | 3/3 arresti attesi | ipi-service-260d1ddc928748c38c9c16f580e696d8 |
+| Boot ordinario | 10/10 | ap-runtime-fd3c0cd9433645ddb2206b0d61606dde |
+
+Suite host ipi-service e layout passate con exit 0. Evidenze in
+kernel/build/test-run-3af6ec2f0497450ea0ce7626a0333633 e
+kernel/build/test-run-6d37d33b37e6424280cebb07bcaf0cf7.
+Audit di emergenza passato per tutte e tre le immagini diagnostiche.
+Resta da collegare il flush al paging ordinario e al rilascio dei
+suoi frame e delle tabelle intermedie.

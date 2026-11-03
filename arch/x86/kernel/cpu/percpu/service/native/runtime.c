@@ -1,4 +1,5 @@
 #include <intrin.h>
+#include "arch/x86/configs/boot_profile.h"
 #include "native.h"
 #include "../../startup/private/frame.h"
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
@@ -117,9 +118,7 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     if (!generation || generation == XIS_INVALID) xis_native_abort(0x4b34495049434c4dULL);
     ks_atomic_store_release(&cpu->FrameRsp, frame->Rsp);
     ks_atomic_store_release(&cpu->Entered, generation);
-#if KERNEL_TEST_AP_SERVICE == 3
-    if (index == 1 && !xis_complete(index, index, generation + 1)) xis_native_abort(0x4b34495049424144ULL);
-#elif KERNEL_TEST_AP_SERVICE == 5
+#if KERNEL_TEST_AP_SERVICE == 5
     if (index == 1) {
         uint32_t start, now;
         if (!xis_native_now(NULL, &start)) xis_native_abort(0x4b34495049434c4bULL);
@@ -135,12 +134,24 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     if (operation != XIS_PING &&
         (operation != XIS_FLUSH_CONTEXT || !xis_native_flush_context()))
         xis_native_abort(0x4b34544c42464c53ULL);
+#ifdef XIS_REMAP_TEST
+    if (generation == XIS_WARM_ROUND || generation == XIS_READ_ROUND) {
+        const volatile unsigned char *view = (const volatile unsigned char *)X86_KERNEL_PAGE_WINDOW;
+        unsigned char expected = generation == XIS_WARM_ROUND ? XIS_OLD_VALUE : XIS_NEW_VALUE;
+        if (operation != XIS_PING || *view != expected) xis_native_abort(0x4b34544c42524541ULL);
+    }
+#endif
     xis_mmio_write(0xb0, 0);
     if (xis_mmio_read(0x100 + (XIS_VECTOR / 32) * 16)) xis_native_abort(0x4b34495049454f49ULL);
     ks_atomic_store_release(&cpu->Eois, generation);
     ks_atomic_store_release(&cpu->Delivered, generation);
 #if KERNEL_TEST_AP_SERVICE == 2
-    if (index == 1) return;
+    if (index == 1 && generation == XIS_FLUSH_ROUND) return;
+#elif KERNEL_TEST_AP_SERVICE == 3
+    if (index == 1 && generation == XIS_FLUSH_ROUND) {
+        if (!xis_complete(index, index, generation + 1)) xis_native_abort(0x4b34495049424144ULL);
+        xis_native_abort(0x4b34544c42424144ULL);
+    }
 #endif
     if (!xis_complete(index, index, generation)) xis_native_abort(0x4b3449504941434bULL);
 }

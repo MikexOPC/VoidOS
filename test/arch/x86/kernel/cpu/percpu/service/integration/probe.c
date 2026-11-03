@@ -1,4 +1,5 @@
 #include "probe.h"
+#include "arch/x86/configs/boot_profile.h"
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "kernel/diagnostics/log.h"
 #include "arch/x86/kernel/stack/main.h"
@@ -11,7 +12,10 @@ static void number_private(const char *name, uint64_t value) {
 
 // ====== xis_service_probe ======
 
-__declspec(noreturn) void xis_service_probe(void) {
+__declspec(noreturn) void xis_service_probe(X86_PAGE_WINDOW *window) {
+#ifndef XIS_REMAP_TEST
+    (void)window;
+#endif
     if (ks_irq_state() || xis_native_index() != 0 || xis_native.Count < 2) xis_native_abort(0x4b34495049425350ULL);
     number_private("KERNEL_IPI_NATIVE: ", (uint64_t)&xis_native);
     number_private("KERNEL_IPI_IDTR: ", (uint64_t)&xis_native.Idtr);
@@ -22,14 +26,28 @@ __declspec(noreturn) void xis_service_probe(void) {
         xis_native_abort(0x4b34495049484e44ULL);
     xis_native_abort(0x4b344950494e4d35ULL);
 #else
+#ifdef XIS_REMAP_TEST
+    KERNEL_PHYSICAL_LEASE old = {0}, replacement = {0};
+    volatile unsigned char *view = (volatile unsigned char *)X86_KERNEL_PAGE_WINDOW;
+    if (!x86_page_window_acquire(window, 1)) xis_native_abort(0x4b34544c42414c31ULL);
+    *view = XIS_NEW_VALUE;
+    if (!x86_page_window_park(window, &replacement) || !x86_page_window_acquire(window, 1) ||
+        window->Lease.Base == replacement.Base) xis_native_abort(0x4b34544c42414c32ULL);
+    *view = XIS_OLD_VALUE;
+#endif
     for (uint32_t round = 1; round <= 100; ++round) {
+#ifdef XIS_REMAP_TEST
+        if (round == XIS_FLUSH_ROUND) {
+            if (!x86_page_window_park(window, &old) || !x86_page_window_resume(window, &replacement) ||
+                !xis_native_flush_context()) xis_native_abort(0x4b34544c4252454dULL);
+            number_private("KERNEL_IPI_OLD_FRAME: ", old.Base);
+            number_private("KERNEL_IPI_NEW_FRAME: ", window->Lease.Base);
+        }
+#endif
         for (uint32_t index = 1; index < xis_native.Count; ++index) {
             uint32_t operation = XIS_PING;
-#if KERNEL_TEST_AP_SERVICE == 1
-            if (round == 100) {
-                if (index == 1 && !xis_native_flush_context()) xis_native_abort(0x4b34544c42425350ULL);
-                operation = XIS_FLUSH_CONTEXT;
-            }
+#ifdef XIS_REMAP_TEST
+            if (round == XIS_FLUSH_ROUND) operation = XIS_FLUSH_CONTEXT;
 #endif
             uint64_t generation = xis_publish_operation(index, 0, operation);
             if (generation != round || !xis_native_send(index)) xis_native_abort(0x4b3449504953454eULL);
@@ -48,6 +66,10 @@ __declspec(noreturn) void xis_service_probe(void) {
             !ks_atomic_load_acquire(&xis_native.Cpus[index].Spurious)) xis_native_abort(0x4b34495049454e44ULL);
         number_private("KERNEL_IPI_ACK: ", xis_value(index, XIS_ACK));
     }
+#ifdef XIS_REMAP_TEST
+    if (!kernel_physical_release_after_unmap(window->Pool, &old) ||
+        !kernel_log(0, "KERNEL_IPI_REMAP_VERIFIED")) xis_native_abort(0x4b34544c4252454cULL);
+#endif
     if (!kernel_log(0, "KERNEL_IPI_SERVICE_READY")) xis_native_abort(0x4b344950494c4f47ULL);
 #if KERNEL_TEST_AP_SERVICE == 4
     xis_native_abort(0x4b344950494e4d34ULL);
