@@ -118,3 +118,24 @@ La richiesta 103 completa flush, EOI e ritorno IRETQ su ogni AP.
 
 Questo test verifica il teardown di un ramo heap senza utenti.
 Le iniezioni ACK precedenti riguardano la rimappatura della finestra.
+
+## Rimozione del ramo CPU dell'arena DMA
+
+Il diagnostico crea un'arena di quattro pagine dati e tre tabelle
+senza collegarla a un dispositivo. Il teardown scollega lo slot PML4,
+attende gli AP e verifica il ripristino del budget. La richiesta 104
+attesta flush, EOI e ritorno IRETQ su ogni AP. Il runner verifica che
+le quattro lease siano assenti dall'inventario finale.
+
+- 10/10 boot diagnostici QEMU a 4 CPU.
+  Evidenza: kernel/build/ipi-service-125d0d2673e4410b89344918a1d70e6b.
+- 10/10 boot ordinari QEMU a 4 CPU.
+  Evidenza: kernel/build/ap-runtime-60333af0b11b460689353b61760c0eff.
+- Suite dma-arena, ipi-service e layout superate. Log in
+  kernel/build/test-run-e63338558d50401bb4c7a9ae9da1c919,
+  kernel/build/test-run-07d2b92e1edd469d820c71b95d4a1bc1 e
+  kernel/build/test-run-b6a9c6054eac4c528f8039a8894ee1d8.
+- Audit di emergenza passato sulle due immagini.
+
+Le prove isolano il ramo CPU. Il ciclo dispositivo e VT-d resta
+responsabilità del chiamante e non è stato rieseguito in questa campagna.

@@ -1,4 +1,7 @@
 #include "arena.h"
+#ifdef KERNEL_AP_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#endif
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/interrupts/apic/probe.h"
 #include "lib/memory/address_ranges.h"
@@ -143,7 +146,12 @@ int x86_dma_arena_unbind(X86_DMA_ARENA *owner)
 
         root[X86_DMA_SLOT] = 0;
 
-        if (!x86_fb_flush(cpu.Root) || root[X86_DMA_SLOT]) return 0;
+#ifdef KERNEL_AP_RUNTIME
+        if (xis_native_shootdown()) x86_paging_generation_bump();
+        else
+#endif
+        if (!x86_fb_flush(cpu.Root)) return 0;
+        if (root[X86_DMA_SLOT]) return 0;
 
         owner->Published = 0;
     }

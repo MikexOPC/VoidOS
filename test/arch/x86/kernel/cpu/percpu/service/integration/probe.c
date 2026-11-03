@@ -1,4 +1,5 @@
 #include "probe.h"
+#include "arch/x86/mm/dma/arena.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "arch/x86/configs/boot_profile.h"
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
@@ -98,6 +99,17 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
         xis_native_abort(0x4b34544c42485032ULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
         if (!xis_native_wait(index, 1, XIS_READ_ROUND + 3)) xis_native_abort(0x4b34544c42485033ULL);
+    X86_DMA_ARENA dma = {0};
+    if (!x86_dma_arena_bind(context, window, xp_panic_native.Lapic, inventory,
+        x86_paging_inventory_capture_lapic, 4, &dma) || dma.Allocated != 3)
+        xis_native_abort(0x4b34544c42444d31ULL);
+    number_private("KERNEL_IPI_DMA_DATA: ", dma.Authority.Data.Base);
+    for (uint32_t index = 0; index < dma.Allocated; ++index)
+        number_private("KERNEL_IPI_DMA_TABLE: ", dma.Authority.Tables[index].Base);
+    if (!x86_dma_arena_unbind(&dma) || x86_dma_owner() || x86_fb_root()[X86_DMA_SLOT])
+        xis_native_abort(0x4b34544c42444d32ULL);
+    for (uint32_t index = 1; index < xis_native.Count; ++index)
+        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 4)) xis_native_abort(0x4b34544c42444d33ULL);
 #endif
     if (!kernel_log(0, "KERNEL_IPI_REMAP_VERIFIED")) xis_native_abort(0x4b34544c4252454cULL);
 #endif

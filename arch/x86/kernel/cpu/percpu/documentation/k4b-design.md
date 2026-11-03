@@ -93,3 +93,12 @@ dati e tabelle. Prima della pubblicazione del servizio IPI usa il
 reload locale esistente. Il teardown richiede un heap senza utenti.
 Il diagnostico positivo crea un binding temporaneo dopo l'avvio AP
 e lo rimuove senza inizializzare l'allocatore heap sopra il binding.
+
+## Rimozione del ramo dell'arena DMA
+
+Il BSP scollega lo slot CPU, attende la barriera del gruppo e poi
+rimuove l'autorità e restituisce i frame. Il chiamante deve avere
+già fermato il dispositivo e revocato le traduzioni DMA. La sessione
+VirtIO esegue reset e disattivazione della traduzione prima del
+rilascio. Il diagnostico usa un'arena senza dispositivo associato
+per verificare separatamente la barriera CPU.
