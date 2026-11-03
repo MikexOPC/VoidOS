@@ -1,4 +1,7 @@
 #include "mapping.h"
+#ifdef KERNEL_AP_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#endif
 #include "arch/x86/mm/window/access.h"
 
 // ====== x86_vgpu_authority ======
@@ -31,7 +34,12 @@ int x86_vgpu_unbind(X86_VGPU_MAPPING *owner)
     if (owner->Published) {
         if (root[X86_GPU_SLOT] && (root[X86_GPU_SLOT]&~0x60ULL) != (owner->Authority.Tables[0].Base|3)) return 0;
         root[X86_GPU_SLOT]=0;
-        if (!x86_fb_flush(owner->Authority.Root) || root[X86_GPU_SLOT]) return 0;
+#ifdef KERNEL_AP_RUNTIME
+        if (xis_native_shootdown()) x86_paging_generation_bump();
+        else
+#endif
+        if (!x86_fb_flush(owner->Authority.Root)) return 0;
+        if (root[X86_GPU_SLOT]) return 0;
         owner->Published=0;
     } else if (root[X86_GPU_SLOT]) return 0;
     if (owner->Registered) {
