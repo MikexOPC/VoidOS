@@ -139,3 +139,27 @@ le quattro lease siano assenti dall'inventario finale.
 
 Le prove isolano il ramo CPU. Il ciclo dispositivo e VT-d resta
 responsabilità del chiamante e non è stato rieseguito in questa campagna.
+
+## Rimozione del ramo framebuffer GOP
+
+Il profilo positivo crea e rimuove un mapping temporaneo dopo l'avvio
+degli AP. La richiesta 105 attesta flush, EOI e ritorno IRETQ su ogni
+AP. Il runner verifica slot e lease delle tabelle, mentre il teardown
+controlla il budget fisico. Il mapping riguarda la VRAM GOP e non
+libera la memoria del dispositivo.
+
+- 10/10 boot diagnostici QEMU a 4 CPU.
+  Evidenza: kernel/build/ipi-service-dd2035d54354456c8d0254055e35ce4e.
+- 10/10 boot ordinari QEMU a 4 CPU.
+  Evidenza: kernel/build/ap-runtime-d68e78b60c404b4cbb43f6d7c9209c23.
+- Suite x86-framebuffer, ipi-service e layout passate. Log in
+  kernel/build/test-run-c2c44248543047198a0fdafd7fc6b329,
+  kernel/build/test-run-2d645386f6b048df8c2c8b42652cc417 e
+  kernel/build/test-run-f90480fe646d4154a5bdcb8bbfe5e7f2.
+- Audit di emergenza passato sulle due immagini finali.
+
+La prima immagine diagnostica ha raggiunto VGPU_MAPPING_FAILED:
+VirtIO era ancora inizializzato dopo aver differito il mapping GOP.
+La campagna finale separa l'avvio video ordinario dal profilo IPI e
+riparte da zero. Evidenza iniziale:
+kernel/build/ipi-service-8b44d81387e84b34af0f233b266bffb5.

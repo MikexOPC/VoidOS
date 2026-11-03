@@ -110,6 +110,17 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
         xis_native_abort(0x4b34544c42444d32ULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
         if (!xis_native_wait(index, 1, XIS_READ_ROUND + 4)) xis_native_abort(0x4b34544c42444d33ULL);
+    X86_FB_MAPPING framebuffer = {0};
+    if (!x86_fb_bind(context, window, xp_panic_native.Lapic, inventory, &framebuffer) ||
+        !framebuffer.Published || !framebuffer.Allocated ||
+        framebuffer.Allocated > X86_PAGING_VIDEO_TABLES) xis_native_abort(0x4b34544c42464231ULL);
+    number_private("KERNEL_IPI_FB_TABLE_COUNT: ", framebuffer.Allocated);
+    for (uint32_t index = 0; index < framebuffer.Allocated; ++index)
+        number_private("KERNEL_IPI_FB_TABLE: ", framebuffer.Authority.Tables[index].Base);
+    if (!x86_fb_unbind(&framebuffer) || x86_paging_video_owner() || x86_fb_root()[X86_FB_SLOT])
+        xis_native_abort(0x4b34544c42464232ULL);
+    for (uint32_t index = 1; index < xis_native.Count; ++index)
+        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 5)) xis_native_abort(0x4b34544c42464233ULL);
 #endif
     if (!kernel_log(0, "KERNEL_IPI_REMAP_VERIFIED")) xis_native_abort(0x4b34544c4252454cULL);
 #endif
