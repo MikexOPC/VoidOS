@@ -39,3 +39,17 @@ pub extern "C" fn xis_fail(index: u32, caller: u32) -> u32 { SERVICE.fail(index,
 
 #[unsafe(no_mangle)]
 pub extern "C" fn xis_value(index: u32, field: u32) -> u64 { SERVICE.value(index, field) }
+
+// ====== xis_publish_operation ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xis_publish_operation(index: u32, caller: u32, operation: u32) -> u64 {
+    SERVICE.publish_operation(index, caller, operation)
+}
+
+// ====== xis_operation ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xis_operation(index: u32, caller: u32, generation: u64) -> u32 {
+    SERVICE.operation(index, caller, generation)
+}

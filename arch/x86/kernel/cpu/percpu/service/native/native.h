@@ -25,6 +25,7 @@ extern const BOOT_U64 xis_irq_targets[224];
 extern const unsigned char xis_irq_begin[], xis_irq_end[];
 int xis_native_prepare(void);
 uint32_t xis_native_enter(void *frame);
+int xis_native_flush_context(void);
 void xis_native_dispatch(const X86_IRQ_FRAME *frame);
 void xis_native_verified(const unsigned char *fx);
 int xis_native_send(uint32_t index);

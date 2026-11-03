@@ -24,7 +24,14 @@ __declspec(noreturn) void xis_service_probe(void) {
 #else
     for (uint32_t round = 1; round <= 100; ++round) {
         for (uint32_t index = 1; index < xis_native.Count; ++index) {
-            uint64_t generation = xis_publish(index, 0);
+            uint32_t operation = XIS_PING;
+#if KERNEL_TEST_AP_SERVICE == 1
+            if (round == 100) {
+                if (index == 1 && !xis_native_flush_context()) xis_native_abort(0x4b34544c42425350ULL);
+                operation = XIS_FLUSH_CONTEXT;
+            }
+#endif
+            uint64_t generation = xis_publish_operation(index, 0, operation);
             if (generation != round || !xis_native_send(index)) xis_native_abort(0x4b3449504953454eULL);
             XIS_WAIT wait = {xis_native_now, NULL, xp_panic_native.Source.Mask, KERNEL_PM_TIMER_HZ, 1000000, 0};
             uint32_t result = xis_wait(index, generation, &wait);

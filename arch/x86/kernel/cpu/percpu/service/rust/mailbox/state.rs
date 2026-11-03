@@ -2,6 +2,8 @@
 use core::sync::atomic::{AtomicU64, Ordering::{Acquire, Release, AcqRel}};
 
 pub const INVALID: u64 = u64::MAX;
+const FLUSH_BIT: u64 = 1 << 63;
+const GENERATION_MASK: u64 = FLUSH_BIT - 1;
 
 #[repr(C, align(64))]
 pub struct Mailbox {
@@ -57,12 +59,21 @@ impl Service {
     // ====== publish ======
 
     pub fn publish(&self, index: u32, caller: u32) -> u64 {
+        self.publish_operation(index, caller, 0)
+    }
+
+    // ====== publish_operation ======
+
+    pub fn publish_operation(&self, index: u32, caller: u32, operation: u32) -> u64 {
         let Some(slot) = self.slot(index) else { return INVALID; };
-        if caller != 0 || slot.phase.load(Acquire) != 1 { return INVALID; }
-        let request = slot.request.load(Acquire);
+        if operation > 1 || caller != 0 || slot.phase.load(Acquire) != 1 { return INVALID; }
+        let encoded = slot.request.load(Acquire);
+        let request = encoded & GENERATION_MASK;
         if slot.ack.load(Acquire) != request { return 0; }
-        let Some(next) = request.checked_add(1).filter(|value| *value != INVALID) else { return INVALID; };
-        if slot.request.compare_exchange(request, next, AcqRel, Acquire).is_err() { return 0; }
+        if request == GENERATION_MASK { return INVALID; }
+        let next = request + 1;
+        let pending = next | (u64::from(operation) << 63);
+        if slot.request.compare_exchange(encoded, pending, AcqRel, Acquire).is_err() { return 0; }
         if slot.phase.load(Acquire) == 1 { next } else { INVALID }
     }
 
@@ -71,7 +82,7 @@ impl Service {
     pub fn claim(&self, index: u32, caller: u32) -> u64 {
         let Some(slot) = self.slot(index) else { return INVALID; };
         if caller != index || slot.phase.load(Acquire) != 1 { return INVALID; }
-        let request = slot.request.load(Acquire);
+        let request = slot.request.load(Acquire) & GENERATION_MASK;
         let ack = slot.ack.load(Acquire);
         if request == ack { return 0; }
         if ack.checked_add(1) != Some(request) ||
@@ -79,12 +90,23 @@ impl Service {
         if slot.phase.load(Acquire) == 1 { request } else { INVALID }
     }
 
+    // ====== operation ======
+
+    pub fn operation(&self, index: u32, caller: u32, generation: u64) -> u32 {
+        let Some(slot) = self.slot(index) else { return u32::MAX; };
+        let encoded = slot.request.load(Acquire);
+        if caller != index || generation == 0 || (encoded & GENERATION_MASK) != generation ||
+            slot.claimed.load(Acquire) != generation || slot.ack.load(Acquire) >= generation ||
+            slot.phase.load(Acquire) != 1 { return u32::MAX; }
+        (encoded >> 63) as u32
+    }
+
     // ====== complete ======
 
     pub fn complete(&self, index: u32, caller: u32, generation: u64) -> u32 {
         let Some(slot) = self.slot(index) else { return 0; };
         if caller != index || generation == 0 || generation == INVALID || slot.phase.load(Acquire) != 1 ||
-            slot.request.load(Acquire) != generation || slot.claimed.load(Acquire) != generation { return 0; }
+            (slot.request.load(Acquire) & GENERATION_MASK) != generation || slot.claimed.load(Acquire) != generation { return 0; }
         u32::from(slot.ack.compare_exchange(generation - 1, generation, Release, Acquire).is_ok())
     }
 
@@ -102,7 +124,7 @@ impl Service {
     pub fn value(&self, index: u32, field: u32) -> u64 {
         let Some(slot) = self.slot(index) else { return INVALID; };
         match field {
-            0 => slot.phase.load(Acquire), 1 => slot.request.load(Acquire),
+            0 => slot.phase.load(Acquire), 1 => slot.request.load(Acquire) & GENERATION_MASK,
             2 => slot.claimed.load(Acquire), 3 => slot.ack.load(Acquire), _ => INVALID,
         }
     }
