@@ -39,7 +39,7 @@ try {
     $nativeTest = "$project/test/arch/x86/kernel/cpu/percpu/service/native_test.c"
     foreach ($part in @(@($native, 'native'), @($nativeTest, 'native-test'))) {
         Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-            '/MD','/O2','/UNDEBUG','/c',"/I$project",$part[0],"/Fo$out/$($part[1]).obj","/Fd$out/native.pdb")
+            '/MD','/O2','/UNDEBUG','/DKERNEL_TEST_AP_SERVICE=1','/c',"/I$project",$part[0],"/Fo$out/$($part[1]).obj","/Fd$out/native.pdb")
     }
     Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/MD','/fsanitize=address',"/Fe$out/native.exe",
         "$out/native.obj","$out/native-test.obj","$out/mailbox.obj",'/link','/incremental:no','/DEBUG','/WX')

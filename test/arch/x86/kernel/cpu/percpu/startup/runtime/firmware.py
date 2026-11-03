@@ -79,7 +79,7 @@ def verify(vm, log, count, panic=False, reason=None):
     if log.has("KERNEL_AP_TRANSITION_TEST_READY") or log.has("KERNEL_AP_JOINT_RETENTION_GUARDS_OK"):
         raise RuntimeError("Diagnostic probe executed in ordinary boot")
     if count == 1:
-        if log.count("KERNEL_AP_RUNTIME_BSP_ONLY", "OK") != 1 or log.has("KERNEL_AP_RUNTIME_READY"):
+        if log.count("KERNEL_AP_RUNTIME_BSP_ONLY", "OK") != 1 or log.has("KERNEL_AP_RUNTIME_READY") or log.has_number("KERNEL_AP_RUNTIME_IPI_ACKS"):
             raise RuntimeError("BSP-only path differs")
     elif log.count("KERNEL_AP_RUNTIME_READY", "OK") != 1 or not log.before("KERNEL_AP_RUNTIME_READY", "KERNEL_TIMER_OK"):
         raise RuntimeError("AP startup missing or BSP did not continue")
@@ -105,7 +105,9 @@ def verify(vm, log, count, panic=False, reason=None):
         if root != log.number("KERNEL_AP_TRANSITION_ROOT"):
             raise RuntimeError("BSP left the shared operational root")
         first = log.number("KERNEL_AP_CONTEXTS")
-        launch.verify_parked_cpus(vm, log, root, first, panic)
+        if log.numbers("KERNEL_AP_RUNTIME_IPI_ACKS") != [count - 1]:
+            raise RuntimeError("Ordinary AP PING acknowledgements differ")
+        launch.verify_parked_cpus(vm, log, root, first, panic, count=count, service=True)
         transition_memory(vm, log, root, pool, live, pins)
         for index in range(1, count):
             address = first + (index - 1) * 448
@@ -137,7 +139,7 @@ def verify_panic(vm, log, count, root, texts, expected_reason=None):
         record = cpu.memory(vm, address, 64)
         if record[:3] != [address, 1, index] or record[7] != root or any(record[31:]):
             raise RuntimeError("Continuation panic record ownership/root/reserved differs")
-        if record[11] != 8 or record[14] not in (0, 16) or record[12] & 0x7600 or not record[12] & 2:
+        if record[11] != 8 or record[14] not in (0, 16) or record[12] & (0x7400 if index else 0x7600) or not record[12] & 2:
             raise RuntimeError("Continuation captured ring/flags differ")
         if record[19] != record[13] or not 0xffffffff80000000 <= record[10] < 0xffffffff80400000:
             raise RuntimeError("Continuation captured RIP/RSP differs")
@@ -179,7 +181,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--boots", type=int, default=10, choices=range(1, 11))
-    parser.add_argument("--smp", type=int, required=True, choices=(1, 4))
+    parser.add_argument("--smp", type=int, required=True, choices=(1, 2, 4, 8))
     parser.add_argument("--panic", action="store_true")
     args = parser.parse_args()
     if args.panic and args.smp != 4:

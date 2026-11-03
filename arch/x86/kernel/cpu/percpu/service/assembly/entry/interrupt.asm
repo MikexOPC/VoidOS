@@ -45,12 +45,14 @@ xis_common:
     and rsp, -16
     sub rsp, 544
     fxsave64 [rsp+32]
+%ifdef KERNEL_TEST_AP_SERVICE
     fninit
 %assign i 0
 %rep 16
     pxor xmm%+i, xmm%+i
 %assign i i+1
 %endrep
+%endif
     cld
     [warning -reloc-rel-dword]
     call xis_native_dispatch

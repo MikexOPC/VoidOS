@@ -92,7 +92,7 @@ def verify_records(vm, log, root, owner, before, frames):
         if record[3] not in (2, 3) or record[5] or record[8:10] != [2, 0] or (index == owner and record[3] != 2):
             raise RuntimeError("NMI origin/follower record differs")
         contenders += int(record[3] == 2)
-        if record[11] != 8 or record[14] not in (0, 16) or record[12] & 0x7600 or not record[12] & 2:
+        if record[11] != 8 or record[14] not in (0, 16) or record[12] & (0x7400 if index else 0x7600) or not record[12] & 2:
             raise RuntimeError("Captured ring/flags differ")
         if record[19] != record[13] or not 0xffffffff80000000 <= record[10] < 0xffffffff80400000:
             raise RuntimeError("Captured RIP/GPR RSP differs")
@@ -133,7 +133,7 @@ def verify(vm, initial, owner, case, before, frames, budget):
     root = launch.value(before[0], "CR3") if before else initial.number("KERNEL_AP_TRANSITION_ROOT")
     records, contenders = verify_records(vm, initial, root, owner, before, frames)
     if before is None:
-        launch.verify_parked_cpus(vm, initial, root, initial.number("KERNEL_AP_CONTEXTS"), panic=True, reporter=owner)
+        launch.verify_parked_cpus(vm, initial, root, initial.number("KERNEL_AP_CONTEXTS"), panic=True, reporter=owner, service=True)
     pool, live, pins, free = runtime.allocator(vm, initial)
     if free != budget:
         raise RuntimeError("Panic allocated or released physical pages")

@@ -10,6 +10,7 @@ bits 64
 default rel
 section .text
 global xis_service_loop
+%ifdef KERNEL_TEST_AP_SERVICE
 extern xis_native_verified, xis_native_abort
 
 ; ====== xis_service_loop ======
@@ -108,3 +109,16 @@ xis_service_loop:
     call xis_native_abort
     [warning +reloc-rel-dword]
     ud2
+
+%else
+
+; ====== xis_service_loop ======
+
+xis_service_loop:
+    sub rsp, 576
+.idle:
+    sti
+    hlt
+    cli
+    jmp .idle
+%endif

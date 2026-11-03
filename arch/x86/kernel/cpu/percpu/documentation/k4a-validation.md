@@ -1,11 +1,13 @@
 # K4-A — Evidenze e lavoro rimanente
 
-2 novembre 2026. Verifica dopo i refactor K4 di `26044e4` e i fix della review:
+## Checkpoint del 2 novembre 2026
+
+Verifica dopo i refactor K4 di `26044e4` e i fix della review:
 diagnostico IPI e panic con **2, 4 e 8 CPU**, boot ordinario con 1 e 4 CPU.
 Campagna **80/80**: 50 boot positivi e 30 panic intenzionali previsti.
 Il codice accetta gruppi di 2–64 CPU; non sono prove hardware su 64 CPU.
-Gli AP del boot ordinario mantengono il parcheggio K3 a IF=0.
-K4 non è chiusa: integrazione ordinaria, shootdown e preemption restano da fare.
+In quel checkpoint gli AP ordinari erano parcheggiati a IF=0.
+A quel punto mancavano integrazione ordinaria, shootdown e preemption.
 
 ## Prove eseguite
 
@@ -101,9 +103,45 @@ Nessuna certificazione di 64 CPU, hardware fisico, x2APIC, hotplug,
 task AP o sorgenti IRQ spostate dal BSP.
 IDT immutabile tramite API, non nuova protezione PTE read-only.
 
-## Prossimo incremento nello stesso modulo
+## PING nel boot ordinario
 
-Integrare il servizio nel boot ordinario con il relativo contratto di
-inizializzazione/idle e profili CPU supportati; poi progettare lo shootdown
-K4-B. Il solo PING non autorizza a liberare pagine usate da altri core e
-non dimostra uno scheduler SMP. Vedere il [design](k4a-design.md).
+Il BSP attende READY, invia la generazione 1 e verifica l'ACK dopo EOI
+per ogni AP. Su una CPU il servizio resta inattivo. Su più CPU il runner
+verifica anche stack, CR3, GS, IDT del servizio e ritorno a HLT con IF=1.
+Driver e scheduler continuano sul BSP.
+
+Build ordinaria MSVC, NASM e Rust superata. La mappa contiene il loop
+ordinario e lascia nel diagnostico le sonde di stato. Audit d'emergenza
+superato su immagini ordinaria, diagnostica, panic e console.
+Cinque suite host passate: ap-runtime, ipi-service, layout, ap-native
+e percpu-panic. Il modello AP verifica anche arresto e risorse trattenute
+per READY mancante, pubblicazione o invio falliti e ACK assente.
+
+| CPU | Boot ordinari | Evidenza in kernel/build |
+| --- | --- | --- |
+| 1 | 10/10 | ap-runtime-d3151a2e131b41518e63acf3345d9a0b |
+| 2 | 10/10 | ap-runtime-65af2dd68d744f2f9d5892704d76c4f8 |
+| 4 | 10/10 | ap-runtime-f44796cf425a4cc880d68ca48a0e2132 |
+| 8 | 10/10 | ap-runtime-86bd7832e0424b778ce6840ce144669e |
+
+L'immagine ordinaria ha SHA-256
+`9FE01FDF2F2713DC97092E8CDD80D4109CA4CC33BCFD0C18CE8878E067AA2224`.
+Il primo tentativo a due CPU aveva ACK valido e kernel pronto. Il runner
+cercava il contatore numerico tra i marker testuali. Dopo la correzione,
+la campagna a due CPU è ripartita da zero.
+
+Regressioni a 4 CPU:
+
+| Profilo | Esito | Evidenza in kernel/build |
+| --- | --- | --- |
+| Diagnostico IPI | 10/10 | ipi-service-4701a9223941449899e2569d13039312 |
+| Panic coordinato dopo il PING ordinario | 10/10 attesi | ap-runtime-c49e762f6e4d4834812e0fbc2725d4ca |
+| ACK mancante | 3/3 arresti attesi | ipi-service-5a753968147048d3a2c420439a318247 |
+| Panic dentro l'handler IPI | 3/3 arresti attesi | ipi-service-0c6c75f30dfc4bd29842c1571c64d103 |
+| NMI esterno sul boot ordinario | 1/1 arresto atteso | ap-panic-stress-6c16c142abe0455ba47e9da77f0f1fee |
+| Console GOP, pixel, mouse e cleanup | 1/1 | pointer-interactive-check-4c9eb54eddb3432fbaa14b5a73cf7092 |
+
+La prova console è breve. I profili diagnostici stale-ack e panic-idle
+non sono stati rieseguiti su queste immagini. Le prove sono per QEMU/OVMF.
+
+L'invalidazione delle traduzioni condivise resta il compito K4-B.

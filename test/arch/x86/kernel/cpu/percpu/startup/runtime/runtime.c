@@ -18,6 +18,8 @@ static uint32_t boot_cpu;
 static int stop_expected, rollback_broken;
 static jmp_buf stopped;
 XP_PANIC_NATIVE xp_panic_native;
+XIS_NATIVE xis_native;
+static uint32_t pings, ping_failure;
 const unsigned char xs_blob_template[4096] = {0};
 const unsigned char xs_private_entry[1] = {0};
 
@@ -82,6 +84,28 @@ int xt_verify_live_tables(X86_AP_TRANSITION *t) { assert(t == &transition); retu
 uint64_t xs_snapshot(void) { return snapshot; }
 uint64_t xp_panic_value(uint32_t field) { assert(field == XP_PANIC_ONLINE || field == XP_PANIC_OWNER); return field == XP_PANIC_ONLINE ? online : 0; }
 
+// ====== service_model ======
+
+int xis_native_prepare(void) { assert(committed && !runs); return pass_private(); }
+int xis_native_wait(uint32_t index, uint32_t field, uint64_t value) {
+    assert(runs == identities.Count - 1 && index == pings + 1 && !field && value == XIS_READY);
+    return ping_failure != 1;
+}
+uint64_t xis_publish(uint32_t index, uint32_t caller) {
+    assert(index == pings + 1 && !caller); return ping_failure == 2 ? 0 : 1;
+}
+int xis_native_send(uint32_t index) { assert(index == pings + 1); return ping_failure != 3; }
+int xis_native_now(void *context, uint32_t *now) { (void)context; (void)now; return 0; }
+uint32_t xis_wait(uint32_t index, uint64_t generation, const XIS_WAIT *wait) {
+    assert(index == pings + 1 && generation == 1 && wait->Read == xis_native_now && wait->MaxPolls);
+    if (ping_failure == 4) return XIS_WAIT_FAILED;
+    ++pings;
+    return XIS_WAIT_ACK;
+}
+__declspec(noreturn) void xis_native_abort(uint64_t reason) {
+    assert(ping_failure && reason == 0x4b3449504950494eULL); longjmp(stopped, 1);
+}
+
 // ====== reset_private ======
 
 static void reset_private(uint32_t count) {
@@ -92,6 +116,7 @@ static void reset_private(uint32_t count) {
     transition.Pool = &pool; transition.Code = &low; pool.PhysicalBits = 48;
     step = fail_at = committed = erases = cancels = runs = nexts = parked = 0;
     snapshot = 0; online = 1; stop_expected = rollback_broken = 0;
+    pings = ping_failure = 0;
     irq_state = 0; boot_cpu = 1;
 }
 
@@ -107,6 +132,7 @@ static void expect_private(X86_AP_TRANSITION *t, const X86_LAPIC_MAPPING *l, int
 int main(void) {
     reset_private(4);
     expect_private(&transition, &lapic, 1);
+    assert(pings == 3);
     uint32_t stages = step;
     assert(committed && runs == 3 && nexts == 2 && parked == 3 && !erases && !cancels && online == 15);
     expect_private(&transition, &lapic, 0); assert(step == stages);
@@ -130,6 +156,11 @@ int main(void) {
     reset_private(4); transition.Self = 0; expect_private(&transition, &lapic, 0); assert(!step);
     reset_private(4); rollback_broken = stop_expected = 1; fail_at = 4;
     if (!setjmp(stopped)) { (void)x86_ap_runtime_start(&transition, &lapic); assert(0); }
+    for (uint32_t failure = 1; failure <= 4; ++failure) {
+        reset_private(4); ping_failure = failure;
+        if (!setjmp(stopped)) { (void)x86_ap_runtime_start(&transition, &lapic); assert(0); }
+        assert(committed && runs == 3 && !pings && !erases && !cancels);
+    }
     printf("AP_RUNTIME_HOST_PASS: %u failure stages, order, duplicate, BSP-only, bounds and terminal rollback\n", stages);
     return 0;
 }
