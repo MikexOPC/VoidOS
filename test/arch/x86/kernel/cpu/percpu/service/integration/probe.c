@@ -67,8 +67,11 @@ __declspec(noreturn) void xis_service_probe(X86_PAGE_WINDOW *window) {
         number_private("KERNEL_IPI_ACK: ", xis_value(index, XIS_ACK));
     }
 #ifdef XIS_REMAP_TEST
-    if (!kernel_physical_release_after_unmap(window->Pool, &old) ||
-        !kernel_log(0, "KERNEL_IPI_REMAP_VERIFIED")) xis_native_abort(0x4b34544c4252454cULL);
+    if (!kernel_physical_release_after_unmap(window->Pool, &old) || !x86_page_window_release(window))
+        xis_native_abort(0x4b34544c4252454cULL);
+    for (uint32_t index = 1; index < xis_native.Count; ++index)
+        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 1)) xis_native_abort(0x4b34544c42444f4eULL);
+    if (!kernel_log(0, "KERNEL_IPI_REMAP_VERIFIED")) xis_native_abort(0x4b34544c4252454cULL);
 #endif
     if (!kernel_log(0, "KERNEL_IPI_SERVICE_READY")) xis_native_abort(0x4b344950494c4f47ULL);
 #if KERNEL_TEST_AP_SERVICE == 4

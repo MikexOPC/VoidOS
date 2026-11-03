@@ -97,3 +97,21 @@ int xis_native_send(uint32_t index) {
     return x86_icr_send(&port, xp_panic_native.Ids[index], 0x4000 | XIS_VECTOR,
         X86_ICR_CHECK_ESR | X86_ICR_WAIT_SENT) == X86_ICR_OK;
 }
+
+// ====== xis_native_shootdown ======
+
+int xis_native_shootdown(void) {
+    if (!ks_atomic_load_acquire(&xis_native.Published)) return 0;
+    uint64_t saved_if = ks_irq_save();
+    if (xis_native_index() != 0 || !xis_native_flush_context())
+        xis_native_abort(0x4b34544c42524f4fULL);
+    for (uint32_t index = 1; index < xis_native.Count; ++index) {
+        uint64_t generation = xis_publish_operation(index, 0, XIS_FLUSH_CONTEXT);
+        XIS_WAIT wait = {xis_native_now, NULL, xp_panic_native.Source.Mask, KERNEL_PM_TIMER_HZ, 1000000, 0};
+        if (!generation || generation == XIS_INVALID || !xis_native_send(index) ||
+            xis_wait(index, generation, &wait) != XIS_WAIT_ACK)
+            xis_native_abort(0x4b34544c4241434bULL);
+    }
+    ks_irq_restore(saved_if);
+    return 1;
+}

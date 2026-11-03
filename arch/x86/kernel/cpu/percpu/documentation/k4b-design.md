@@ -58,3 +58,16 @@ vecchio frame è invece l'ACK del flush remoto, seguito dalla rilettura
 su tutti gli AP. Il secondo frame resta pinned fino all'arresto
 diagnostico. Il paging ordinario richiederà una barriera propria prima
 di pubblicare la generazione condivisa.
+
+## Prima integrazione nel paging ordinario
+
+Il rilascio della page window rimuove le PTE e invoca una sola barriera
+per l'intero gruppo. A servizio pubblicato, il BSP ricarica CR3,
+attende gli ACK e solo dopo avanza la generazione e restituisce il
+lease. Prima della pubblicazione vale l'invalidazione locale esistente.
+La finestra resta ad uso esclusivo del chiamante durante il rilascio.
+Se la barriera fallisce, il panic trattiene il lease.
+
+Il diagnostico usa lo stesso percorso per smontare il frame sostitutivo
+dopo l'ultima lettura degli AP. Le altre API di mapping e la rimozione di
+tabelle intermedie richiedono ancora integrazione propria.
