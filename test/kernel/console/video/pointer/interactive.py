@@ -327,6 +327,13 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
         if vm.process.returncode: raise RuntimeError('QEMU exit failure')
         translation = (translation_check(log,mouse_trace.read_text(errors='replace'),fallbacks,presenting,stall) if iommu else
             untranslated_check(log) if absent else None)
+        if iommu and smp > 1 and log.has('KERNEL_VGPU_SESSION_RELEASED'):
+            # K4-B: the session teardown must wait for AP context flushes before reusing its frames.
+            before_flush = log.number('KERNEL_VGPU_SESSION_SHOOTDOWNS_BEFORE')
+            after_flush = log.number('KERNEL_VGPU_SESSION_SHOOTDOWNS_AFTER')
+            if after_flush <= before_flush:
+                raise RuntimeError('VirtIO teardown released CPU mappings without AP shootdown')
+            translation = dict(translation or {}, Shootdowns=after_flush - before_flush)
         return dict(ConfiguredVcpus=smp,OsCpusReady=ap_state['OsCpusInitialized'] if ap_state else 1,ApRuntime=ap_state,Soak=soak,Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
             EscCancelled=True,EscMouseProgress=True,CancelScenes=1,
             DrainSeconds=latencies,BudgetBefore=before,BudgetAfter=before,

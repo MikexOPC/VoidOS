@@ -201,4 +201,53 @@ ricadono in verifiche ECAM, inventario e controlli di sovrapposizione.
 Il BSP stava eseguendo codice prima del teardown. I campioni non
 misurano la durata totale né escludono altri colli di bottiglia.
 Evidenza: kernel/build/k4b-vtd-startup-sample-c10ace20f57e4a92adbda9c3a047d1cb/monitor.log.
-La prova end-to-end della sessione VT-d resta aperta.
+La prova end-to-end è nella chiusura sotto.
+
+## Chiusura K4-B
+
+3 novembre 2026. K4-B è chiusa sul profilo QEMU xAPIC a quattro CPU.
+
+**Sessione VirtIO/VT-d.** Il blocco precedente non era un difetto del
+kernel: un boot dura circa 5,5 minuti sotto TCG e la VM era stata
+fermata a mano. Inoltre la build del profilo superava il limite di
+32.767 caratteri della riga di comando del linker; ora usa un
+response file. Il runner verifica traduzione attivata e revocata
+(trace `vtd_dmar_enable` 1 → 0), nessun fault della GPU, budget fisico
+identico prima e dopo, e almeno uno shootdown confermato dagli AP
+durante il teardown (`KERNEL_VGPU_SESSION_SHOOTDOWNS_*`).
+
+**Barriera fallita in una vera API di rilascio.** Profilo
+`release-missing-ack`: AP1 riceve il flush di `x86_page_window_release`,
+completa EOI e non conferma. Il BSP va in panic coordinato. A VM ferma
+il frame risulta ancora lease vivo, pinned una volta, con il contenuto
+scritto prima del rilascio.
+
+**Review dei percorsi di riuso.**
+
+| Percorso | Barriera |
+| --- | --- |
+| Page window, regioni, heap, arena DMA, framebuffer, VirtIO, registri VT-d | Shootdown prima del rilascio |
+| Stack dei task dello scheduler | Shootdown aggiunto ora: lo scheduler gira dopo l'avvio degli AP |
+| Stack del kernel e stack principale | Locale: solo prima del commit e dello switch, prima degli AP |
+| Risorse AP e tabelle di transizione | Locale: rollback solo se il gruppo non è trattenuto, prima del commit |
+| Pagina SIPI | Mai rilasciata nel boot ordinario |
+| Tabelle VT-d (dominio e coda) | CPU tramite page window; lato dispositivo servono reset GPU e invalidazione IOTLB |
+
+I diagnostici IPI contano ora le generazioni dalla base trovata dalla
+probe (`KERNEL_IPI_BASE_GENERATION`), perché gli shootdown del boot
+consumano generazioni prima della probe.
+
+**Campagna finale sull'immagine risultante.**
+
+| Profilo QEMU | Esito | Evidenza in kernel/build |
+| --- | --- | --- |
+| Boot ordinario, 4 CPU | 10/10 | ap-runtime-ff4e8485ea6a40888acb5ed55aec116e |
+| Diagnostico IPI con rimappatura | 10/10 | ipi-service-dc52577db8aa430bae3854d7f26b6a57 |
+| Rilascio con ACK mancante | 10/10 arresti attesi | ipi-service-4bd8ad49de5e478bbf7b668af4ae7c86 |
+| Console VirtIO/VT-d, 4 CPU, teardown | 10/10, 3 shootdown per boot | pointer-interactive-check-3487753778c7468e991226dd204828c2 |
+
+Prima della campagna finale sono passati anche ACK mancante, ACK di
+generazione errata, panic in idle e nell'handler, 2 e 8 CPU, panic
+ordinario e boot a una CPU. Suite host: ipi-service, x86-scheduler,
+scheduler, console, x86-vgpu-present, x86-virtio, pointer, ap-runtime e
+layout. Coverage non misurata. Hardware fisico, x2APIC e PCID non provati.

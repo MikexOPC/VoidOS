@@ -1,6 +1,9 @@
 #include "session.h"
 #include "kernel/diagnostics/log.h"
 #include <intrin.h>
+#ifdef KERNEL_AP_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#endif
 
 // ====== ticks_private ======
 
@@ -158,6 +161,11 @@ int x86_vgpu_session_stop(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu)
     )
     return 0;
 
+#ifdef KERNEL_AP_RUNTIME
+    // K4-B evidence: AP flushes acknowledged while the session releases its CPU mappings.
+    if (!number_private("KERNEL_VGPU_SESSION_SHOOTDOWNS_BEFORE: ", xis_native_shootdowns())) return 0;
+#endif
+
     // The GPU is stopped and reset before the translation it uses is turned off.
     if (!x86_vgpu_present_close(&self->Present)) {
         self->State = X86_VGPU_SESSION_RETAINED;
@@ -187,6 +195,9 @@ int x86_vgpu_session_stop(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu)
     if (!released || !kernel_physical_budget_read(gpu->Window->Pool, &after)) return 0;
     return released && kernel_latency_report("KERNEL_VGPU_QUIET_PM", &self->QuietTicks) &&
         number_private("KERNEL_VGPU_SESSION_BUDGET_AFTER: ", after) &&
+#ifdef KERNEL_AP_RUNTIME
+        number_private("KERNEL_VGPU_SESSION_SHOOTDOWNS_AFTER: ", xis_native_shootdowns()) &&
+#endif
         kernel_log(0, "KERNEL_VGPU_SESSION_RELEASED");
 }
 

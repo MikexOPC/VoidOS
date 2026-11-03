@@ -13,6 +13,16 @@ console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
 Non ci sono ancora SMP operativo, processi utente, syscall, VFS o driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
+## K4-B: shootdown TLB prima di ogni riuso
+
+Dopo l'avvio degli AP ogni rilascio di mappature attende il flush
+confermato da tutti gli AP prima di restituire frame e tabelle,
+compresi gli stack dei task dello scheduler. Un ACK mancante porta
+al panic coordinato con il frame trattenuto. Campagna finale 40/40
+a 4 CPU, inclusa la console VirtIO/VT-d con teardown completo.
+Resta la preemption per chiudere K4.
+Prove e limiti in [validazione K4-B](../arch/x86/kernel/cpu/percpu/documentation/k4b-validation.md#chiusura-k4-b).
+
 ## K4-A: PING agli AP nel boot ordinario
 
 Il BSP invia un PING a ciascun AP e attende l'ACK dopo EOI prima
@@ -21,7 +31,7 @@ Su una CPU il servizio resta inattivo. Driver e scheduler restano sul BSP.
 
 40 boot ordinari QEMU passati su 1/2/4/8 CPU, 10 per configurazione.
 Il diagnostico IPI conserva le prove di ripristino dei registri.
-Il limite del gruppo è 64 CPU. Restano shootdown TLB e preemption.
+Il limite del gruppo è 64 CPU.
 Prove e limiti in [validazione K4-A](../arch/x86/kernel/cpu/percpu/documentation/k4a-validation.md).
 
 ## K3: base per-CPU chiusa sul profilo QEMU
