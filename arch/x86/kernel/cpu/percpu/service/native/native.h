@@ -13,6 +13,19 @@
 #define XIS_NEW_VALUE 0xc7U
 #endif
 
+#ifdef KERNEL_TEST_AP_SERVICE
+// Mailbox generation every AP had when the probe started.
+extern uint64_t xis_probe_base;
+// Set once the probe recorded the base: boot-time shootdowns before it are ordinary flushes.
+extern uint64_t xis_probe_armed;
+#endif
+
+#if KERNEL_TEST_AP_SERVICE == 6
+#define XIS_RELEASE_VALUE 0x5aU
+// Set by the probe just before its release, so earlier boot-time flushes are acknowledged.
+extern uint64_t xis_release_armed;
+#endif
+
 #define XIS_VECTOR 0xe1U
 // Stack bytes reserved by xis_service_loop (idle.asm: sub rsp, 576) below the private frame.
 #define XIS_IDLE_FRAME_BYTES 576ULL
@@ -26,7 +39,8 @@ typedef struct {
     unsigned char  Padding[6];
     uint32_t  Count, Reserved;
     uint64_t  Published;
-    uint64_t  HeaderReserved[4];
+    uint64_t  Shootdowns;
+    uint64_t  HeaderReserved[3];
     XIS_CPU  Cpus[64];
 } XIS_NATIVE;
 extern XIS_NATIVE xis_native;
@@ -38,6 +52,7 @@ int xis_native_flush_context(void);
 void xis_native_dispatch(const X86_IRQ_FRAME *frame);
 void xis_native_verified(const unsigned char *fx);
 int xis_native_shootdown(void);
+uint64_t xis_native_shootdowns(void);
 int xis_native_send(uint32_t index);
 int xis_native_now(void *context, uint32_t *now);
 int xis_native_wait(uint32_t index, uint32_t field, uint64_t value);

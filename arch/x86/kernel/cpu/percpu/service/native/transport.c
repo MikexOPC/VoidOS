@@ -112,6 +112,12 @@ int xis_native_shootdown(void) {
             xis_wait(index, generation, &wait) != XIS_WAIT_ACK)
             xis_native_abort(0x4b34544c4241434bULL);
     }
+    // BSP-only writer: counts flushes acknowledged by every AP, for teardown evidence.
+    ks_atomic_store_release(&xis_native.Shootdowns, xis_native.Shootdowns + 1);
     ks_irq_restore(saved_if);
     return 1;
 }
+
+// ====== xis_native_shootdowns ======
+
+uint64_t xis_native_shootdowns(void) { return ks_atomic_load_acquire(&xis_native.Shootdowns); }

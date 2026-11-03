@@ -19,7 +19,7 @@ void xp_panic_integration_probe(void);
 
 static void video_private(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *context, X86_PAGING_INVENTORY *paging)
 {
-#if KERNEL_TEST_AP_SERVICE == 1
+#if KERNEL_TEST_AP_SERVICE == 1 || KERNEL_TEST_AP_SERVICE == 6
     (void)startup; (void)context; (void)paging;
 #else
     if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &startup->Memory->Window,
@@ -47,7 +47,7 @@ void kernel_startup_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CON
 #ifdef KERNEL_TEST_SMP_PANIC
     xp_panic_integration_probe();
 #endif
-    #if KERNEL_TEST_AP_SERVICE != 1
+    #if KERNEL_TEST_AP_SERVICE != 1 && KERNEL_TEST_AP_SERVICE != 6
     // G3: the kernel heap is bound first, in every profile, so the framebuffer and later budgets
     // already include it.
     if (context->Info.Acpi.Source && !x86_heap_kernel_start(context, &startup->Memory->Window,

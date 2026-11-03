@@ -74,6 +74,16 @@ def verify(vm, log, case, count):
                 index = indices[0]
                 if live[4 * index + 1] != 1 or (pins[index // 2] >> (32 * (index % 2))) & 0xffffffff != 1:
                     raise RuntimeError("Diagnostic frame is not a pinned single-page lease")
+    if case == "release-missing-ack":
+        frame = log.number("KERNEL_IPI_RELEASE_FRAME")
+        indices = [index for index in range(64) if live[4 * index] == frame and live[4 * index + 2]]
+        if len(indices) != 1:
+            raise RuntimeError("Released window frame returned before the flush ACK")
+        index = indices[0]
+        if live[4 * index + 1] != 1 or (pins[index // 2] >> (32 * (index % 2))) & 0xffffffff != 1:
+            raise RuntimeError("Retained window frame is not a pinned single-page lease")
+        if vm.physical(frame, 1)[0] & 0xff != 0x5a:
+            raise RuntimeError("Retained window frame content changed")
     if case == "ping":
         dma_frames = [log.number("KERNEL_IPI_DMA_DATA"), *log.numbers("KERNEL_IPI_DMA_TABLE")]
         if len(dma_frames) != 4 or len(set(dma_frames)) != 4:
@@ -101,8 +111,14 @@ def verify(vm, log, case, count):
         if (low >> 16) & 0xffffffff != 0x8e000008 or high >> 32 or not 0xffffffff80000000 <= target < 0xffffffff80400000:
             raise RuntimeError("Invalid service gate or target")
     counters = cpu.memory(vm, address + 4160, 64 * 8)
-    if case in ("missing-ack", "stale-ack") and [counters[index] for index in (8, 12, 13)] != [99] * 3:
+    generation_base = log.number("KERNEL_IPI_BASE_GENERATION")
+    if case in ("missing-ack", "stale-ack") and [counters[index] for index in (8, 12, 13)] != [generation_base + 99] * 3:
         raise RuntimeError("AP1 did not enter and finish EOI for the flush request")
+    if case == "release-missing-ack":
+        for index in range(1, count):
+            expected = generation_base + (101 if index == 1 else 100)
+            if [counters[index * 8 + field] for field in (0, 4, 5)] != [expected] * 3:
+                raise RuntimeError("Release flush delivery, EOI or entry counters differ")
     first = log.number("KERNEL_AP_CONTEXTS")
     owner = log.number("PANIC_OWNER") if case != "ping" else None
     final = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
@@ -130,7 +146,7 @@ def verify(vm, log, case, count):
             raise RuntimeError("Sealed AP startup record changed")
         if case == "ping":
             values = counters[index * 8:(index + 1) * 8]
-            if values != [105, 105, values[2], top - 576, 105, 105, 0, 0] or values[2] < 1:
+            if values != [generation_base + 105, generation_base + 105, values[2], top - 576, generation_base + 105, generation_base + 105, 0, 0] or values[2] < 1:
                 raise RuntimeError("IPI completion/return/EOI counters differ: " + str(values))
             if launch.value(text, "RSP") != top - 576 or launch.value(text, "RFL") & 0x7602 != 0x602:
                 raise RuntimeError("AP did not return to IF=1/DF=1 private idle")
@@ -152,7 +168,8 @@ def verify(vm, log, case, count):
         if owner != expected_owner or state[:9] != [2, mask, mask, owner + 1, targets, targets, 0, 2, 0] or state[9:] != [2] * count + [0] * (71 - count):
             raise RuntimeError("SMP panic coordinator did not collect all CPUs")
         reason = {"missing-ack": 0x4b34495049544d4f, "stale-ack": 0x4b34495049424144,
-                  "panic-idle": 0x4b344950494e4d34, "panic-handler": 0x4b344950494e4d35}[case]
+                  "panic-idle": 0x4b344950494e4d34, "panic-handler": 0x4b344950494e4d35,
+                  "release-missing-ack": 0x4b34544c4241434b}[case]
         if log.number("PANIC_REASON_ADDRESS") != reason or log.number("PANIC_MISSING") != 0:
             raise RuntimeError("Different failure reason or missing panic ACK")
         for index in range(count):
@@ -181,6 +198,8 @@ def verify(vm, log, case, count):
         requests += 5 * (count - 1)
     if case in ("missing-ack", "stale-ack"):
         requests += 98 * (count - 1)
+    if case == "release-missing-ack":
+        requests = 100 * (count - 1) + 1
     return dict(Case=case, RealCpus=count, Requests=requests,
                 PhysicalFree=free, Pinned=True)
 
@@ -198,7 +217,7 @@ def capture_failure(vm, count):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler"), default="ping")
+    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack"), default="ping")
     parser.add_argument("--boots", type=int, choices=range(1, 11), default=10)
     parser.add_argument("--smp", type=int, choices=range(2, 65), default=4)
     args = parser.parse_args()

@@ -6,6 +6,12 @@
 #include "arch/x86/kernel/stack/main.h"
 
 XIS_NATIVE xis_native;
+#ifdef KERNEL_TEST_AP_SERVICE
+uint64_t xis_probe_base, xis_probe_armed;
+#endif
+#if KERNEL_TEST_AP_SERVICE == 6
+uint64_t xis_release_armed;
+#endif
 
 // ====== xis_native_abort ======
 
@@ -118,8 +124,12 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     if (!generation || generation == XIS_INVALID) xis_native_abort(0x4b34495049434c4dULL);
     ks_atomic_store_release(&cpu->FrameRsp, frame->Rsp);
     ks_atomic_store_release(&cpu->Entered, generation);
+#ifdef XIS_REMAP_TEST
+    // Diagnostic rounds count from the generation the probe found: boot-time shootdowns come first.
+    uint64_t round = generation - ks_atomic_load_acquire(&xis_probe_base);
+#endif
 #if KERNEL_TEST_AP_SERVICE == 5
-    if (index == 1) {
+    if (index == 1 && ks_atomic_load_acquire(&xis_probe_armed)) {
         uint32_t start, now;
         if (!xis_native_now(NULL, &start)) xis_native_abort(0x4b34495049434c4bULL);
         for (uint32_t poll = 0; poll < 1000000; ++poll) {
@@ -135,9 +145,9 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
         (operation != XIS_FLUSH_CONTEXT || !xis_native_flush_context()))
         xis_native_abort(0x4b34544c42464c53ULL);
 #ifdef XIS_REMAP_TEST
-    if (generation == XIS_WARM_ROUND || generation == XIS_READ_ROUND) {
+    if (round == XIS_WARM_ROUND || round == XIS_READ_ROUND) {
         const volatile unsigned char *view = (const volatile unsigned char *)X86_KERNEL_PAGE_WINDOW;
-        unsigned char expected = generation == XIS_WARM_ROUND ? XIS_OLD_VALUE : XIS_NEW_VALUE;
+        unsigned char expected = round == XIS_WARM_ROUND ? XIS_OLD_VALUE : XIS_NEW_VALUE;
         if (operation != XIS_PING || *view != expected) xis_native_abort(0x4b34544c42524541ULL);
     }
 #endif
@@ -146,12 +156,15 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     ks_atomic_store_release(&cpu->Eois, generation);
     ks_atomic_store_release(&cpu->Delivered, generation);
 #if KERNEL_TEST_AP_SERVICE == 2
-    if (index == 1 && generation == XIS_FLUSH_ROUND) return;
+    if (index == 1 && round == XIS_FLUSH_ROUND) return;
 #elif KERNEL_TEST_AP_SERVICE == 3
-    if (index == 1 && generation == XIS_FLUSH_ROUND) {
+    if (index == 1 && round == XIS_FLUSH_ROUND) {
         if (!xis_complete(index, index, generation + 1)) xis_native_abort(0x4b34495049424144ULL);
         xis_native_abort(0x4b34544c42424144ULL);
     }
+#elif KERNEL_TEST_AP_SERVICE == 6
+    // Release diagnostic: AP1 completes EOI for the flush and withholds the ACK.
+    if (index == 1 && operation == XIS_FLUSH_CONTEXT && ks_atomic_load_acquire(&xis_release_armed)) return;
 #endif
     if (!xis_complete(index, index, generation)) xis_native_abort(0x4b3449504941434bULL);
 }
