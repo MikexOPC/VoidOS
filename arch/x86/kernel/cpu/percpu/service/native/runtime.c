@@ -1,3 +1,4 @@
+#include <intrin.h>
 #include "native.h"
 #include "../../startup/private/frame.h"
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
@@ -73,6 +74,18 @@ uint32_t xis_native_enter(void *private_frame) {
     return 1;
 }
 
+// ====== xis_native_flush_context ======
+
+// Intel SDM 078US 4.10.4.1: reload the verified CR3 with CR4.PGE7 and PCIDE17 clear.
+int xis_native_flush_context(void) {
+    const uint64_t incompatible = (1ULL << 7) | (1ULL << 17);
+    uint64_t root = __readcr3();
+    if (ks_irq_state() || !root || root != xp_panic_native.Root || (__readcr4() & incompatible))
+        return 0;
+    __writecr3(root);
+    return 1;
+}
+
 // ====== xis_native_dispatch ======
 
 void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
@@ -118,6 +131,10 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
         xis_native_abort(0x4b344950494e4d49ULL);
     }
 #endif
+    uint32_t operation = xis_operation(index, index, generation);
+    if (operation != XIS_PING &&
+        (operation != XIS_FLUSH_CONTEXT || !xis_native_flush_context()))
+        xis_native_abort(0x4b34544c42464c53ULL);
     xis_mmio_write(0xb0, 0);
     if (xis_mmio_read(0x100 + (XIS_VECTOR / 32) * 16)) xis_native_abort(0x4b34495049454f49ULL);
     ks_atomic_store_release(&cpu->Eois, generation);

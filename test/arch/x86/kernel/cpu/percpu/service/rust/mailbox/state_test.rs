@@ -94,15 +94,15 @@ fn failure_is_terminal() {
 fn generation_exhaustion() {
     let service = prepared();
     let slot = &service.slots[1];
-    let last = INVALID - 2;
+    let last = GENERATION_MASK - 1;
     slot.request.store(last, Release);
     slot.claimed.store(last, Release);
     slot.ack.store(last, Release);
-    assert_eq!(service.publish(1, 0), INVALID - 1);
-    assert_eq!(service.claim(1, 1), INVALID - 1);
-    assert_eq!(service.complete(1, 1, INVALID - 1), 1);
+    assert_eq!(service.publish(1, 0), GENERATION_MASK);
+    assert_eq!(service.claim(1, 1), GENERATION_MASK);
+    assert_eq!(service.complete(1, 1, GENERATION_MASK), 1);
     assert_eq!(service.publish(1, 0), INVALID);
-    assert_eq!(service.value(1, 1), INVALID - 1);
+    assert_eq!(service.value(1, 1), GENERATION_MASK);
 }
 
 // ====== concurrent_three_consumers ======
@@ -157,4 +157,24 @@ fn timeout_racing_completion_cannot_reopen() {
         assert_eq!(service.publish(1, 0), INVALID);
         assert_eq!(service.ready(1, 1), 0);
     }
+}
+
+// ====== operation_matches_claimed_generation ======
+
+#[test]
+fn operation_matches_claimed_generation() {
+    let service = prepared();
+    assert_eq!(service.publish_operation(1, 0, 2), INVALID);
+    assert_eq!(service.publish_operation(1, 0, 1), 1);
+    assert_eq!(service.operation(1, 1, 1), u32::MAX);
+    assert_eq!(service.publish(1, 0), 0);
+    assert_eq!(service.claim(1, 1), 1);
+    assert_eq!(service.operation(1, 2, 1), u32::MAX);
+    assert_eq!(service.operation(1, 1, 2), u32::MAX);
+    assert_eq!(service.operation(1, 1, 1), 1);
+    assert_eq!(service.complete(1, 1, 1), 1);
+    assert_eq!(service.operation(1, 1, 1), u32::MAX);
+    assert_eq!(service.publish(1, 0), 2);
+    assert_eq!(service.claim(1, 1), 2);
+    assert_eq!(service.operation(1, 1, 2), 0);
 }
