@@ -65,7 +65,7 @@ def verify(vm, log, case, count):
         new_frame = log.number("KERNEL_IPI_NEW_FRAME")
         if old_frame == new_frame:
             raise RuntimeError("Diagnostic frames overlap")
-        for frame, expected in ((old_frame, case != "ping"), (new_frame, True)):
+        for frame, expected in ((old_frame, case != "ping"), (new_frame, case != "ping")):
             indices = [index for index in range(64)
                        if live[4 * index] == frame and live[4 * index + 2]]
             if len(indices) != int(expected):
@@ -117,7 +117,7 @@ def verify(vm, log, case, count):
             raise RuntimeError("Sealed AP startup record changed")
         if case == "ping":
             values = counters[index * 8:(index + 1) * 8]
-            if values != [100, 100, values[2], top - 576, 100, 100, 0, 0] or values[2] < 1:
+            if values != [101, 101, values[2], top - 576, 101, 101, 0, 0] or values[2] < 1:
                 raise RuntimeError("IPI completion/return/EOI counters differ: " + str(values))
             if launch.value(text, "RSP") != top - 576 or launch.value(text, "RFL") & 0x7602 != 0x602:
                 raise RuntimeError("AP did not return to IF=1/DF=1 private idle")
@@ -164,6 +164,8 @@ def verify(vm, log, case, count):
         if case == "missing-ack" and log.number("KERNEL_IPI_FAILED_PHASE") != 2:
             raise RuntimeError("Timed-out mailbox was reopened")
     requests = 100 * (count - 1) if case in ("ping", "panic-idle") else 1
+    if case == "ping":
+        requests += count - 1
     if case in ("missing-ack", "stale-ack"):
         requests += 98 * (count - 1)
     return dict(Case=case, RealCpus=count, Requests=requests,

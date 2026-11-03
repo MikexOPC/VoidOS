@@ -37,6 +37,7 @@ uint32_t xis_native_enter(void *frame);
 int xis_native_flush_context(void);
 void xis_native_dispatch(const X86_IRQ_FRAME *frame);
 void xis_native_verified(const unsigned char *fx);
+int xis_native_shootdown(void);
 int xis_native_send(uint32_t index);
 int xis_native_now(void *context, uint32_t *now);
 int xis_native_wait(uint32_t index, uint32_t field, uint64_t value);

@@ -55,3 +55,23 @@ kernel/build/test-run-6d37d33b37e6424280cebb07bcaf0cf7.
 Audit di emergenza passato per tutte e tre le immagini diagnostiche.
 Resta da collegare il flush al paging ordinario e al rilascio dei
 suoi frame e delle tabelle intermedie.
+
+## Rilascio della page window
+
+Il diagnostico rimappa e verifica i frame come sopra, poi chiama
+x86_page_window_release sul frame sostitutivo. Il runner controlla
+che ogni AP completi la richiesta 101 con EOI e ritorno da IRETQ,
+e che l'inventario finale non contenga più nessuno dei due lease.
+
+- 10/10 boot QEMU a 4 CPU con il rilascio della finestra.
+  Evidenza: kernel/build/ipi-service-1aa85b633daf4d4eb6b28d46ac12e89c.
+- 10/10 boot ordinari QEMU a 4 CPU.
+  Evidenza: kernel/build/ap-runtime-08b9981f6101447f929d086ef0bc37de.
+- Suite host ipi-service, kernel e layout superate. Log in
+  kernel/build/test-run-9aa863b2c7fb4e85914b1ec00d5c47b6,
+  kernel/build/test-run-52ac4958ff014c0f90a669f1ea5690f5 e
+  kernel/build/test-run-5c616c8e82424dcbae68fe6284289db4.
+- Audit del codice di emergenza passato sulle due immagini.
+
+Gli arresti da ACK mancante o errato sopra sono prove della rimappatura
+del blocco precedente. Non sono iniezioni nel rilascio finale.

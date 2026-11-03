@@ -1,5 +1,9 @@
 #include "page.h"
 #include "access.h"
+#ifdef KERNEL_AP_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#include "arch/x86/mm/paging/inventory.h"
+#endif
 #include "kernel/mm/inventory.h"
 #include "lib/memory/address_ranges.h"
 #define PAGE_NX (1ULL << 63)
@@ -200,7 +204,11 @@ int x86_page_window_release(X86_PAGE_WINDOW *window)
     for (index = 0; index < pages; ++index) {
         entries[WINDOW_LEAF + index] = 0;
     }
-    invalidate_span(pages);
+#ifdef KERNEL_AP_RUNTIME
+    if (xis_native_shootdown()) x86_paging_generation_bump();
+    else
+#endif
+        invalidate_span(pages);
     if (!kernel_physical_release_after_unmap(window->Pool, &window->Lease)) {
         return 0;
     }
