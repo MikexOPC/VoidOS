@@ -1,5 +1,9 @@
 #include "native.h"
 #include "arch/x86/configs/layout.h"
+#ifdef KERNEL_AP_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#include "arch/x86/mm/paging/inventory.h"
+#endif
 
 #define TASK_XD (UINT64_C(1) << 63)
 #define TASK_ADDRESS UINT64_C(0x000FFFFFFFFFF000)
@@ -150,7 +154,13 @@ int x86_task_stack_revoke(const X86_TASK_STACK *owner)
     if (!x86_task_stack_dispatcher(owner) || !slot_private(owner, 2)) return 0;
     entries = x86_stack_entries(3); first = X86_TASK_STACK_LEAF + owner->index * 18;
     for (uint32_t page = 0; page < 16; ++page) entries[first + page + 1] = 0;
-    invalidate_private(owner);
+    // K4-B: the scheduler releases task stacks after the APs are online; the frames
+    // return to the allocator only once every AP acknowledged the context flush.
+#ifdef KERNEL_AP_RUNTIME
+    if (xis_native_shootdown()) x86_paging_generation_bump();
+    else
+#endif
+        invalidate_private(owner);
     return slot_private(owner, 0);
 }
 

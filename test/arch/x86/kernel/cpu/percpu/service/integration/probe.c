@@ -15,7 +15,7 @@ static void number_private(const char *name, uint64_t value) {
 // ====== xis_service_probe ======
 
 __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
-#ifdef XIS_REMAP_TEST
+#if defined(XIS_REMAP_TEST) || KERNEL_TEST_AP_SERVICE == 6
     X86_PAGE_WINDOW *window = &startup->Memory->Window;
 #else
     (void)startup;
@@ -25,8 +25,16 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
     number_private("KERNEL_IPI_IDTR: ", (uint64_t)&xis_native.Idtr);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
         if (!xis_native_wait(index, 0, XIS_READY)) xis_native_abort(0x4b34495049524459ULL);
+    // Boot-time shootdowns (scheduler task stacks) already used one generation per AP each.
+    uint64_t base = xis_native_shootdowns();
+    for (uint32_t index = 1; index < xis_native.Count; ++index)
+        if (xis_value(index, XIS_REQUEST) != base || xis_value(index, XIS_ACK) != base)
+            xis_native_abort(0x4b34495049424153ULL);
+    ks_atomic_store_release(&xis_probe_base, base);
+    ks_atomic_store_release(&xis_probe_armed, 1);
+    number_private("KERNEL_IPI_BASE_GENERATION: ", base);
 #if KERNEL_TEST_AP_SERVICE == 5
-    if (xis_publish(1, 0) != 1 || !xis_native_send(1) || !xis_native_wait(1, 2, 1))
+    if (xis_publish(1, 0) != base + 1 || !xis_native_send(1) || !xis_native_wait(1, 2, base + 1))
         xis_native_abort(0x4b34495049484e44ULL);
     xis_native_abort(0x4b344950494e4d35ULL);
 #else
@@ -54,7 +62,7 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
             if (round == XIS_FLUSH_ROUND) operation = XIS_FLUSH_CONTEXT;
 #endif
             uint64_t generation = xis_publish_operation(index, 0, operation);
-            if (generation != round || !xis_native_send(index)) xis_native_abort(0x4b3449504953454eULL);
+            if (generation != base + round || !xis_native_send(index)) xis_native_abort(0x4b3449504953454eULL);
             XIS_WAIT wait = {xis_native_now, NULL, xp_panic_native.Source.Mask, KERNEL_PM_TIMER_HZ, 1000000, 0};
             uint32_t result = xis_wait(index, generation, &wait);
             if (result != XIS_WAIT_ACK) {
@@ -65,8 +73,9 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
         }
     }
     for (uint32_t index = 1; index < xis_native.Count; ++index) {
-        if (xis_value(index, XIS_ACK) != 100 || ks_atomic_load_acquire(&xis_native.Cpus[index].Delivered) != 100 ||
-            ks_atomic_load_acquire(&xis_native.Cpus[index].Eois) != 100 ||
+        if (xis_value(index, XIS_ACK) != base + 100 ||
+            ks_atomic_load_acquire(&xis_native.Cpus[index].Delivered) != base + 100 ||
+            ks_atomic_load_acquire(&xis_native.Cpus[index].Eois) != base + 100 ||
             !ks_atomic_load_acquire(&xis_native.Cpus[index].Spurious)) xis_native_abort(0x4b34495049454e44ULL);
         number_private("KERNEL_IPI_ACK: ", xis_value(index, XIS_ACK));
     }
@@ -74,7 +83,7 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
     if (!kernel_physical_release_after_unmap(window->Pool, &old) || !x86_page_window_release(window))
         xis_native_abort(0x4b34544c4252454cULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
-        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 1)) xis_native_abort(0x4b34544c42444f4eULL);
+        if (!xis_native_wait(index, 1, base + XIS_READ_ROUND +1)) xis_native_abort(0x4b34544c42444f4eULL);
 #if KERNEL_TEST_AP_SERVICE == 1
     X86_REGION_MAPPER *regions = &startup->Memory->Regions;
     X86_REGION_HANDLE region = {0};
@@ -85,7 +94,7 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
     if (!x86_region_release(regions, &region) || !x86_region_validate(regions))
         xis_native_abort(0x4b34544c42524733ULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
-        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 2)) xis_native_abort(0x4b34544c42524734ULL);
+        if (!xis_native_wait(index, 1, base + XIS_READ_ROUND +2)) xis_native_abort(0x4b34544c42524734ULL);
     X86_HEAP_BINDING temporary = {0};
     X86_PAGING_INVENTORY *inventory = (X86_PAGING_INVENTORY *)
         x86_object_arena_data(&startup->Memory->Arena, startup->Paging);
@@ -98,7 +107,7 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
     if (!x86_heap_unbind(&temporary) || x86_heap_owner() || x86_fb_root()[X86_HEAP_SLOT])
         xis_native_abort(0x4b34544c42485032ULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
-        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 3)) xis_native_abort(0x4b34544c42485033ULL);
+        if (!xis_native_wait(index, 1, base + XIS_READ_ROUND +3)) xis_native_abort(0x4b34544c42485033ULL);
     X86_DMA_ARENA dma = {0};
     if (!x86_dma_arena_bind(context, window, xp_panic_native.Lapic, inventory,
         x86_paging_inventory_capture_lapic, 4, &dma) || dma.Allocated != 3)
@@ -109,7 +118,7 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
     if (!x86_dma_arena_unbind(&dma) || x86_dma_owner() || x86_fb_root()[X86_DMA_SLOT])
         xis_native_abort(0x4b34544c42444d32ULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
-        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 4)) xis_native_abort(0x4b34544c42444d33ULL);
+        if (!xis_native_wait(index, 1, base + XIS_READ_ROUND +4)) xis_native_abort(0x4b34544c42444d33ULL);
     X86_FB_MAPPING framebuffer = {0};
     if (!x86_fb_bind(context, window, xp_panic_native.Lapic, inventory, &framebuffer) ||
         !framebuffer.Published || !framebuffer.Allocated ||
@@ -120,15 +129,25 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
     if (!x86_fb_unbind(&framebuffer) || x86_paging_video_owner() || x86_fb_root()[X86_FB_SLOT])
         xis_native_abort(0x4b34544c42464232ULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
-        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 5)) xis_native_abort(0x4b34544c42464233ULL);
+        if (!xis_native_wait(index, 1, base + XIS_READ_ROUND +5)) xis_native_abort(0x4b34544c42464233ULL);
 #endif
     if (!kernel_log(0, "KERNEL_IPI_REMAP_VERIFIED")) xis_native_abort(0x4b34544c4252454cULL);
 #endif
+#if KERNEL_TEST_AP_SERVICE == 6
+    // Ordinary release API with a withheld flush ACK: the coordinated panic must keep the lease.
+    if (!x86_page_window_acquire(window, 1)) xis_native_abort(0x4b34544c42524c31ULL);
+    number_private("KERNEL_IPI_RELEASE_FRAME: ", window->Lease.Base);
+    *(volatile unsigned char *)X86_KERNEL_PAGE_WINDOW = XIS_RELEASE_VALUE;
+    ks_atomic_store_release(&xis_release_armed, 1);
+    (void)x86_page_window_release(window);
+    xis_native_abort(0x4b34544c42524c32ULL);
+#else
     if (!kernel_log(0, "KERNEL_IPI_SERVICE_READY")) xis_native_abort(0x4b344950494c4f47ULL);
 #if KERNEL_TEST_AP_SERVICE == 4
     xis_native_abort(0x4b344950494e4d34ULL);
 #else
     x86_kernel_stop(0x4b34495049504153ULL);
+#endif
 #endif
 #endif
 }

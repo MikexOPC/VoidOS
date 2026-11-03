@@ -25,6 +25,12 @@
       "boots": 10, "smoke": 1, "heavy": true,
       "summary": "Bounded missing IPI acknowledgement, terminal mailbox and coordinated panic"
     },
+    "ipi-release-missing-ack": {
+      "build": ["-TestApService", "release-missing-ack"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "release-missing-ack"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "x86_page_window_release with a withheld AP flush ACK: coordinated panic keeps the pinned lease and its content"
+    },
     "ipi-stale-ack": {
       "build": ["-TestApService", "stale-ack"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "stale-ack"],
