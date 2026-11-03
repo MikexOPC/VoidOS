@@ -78,7 +78,11 @@ def verify(vm, log, case, count):
         dma_frames = [log.number("KERNEL_IPI_DMA_DATA"), *log.numbers("KERNEL_IPI_DMA_TABLE")]
         if len(dma_frames) != 4 or len(set(dma_frames)) != 4:
             raise RuntimeError("Diagnostic DMA leases differ")
-        frames = dma_frames + [log.number("KERNEL_IPI_" + name)
+        framebuffer_tables = log.numbers("KERNEL_IPI_FB_TABLE")
+        if (not framebuffer_tables or len(framebuffer_tables) != log.number("KERNEL_IPI_FB_TABLE_COUNT") or
+                len(set(framebuffer_tables)) != len(framebuffer_tables)):
+            raise RuntimeError("Diagnostic framebuffer leases differ")
+        frames = dma_frames + framebuffer_tables + [log.number("KERNEL_IPI_" + name)
                                for name in ("REGION_FRAME", "HEAP_DATA", "HEAP_TABLES")]
         live_bases = {live[index] for index in range(0, len(live), 4) if live[index + 2]}
         if 0 in frames or live_bases.intersection(frames):
@@ -126,7 +130,7 @@ def verify(vm, log, case, count):
             raise RuntimeError("Sealed AP startup record changed")
         if case == "ping":
             values = counters[index * 8:(index + 1) * 8]
-            if values != [104, 104, values[2], top - 576, 104, 104, 0, 0] or values[2] < 1:
+            if values != [105, 105, values[2], top - 576, 105, 105, 0, 0] or values[2] < 1:
                 raise RuntimeError("IPI completion/return/EOI counters differ: " + str(values))
             if launch.value(text, "RSP") != top - 576 or launch.value(text, "RFL") & 0x7602 != 0x602:
                 raise RuntimeError("AP did not return to IF=1/DF=1 private idle")
@@ -174,7 +178,7 @@ def verify(vm, log, case, count):
             raise RuntimeError("Timed-out mailbox was reopened")
     requests = 100 * (count - 1) if case in ("ping", "panic-idle") else 1
     if case == "ping":
-        requests += 4 * (count - 1)
+        requests += 5 * (count - 1)
     if case in ("missing-ack", "stale-ack"):
         requests += 98 * (count - 1)
     return dict(Case=case, RealCpus=count, Requests=requests,

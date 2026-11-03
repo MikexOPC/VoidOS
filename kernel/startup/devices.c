@@ -19,6 +19,9 @@ void xp_panic_integration_probe(void);
 
 static void video_private(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *context, X86_PAGING_INVENTORY *paging)
 {
+#if KERNEL_TEST_AP_SERVICE == 1
+    (void)startup; (void)context; (void)paging;
+#else
     if (context->Info.Acpi.Source && !x86_fb_kernel_start(context, &startup->Memory->Window,
         x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
     if (context->Info.Acpi.Source && !x86_vgpu_kernel_start(context,&startup->Memory->Window,
@@ -28,6 +31,7 @@ static void video_private(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTE
     if (context->Info.Acpi.Source && !x86_vgpu_kernel_session_start(
         (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&startup->Memory->Arena, startup->Acpi)))
     kernel_panic("VGPU_SESSION_FAILED");
+#endif
 #endif
 }
 

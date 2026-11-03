@@ -102,3 +102,14 @@ già fermato il dispositivo e revocato le traduzioni DMA. La sessione
 VirtIO esegue reset e disattivazione della traduzione prima del
 rilascio. Il diagnostico usa un'arena senza dispositivo associato
 per verificare separatamente la barriera CPU.
+
+## Rimozione del ramo framebuffer GOP
+
+Il teardown scollega lo slot CPU e attende il flush di tutti gli AP
+prima di liberare le tabelle di paging possedute dal kernel. La VRAM
+consegnata dal firmware resta fuori dall'allocatore fisico. Il chiamante
+deve avere concluso le operazioni di disegno. Prima che il servizio IPI
+sia pubblicato, si usa il reload locale esistente.
+
+Il diagnostico positivo costruisce un mapping GOP temporaneo dopo
+l'avvio degli AP. Il boot ordinario mantiene il mapping persistente.
