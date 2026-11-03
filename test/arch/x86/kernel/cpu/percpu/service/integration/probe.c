@@ -12,7 +12,10 @@ static void number_private(const char *name, uint64_t value) {
 
 // ====== xis_service_probe ======
 
-__declspec(noreturn) void xis_service_probe(X86_PAGE_WINDOW *window) {
+__declspec(noreturn) void xis_service_probe(X86_PAGE_WINDOW *window, X86_REGION_MAPPER *regions) {
+#if KERNEL_TEST_AP_SERVICE != 1
+    (void)regions;
+#endif
 #ifndef XIS_REMAP_TEST
     (void)window;
 #endif
@@ -71,6 +74,17 @@ __declspec(noreturn) void xis_service_probe(X86_PAGE_WINDOW *window) {
         xis_native_abort(0x4b34544c4252454cULL);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
         if (!xis_native_wait(index, 1, XIS_READ_ROUND + 1)) xis_native_abort(0x4b34544c42444f4eULL);
+#if KERNEL_TEST_AP_SERVICE == 1
+    X86_REGION_HANDLE region = {0};
+    if (!x86_region_acquire(regions, 2, 1, &region)) xis_native_abort(0x4b34544c42524731ULL);
+    uint32_t slot = x86_region_slot(region.Virtual);
+    if (!slot || slot > X86_REGION_SLOTS) xis_native_abort(0x4b34544c42524732ULL);
+    number_private("KERNEL_IPI_REGION_FRAME: ", regions->Live[slot - 1].Base);
+    if (!x86_region_release(regions, &region) || !x86_region_validate(regions))
+        xis_native_abort(0x4b34544c42524733ULL);
+    for (uint32_t index = 1; index < xis_native.Count; ++index)
+        if (!xis_native_wait(index, 1, XIS_READ_ROUND + 2)) xis_native_abort(0x4b34544c42524734ULL);
+#endif
     if (!kernel_log(0, "KERNEL_IPI_REMAP_VERIFIED")) xis_native_abort(0x4b34544c4252454cULL);
 #endif
     if (!kernel_log(0, "KERNEL_IPI_SERVICE_READY")) xis_native_abort(0x4b344950494c4f47ULL);

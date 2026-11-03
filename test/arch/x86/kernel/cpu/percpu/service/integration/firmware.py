@@ -74,6 +74,10 @@ def verify(vm, log, case, count):
                 index = indices[0]
                 if live[4 * index + 1] != 1 or (pins[index // 2] >> (32 * (index % 2))) & 0xffffffff != 1:
                     raise RuntimeError("Diagnostic frame is not a pinned single-page lease")
+    if case == "ping":
+        frame = log.number("KERNEL_IPI_REGION_FRAME")
+        if not frame or any(live[index] == frame and live[index + 2] for index in range(0, len(live), 4)):
+            raise RuntimeError("Diagnostic region lease was not released")
     address = log.number("KERNEL_IPI_NATIVE")
     idtr = b"".join(word.to_bytes(8, "little") for word in cpu.memory(vm, log.number("KERNEL_IPI_IDTR"), 2))
     if int.from_bytes(idtr[:2], "little") != 4095 or int.from_bytes(idtr[2:10], "little") != address:
@@ -117,7 +121,7 @@ def verify(vm, log, case, count):
             raise RuntimeError("Sealed AP startup record changed")
         if case == "ping":
             values = counters[index * 8:(index + 1) * 8]
-            if values != [101, 101, values[2], top - 576, 101, 101, 0, 0] or values[2] < 1:
+            if values != [102, 102, values[2], top - 576, 102, 102, 0, 0] or values[2] < 1:
                 raise RuntimeError("IPI completion/return/EOI counters differ: " + str(values))
             if launch.value(text, "RSP") != top - 576 or launch.value(text, "RFL") & 0x7602 != 0x602:
                 raise RuntimeError("AP did not return to IF=1/DF=1 private idle")
@@ -165,7 +169,7 @@ def verify(vm, log, case, count):
             raise RuntimeError("Timed-out mailbox was reopened")
     requests = 100 * (count - 1) if case in ("ping", "panic-idle") else 1
     if case == "ping":
-        requests += count - 1
+        requests += 2 * (count - 1)
     if case in ("missing-ack", "stale-ack"):
         requests += 98 * (count - 1)
     return dict(Case=case, RealCpus=count, Requests=requests,
