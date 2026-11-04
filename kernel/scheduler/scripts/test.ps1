@@ -87,6 +87,14 @@ try {
         ("/Fo$out/payload-test.obj"),("/Fd$out/payload-test.pdb"),("/Fe$out/payload-test.exe"),
         '/link','/incremental:no',"$out/scheduler-bound.lib")
     Invoke-Checked "$out/payload-test.exe" @()
+    Invoke-Checked $rustc @('--edition=2024','--crate-type=staticlib','--target','x86_64-pc-windows-msvc',
+        '--cfg','scheduler_core_lock','-C','panic=abort','-C','opt-level=2','-C','overflow-checks=yes','-D','warnings',
+        (Join-Path $module 'rust/ffi/gateway.rs'),'-o',"$out/scheduler-smp.lib")
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2',('/I' + $project),(Join-Path $module '../../test/kernel/scheduler/ffi/smp_test.c'),
+        ("/Fo$out/smp-test.obj"),("/Fd$out/smp-test.pdb"),("/Fe$out/smp-test.exe"),
+        '/link','/incremental:no',"$out/scheduler-smp.lib")
+    foreach ($run in 1..5) { Invoke-Checked "$out/smp-test.exe" @() }
     $bindingSymbols = & "$bin/dumpbin.exe" /symbols "$out/scheduler-bound.lib" 2>&1
     if ($LASTEXITCODE) { throw 'Production symbol inspection failed' }
     if ($bindingSymbols -match '\| kernel_scheduler_irq_post\s*$') {
@@ -103,7 +111,7 @@ try {
     $cppcheckArguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64',
         '--std=c11','--xml','--xml-version=2','-DSCHEDULER_HOST_UNBOUND',('-I' + $project),
         (Join-Path $module '../../test/kernel/scheduler/ffi/gateway_test.c'),(Join-Path $module '../../test/kernel/scheduler/ffi/binding_test.c'),
-        (Join-Path $module '../../test/kernel/scheduler/ffi/payload_test.c'))
+        (Join-Path $module '../../test/kernel/scheduler/ffi/payload_test.c'),(Join-Path $module '../../test/kernel/scheduler/ffi/smp_test.c'))
     & $CppcheckPath @cppcheckArguments 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck execution failed' }
     [xml]$analysis = Get-Content -LiteralPath "$out/cppcheck.xml"

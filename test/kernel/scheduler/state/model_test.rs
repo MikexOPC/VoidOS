@@ -137,7 +137,8 @@ fn full_state_operation_matrix() {
         for operation in 0..8 {
             let mut owner = Owner::new();
             let mut model = Model::new();
-            owner.slots[0] = Slot { state, generation: 1 };
+            let affinity = u64::from(!matches!(state, State::Free | State::Retired));
+            owner.slots[0] = Slot { state, generation: 1, affinity };
             model.slots[0] = (state, 1);
             if state == State::Retired {
                 owner.slots[0].generation = u64::MAX;
@@ -145,7 +146,7 @@ fn full_state_operation_matrix() {
             }
             if state == State::Ready { owner.ready.push(0); model.order.push_back(0); }
             let handle = Handle { index: 0, generation: model.slots[0].1 };
-            if state == State::Running { owner.current = Some(handle); model.active = Some(0); }
+            if state == State::Running { owner.current[0] = Some(handle); model.active = Some(0); }
             assert!(owner.validate());
             assert_eq!(actual(&mut owner, operation, handle), model.apply(operation, handle));
             compare(&owner, &model);

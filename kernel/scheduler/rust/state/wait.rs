@@ -20,34 +20,47 @@ impl Owner {
 
     // ====== owner_event_actor ======
 
-    fn event_actor(&self, handle: Handle, event: u32) -> Result<usize, Error> {
+    fn event_actor(&self, cpu: u32, handle: Handle, event: u32) -> Result<(usize, usize), Error> {
         if !self.validate() { return Err(Error::Corrupt); }
         if event as usize >= EVENT_CAPACITY { return Err(Error::InvalidEvent); }
+        let at = self.cpu(cpu)?;
         let index = self.handle(handle)?;
-        if self.current != Some(handle) || self.slots[index].state != State::Running {
+        if self.current[at] != Some(handle) || self.slots[index].state != State::Running {
             return Err(Error::InvalidState);
         }
-        Ok(index)
+        Ok((at, index))
     }
 
     // ====== owner_observe ======
 
+    #[cfg(test)]
     pub fn observe(&self, handle: Handle, event: u32) -> Result<EventResult, Error> {
-        self.event_actor(handle, event)?;
+        self.observe_on(0, handle, event)
+    }
+
+    pub fn observe_on(&self, cpu: u32, handle: Handle, event: u32) -> Result<EventResult, Error> {
+        self.event_actor(cpu, handle, event)?;
         Ok(EventResult { epoch: self.epochs[event as usize], outcome: 0, woken: 0 })
     }
 
     // ====== owner_wait ======
 
+    #[cfg(test)]
     pub fn wait(&mut self, handle: Handle, event: u32, observed: u64) -> Result<EventResult, Error> {
+        self.wait_on(0, handle, event, observed)
+    }
+
+    pub fn wait_on(&mut self, cpu: u32, handle: Handle, event: u32, observed: u64)
+        -> Result<EventResult, Error> {
         self.transaction(|next| {
-            let index = next.event_actor(handle, event)?;
+            let (at, index) = next.event_actor(cpu, handle, event)?;
             let epoch = next.epochs[event as usize];
             if observed > epoch { return Err(Error::InvalidToken); }
             if next.stops[index] {
                 if !next.ready.push(handle.index) { return Err(Error::Corrupt); }
                 next.slots[index].state = State::Ready;
-                next.current = None;
+                next.current[at] = None;
+                next.remaining[at] = 0;
                 return Ok(EventResult { epoch, outcome: 5, woken: 0 });
             }
             let changed = observed != epoch;
@@ -58,16 +71,22 @@ impl Owner {
                 next.slots[index].state = State::Waiting;
                 next.waits[index] = Some(Token { event: event as usize, epoch });
             }
-            next.current = None;
+            next.current[at] = None;
+            next.remaining[at] = 0;
             Ok(EventResult { epoch, outcome: if changed { 2 } else { 1 }, woken: 0 })
         })
     }
 
     // ====== owner_signal ======
 
+    #[cfg(test)]
     pub fn signal(&mut self, handle: Handle, event: u32) -> Result<EventResult, Error> {
+        self.signal_on(0, handle, event)
+    }
+
+    pub fn signal_on(&mut self, cpu: u32, handle: Handle, event: u32) -> Result<EventResult, Error> {
         self.transaction(|next| {
-            next.event_actor(handle, event)?;
+            next.event_actor(cpu, handle, event)?;
             let event = event as usize;
             let epoch = next.epochs[event].checked_add(1).ok_or(Error::CounterExhausted)?;
             let mut woken = 0;
@@ -88,8 +107,12 @@ impl Owner {
 
     // Dispatcher only: no fictitious RUNNING producer. Whole batch is atomic.
     pub fn signal_pending(&mut self, mask: u32) -> Result<EventResult, Error> {
+        self.signal_pending_on(0, mask)
+    }
+
+    pub fn signal_pending_on(&mut self, cpu: u32, mask: u32) -> Result<EventResult, Error> {
         self.transaction(|next| {
-            if next.current.is_some() { return Err(Error::Running); }
+            next.dispatcher(cpu)?;
             if mask == 0 || mask & !0xFF != 0 { return Err(Error::InvalidEvent); }
             for event in 0..EVENT_CAPACITY {
                 if mask & (1 << event) != 0 {

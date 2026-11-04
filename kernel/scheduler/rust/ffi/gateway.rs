@@ -2,12 +2,14 @@
 
 #[path = "../state/owner.rs"]
 mod state;
+
 #[path = "../irq/pending.rs"]
 mod pending;
 mod binding;
 mod payload;
+mod core_lock;
+mod smp;
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, Ordering};
 use state::{Error, Handle, Owner, NONE};
 
 #[repr(C)]
@@ -33,11 +35,10 @@ const _: () = {
 
 struct Storage(UnsafeCell<Option<Owner>>);
 
-// SAFETY: every access to Storage is under the exclusive ENTERED guard below.
-// No borrow escapes apply, including errors. IRQ/NMI/SMP use is unsupported.
+// SAFETY: every access to Storage is under the exclusive core_lock guard. No borrow
+// escapes an entry point, including errors. IRQ/NMI entry is unsupported.
 unsafe impl Sync for Storage {}
 static STORAGE: Storage = Storage(UnsafeCell::new(None));
-static ENTERED: AtomicBool = AtomicBool::new(false);
 static PENDING: pending::Pending = pending::Pending::new();
 
 unsafe extern "C" {
@@ -49,8 +50,6 @@ unsafe extern "C" {
     fn kernel_scheduler_fail_stop() -> !;
 }
 
-struct Guard;
-
 #[repr(C)]
 pub struct EventReply { reply: Reply, epoch: u64, outcome: u32, woken: u32 }
 const _: () = {
@@ -60,12 +59,6 @@ const _: () = {
     assert!(core::mem::offset_of!(EventReply, outcome) == 40);
     assert!(core::mem::offset_of!(EventReply, woken) == 44);
 };
-
-// ====== gateway_release_guard ======
-
-impl Drop for Guard {
-    fn drop(&mut self) { ENTERED.store(false, Ordering::Release); }
-}
 
 // ====== gateway_reply ======
 
@@ -79,18 +72,25 @@ fn reply(status: u32) -> Reply {
 // Struct return uses the target ABI; caller must provide valid return storage.
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_scheduler_apply(operation: u32, index: u32, generation: u64) -> Reply {
-    if ENTERED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+    apply_on(0, operation, index, generation, 9)
+}
+
+// ====== gateway_apply_on ======
+
+// Same commands for the dispatcher of `cpu`; operation 10 is PREEMPT (timer-driven yield).
+// `limit` keeps the CPU-0 entry point at its original command set.
+fn apply_on(cpu: u32, operation: u32, index: u32, generation: u64, limit: u32) -> Reply {
+    let Some(_guard) = core_lock::enter() else {
         return reply(9); // BUSY: no owner borrow, no backend callback.
-    }
-    let _guard = Guard;
+    };
     // SAFETY: the linked backend has the stated C ABI and returns a normalized bit.
     // Callback occurs BEFORE creating any Rust reference to STORAGE.
     if unsafe { kernel_scheduler_context_valid() } != 1 { return reply(10); }
-    if operation > 9 { return reply(12); }
+    if operation > limit { return reply(12); }
     if matches!(operation, 0 | 1 | 4 | 9) && (index != NONE || generation != 0) {
         return reply(12);
     }
-    // SAFETY: ENTERED exclusively owns Storage; no callbacks occur during borrow.
+    // SAFETY: the core_lock guard exclusively owns Storage; no callbacks during borrow.
     let storage = unsafe { &mut *STORAGE.0.get() };
     if operation == 0 {
         if storage.is_some() { return reply(13); }
@@ -100,15 +100,16 @@ pub extern "C" fn kernel_scheduler_apply(operation: u32, index: u32, generation:
     let Some(owner) = storage.as_mut() else { return reply(11); };
     let handle = Handle { index, generation };
     let result: Result<Handle, Error> = match operation {
-        1 => owner.reserve(),
-        2 => owner.publish(handle).map(|()| handle),
-        3 => owner.abort(handle).map(|()| handle),
-        4 => owner.select(),
-        5 => owner.yield_task(handle).map(|()| handle),
-        6 => owner.exit(handle).map(|()| handle),
-        7 => owner.collect(handle).map(|()| handle),
+        1 => owner.reserve_on(cpu),
+        2 => owner.publish_on(cpu, handle).map(|()| handle),
+        3 => owner.abort_on(cpu, handle).map(|()| handle),
+        4 => owner.select_on(cpu),
+        5 => owner.yield_on(cpu, handle).map(|()| handle),
+        6 => owner.exit_on(cpu, handle).map(|()| handle),
+        7 => owner.collect_on(cpu, handle).map(|()| handle),
         8 => owner.state(handle).map(|_| handle),
-        9 => owner.current(),
+        9 => owner.current_on(cpu),
+        10 => owner.preempt_on(cpu, handle).map(|()| handle),
         _ => return reply(12),
     };
     let mut output = match result {
@@ -136,11 +137,15 @@ pub extern "C" fn kernel_scheduler_apply(operation: u32, index: u32, generation:
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_scheduler_event_apply(operation: u32, index: u32, generation: u64,
     event: u32, observed: u64) -> EventReply {
+    event_apply_on(0, operation, index, generation, event, observed)
+}
+
+// ====== gateway_event_apply_on ======
+
+fn event_apply_on(cpu: u32, operation: u32, index: u32, generation: u64,
+    event: u32, observed: u64) -> EventReply {
     let mut output = EventReply { reply: reply(0), epoch: 0, outcome: u32::MAX, woken: 0 };
-    if ENTERED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-        output.reply = reply(9); return output;
-    }
-    let _guard = Guard;
+    let Some(_guard) = core_lock::enter() else { output.reply = reply(9); return output; };
     // SAFETY: trusted ABI callback, before borrowing the exclusively owned storage.
     if unsafe { kernel_scheduler_context_valid() } != 1 {
         output.reply = reply(10); return output;
@@ -153,9 +158,9 @@ pub extern "C" fn kernel_scheduler_event_apply(operation: u32, index: u32, gener
     let Some(owner) = storage.as_mut() else { output.reply = reply(11); return output; };
     let handle = Handle { index, generation };
     let result: Result<state::EventResult, Error> = match operation {
-        0 => owner.observe(handle, event),
-        1 => owner.wait(handle, event, observed),
-        2 => owner.signal(handle, event),
+        0 => owner.observe_on(cpu, handle, event),
+        1 => owner.wait_on(cpu, handle, event, observed),
+        2 => owner.signal_on(cpu, handle, event),
         _ => unreachable!(),
     };
     match result {
@@ -178,20 +183,23 @@ pub extern "C" fn kernel_scheduler_event_apply(operation: u32, index: u32, gener
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_scheduler_stop_apply(operation: u32, index: u32,
     generation: u64) -> EventReply {
+    stop_apply_on(0, operation, index, generation)
+}
+
+// ====== gateway_stop_apply_on ======
+
+fn stop_apply_on(cpu: u32, operation: u32, index: u32, generation: u64) -> EventReply {
     let mut output = EventReply { reply: reply(0), epoch: 0, outcome: u32::MAX, woken: 0 };
-    if ENTERED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-        output.reply = reply(9); return output;
-    }
-    let _guard = Guard;
+    let Some(_guard) = core_lock::enter() else { output.reply = reply(9); return output; };
     // SAFETY: trusted context callback before creating any storage reference.
     if unsafe { kernel_scheduler_context_valid() } != 1 { output.reply = reply(10); return output; }
     if operation > 1 { output.reply = reply(12); return output; }
-    // SAFETY: ENTERED owns the storage; no callback or switch during this borrow.
+    // SAFETY: the core_lock guard owns the storage; no callback or switch during this borrow.
     let storage = unsafe { &mut *STORAGE.0.get() };
     let Some(owner) = storage.as_mut() else { output.reply = reply(11); return output; };
     let handle = Handle { index, generation };
     let result = if operation == 0 {
-        owner.request_stop(handle).map(|woken| (1, woken))
+        owner.request_stop_on(cpu, handle).map(|woken| (1, woken))
     } else { owner.stop_requested(handle).map(|stopped| (u32::from(stopped), 0)) };
     match result {
         Ok((outcome, woken)) => {
@@ -222,13 +230,10 @@ pub extern "C" fn kernel_scheduler_irq_post(event: u32) -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_scheduler_irq_drain() -> EventReply {
     let mut output = EventReply { reply: reply(0), epoch: 0, outcome: 4, woken: 0 };
-    if ENTERED.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-        output.reply = reply(9); return output;
-    }
-    let _guard = Guard;
+    let Some(_guard) = core_lock::enter() else { output.reply = reply(9); return output; };
     // SAFETY: trusted ABI callback before creating the exclusive owner borrow.
     if unsafe { kernel_scheduler_context_valid() } != 1 { output.reply = reply(10); return output; }
-    // SAFETY: identical ENTERED discipline; no callbacks while this borrow exists.
+    // SAFETY: identical core_lock discipline; no callbacks while this borrow exists.
     let storage = unsafe { &mut *STORAGE.0.get() };
     let Some(owner) = storage.as_mut() else { output.reply = reply(11); return output; };
     if PENDING.empty() { return output; }

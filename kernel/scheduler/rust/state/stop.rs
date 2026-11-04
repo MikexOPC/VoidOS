@@ -23,9 +23,14 @@ impl Owner {
 
     // Dispatcher only. Stop never completes a task or releases native resources.
     // Duplicate requests are true no-ops, including at the mutation counter limit.
+    #[cfg(test)]
     pub fn request_stop(&mut self, handle: Handle) -> Result<u32, Error> {
+        self.request_stop_on(0, handle)
+    }
+
+    pub fn request_stop_on(&mut self, cpu: u32, handle: Handle) -> Result<u32, Error> {
         if !self.validate() { return Err(Error::Corrupt); }
-        if self.current.is_some() { return Err(Error::Running); }
+        self.dispatcher(cpu)?;
         let index = self.handle(handle)?;
         if !matches!(self.slots[index].state, State::Ready | State::Waiting) {
             return Err(Error::InvalidState);
