@@ -2,7 +2,7 @@
 #define OS_X86_PERCPU_SERVICE_H
 #include <stdint.h>
 
-enum { XIS_PING = 0, XIS_FLUSH_CONTEXT = 1 };
+enum { XIS_PING = 0, XIS_FLUSH_CONTEXT = 1, XIS_ARM_TIMER = 2, XIS_STOP_TIMER = 3 };
 
 enum { XIS_PREPARED = 0, XIS_READY = 1, XIS_FAILED = 2 };
 enum { XIS_PHASE = 0, XIS_REQUEST = 1, XIS_CLAIMED = 2, XIS_ACK = 3 };

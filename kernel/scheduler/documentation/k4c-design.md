@@ -124,6 +124,41 @@ jitter fa parte della validazione.
 6. **K4-C6, campagna di chiusura K4:** stress su 4 CPU, audit G5,
    accounting, regressioni, console VirtIO/VT-d. Poi push di K4.
 
+## K4-C2 — Prima prova del timer sugli AP
+
+Il BSP termina il collaudo one-shot e pubblica il reload calibrato
+con il suo divisore. Gli AP sono già in idle di servizio. Il profilo diagnostico usa un comando esplicito della mailbox per armare e fermare il
+timer locale. La richiesta porta una generazione; il parametro
+calibrato è pubblicato dal BSP e rimane immutabile per la prova.
+L'ACK certifica che l'AP ha verificato la configurazione locale.
+
+Nella IDT di servizio si riserva 0xd1 al timer degli AP, in una
+classe di priorità sotto l'IPI 0xe1. Il LVT Timer (+0x320) usa
+vettore nei bit 7:0, maschera nel bit 16 e modalità periodica
+nei bit 18:17 con valore 01b. Il divide register (+0x3e0) usa
+il divisore della calibrazione BSP (codifica 3, divide per 16).
+Si scrive il reload in Initial Count (+0x380) dopo il LVT.
+Current Count (+0x390) è in sola lettura. Si verificano i valori
+programmati e si scrive zero in Initial Count per lo stop.
+Riferimento: Intel SDM 078US, Vol. 3A, §11.5.4, figure 11-8,
+11-10 e 11-11; §11.8.5 per EOI (+0xb0).
+
+Il primo handler verifica identità, stato per CPU e vettore in
+servizio. Conta le consegne dopo EOI. Le interruzioni LAPIC possono
+accorparsi: il contatore misura consegne, senza rappresentare
+tutti i periodi trascorsi. La prova non cambia il dispatcher.
+Prima di dichiarare il timer fermo si maschera il LVT, si azzera
+Initial Count e si gestiscono eventuali IRQ già pendenti.
+Un timeout porta al panic coordinato.
+
+Accettazione: tick su ogni AP reale, PING e flush durante la prova,
+stop verificato, nessun tick dopo lo stop, regressione del timer BSP
+e dieci boot consecutivi a quattro CPU. Il riuso del reload BSP
+va misurato rispetto al clock PM per ogni AP sul profilo QEMU xAPIC.
+
+Decisione: primo collegamento nel profilo isolato `-TestApService ap-timer`.
+La mailbox usa due bit per il comando e 62 per la generazione.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):

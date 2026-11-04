@@ -93,6 +93,64 @@ int xis_native_flush_context(void) {
     return 1;
 }
 
+#if KERNEL_TEST_AP_SERVICE == 7
+#define XIS_TIMER_VECTOR 0xd1U
+#define XIS_TIMER_PERIODIC (1U << 17)
+#define XIS_TIMER_MASKED (1U << 16)
+uint64_t xis_timer_reload;
+uint64_t xis_timer_ticks[64];
+static uint8_t timer_state[64];
+
+// ====== timer_command ======
+
+// Intel SDM 078US Vol. 3A §11.5.4: LVT +320h, Initial Count +380h,
+// Current Count +390h (RO), Divide +3e0h (3 divides by 16).
+static int timer_command(uint32_t index, uint32_t operation)
+{
+    volatile uint32_t *lvt = (volatile uint32_t *)(X86_LAPIC_VIRTUAL + 0x320);
+    volatile uint32_t *initial = (volatile uint32_t *)(X86_LAPIC_VIRTUAL + 0x380);
+    volatile const uint32_t *current = (volatile const uint32_t *)(X86_LAPIC_VIRTUAL + 0x390);
+    volatile uint32_t *divide = (volatile uint32_t *)(X86_LAPIC_VIRTUAL + 0x3e0);
+    uint32_t periodic = XIS_TIMER_PERIODIC | XIS_TIMER_VECTOR;
+
+    if (operation == XIS_ARM_TIMER && !timer_state[index]) {
+        uint64_t reload = ks_atomic_load_acquire(&xis_timer_reload);
+        if (!reload || reload > UINT32_MAX || *initial || *current || *lvt != 0x10040) return 0;
+        *divide = 3;
+        *lvt = periodic;
+        *initial = (uint32_t)reload;
+        if (*divide != 3 || *lvt != periodic || *initial != reload) return 0;
+        timer_state[index] = 1;
+        return 1;
+    }
+    if (operation == XIS_STOP_TIMER && timer_state[index] == 1) {
+        *lvt = periodic | XIS_TIMER_MASKED;
+        *initial = 0;
+        if (*lvt != (periodic | XIS_TIMER_MASKED) || *initial || *current) return 0;
+        timer_state[index] = 2;
+        return 1;
+    }
+    return 0;
+}
+
+// ====== timer_interrupt ======
+
+static void timer_interrupt(uint32_t index)
+{
+    const uint32_t isr = 0x100 + (XIS_TIMER_VECTOR / 32) * 16;
+    const uint32_t bit = 1U << (XIS_TIMER_VECTOR % 32);
+    for (uint32_t offset = 0x100; offset <= 0x170; offset += 16)
+        if (xis_mmio_read(offset) != (offset == isr ? bit : 0))
+            xis_native_abort(0x4b34435449535200ULL);
+    uint64_t count = ks_atomic_load_relaxed(&xis_timer_ticks[index]);
+    if (!timer_state[index] || count == UINT64_MAX)
+        xis_native_abort(0x4b3443545449434bULL);
+    xis_mmio_write(0xb0, 0);
+    if (xis_mmio_read(isr)) xis_native_abort(0x4b344354454f4900ULL);
+    ks_atomic_store_release(&xis_timer_ticks[index], count + 1);
+}
+#endif
+
 // ====== xis_native_dispatch ======
 
 void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
@@ -116,6 +174,12 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
         ks_atomic_store_release(&cpu->Spurious, previous + 1);
         return;
     }
+#if KERNEL_TEST_AP_SERVICE == 7
+    if (frame->Vector == XIS_TIMER_VECTOR) {
+        timer_interrupt(index);
+        return;
+    }
+#endif
     if (frame->Vector != XIS_VECTOR) xis_native_abort(0x4b34495049564543ULL);
     for (uint32_t word = 0; word < 8; ++word)
         if (xis_mmio_read(0x100 + word * 16) != (word == XIS_VECTOR / 32 ? 1U << (XIS_VECTOR % 32) : 0))
@@ -141,6 +205,11 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     }
 #endif
     uint32_t operation = xis_operation(index, index, generation);
+#if KERNEL_TEST_AP_SERVICE == 7
+    if (operation == XIS_ARM_TIMER || operation == XIS_STOP_TIMER) {
+        if (!timer_command(index, operation)) xis_native_abort(0x4b344354434d4400ULL);
+    } else
+#endif
     if (operation != XIS_PING &&
         (operation != XIS_FLUSH_CONTEXT || !xis_native_flush_context()))
         xis_native_abort(0x4b34544c42464c53ULL);

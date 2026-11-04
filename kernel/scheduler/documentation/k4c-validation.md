@@ -70,3 +70,26 @@ ogni percorso di uscita.
 
 Limiti: lo scheduler del kernel usa ancora solo la CPU 0. Timer per CPU,
 entry di preemption e dispatcher sugli AP sono C2–C4.
+
+## K4-C2 — Timer periodico sugli AP
+
+Il profilo isolato TestApService ap-timer usa il reload ottenuto dal
+timer one-shot del BSP con divisore 16. Gli AP usano il vettore 0xd1.
+Il BSP attende ACK e ritorno IRETQ per arm, PING e stop. Fra arm e stop
+esegue anche uno shootdown sul gruppo. L'handler valida il bit ISR
+e pubblica il conteggio dopo EOI.
+
+- 10/10 boot QEMU xAPIC a quattro CPU. Tutti i 30 AP osservati
+  hanno riportato dieci consegne. Dopo lo stop, 40 ms di drenaggio
+  seguiti da 100 ms di osservazione con contatore invariato.
+  Evidenza: kernel/build/ipi-service-ec99d86c7d954211a0e8deb960f37c72.
+- Suite ipi-service e layout passate.
+  Evidenze: kernel/build/test-run-aa452f867292444091ceabdddafcc8c0 e
+  kernel/build/test-run-de2897c0d3b14ed39cd00de4497f275b.
+- 10/10 boot ordinari a quattro CPU.
+  Evidenza: kernel/build/ap-runtime-95ad7ee35c7243a2a9e48364af26ad90.
+- Audit di emergenza passato sulle immagini diagnostica e ordinaria.
+
+La prova misura le consegne aggregate su QEMU. Jitter e comportamento
+su hardware fisico restano da misurare. Il profilo non effettua switch
+preemptivi. Coverage non misurata.

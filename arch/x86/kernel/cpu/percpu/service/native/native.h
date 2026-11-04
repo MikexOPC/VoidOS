@@ -26,6 +26,12 @@ extern uint64_t xis_probe_armed;
 extern uint64_t xis_release_armed;
 #endif
 
+#if KERNEL_TEST_AP_SERVICE == 7
+extern uint64_t xis_timer_reload;
+extern uint64_t xis_timer_ticks[64];
+uint32_t x86_timer_diagnostic_reload(void);
+#endif
+
 #define XIS_VECTOR 0xe1U
 // Stack bytes reserved by xis_service_loop (idle.asm: sub rsp, 576) below the private frame.
 #define XIS_IDLE_FRAME_BYTES 576ULL
