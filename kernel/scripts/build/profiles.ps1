@@ -1,8 +1,9 @@
 # ============ isolated synchronization profile ============
 
-if ($TestSchedulerPreemption) {
+if ($TestSchedulerPreemption -or $TestSchedulerPeriodic) {
+    if ($TestSchedulerPreemption -and $TestSchedulerPeriodic) { throw 'Choose one preemption diagnostic.' }
     foreach ($key in $PSBoundParameters.Keys) {
-        if ($key -notin @('TestSchedulerPreemption','OutputDirectory','ToolchainBin')) { throw 'Preemption requires an isolated diagnostic profile.' }
+        if ($key -notin @('TestSchedulerPreemption','TestSchedulerPeriodic','OutputDirectory','ToolchainBin')) { throw 'Preemption requires an isolated diagnostic profile.' }
     }
 }
 

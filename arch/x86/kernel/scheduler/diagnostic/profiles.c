@@ -41,6 +41,9 @@ static const X86_SCHEDULER_PROFILE profiles[] = {
     {2,6,1,1,x86_scheduler_idle_task,x86_scheduler_idle_wait},
     {2,1024,0,1,x86_scheduler_persistent_task,NULL},
     {2,6,1,1,x86_scheduler_idle_task,x86_scheduler_idle_wait}
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+    ,{2,8,0,0,x86_scheduler_periodic_task,NULL}
+#endif
 #ifdef KERNEL_PS2_INPUT
     // Interactive session: no step/idle cap (B1); each idle wait keeps its own watchdog timeout.
 #ifdef KERNEL_PS2_MOUSE
@@ -77,6 +80,9 @@ int x86_scheduler_profile_complete(uint32_t id, const X86_DISPATCH_STATS *stats)
 #endif
     if (id == 1) return stats->steps == profile->step_limit && stats->waiting_count == irq_waits && !stats->changed_count &&
         !stats->signal_count && !stats->stop_waits && x86_scheduler_irq_verified();
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+    if (id == 5) return stats->steps == 8 && !stats->waiting_count && x86_scheduler_periodic_verified();
+#endif
     if (id == 3) return stats->steps == 136 && stats->waiting_count == 33 && !stats->changed_count &&
         stats->signal_count == 32 && stats->stop_waits == 1 && x86_scheduler_persistent_complete();
     return stats->steps == 6 && stats->waiting_count == 2 && !stats->changed_count && !stats->signal_count &&

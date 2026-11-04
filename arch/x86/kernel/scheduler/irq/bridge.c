@@ -12,6 +12,12 @@ static uint32_t posted, finished;
 static uint32_t suspended, peer_ran, resumed;
 void x86_scheduler_irq_suspend(void);
 #endif
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+static const X86_LAPIC_TIMER *periodic_source;
+static X86_IRQ_TOKEN periodic_token;
+static volatile uint32_t periodic_completion[2][2];
+static uint32_t periodic_ticks[2], periodic_resumed[2], periodic_total;
+#endif
 static uint64_t binding_generation;
 static uint64_t irq_rip, irq_rsp, irq_flags, irq_generation;
 extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_compute_end[];
@@ -25,6 +31,15 @@ int x86_scheduler_irq_record(uint64_t vector, uint64_t rip, uint64_t rsp, uint64
 {
 #ifdef KERNEL_PS2_INPUT
     if (x86_ps2_session()->Active) return x86_ps2_irq_record(vector,rip,rsp,flags);
+#endif
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+    if (periodic_source) {
+        uint32_t index = x86_scheduler_index();
+        return vector == 0x41 && index < 2 && x86_scheduler_task_valid() &&
+            (flags & 0x600) == 0x200 &&
+            rip >= (uint64_t)x86_scheduler_irq_compute_begin && rip < (uint64_t)x86_scheduler_irq_compute_end &&
+            rsp >= x86_task_stack_base(index) + 4096 && rsp < x86_task_stack_base(index) + 65536;
+    }
 #endif
     if (!timer_source || vector != 0x41 || irq_rip || x86_scheduler_index() != 1 ||
         !x86_scheduler_task_valid() || !(flags & 512) || (flags & 1024) ||
@@ -53,6 +68,18 @@ int x86_scheduler_timer_notify(const X86_LAPIC_TIMER *source)
 
 void x86_scheduler_irq_after(const X86_IRQ_FRAME *frame)
 {
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+    if (periodic_source && frame->Vector == 0x41) {
+        uint32_t index = x86_scheduler_index();
+        const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
+        if (index >= 2 || !locks || locks->Depth || ks_irq_state() || !(frame->Flags & 512) ||
+            periodic_ticks[index] != periodic_resumed[index] + 1)
+            kernel_scheduler_fail_stop();
+        x86_scheduler_irq_suspend();
+        ++periodic_resumed[index];
+        return;
+    }
+#endif
     if (!timer_source || frame->Vector != 0x41 || !posted || suspended) return;
     const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
     if (!locks || locks->Depth || ks_irq_state() || frame->Rip != irq_rip ||
@@ -165,3 +192,71 @@ int x86_scheduler_timer_tasks(X86_LAPIC_TIMER *source)
         kernel_text("\nSCHEDULER_IRQ_TASK: ") && kernel_number(1) && kernel_text("\n") &&
         kernel_log(0,"KERNEL_SCHEDULER_TASK_IRQ_OK");
 }
+
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+// ====== periodic_quiet ======
+
+static int periodic_quiet(void)
+{
+    BOOT_U32 value;
+    const X86_LAPIC_MAPPING *mapping = periodic_source->Mapping;
+    return x86_timer_read(mapping,0x320,&value) && value == 0x10041 &&
+        x86_timer_read(mapping,0x380,&value) && !value &&
+        x86_timer_read(mapping,0x390,&value) && !value && x86_lapic_idle(mapping);
+}
+
+// ====== periodic_irq ======
+
+static int periodic_irq(void)
+{
+    uint32_t index = x86_scheduler_index();
+    if (!periodic_source || index >= 2 || index != periodic_total % 2 ||
+        periodic_ticks[index] >= 3 || periodic_total >= 6) return 0;
+    if (periodic_total == 5 && !x86_timer_stop(periodic_source->Mapping)) return 0;
+    if (!x86_lapic_eoi_vector(periodic_source->Mapping,0x41)) return 0;
+    ++periodic_total;
+    if (++periodic_ticks[index] == 3) periodic_completion[index][0] = 1;
+    return 1;
+}
+
+// ====== x86_scheduler_periodic_task ======
+
+void x86_scheduler_periodic_task(uint32_t index)
+{
+    if (index >= 2 || !periodic_source || !x86_scheduler_task_valid()) kernel_scheduler_fail_stop();
+    if (index == 0) {
+        const X86_LAPIC_MAPPING *mapping = periodic_source->Mapping;
+        // Intel SDM 078US Vol. 3A §11.5.4: +320h periodic mode, +380h starts counting.
+        if (!x86_timer_confirm_write(mapping,0x320,0x20041) ||
+            !x86_timer_confirm_write(mapping,0x380,periodic_source->Reload)) kernel_scheduler_fail_stop();
+    }
+    if (x86_scheduler_irq_poll(periodic_completion[index],periodic_source->Clock.Port,
+        periodic_source->Clock.Mask,X86_PM_CLOCK_HZ / 2) != 1 || periodic_resumed[index] != 3)
+        kernel_scheduler_fail_stop();
+}
+
+// ====== x86_scheduler_periodic_verified ======
+
+int x86_scheduler_periodic_verified(void)
+{
+    return periodic_total == 6 && periodic_resumed[0] == 3 && periodic_resumed[1] == 3 &&
+        periodic_quiet();
+}
+
+// ====== x86_scheduler_periodic_run ======
+
+int x86_scheduler_periodic_run(const X86_LAPIC_TIMER *source)
+{
+    if (!source || periodic_source || !source->Reload || source->Error || !x86_irq_ready()) return 0;
+    const X86_LAPIC_MAPPING *mapping = source->Mapping;
+    periodic_source = source;
+    if (!x86_timer_stop(mapping) || !x86_timer_confirm_write(mapping,0x3e0,3) || !periodic_quiet() ||
+        !x86_irq_registry_bind(x86_irq_registry(),0x41,periodic_irq,periodic_quiet,&periodic_token) ||
+        !x86_scheduler_run_periodic() || x86_irq_registry_deliveries(x86_irq_registry(),&periodic_token) != 6 ||
+        !x86_irq_registry_unbind(x86_irq_registry(),&periodic_token) ||
+        !x86_timer_confirm_write(mapping,0x3e0,source->OriginalDivide) ||
+        !x86_timer_confirm_write(mapping,0x320,source->OriginalLvt) || !x86_lapic_idle(mapping)) return 0;
+    periodic_source = 0;
+    return kernel_log(0,"KERNEL_SCHEDULER_PERIODIC_OK");
+}
+#endif

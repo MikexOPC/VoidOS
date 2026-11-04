@@ -188,6 +188,37 @@ far avanzare un altro task e riprendere il primo con registri e
 flags intatti. Dispatcher e idle devono proseguire senza switch
 preemptivo quando ricevono il timer.
 
+## Preemption periodica prima del dispatcher AP
+
+Il diagnostico BSP ha provato un singolo switch con il timer one-shot.
+Il diagnostico AP ha provato la sorgente periodica durante l'idle.
+Il prossimo collegamento deve distinguere la consegna del tick
+dalla decisione di cambiare task.
+
+Decisione: profilo periodico isolato sul solo BSP, TestSchedulerPeriodic. Il profilo prende
+in carico il LAPIC timer dopo la chiusura della sessione one-shot
+esistente, con source mascherata e senza consegne pendenti. Due task
+di calcolo senza yield alternano esecuzione fino a un limite
+esplicito. Il timer completa EOI prima dell'epilogo IRQ. Il dispatcher
+Rust consuma il tick e decide se riprendere il task o rimetterlo in
+coda. Il dispatcher opera con IF disabilitato durante questa prova.
+Lo stop al sesto IRQ verifica source ferma e ISR/IRR vuoti prima
+del distacco; una sorgente ancora pendente fa fallire la prova.
+Il teardown ripristina LVT, divisore e budget. I test confrontano progresso, contesto e
+numero di switch su dieci boot QEMU.
+
+Il passo AP richiede poi tre garanzie proprie: verificare l'indice
+CPU dal contesto locale prima di usare il gateway Rust, separare
+stack e stato dei dispatcher, accettare PING e flush anche quando
+l'IRQ interrompe uno stack task autorizzato. Il gate attuale del
+gateway verifica il dispatcher BSP; il parametro cpu da solo
+non autorizza operazioni sullo stato di un altro core.
+
+Alternativa: collegare subito il timer periodico e il dispatcher
+su un AP nel medesimo diagnostico. Dimostra prima il lavoro su un
+core secondario, ma unisce la validazione dello switch ripetuto,
+dell'identità CPU e dei nuovi stack nello stesso collaudo.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):

@@ -3,6 +3,12 @@
 #include "arch/x86/kernel/timer/lapic/timer.h"
 // ====== timer_owned_session ======
 
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+int x86_scheduler_periodic_run(const X86_LAPIC_TIMER *source);
+void x86_scheduler_periodic_task(uint32_t index);
+int x86_scheduler_periodic_verified(void);
+int x86_scheduler_run_periodic(void);
+#endif
 int x86_scheduler_timer_tasks(X86_LAPIC_TIMER *source);
 int x86_scheduler_timer_notify(const X86_LAPIC_TIMER *source);
 uint64_t x86_scheduler_irq_stack_top(uint64_t frame);

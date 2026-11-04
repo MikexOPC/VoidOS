@@ -14,7 +14,11 @@ int x86_scheduler_report(uint64_t root, uint64_t before, const KERNEL_PHYSICAL_A
         !kernel_text("\nSCHEDULER_BUDGET_AFTER: ") || !kernel_number(after) ||
         !kernel_text("\nSCHEDULER_DISPATCHES: ") || !kernel_number(steps) || !kernel_text("\n")) return 0;
     if (!profile) return 1;
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+    if (profile == 5) return steps == 8;
+#else
     if (profile == 5) return kernel_log(0,"KERNEL_INPUT_TASKS_COLLECTED");
+#endif
     if (profile == 3) return kernel_text("SCHEDULER_PERSISTENT_DISPATCHES: ") && kernel_number(steps) &&
         kernel_text("\nSCHEDULER_PERSISTENT_CYCLES: ") && kernel_number(x86_scheduler_persistent_cycles()) &&
         kernel_text("\nSCHEDULER_PERSISTENT_BUDGET_BEFORE: ") && kernel_number(before) &&

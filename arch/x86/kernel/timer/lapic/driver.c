@@ -308,6 +308,9 @@ cleanup:
         !x86_device_inventory_verify(context,window->Pool,mapping,inventory)) {
         return 0;
     }
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+    if (!x86_scheduler_periodic_run(&timer)) return 0;
+#endif
     return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);
 }
 

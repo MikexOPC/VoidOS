@@ -1,5 +1,5 @@
 param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-handler','release-missing-ack','ap-timer')][string]$TestApService = 'none', [ValidateSet('none','withhold-ack','lock-held','contended')][string]$TestApStress = 'none', [ValidateSet('none','bsp','ap')][string]$TestApGroupPanic = 'none', [switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic, [switch]$TestApSequence, [switch]$TestApSequenceFault,
-    [switch]$TestSchedulerPreemption, [ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
+    [switch]$TestSchedulerPeriodic, [switch]$TestSchedulerPreemption, [ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [ValidateSet('none','guard','nx')][string]$TestApResourceFault = 'none',
     [ValidateSet('none','prepare','voluntary','opcode','page','nmi','double','no-simd','recursive','lock-held','prepare-rollback','no-simd-call')][string]$TestSmpPanic = 'none',
     [ValidateSet('none','prepare','rollback','freeze','image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')][string]$TestApTransition = 'none',
@@ -162,7 +162,7 @@ Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c
 $objects += ($output+'/pm-read.obj')
 foreach ($entry in @('entry/return','verification/registers')) {
     $object = $output + '/irq-' + ($entry.Replace('/','-')) + '.obj'
-    $irqDefines = if ($TestSchedulerPreemption -and $entry -eq 'entry/return') { @('/DKERNEL_TEST_SCHEDULER_PREEMPTION=1') } else { @() }
+    $irqDefines = if (($TestSchedulerPreemption -or $TestSchedulerPeriodic) -and $entry -eq 'entry/return') { @('/DKERNEL_TEST_SCHEDULER_PREEMPTION=1') } else { @() }
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') (@('/nologo','/W3','/WX','/c',('/Fo'+$object)) + $irqDefines +
         @((Join-Path $project ('arch/x86/kernel/interrupts/return/assembly/'+$entry+'.asm'))))
     $objects += $object
