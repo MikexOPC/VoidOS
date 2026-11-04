@@ -9,6 +9,7 @@
 #define X86_TASK_SIGNAL 5U
 #define X86_TASK_STOP 6U
 #define X86_TASK_STOP_QUERY 7U
+#define X86_TASK_PREEMPT 8U
 
 // step_limit/idle_limit value meaning "no cap": a continuous interactive session.
 #define X86_DISPATCH_UNLIMITED 0xFFFFFFFFU

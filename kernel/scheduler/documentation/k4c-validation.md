@@ -133,3 +133,28 @@ e FXSAVE intatti. Lo stop atteso conserva le risorse del test.
 L'arresto spontaneo iniziale non si è ripetuto. Il trace non contiene
 una consegna 0x41, ma il vecchio codice terminale non distingue
 l'armamento dall'attesa. La causa originaria non è dimostrata.
+
+### Prima preemption del BSP
+
+Il profilo TestSchedulerPreemption usa il timer one-shot esistente.
+Dopo l'EOI, l'epilogo IRQ chiama il percorso di sospensione con
+il frame ancora sullo stack del task. Il dispatcher esegue tick_on
+e PREEMPT tramite il gateway Rust per CPU. Un secondo task già
+pronto prosegue prima che il primo riprenda tramite IRETQ.
+
+- 10/10 boot QEMU a quattro CPU, con marker di preemption obbligatorio.
+  Evidenza: kernel/build/ap-runtime-05f9aac71ab04ad7afcb2020d8c9d988.
+- Il workload controlla sette GPR e l'immagine FXSAVE. Il marker
+  arriva dopo l'esecuzione del secondo task, la ripresa e il cleanup.
+- Suite x86-scheduler, scheduler e layout passate. Evidenze:
+  kernel/build/test-run-72e3079edcf849b49d3920348d93b48d,
+  kernel/build/test-run-14998121be2f4fc8962dce896f6728bf e
+  kernel/build/test-run-4602125d84fe46a7a581bc0e119dc629.
+- 10/10 boot ordinari a quattro CPU e audit di emergenza su entrambe le immagini.
+  Evidenza: kernel/build/ap-runtime-73f296bae8dc4e0db20fa61f302b5a12.
+
+I primi tentativi si sono fermati perché l'argomento MASM per
+attivare il ramo era dopo il sorgente. Nel disassemblato finale la
+chiamata è presente tra il dispatch IRQ e FXRSTOR64.
+La prova è un singolo switch preemptivo sul BSP. L'uso periodico
+nello scheduler e il dispatcher AP richiedono i blocchi successivi.

@@ -172,9 +172,9 @@ che tutta l'area salvata vi rientri. Il controllo avviene dopo i
 salvataggi Assembly. Le pagine di guardia restano la protezione
 durante l'ingresso.
 
-Per il prossimo collegamento, la proposta è conservare una
-continuazione nello stack del task. Il ramo Assembly dopo il
-ritorno dell'handler può sospenderla usando lo switch esistente.
+Nel profilo TestSchedulerPreemption la continuazione resta nello
+stack del task. Il ramo Assembly dopo il ritorno dell'handler
+la sospende usando lo switch esistente.
 Il dispatcher applica la transizione Rust prima di rieseguire il
 task. La ripresa torna all'epilogo IRQ, che ripristina FXSAVE,
 i registri e il frame tramite IRETQ. Prima della sospensione si

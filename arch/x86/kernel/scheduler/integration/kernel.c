@@ -154,6 +154,21 @@ void x86_scheduler_yield(void)
         kernel_scheduler_fail_stop();
 }
 
+#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
+// ====== x86_scheduler_irq_suspend ======
+
+void x86_scheduler_irq_suspend(void)
+{
+    uint32_t index = current;
+    uint64_t gen = generation;
+    if (!x86_scheduler_task_valid() || event || !dispatcher_resume_private()) kernel_scheduler_fail_stop();
+    event = X86_TASK_PREEMPT;
+    x86_scheduler_context_switch(&contexts[index], &dispatcher);
+    if (!x86_scheduler_task_valid() || current != index || generation != gen || event)
+        kernel_scheduler_fail_stop();
+}
+#endif
+
 // ====== x86_scheduler_event_request ======
 
 KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uint64_t token)
@@ -199,8 +214,8 @@ static int native_dispatch_run_private(const KERNEL_SCHEDULER_REPLY *task, X86_D
     phase = 1;
     if (!kernel_scheduler_context_valid() || !x86_task_stack_validate(&stacks[current])) return 0;
     command->reason = event;
-    command->target = event >= X86_TASK_OBSERVE ? requested_event : 0;
-    command->token = event >= X86_TASK_OBSERVE ? requested_epoch : 0;
+    command->target = event >= X86_TASK_OBSERVE && event <= X86_TASK_STOP_QUERY ? requested_event : 0;
+    command->token = event >= X86_TASK_OBSERVE && event <= X86_TASK_STOP_QUERY ? requested_epoch : 0;
     event = 0;
     return 1;
 }

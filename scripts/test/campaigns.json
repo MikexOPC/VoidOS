@@ -1,6 +1,12 @@
 {
   "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
+    "bsp-preemption": {
+      "build": ["-TestSchedulerPreemption"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4", "--preempt"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "BSP timer IRQ suspends the task, runs a peer, and resumes the saved IRQ frame"
+    },
     "ap-timer": {
       "build": ["-TestApService", "ap-timer"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-timer", "--smp", "4"],
