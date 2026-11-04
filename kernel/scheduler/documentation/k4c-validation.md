@@ -93,3 +93,43 @@ e pubblica il conteggio dopo EOI.
 La prova misura le consegne aggregate su QEMU. Jitter e comportamento
 su hardware fisico restano da misurare. Il profilo non effettua switch
 preemptivi. Coverage non misurata.
+
+## K4-C3 — Controllo dell'area salvata
+
+Il dispatcher IRQ verifica in Rust l'estensione del frame, dei 15
+registri e della zona FXSAVE sullo stack autorizzato prima di leggere
+RIP e RSP. I test coprono guardia, disallineamento, fine stack e
+intervalli non canonici.
+
+- Suite kernel, x86-scheduler e layout passate. Evidenze in
+  kernel/build/test-run-c76ae287e2f6453dab0a9577a3de9d5a,
+  kernel/build/test-run-86c6d63b7ddb419d9707ebe7efaf81df e
+  kernel/build/test-run-2a5a8de940fa4e5ca83bc06c8c1e9674.
+- QEMU a 4 CPU: prima campagna 2/10, con arresto generico dello
+  scheduler nel boot 3. Il trace non mostra il vettore 0x41 prima
+  dello stop. Evidenza: kernel/build/ap-runtime-f1fbfb0b3d7f4fda9da7c96f2f1cde96.
+- Seconda campagna, a suite host terminate: 10/10.
+  Evidenza: kernel/build/ap-runtime-80be882ff28348a1a693872768f80ff2.
+
+La causa dell'arresto iniziale resta aperta. Nessuno switch preemptivo
+è ancora collegato. Coverage non misurata.
+
+### Diagnostica dell'IRQ sul BSP
+
+Il diagnostico distingue armamento fallito, attesa scaduta senza
+consegna e completamento incoerente. Il test irq-timeout ferma il
+timer dopo l'armamento e richiede che il poll scada con registri
+e FXSAVE intatti. Lo stop atteso conserva le risorse del test.
+
+- 10/10 boot ordinari QEMU a quattro CPU sull'immagine finale.
+  Evidenza: kernel/build/ap-runtime-6a2c0402beae47eb877ba0696b5bd1ac.
+- 1/1 arresto atteso irq-timeout, con prova CPU e memoria.
+  Evidenza: kernel/build/scheduler-firmware-5172deff3c8846d7919e8c4646195b81.
+- Suite x86-scheduler, kernel e layout passate. Evidenze:
+  kernel/build/test-run-96ddc10faf1e4171a65cea5af1955067,
+  kernel/build/test-run-bed4189df7c74c65b337a601bc53cca9 e
+  kernel/build/test-run-8b2c2ada1f49467388ef41a8a7c96755.
+
+L'arresto spontaneo iniziale non si è ripetuto. Il trace non contiene
+una consegna 0x41, ma il vecchio codice terminale non distingue
+l'armamento dall'attesa. La causa originaria non è dimostrata.

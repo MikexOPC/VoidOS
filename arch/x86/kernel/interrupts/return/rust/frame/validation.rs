@@ -24,3 +24,18 @@ pub extern "C" fn x86_irq_frame(vector: u64, cs: u64, flags: u64, ss: u64) -> u3
     u32::from(matches!(vector,0x40..=0x42 | 0xf0 | 0xff) && cs == 8 && ss == 16 && flags & 2 != 0
         && (vector != 0xf0 || flags & 0x200 == 0) && (!matches!(vector,0x40..=0x42) || flags & 0x200 != 0))
 }
+
+// ====== x86_irq_saved_area ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_irq_saved_area(frame: u64, floor: u64, top: u64) -> u32 {
+    const GPR_BYTES: u64 = 15 * 8;
+    const SAVE_BYTES: u64 = 32 + 512;
+    const FRAME_BYTES: u64 = 6 * 8;
+
+    let Some(stack_bytes) = top.checked_sub(floor) else { return 0; };
+    let Some(gprs) = frame.checked_sub(GPR_BYTES) else { return 0; };
+    let Some(saved) = (gprs & !15).checked_sub(SAVE_BYTES) else { return 0; };
+    u32::from(frame & 7 == 0 && range(floor, stack_bytes) && saved >= floor &&
+        frame.checked_add(FRAME_BYTES).is_some_and(|end| end <= top))
+}

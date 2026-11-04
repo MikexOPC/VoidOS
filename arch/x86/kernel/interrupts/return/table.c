@@ -6,6 +6,7 @@
 #include "arch/x86/kernel/interrupts/registry/registry.h"
 #ifdef KERNEL_SCHEDULER_IRQ
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
+#include "arch/x86/kernel/scheduler/context.h"
 #endif
 extern const BOOT_U64 x86_irq_targets[224];
 extern const unsigned char x86_irq_begin[], x86_irq_end[];
@@ -177,20 +178,16 @@ int x86_irq_initialize(void)
 static int frame_owner(const X86_IRQ_FRAME *frame)
 {
     BOOT_U64 address = (BOOT_U64)frame;
-    BOOT_U64 top = X86_KERNEL_MAIN_TOP;
+    BOOT_U64 floor = X86_KERNEL_MAIN_BASE, top = X86_KERNEL_MAIN_TOP;
 #ifdef KERNEL_SCHEDULER_IRQ
-    if (frame && !(address & 7) && (address < X86_KERNEL_MAIN_BASE ||
-        address > X86_KERNEL_MAIN_TOP - sizeof(*frame))) {
+    if (address < floor || address > top - sizeof(*frame)) {
         top = x86_scheduler_irq_stack_top(address);
-        if (!top) return 0; // Authority BEFORE reading the borrowed CPU frame.
-        return frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= top &&
-            frame->Rip >= X86_KERNEL_IMAGE_BASE && frame->Rip < X86_KERNEL_IMAGE_LIMIT;
+        if (!top) return 0;
+        floor = top - X86_TASK_STACK_BYTES;
     }
 #endif
-    // IST zero: il frame e preso in prestito dallo stack principale persistente.
-    return frame && !(address & 7) && address >= X86_KERNEL_MAIN_BASE &&
-        address <= X86_KERNEL_MAIN_TOP - sizeof(*frame) &&
-        frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= top &&
+    if (!x86_irq_saved_area(address, floor, top)) return 0;
+    return frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= top &&
         frame->Rip >= X86_KERNEL_IMAGE_BASE && frame->Rip < X86_KERNEL_IMAGE_LIMIT;
 }
 

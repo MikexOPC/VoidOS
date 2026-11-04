@@ -64,22 +64,30 @@ void x86_scheduler_irq_task(uint32_t index)
             timer_source->Error || !timer_source->Clock.Port || timer_source->Clock.Port > 65535 ||
             (timer_source->Clock.Mask != 0xFFFFFF && timer_source->Clock.Mask != UINT32_MAX))
             kernel_scheduler_fail_stop();
-        if (!x86_timer_arm(timer_source)) kernel_scheduler_fail_stop();
+        if (!x86_timer_arm(timer_source)) {
+            (void)kernel_log(1, "KERNEL_SCHEDULER_IRQ_ARM_FAILED");
+            kernel_scheduler_fail_stop();
+        }
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT == 7
         // Isolated missing-source injection through the driver's verified stop API.
         // Preserve logical owner/subscription and both task leases on terminal failure.
         if (!x86_timer_stop(timer_source->Mapping)) kernel_scheduler_fail_stop();
 #endif
-        received = x86_scheduler_irq_compute(&timer_source->Count, timer_source->Clock.Port,
+        received = x86_scheduler_irq_poll(&timer_source->Count, timer_source->Clock.Port,
             timer_source->Clock.Mask, X86_PM_CLOCK_HZ / 10);
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT == 7
-        if (received || posted || timer_source->Count || timer_source->Error ||
+        if (received != 2 || posted || timer_source->Count || timer_source->Error ||
             !x86_scheduler_irq_timeout_valid() || !kernel_log(1,"KERNEL_SCHEDULER_IRQ_TIMEOUT_OK"))
             kernel_scheduler_fail_stop();
         kernel_scheduler_fail_stop();
 #else
-        if (!received || !posted || timer_source->Error)
+        if (received != 1 || !posted || timer_source->Error) {
+            if (received == 2 && !timer_source->Count && !timer_source->Error)
+                (void)kernel_log(1, "KERNEL_SCHEDULER_IRQ_DELIVERY_TIMEOUT");
+            else
+                (void)kernel_log(1, "KERNEL_SCHEDULER_IRQ_COMPLETION_FAILED");
             kernel_scheduler_fail_stop();
+        }
         finished = 1;
 #endif
     } else kernel_scheduler_fail_stop();
