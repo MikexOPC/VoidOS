@@ -1,5 +1,11 @@
 # ============ isolated synchronization profile ============
 
+if ($TestSchedulerPreemption) {
+    foreach ($key in $PSBoundParameters.Keys) {
+        if ($key -notin @('TestSchedulerPreemption','OutputDirectory','ToolchainBin')) { throw 'Preemption requires an isolated diagnostic profile.' }
+    }
+}
+
 if ($TestApService -ne 'none') {
     foreach ($key in $PSBoundParameters.Keys) {
         if ($key -notin @('TestApService','OutputDirectory','ToolchainBin')) { throw 'AP service requires an isolated diagnostic profile.' }

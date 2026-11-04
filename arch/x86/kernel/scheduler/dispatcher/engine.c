@@ -19,6 +19,16 @@ static int dispatch_command_private(const X86_DISPATCH_CONFIG *config, X86_DISPA
 {
     KERNEL_SCHEDULER_REPLY reply;
     KERNEL_EVENT_REPLY result;
+#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
+    if (command->reason == X86_TASK_PREEMPT) {
+        if (command->target || command->token) return 0;
+        reply = kernel_scheduler_tick_on(0);
+        if (reply.status != KERNEL_SCHEDULER_OK || reply.state != 1) return 0;
+        reply = kernel_scheduler_apply_on(0,KERNEL_SCHEDULER_PREEMPT,task->index,task->generation);
+        return reply.status == KERNEL_SCHEDULER_OK && reply.state == KERNEL_TASK_READY &&
+            reply.index == task->index && reply.generation == task->generation;
+    }
+#endif
     if (command->reason < X86_TASK_YIELD || command->reason > X86_TASK_STOP_QUERY) return 0;
     if (command->reason >= X86_TASK_STOP) {
         if (!dispatch_apply_private(KERNEL_SCHEDULER_YIELD,task,&reply)) return 0;

@@ -183,7 +183,10 @@ def main():
     parser.add_argument("--boots", type=int, default=10, choices=range(1, 11))
     parser.add_argument("--smp", type=int, required=True, choices=(1, 2, 4, 8))
     parser.add_argument("--panic", action="store_true")
+    parser.add_argument("--preempt", action="store_true")
     args = parser.parse_args()
+    if args.preempt and args.panic:
+        parser.error("Preemption and panic are separate profiles")
     if args.panic and args.smp != 4:
         parser.error("Continuation panic requires the four-core group")
     out = transition.ROOT / "kernel/build" / ("ap-runtime-" + uuid.uuid4().hex)
@@ -207,6 +210,8 @@ def main():
                     vm.command("stop")
                     if args.panic:
                         group.settle(vm, 0)
+                    if args.preempt and log.count("KERNEL_SCHEDULER_PREEMPTION_OK", "OK") != 1:
+                        raise RuntimeError("Missing task suspension and IRQ return proof")
                     results.append(verify(vm, log, args.smp, args.panic))
                 except BaseException:
                     vm.command("stop")
