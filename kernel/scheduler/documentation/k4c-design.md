@@ -159,6 +159,35 @@ va misurato rispetto al clock PM per ogni AP sul profilo QEMU xAPIC.
 Decisione: primo collegamento nel profilo isolato `-TestApService ap-timer`.
 La mailbox usa due bit per il comando e 62 per la generazione.
 
+## K4-C3 — Frame e ripresa sul BSP
+
+Il frame può restare nello stack pinned del task. L'entry IRQ salva
+15 registri, allinea RSP a 16 byte, riserva 32 byte di shadow space
+e 512 byte FXSAVE. Il frame con vettore, RIP, CS, RFLAGS, RSP e SS
+occupa 48 byte. Sono dimensioni dell'ABI attuale di return.asm.
+Per il frame hardware e IRETQ si applica Intel SDM Vol. 3A §6.14.
+
+Prima di leggere il frame, C identifica lo stack e Rust verifica
+che tutta l'area salvata vi rientri. Il controllo avviene dopo i
+salvataggi Assembly. Le pagine di guardia restano la protezione
+durante l'ingresso.
+
+Per il prossimo collegamento, la proposta è conservare una
+continuazione nello stack del task. Il ramo Assembly dopo il
+ritorno dell'handler può sospenderla usando lo switch esistente.
+Il dispatcher applica la transizione Rust prima di rieseguire il
+task. La ripresa torna all'epilogo IRQ, che ripristina FXSAVE,
+i registri e il frame tramite IRETQ. Prima della sospensione si
+verificano EOI, task e generazione correnti, IF originario e
+assenza di lock. Lo stack resta posseduto fino al termine del task.
+
+Alternativa: copiare il frame completo in un oggetto separato per
+task. Richiede un nuovo formato di ripresa e un secondo percorso di
+ripristino. La prima prova deve interrompere un task senza yield,
+far avanzare un altro task e riprendere il primo con registri e
+flags intatti. Dispatcher e idle devono proseguire senza switch
+preemptivo quando ricevono il timer.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):
