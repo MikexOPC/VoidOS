@@ -273,7 +273,11 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
         saved_pool = pool; saved_root = root;
     }
     for (uint32_t index = 0; index < active_profile->task_count; ++index) prepare_private(pool,root);
-    if ((irq_profile == 2 || irq_profile == 4 || irq_profile == 5) &&
+    if ((irq_profile == 2 || irq_profile == 4
+#ifdef KERNEL_PS2_INPUT
+        || irq_profile == 5
+#endif
+        ) &&
         !x86_watchdog_budget_begin_four(&stacks[0].lease,&stacks[1].lease,irq_profile == 5 ? &stacks[2].lease : NULL,
             active_profile->task_count == 4 ? &stacks[3].lease : NULL))
         kernel_panic("SCHEDULER_IDLE_ACCOUNTING_FAILED");
@@ -353,6 +357,12 @@ int x86_scheduler_run_persistent(void)
 {
     return next_session_private(2);
 }
+
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+// ====== x86_scheduler_run_periodic ======
+
+int x86_scheduler_run_periodic(void) { return next_session_private(4); }
+#endif
 
 // ====== x86_scheduler_idle_retained_valid ======
 

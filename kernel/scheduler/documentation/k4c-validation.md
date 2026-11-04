@@ -158,3 +158,28 @@ attivare il ramo era dopo il sorgente. Nel disassemblato finale la
 chiamata è presente tra il dispatch IRQ e FXRSTOR64.
 La prova è un singolo switch preemptivo sul BSP. L'uso periodico
 nello scheduler e il dispatcher AP richiedono i blocchi successivi.
+
+### Preemption periodica sul BSP
+
+Il profilo TestSchedulerPeriodic chiude la sessione one-shot e riusa
+il reload calibrato. Due task senza yield alternano sei preemption,
+tre ciascuno, con otto ingressi del dispatcher inclusi i ritorni finali.
+Ciascun workload controlla sette GPR e l'immagine FXSAVE dopo la
+ripresa. Il sesto IRQ arresta il timer. Lo stop richiede ISR e IRR
+vuoti, distacco del callback, LVT e divisore ripristinati e budget
+fisico invariato dopo la raccolta degli stack.
+
+- 10/10 boot diagnostici QEMU a quattro CPU.
+  Evidenza: kernel/build/ap-runtime-c447cbdd8ad147df987184ad7018b636.
+- Suite x86-scheduler, kernel e layout passate. Evidenze:
+  kernel/build/test-run-07add93eaad9493e8a8304e4c475ab52,
+  kernel/build/test-run-82d4354b12104bffb1cddd0d70c1c32c e
+  kernel/build/test-run-a446762f4cfb43078cd369857ffdcbc1.
+- 10/10 boot ordinari QEMU a quattro CPU.
+  Evidenza: kernel/build/ap-runtime-b5c96fed0f8744fca30b838dd4eec005.
+- Audit di emergenza superato sulle due immagini.
+
+Il primo tentativo si è fermato prima dell'armamento: lo slot di
+profilo 5 attivava il controllo budget PS/2 anche senza quel driver.
+Il controllo ora è condizionato al profilo PS/2. Il diagnostico usa
+il solo BSP. Jitter, preemption su AP e stress restano da provare.

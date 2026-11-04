@@ -29,8 +29,11 @@ SKILL.md e REVIEW_INSTRUCTION.md:
 | Preparazione K4 (geometria per CPU, gruppo da 2 a 64 CPU, helper ICR) | Fatta | 48b7107, 7cec55c, 26044e4 |
 | K4-B, shootdown TLB | Chiusa, campagna finale 40/40 | fa35474, b1b33af, 1c19bda |
 | K4-C, design preemption SMP | Approvato | f86a2be |
-| K4-C1, core Rust SMP | Vedi sotto | — |
-| K4-C2…C6 | Da fare | — |
+| K4-C1, core Rust SMP | Chiusa | e9ac1d3 |
+| K4-C2, timer AP | Verificato nel diagnostico periodico | 4160fe1 |
+| K4-C3, preemption BSP | Verificato uno switch one-shot | 4224ce6, 8e818b1 |
+| K4-C3, preemption periodica BSP | Verificata nel diagnostico | vedi validazione K4-C |
+| K4-C4…C6 | Da fare | — |
 
 Nessun push: la regola git lo prevede alla chiusura di tutta K4.
 Il primo commit di K4-B (fa35474) contiene per errore anche l'aggiunta di
@@ -65,21 +68,14 @@ usa ancora solo la CPU 0 fino a C4.
 
 ## K4-C: sotto-task rimanenti
 
-1. **C2, timer per CPU.** Timer LAPIC periodico su ogni AP con il reload
-   calibrato dal BSP, vettore registrato una volta, validazione Rust del
-   reload riusata.
-2. **C3, entry di preemption.** Salvataggio completo nel contesto del
-   task, controllo Rust del frame, switch al dispatcher all'uscita
-   dell'IRQ. Prima sul solo BSP. Il context switch oggi salva solo i
-   registri non volatili: per la preemption serve il frame completo.
-3. **C4, dispatcher sugli AP.** Gli AP passano dall'idle di servizio al
+1. **C4, dispatcher sugli AP.** Gli AP passano dall'idle di servizio al
    dispatcher, continuando a servire PING e flush. Prima solo task di
    lavoro senza driver. `kernel_scheduler_context_valid` oggi accetta solo
    il BSP sullo stack principale: va esteso per CPU.
-4. **C5, driver sicuri su più CPU.** Audit dei `ks_boot_cpu` raggiungibili
+2. **C5, driver sicuri su più CPU.** Audit dei `ks_boot_cpu` raggiungibili
    dai task, poi lock per oggetto (o owner unico) per console, PS/2,
    VirtIO, shell e watchdog. Gli IRQ dei dispositivi restano al BSP.
-5. **C6, chiusura di K4.** Stress su 4 CPU, audit G5, accounting,
+3. **C6, chiusura di K4.** Stress su 4 CPU, audit G5, accounting,
    regressioni, console VirtIO/VT-d. Poi aggiornamento di status.md e push.
 
 ## Punti aperti dalle review

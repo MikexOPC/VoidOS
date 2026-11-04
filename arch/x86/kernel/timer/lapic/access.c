@@ -24,6 +24,13 @@ int x86_timer_write(const X86_LAPIC_MAPPING *mapping, BOOT_U32 offset, BOOT_U32 
 {
     if (!x86_lapic_validate(mapping)) return 0;
     if (offset == 0x320) {
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+        // Intel SDM 078US Vol. 3A §11.5.4: LVT Timer +320h, periodic bit 17.
+        if (value == 0x20041U) {
+            *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL+offset) = value;
+            return 1;
+        }
+#endif
         if ((value & ~0x100ffU) || (value & 255) < 32 || (value & 255) == 255) return 0;
     } else if (offset == 0x3e0) {
         if (value & ~0xbU) return 0;
