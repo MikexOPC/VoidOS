@@ -107,7 +107,7 @@ fn generation_retirement() {
     assert_eq!(owner.snapshot().unwrap(), (0, 3));
     assert_eq!(owner.reserve().unwrap().index, 1);
     assert_eq!(owner.publish(last), Err(Error::InvalidState));
-    owner.slots.fill(Slot { generation: u64::MAX, state: State::Retired });
+    owner.slots.fill(Slot { generation: u64::MAX, state: State::Retired, affinity: 0 });
     assert_eq!(owner.reserve(), Err(Error::Capacity));
     assert!(owner.validate());
 }
@@ -124,7 +124,7 @@ fn counter_exhaustion_rolls_back() {
     assert_eq!(owner.abort(handle), Err(Error::CounterExhausted));
     assert_eq!(owner, before);
     assert_eq!(owner.snapshot(), Ok((0, u64::MAX)));
-    owner.slots[0] = Slot { generation: u64::MAX, state: State::Free };
+    owner.slots[0] = Slot { generation: u64::MAX, state: State::Free, affinity: 0 };
     let before = owner.copy_state();
     assert_eq!(owner.reserve(), Err(Error::CounterExhausted));
     assert_eq!(owner, before);
@@ -165,7 +165,7 @@ fn corrupted_owner_fail_closed() {
         let handle = owner.reserve().unwrap();
         match variant {
             0 => owner.slots[0].state = State::Ready,
-            1 => owner.current = Some(handle),
+            1 => owner.current[0] = Some(handle),
             2 => owner.slots[0].generation = 0,
             3 => owner.slots[0].state = State::Retired,
             _ => { owner.ready.push(0); }
@@ -189,6 +189,6 @@ fn corrupted_owner_fail_closed() {
 #[test]
 fn native_state_budget() {
     let bytes = core::mem::size_of::<Owner>();
-    assert!(bytes <= 512);
+    assert!(bytes <= 4096);
     println!("Rust owner metadata: {bytes} bytes (no heap)");
 }

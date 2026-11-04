@@ -1,8 +1,10 @@
 mod queue;
 mod wait;
 mod stop;
+mod smp;
 pub use queue::{CAPACITY, NONE};
 pub use wait::{EventResult, EVENT_CAPACITY};
+pub use smp::CPUS;
 use queue::Queue;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,17 +18,20 @@ pub struct Handle { pub index: u32, pub generation: u64 }
 #[repr(u32)]
 pub enum Error {
     Corrupt = 1, Capacity, InvalidHandle, InvalidState, Running, Empty,
-    Retired, CounterExhausted, Blocked = 14, InvalidEvent, InvalidToken,
+    Retired, CounterExhausted, Blocked = 14, InvalidEvent, InvalidToken, InvalidCpu,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Slot { generation: u64, state: State }
+struct Slot { generation: u64, state: State, affinity: u64 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Owner {
     slots: [Slot; CAPACITY],
     ready: Queue,
-    current: Option<Handle>,
+    current: [Option<Handle>; CPUS],
+    remaining: [u32; CPUS],
+    cpus: u32,
+    slice: u32,
     events: u64,
     epochs: [u64; EVENT_CAPACITY],
     waits: [Option<wait::Token>; CAPACITY],
@@ -44,8 +49,9 @@ impl Default for Owner {
 impl Owner {
     pub const fn new() -> Self {
         Self {
-            slots: [Slot { generation: 0, state: State::Free }; CAPACITY],
-            ready: Queue::new(), current: None, events: 0,
+            slots: [Slot { generation: 0, state: State::Free, affinity: 0 }; CAPACITY],
+            ready: Queue::new(), current: [None; CPUS], remaining: [0; CPUS],
+            cpus: 1, slice: 1, events: 0,
             epochs: [0; EVENT_CAPACITY], waits: [None; CAPACITY], stops: [false; CAPACITY],
         }
     }
@@ -53,12 +59,17 @@ impl Owner {
     // ====== owner_validate ======
 
     pub fn validate(&self) -> bool {
-        if !self.ready.validate() || !self.validate_waits() || !self.validate_stops() { return false; }
+        if !self.ready.validate() || !self.validate_waits() || !self.validate_stops() ||
+            !self.validate_cpus() { return false; }
         let mut ready = 0;
         let mut running = 0;
         for (index, slot) in self.slots.iter().enumerate() {
             if slot.state != State::Free && slot.generation == 0 { return false; }
             if slot.state == State::Retired && slot.generation != u64::MAX {
+                return false;
+            }
+            let unused = matches!(slot.state, State::Free | State::Retired);
+            if unused != (slot.affinity == 0) || slot.affinity & !self.all_cpus() != 0 {
                 return false;
             }
             if (slot.state == State::Ready) != self.ready.contains(index as u32) {
@@ -67,12 +78,13 @@ impl Owner {
             if slot.state == State::Ready { ready += 1; }
             if slot.state == State::Running {
                 running += 1;
-                if self.current != Some(Handle {
-                    index: index as u32, generation: slot.generation,
-                }) { return false; }
+                let handle = Handle { index: index as u32, generation: slot.generation };
+                if self.current.iter().filter(|current| **current == Some(handle)).count() != 1 {
+                    return false;
+                }
             }
         }
-        ready == self.ready.len() && running == usize::from(self.current.is_some())
+        ready == self.ready.len() && running == self.current.iter().filter(|c| c.is_some()).count()
     }
 
     // ====== owner_handle ======
@@ -106,17 +118,22 @@ impl Owner {
 
     // Private copy solely for rollback-safe transactions; owner is not public Copy.
     fn copy_state(&self) -> Self {
-        Self { slots: self.slots, ready: self.ready, current: self.current, events: self.events,
+        Self { slots: self.slots, ready: self.ready, current: self.current,
+            remaining: self.remaining, cpus: self.cpus, slice: self.slice, events: self.events,
             epochs: self.epochs, waits: self.waits, stops: self.stops }
     }
 
     // ====== owner_reserve ======
 
-    pub fn reserve(&mut self) -> Result<Handle, Error> {
+    #[cfg(test)]
+    pub fn reserve(&mut self) -> Result<Handle, Error> { self.reserve_on(0) }
+
+    pub fn reserve_on(&mut self, cpu: u32) -> Result<Handle, Error> {
         self.transaction(|next| {
-            if next.current.is_some() { return Err(Error::Running); }
+            next.dispatcher(cpu)?;
             let index = next.slots.iter().position(|s| s.state == State::Free)
                 .ok_or(Error::Capacity)?;
+            let all = next.all_cpus();
             let slot = &mut next.slots[index];
             if slot.generation == u64::MAX {
                 slot.state = State::Retired;
@@ -124,15 +141,19 @@ impl Owner {
             }
             slot.generation += 1;
             slot.state = State::Reserved;
+            slot.affinity = all;
             Ok(Handle { index: index as u32, generation: slot.generation })
         })
     }
 
     // ====== owner_publish ======
 
-    pub fn publish(&mut self, handle: Handle) -> Result<(), Error> {
+    #[cfg(test)]
+    pub fn publish(&mut self, handle: Handle) -> Result<(), Error> { self.publish_on(0, handle) }
+
+    pub fn publish_on(&mut self, cpu: u32, handle: Handle) -> Result<(), Error> {
         self.transaction(|next| {
-            if next.current.is_some() { return Err(Error::Running); }
+            next.dispatcher(cpu)?;
             let index = next.handle(handle)?;
             if next.slots[index].state != State::Reserved { return Err(Error::InvalidState); }
             if !next.ready.push(handle.index) { return Err(Error::Corrupt); }
@@ -143,12 +164,13 @@ impl Owner {
 
     // ====== owner_release ======
 
-    fn release(&mut self, handle: Handle, expected: State) -> Result<(), Error> {
+    fn release(&mut self, cpu: u32, handle: Handle, expected: State) -> Result<(), Error> {
         self.transaction(|next| {
-            if next.current.is_some() { return Err(Error::Running); }
+            next.dispatcher(cpu)?;
             let index = next.handle(handle)?;
             if next.slots[index].state != expected { return Err(Error::InvalidState); }
             next.slots[index].state = State::Free;
+            next.slots[index].affinity = 0;
             next.stops[index] = false;
             Ok(())
         })
@@ -157,58 +179,82 @@ impl Owner {
     // ====== owner_abort ======
 
     // Caller must first confirm native rollback; no native ownership exists here.
-    pub fn abort(&mut self, handle: Handle) -> Result<(), Error> {
-        self.release(handle, State::Reserved)
+    #[cfg(test)]
+    pub fn abort(&mut self, handle: Handle) -> Result<(), Error> { self.abort_on(0, handle) }
+
+    pub fn abort_on(&mut self, cpu: u32, handle: Handle) -> Result<(), Error> {
+        self.release(cpu, handle, State::Reserved)
     }
 
     // ====== owner_collect ======
 
     // Caller must be back on dispatcher and confirm native cleanup beforehand.
-    pub fn collect(&mut self, handle: Handle) -> Result<(), Error> {
-        self.release(handle, State::Finished)
+    #[cfg(test)]
+    pub fn collect(&mut self, handle: Handle) -> Result<(), Error> { self.collect_on(0, handle) }
+
+    pub fn collect_on(&mut self, cpu: u32, handle: Handle) -> Result<(), Error> {
+        self.release(cpu, handle, State::Finished)
     }
 
     // ====== owner_select ======
 
-    pub fn select(&mut self) -> Result<Handle, Error> {
+    #[cfg(test)]
+    pub fn select(&mut self) -> Result<Handle, Error> { self.select_on(0) }
+
+    pub fn select_on(&mut self, cpu: u32) -> Result<Handle, Error> {
         self.transaction(|next| {
-            if next.current.is_some() { return Err(Error::Running); }
-            let index = next.ready.pop().ok_or_else(|| {
-                if next.waits.iter().any(Option::is_some) { Error::Blocked } else { Error::Empty }
-            })?;
+            let at = next.dispatcher(cpu)?;
+            let slots = next.slots;
+            let index = next.ready.take_first(|i| slots[i as usize].affinity & (1 << cpu) != 0)
+                .ok_or_else(|| if next.busy() { Error::Blocked } else { Error::Empty })?;
             let slot = &mut next.slots[index as usize];
             slot.state = State::Running;
             let handle = Handle { index, generation: slot.generation };
-            next.current = Some(handle);
+            next.current[at] = Some(handle);
+            next.remaining[at] = next.slice;
             Ok(handle)
         })
     }
 
     // ====== owner_complete ======
 
-    fn complete(&mut self, handle: Handle, finish: bool) -> Result<(), Error> {
+    fn complete(&mut self, cpu: u32, handle: Handle, finish: bool) -> Result<(), Error> {
         self.transaction(|next| {
+            let at = next.cpu(cpu)?;
             let index = next.handle(handle)?;
-            if next.current != Some(handle) || next.slots[index].state != State::Running {
+            if next.current[at] != Some(handle) || next.slots[index].state != State::Running {
                 return Err(Error::InvalidState);
             }
             if !finish && !next.ready.push(handle.index) { return Err(Error::Corrupt); }
             next.slots[index].state = if finish { State::Finished } else { State::Ready };
-            next.current = None;
+            next.current[at] = None;
+            next.remaining[at] = 0;
             Ok(())
         })
     }
 
     // ====== owner_yield_task ======
 
-    pub fn yield_task(&mut self, handle: Handle) -> Result<(), Error> {
-        self.complete(handle, false)
+    #[cfg(test)]
+    pub fn yield_task(&mut self, handle: Handle) -> Result<(), Error> { self.complete(0, handle, false) }
+
+    pub fn yield_on(&mut self, cpu: u32, handle: Handle) -> Result<(), Error> {
+        self.complete(cpu, handle, false)
+    }
+
+    // ====== owner_preempt ======
+
+    pub fn preempt_on(&mut self, cpu: u32, handle: Handle) -> Result<(), Error> {
+        self.complete(cpu, handle, false)
     }
 
     // ====== owner_exit ======
 
-    pub fn exit(&mut self, handle: Handle) -> Result<(), Error> {
-        self.complete(handle, true)
+    #[cfg(test)]
+    pub fn exit(&mut self, handle: Handle) -> Result<(), Error> { self.complete(0, handle, true) }
+
+    pub fn exit_on(&mut self, cpu: u32, handle: Handle) -> Result<(), Error> {
+        self.complete(cpu, handle, true)
     }
 
     // ====== owner_state ======
@@ -220,9 +266,12 @@ impl Owner {
 
     // ====== owner_current ======
 
-    pub fn current(&self) -> Result<Handle, Error> {
+    #[cfg(test)]
+    pub fn current(&self) -> Result<Handle, Error> { self.current_on(0) }
+
+    pub fn current_on(&self, cpu: u32) -> Result<Handle, Error> {
         if !self.validate() { return Err(Error::Corrupt); }
-        self.current.ok_or(Error::Empty)
+        self.current[self.cpu(cpu)?].ok_or(Error::Empty)
     }
 
     // ====== owner_snapshot ======

@@ -17,6 +17,7 @@
 #define KERNEL_SCHEDULER_COLLECT 7U
 #define KERNEL_SCHEDULER_QUERY 8U
 #define KERNEL_SCHEDULER_CURRENT 9U
+#define KERNEL_SCHEDULER_PREEMPT 10U
 
 #define KERNEL_SCHEDULER_OK 0U
 #define KERNEL_SCHEDULER_CORRUPT 1U
@@ -35,6 +36,7 @@
 #define KERNEL_SCHEDULER_BLOCKED 14U
 #define KERNEL_SCHEDULER_BAD_EVENT 15U
 #define KERNEL_SCHEDULER_BAD_TOKEN 16U
+#define KERNEL_SCHEDULER_BAD_CPU 17U
 #define KERNEL_EVENT_OBSERVE 0U
 #define KERNEL_EVENT_WAIT 1U
 #define KERNEL_EVENT_SIGNAL 2U
@@ -126,10 +128,24 @@ KERNEL_EVENT_REPLY kernel_scheduler_irq_drain(void);
 KERNEL_EVENT_REPLY kernel_scheduler_stop_apply(uint32_t operation, uint32_t index,
     uint64_t generation);
 
+// ====== smp_boundary ======
+
+KERNEL_SCHEDULER_REPLY kernel_scheduler_apply_on(uint32_t cpu, uint32_t operation, uint32_t index,
+    uint64_t generation);
+KERNEL_EVENT_REPLY kernel_scheduler_event_apply_on(uint32_t cpu, uint32_t operation, uint32_t index,
+    uint64_t generation, uint32_t event, uint64_t observed);
+KERNEL_EVENT_REPLY kernel_scheduler_stop_apply_on(uint32_t cpu, uint32_t operation, uint32_t index,
+    uint64_t generation);
+uint32_t kernel_scheduler_configure(uint32_t cpus, uint32_t slice);
+uint32_t kernel_scheduler_affinity_on(uint32_t cpu, uint32_t index, uint64_t generation, uint64_t mask);
+KERNEL_SCHEDULER_REPLY kernel_scheduler_tick_on(uint32_t cpu);
+
 // ====== scheduler_backend_requirements ======
 
 // Backend symbols provided by x86 scheduler integration; host fixtures mock them.
 uint32_t kernel_scheduler_context_valid(void);
 __declspec(noreturn) void kernel_scheduler_fail_stop(void);
+uint32_t kernel_scheduler_lock_acquire(void);
+void kernel_scheduler_lock_release(void);
 
 #endif

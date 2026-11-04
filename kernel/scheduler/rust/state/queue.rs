@@ -58,11 +58,26 @@ impl Queue {
 
     // ====== queue_pop ======
 
+    #[cfg(test)]
     pub fn pop(&mut self) -> Option<u32> {
         if !self.validate() || self.count == 0 { return None; }
         let index = self.entries[self.head];
         self.entries[self.head] = NONE;
         self.head = (self.head + 1) % CAPACITY;
+        self.count -= 1;
+        Some(index)
+    }
+
+    // ====== queue_take_first ======
+
+    pub fn take_first(&mut self, eligible: impl Fn(u32) -> bool) -> Option<u32> {
+        if !self.validate() { return None; }
+        let offset = (0..self.count).find(|&i| eligible(self.entries[(self.head + i) % CAPACITY]))?;
+        let index = self.entries[(self.head + offset) % CAPACITY];
+        for i in offset..self.count - 1 {
+            self.entries[(self.head + i) % CAPACITY] = self.entries[(self.head + i + 1) % CAPACITY];
+        }
+        self.entries[(self.head + self.count - 1) % CAPACITY] = NONE;
         self.count -= 1;
         Some(index)
     }
