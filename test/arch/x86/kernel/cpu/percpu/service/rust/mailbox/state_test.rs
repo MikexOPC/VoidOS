@@ -164,7 +164,7 @@ fn timeout_racing_completion_cannot_reopen() {
 #[test]
 fn operation_matches_claimed_generation() {
     let service = prepared();
-    assert_eq!(service.publish_operation(1, 0, 2), INVALID);
+    assert_eq!(service.publish_operation(1, 0, 4), INVALID);
     assert_eq!(service.publish_operation(1, 0, 1), 1);
     assert_eq!(service.operation(1, 1, 1), u32::MAX);
     assert_eq!(service.publish(1, 0), 0);
@@ -177,4 +177,12 @@ fn operation_matches_claimed_generation() {
     assert_eq!(service.publish(1, 0), 2);
     assert_eq!(service.claim(1, 1), 2);
     assert_eq!(service.operation(1, 1, 2), 0);
+    assert_eq!(service.complete(1, 1, 2), 1);
+    for operation in 2..=3 {
+        let generation = u64::from(operation) + 1;
+        assert_eq!(service.publish_operation(1, 0, operation), generation);
+        assert_eq!(service.claim(1, 1), generation);
+        assert_eq!(service.operation(1, 1, generation), operation);
+        assert_eq!(service.complete(1, 1, generation), 1);
+    }
 }

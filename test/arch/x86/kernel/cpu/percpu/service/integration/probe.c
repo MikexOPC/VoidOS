@@ -12,6 +12,63 @@ static void number_private(const char *name, uint64_t value) {
     if (!kernel_text(name) || !kernel_number(value) || !kernel_text("\n")) xis_native_abort(0x4b344950494c4f47ULL);
 }
 
+#if KERNEL_TEST_AP_SERVICE == 7
+// ====== timer_request ======
+
+static void timer_request(uint32_t index, uint32_t operation)
+{
+    XIS_WAIT wait = {xis_native_now, NULL, xp_panic_native.Source.Mask, KERNEL_PM_TIMER_HZ, 1000000, 0};
+    uint64_t generation = xis_publish_operation(index, 0, operation);
+    if (!generation || generation == XIS_INVALID || !xis_native_send(index) ||
+        xis_wait(index, generation, &wait) != XIS_WAIT_ACK || !xis_native_wait(index, 1, generation))
+        xis_native_abort(0x4b34435452455100ULL);
+}
+
+// ====== timer_delay ======
+
+static void timer_delay(uint32_t ticks)
+{
+    uint32_t start, now;
+    if (!xis_native_now(NULL, &start)) xis_native_abort(0x4b344354434c4b00ULL);
+    for (uint32_t poll = 0; poll < 1000000; ++poll) {
+        if (!xis_native_now(NULL, &now)) break;
+        if (((now - start) & xp_panic_native.Source.Mask) >= ticks) return;
+        ks_pause();
+    }
+    xis_native_abort(0x4b34435457414954ULL);
+}
+
+// ====== timer_probe ======
+
+__declspec(noreturn) static void timer_probe(void)
+{
+    uint32_t reload = x86_timer_diagnostic_reload();
+    if (!reload) xis_native_abort(0x4b344354524c4400ULL);
+    ks_atomic_store_release(&xis_timer_reload, reload);
+    number_private("KERNEL_AP_TIMER_RELOAD: ", reload);
+    for (uint32_t index = 1; index < xis_native.Count; ++index) timer_request(index, XIS_ARM_TIMER);
+    for (uint32_t index = 1; index < xis_native.Count; ++index) timer_request(index, XIS_PING);
+    if (!xis_native_shootdown()) xis_native_abort(0x4b344354464c5300ULL);
+    timer_delay(KERNEL_PM_TIMER_HZ / 10);
+    for (uint32_t index = 1; index < xis_native.Count; ++index) {
+        if (ks_atomic_load_acquire(&xis_timer_ticks[index]) < 3) xis_native_abort(0x4b34435450524700ULL);
+        timer_request(index, XIS_STOP_TIMER);
+    }
+    timer_delay(KERNEL_PM_TIMER_HZ / 25);
+    uint64_t stopped[64];
+    for (uint32_t index = 1; index < xis_native.Count; ++index)
+        stopped[index] = ks_atomic_load_acquire(&xis_timer_ticks[index]);
+    timer_delay(KERNEL_PM_TIMER_HZ / 10);
+    for (uint32_t index = 1; index < xis_native.Count; ++index) {
+        if (ks_atomic_load_acquire(&xis_timer_ticks[index]) != stopped[index])
+            xis_native_abort(0x4b34435453544f50ULL);
+        number_private("KERNEL_AP_TIMER_TICKS: ", stopped[index]);
+    }
+    if (!kernel_log(0, "KERNEL_AP_TIMER_READY")) xis_native_abort(0x4b3443544c4f4700ULL);
+    x86_kernel_stop(0x4b34495049504153ULL);
+}
+#endif
+
 // ====== xis_service_probe ======
 
 __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
@@ -33,7 +90,9 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
     ks_atomic_store_release(&xis_probe_base, base);
     ks_atomic_store_release(&xis_probe_armed, 1);
     number_private("KERNEL_IPI_BASE_GENERATION: ", base);
-#if KERNEL_TEST_AP_SERVICE == 5
+#if KERNEL_TEST_AP_SERVICE == 7
+    timer_probe();
+#elif KERNEL_TEST_AP_SERVICE == 5
     if (xis_publish(1, 0) != base + 1 || !xis_native_send(1) || !xis_native_wait(1, 2, base + 1))
         xis_native_abort(0x4b34495049484e44ULL);
     xis_native_abort(0x4b344950494e4d35ULL);

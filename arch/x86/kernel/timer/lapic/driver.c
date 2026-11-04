@@ -310,3 +310,12 @@ cleanup:
     }
     return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);
 }
+
+#if KERNEL_TEST_AP_SERVICE == 7
+// ====== x86_timer_diagnostic_reload ======
+
+uint32_t x86_timer_diagnostic_reload(void)
+{
+    return finished && !timer.Error && timer.Count == 3 ? timer.Reload : 0;
+}
+#endif

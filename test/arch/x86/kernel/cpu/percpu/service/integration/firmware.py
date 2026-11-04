@@ -28,20 +28,22 @@ def complete_snapshot(log):
 
 
 def await_terminal(vm, case):
+    positive = case in ("ping", "ap-timer")
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         log = complete_snapshot(vm.log())
         if not vm.alive() or any(item != "KERNEL_SMP_PANIC" for item in log.failures()):
             raise RuntimeError("Unexpected kernel/VM failure")
-        if case == "ping" and log.failures():
+        if positive and log.failures():
             raise RuntimeError("Unexpected panic in positive service profile")
-        ready = log.has("KERNEL_IPI_SERVICE_READY") if case == "ping" else "KERNEL_SMP_PANIC_HALTED" in log.text
+        ready_marker = "KERNEL_AP_TIMER_READY" if case == "ap-timer" else "KERNEL_IPI_SERVICE_READY"
+        ready = log.has(ready_marker) if positive else "KERNEL_SMP_PANIC_HALTED" in log.text
         if ready and case == "ping" and not log.before("KERNEL_IPI_REMAP_VERIFIED", "KERNEL_IPI_SERVICE_READY"):
             raise RuntimeError("Missing AP remap and release evidence")
         if ready:
-            owner = 0 if case == "ping" else log.number("PANIC_OWNER")
+            owner = 0 if positive else log.number("PANIC_OWNER")
             text = launch.registers(vm, owner)
-            marker = 0x4b34495049504153 if case == "ping" else 0x50414e4943444f4e
+            marker = 0x4b34495049504153 if positive else 0x50414e4943444f4e
             if "HLT=1" in text and launch.value(text, "RAX") == marker:
                 return complete_snapshot(vm.log())
         time.sleep(0.005)
@@ -51,6 +53,7 @@ def await_terminal(vm, case):
 # ====== verify ======
 
 def verify(vm, log, case, count):
+    positive = case in ("ping", "ap-timer")
     texts = [launch.registers(vm, index) for index in range(count)]
     mask = (1 << count) - 1
     root = launch.value(texts[0], "CR3")
@@ -120,7 +123,11 @@ def verify(vm, log, case, count):
             if [counters[index * 8 + field] for field in (0, 4, 5)] != [expected] * 3:
                 raise RuntimeError("Release flush delivery, EOI or entry counters differ")
     first = log.number("KERNEL_AP_CONTEXTS")
-    owner = log.number("PANIC_OWNER") if case != "ping" else None
+    owner = None if positive else log.number("PANIC_OWNER")
+    timer_ticks = log.numbers("KERNEL_AP_TIMER_TICKS")
+    if case == "ap-timer" and (len(timer_ticks) != count - 1 or min(timer_ticks) < 3 or
+                              log.number("KERNEL_AP_TIMER_RELOAD") != log.number("KERNEL_TIMER_RELOAD")):
+        raise RuntimeError("Missing timer progress or BSP calibration")
     final = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
     for index in range(count):
         text = texts[index]
@@ -144,9 +151,10 @@ def verify(vm, log, case, count):
         expected[1], expected[2], expected[7:10] = index | index << 32, index << 9 | index << 3, [top + 1024, meta, first + (index - 1) * 448]
         if frame[:13] != expected or frame[83] != 6:
             raise RuntimeError("Sealed AP startup record changed")
-        if case == "ping":
+        if positive:
+            expected_generation = generation_base + (4 if case == "ap-timer" else 105)
             values = counters[index * 8:(index + 1) * 8]
-            if values != [generation_base + 105, generation_base + 105, values[2], top - 576, generation_base + 105, generation_base + 105, 0, 0] or values[2] < 1:
+            if values != [expected_generation, expected_generation, values[2], top - 576, expected_generation, expected_generation, 0, 0] or values[2] < 1:
                 raise RuntimeError("IPI completion/return/EOI counters differ: " + str(values))
             if launch.value(text, "RSP") != top - 576 or launch.value(text, "RFL") & 0x7602 != 0x602:
                 raise RuntimeError("AP did not return to IF=1/DF=1 private idle")
@@ -159,7 +167,7 @@ def verify(vm, log, case, count):
             if launch.value(text, "RAX") != marker or not lower <= launch.value(text, "RSP") < upper:
                 raise RuntimeError("AP did not stop through private NMI IST")
     state = cpu.memory(vm, log.number("KERNEL_PANIC_STATE"), 80)
-    if case == "ping":
+    if positive:
         if log.failures() or state != [2, mask, mask] + [0] * 77:
             raise RuntimeError("Unexpected panic state")
     else:
@@ -200,7 +208,9 @@ def verify(vm, log, case, count):
         requests += 98 * (count - 1)
     if case == "release-missing-ack":
         requests = 100 * (count - 1) + 1
-    return dict(Case=case, RealCpus=count, Requests=requests,
+    if case == "ap-timer":
+        requests = 4 * (count - 1)
+    return dict(Case=case, RealCpus=count, Requests=requests, TimerTicks=timer_ticks,
                 PhysicalFree=free, Pinned=True)
 
 
@@ -217,7 +227,7 @@ def capture_failure(vm, count):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack"), default="ping")
+    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack", "ap-timer"), default="ping")
     parser.add_argument("--boots", type=int, choices=range(1, 11), default=10)
     parser.add_argument("--smp", type=int, choices=range(2, 65), default=4)
     args = parser.parse_args()
@@ -231,7 +241,7 @@ def main():
                 try:
                     log = await_terminal(vm, args.case)
                     vm.command("stop")
-                    if args.case != "ping":
+                    if args.case not in ("ping", "ap-timer"):
                         group_spec = importlib.util.spec_from_file_location("service_group", Path(__file__).parents[2] / "panic/integration/group.py")
                         group = importlib.util.module_from_spec(group_spec)
                         group_spec.loader.exec_module(group)

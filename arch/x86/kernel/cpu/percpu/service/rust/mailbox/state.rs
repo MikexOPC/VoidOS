@@ -2,8 +2,8 @@
 use core::sync::atomic::{AtomicU64, Ordering::{Acquire, Release, AcqRel}};
 
 pub const INVALID: u64 = u64::MAX;
-const FLUSH_BIT: u64 = 1 << 63;
-const GENERATION_MASK: u64 = FLUSH_BIT - 1;
+const OPERATION_SHIFT: u32 = 62;
+const GENERATION_MASK: u64 = (1 << OPERATION_SHIFT) - 1;
 
 #[repr(C, align(64))]
 pub struct Mailbox {
@@ -66,13 +66,13 @@ impl Service {
 
     pub fn publish_operation(&self, index: u32, caller: u32, operation: u32) -> u64 {
         let Some(slot) = self.slot(index) else { return INVALID; };
-        if operation > 1 || caller != 0 || slot.phase.load(Acquire) != 1 { return INVALID; }
+        if operation > 3 || caller != 0 || slot.phase.load(Acquire) != 1 { return INVALID; }
         let encoded = slot.request.load(Acquire);
         let request = encoded & GENERATION_MASK;
         if slot.ack.load(Acquire) != request { return 0; }
         if request == GENERATION_MASK { return INVALID; }
         let next = request + 1;
-        let pending = next | (u64::from(operation) << 63);
+        let pending = next | (u64::from(operation) << OPERATION_SHIFT);
         if slot.request.compare_exchange(encoded, pending, AcqRel, Acquire).is_err() { return 0; }
         if slot.phase.load(Acquire) == 1 { next } else { INVALID }
     }
@@ -98,7 +98,7 @@ impl Service {
         if caller != index || generation == 0 || (encoded & GENERATION_MASK) != generation ||
             slot.claimed.load(Acquire) != generation || slot.ack.load(Acquire) >= generation ||
             slot.phase.load(Acquire) != 1 { return u32::MAX; }
-        (encoded >> 63) as u32
+        (encoded >> OPERATION_SHIFT) as u32
     }
 
     // ====== complete ======
