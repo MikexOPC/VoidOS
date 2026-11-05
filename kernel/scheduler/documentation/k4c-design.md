@@ -744,12 +744,13 @@ controlla PTE, guardie, lease vive e pin, oltre alla causa e agli ACK NMI.
 Non si simula un AP bloccato o ancora in esecuzione: è un test della
 doppia conferma obbligatoria. L'iniezione è limitata al relativo profilo.
 
-### Prossimo blocco: quattro CPU di lavoro, proposta da confermare
+### Quattro CPU di lavoro: contratto approvato
 
-Il lotto Rust attuale accetta esattamente due CPU secondarie. La prossima
-estensione richiede una scelta prima del codice:
+Scelta A approvata dall'utente il 5 novembre 2026. Il punto di partenza
+accettava esattamente due CPU secondarie; l'estensione ammette da due a
+quattro AP, con due task ciascuno e raccolta sul BSP.
 
-- A, consigliata: quattro AP di lavoro e BSP supervisore, cinque vCPU
+- A, approvata: quattro AP di lavoro e BSP supervisore, cinque vCPU
   totali. Otto task, due per AP, usano tutti gli slot attuali e 128 pagine
   di stack (512 KiB). Conserva un solo backend IRQ per i task AP e il
   cleanup sul BSP; non porta i driver sugli AP.
@@ -763,33 +764,29 @@ Record e barriera diventano per partecipante; quiescenza completa prima
 di qualsiasi raccolta. Lo stato Rust e i contesti restano separati; non
 si aggiungono migrazione o riarmo del lotto. Un solo lotto per boot.
 
-Perimetro proposto: scheduler Rust e backend x86, ammissione/hook AP,
+Perimetro approvato: scheduler Rust e backend x86, ammissione/hook AP,
 soli adattatori build/test necessari. Riusa risorse per-CPU e protocollo
 IPI esistenti; nessun nuovo dispositivo. Accettazione: test delle nuove
 maschere e dei limiti, stress nativo su quattro CPU effettive, negativo
 di conferma mancante con 128 pagine trattenute, dieci boot consecutivi e
-regressioni dei profili precedenti. Proposta, non risultato verificato.
+regressioni dei profili precedenti. I profili sono ap-four e
+ap-four-incomplete, entrambi con otto riprese per task e otto giri IPI.
+Nel positivo si verificano 64 sospensioni/riprese e 116 richieste IPI;
+nel negativo AP4 omette la conferma Rust: completed=30, quiesced=14 e
+128 pagine ancora pinned al panic. Risultati nel documento di validazione.
 
-## Lavoro restante dopo i prerequisiti C4
+## Lavoro restante dopo C4
 
-Stima di pianificazione, non risultati né percentuale di completamento:
+C4 è completata per i diagnostici di calcolo fidato: ammissione,
+preemption e dispatcher concorrenti su quattro AP, con raccolta BSP,
+regressioni e negativi di conferma mancante. I risultati non promuovono
+lo scheduler ordinario né i driver alla migrazione fra CPU.
 
-Ammissione e primo lotto AP sono implementati nel diagnostico. Il negativo
-di rollback inietta un errore prima della seconda allocazione: uno stack
-già pronto viene rilasciato, entrambe le prenotazioni vengono annullate e
-il budget viene verificato prima del panic coordinato. Non simula
-l'esaurimento reale della RAM fisica.
-
-La preemption AP1 e il lotto concorrente AP1/AP2 sono verificati nei
-profili diagnostici: tre sospensioni e riprese per task, timer fermo
-prima della quiescenza e raccolta BSP.
-Evidenze nella validazione K4-C. Il boot ordinario resta sul BSP.
-
-Restano stress e regressioni di chiusura C4, ampliando il lavoro nativo
-oltre il primo lotto su due AP. Evidenze nella validazione. I fault
-possono richiedere un blocco di diagnosi dedicato.
-Poi restano C5 (driver su più CPU) e C6 (chiusura K4). K5 userspace e K6
-caricamento dei programmi non sono inclusi in questa stima.
+Restano C5 (audit dei driver e lock per oggetto oppure owner unico) e
+C6 (audit G5 globale, integrazione, stress finale e console VirtIO/VT-d).
+Il rollback pre-avvio già collaudato resta un errore iniettato prima
+della seconda allocazione, non esaurimento reale della RAM.
+K5 userspace e K6 caricamento dei programmi sono milestone successive.
 
 ## Fonti
 

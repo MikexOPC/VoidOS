@@ -31,7 +31,7 @@ def complete_snapshot(log):
 
 
 def await_terminal(vm, case):
-    positive = case in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt", "ap-concurrent", "ap-concurrent-stress")
+    positive = case in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt", "ap-concurrent", "ap-concurrent-stress", "ap-four")
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         log = complete_snapshot(vm.log())
@@ -39,7 +39,7 @@ def await_terminal(vm, case):
             raise RuntimeError("Unexpected kernel/VM failure")
         if positive and log.failures():
             raise RuntimeError("Unexpected panic in positive service profile")
-        ready_marker = {"ap-timer": "KERNEL_AP_TIMER_READY", "admission": "KERNEL_AP_DISPATCH_ADMITTED", "ap-batch": "KERNEL_AP_BATCH_READY", "ap-preempt": "KERNEL_AP_PREEMPT_READY", "ap-concurrent": "KERNEL_AP_CONCURRENT_READY", "ap-concurrent-stress": "KERNEL_AP_CONCURRENT_READY"}.get(case,"KERNEL_IPI_SERVICE_READY")
+        ready_marker = {"ap-timer": "KERNEL_AP_TIMER_READY", "admission": "KERNEL_AP_DISPATCH_ADMITTED", "ap-batch": "KERNEL_AP_BATCH_READY", "ap-preempt": "KERNEL_AP_PREEMPT_READY", "ap-concurrent": "KERNEL_AP_CONCURRENT_READY", "ap-concurrent-stress": "KERNEL_AP_CONCURRENT_READY", "ap-four": "KERNEL_AP_FOUR_READY"}.get(case,"KERNEL_IPI_SERVICE_READY")
         ready = log.has(ready_marker) if positive else "KERNEL_SMP_PANIC_HALTED" in log.text
         if ready and case == "ping" and not log.before("KERNEL_IPI_REMAP_VERIFIED", "KERNEL_IPI_SERVICE_READY"):
             raise RuntimeError("Missing AP remap and release evidence")
@@ -56,7 +56,7 @@ def await_terminal(vm, case):
 # ====== verify ======
 
 def verify(vm, log, case, count):
-    positive = case in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt", "ap-concurrent", "ap-concurrent-stress")
+    positive = case in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt", "ap-concurrent", "ap-concurrent-stress", "ap-four")
     texts = [launch.registers(vm, index) for index in range(count)]
     mask = (1 << count) - 1
     root = launch.value(texts[0], "CR3")
@@ -179,11 +179,11 @@ def verify(vm, log, case, count):
                     not base + 4096 <= preempt[10 + task] < base + 65536 or
                     not 0xffffffff80000000 <= preempt[12 + task] < 0xffffffff80400000):
                 raise RuntimeError("AP preemption frame is not on its owned task stack")
-    if case in ("ap-concurrent", "ap-concurrent-stress"):
-        target, rounds = (8, 8) if case == "ap-concurrent-stress" else (3, 1)
-        concurrent_batch.verify(vm, log, count, root, pool, free, first, cpu.memory, target, rounds)
-    if case == "ap-concurrent-incomplete":
-        concurrent_batch.verify_incomplete(vm, log, root, pool, free, live, pins, cpu.memory)
+    if case in ("ap-concurrent", "ap-concurrent-stress", "ap-four"):
+        target, rounds = (8, 8) if case in ("ap-concurrent-stress", "ap-four") else (3, 1)
+        concurrent_batch.verify(vm, log, count, root, pool, free, first, cpu.memory, target, rounds, 8 if case == "ap-four" else 4)
+    if case in ("ap-concurrent-incomplete", "ap-four-incomplete"):
+        concurrent_batch.verify_incomplete(vm, log, root, pool, free, live, pins, cpu.memory, 8 if case == "ap-four-incomplete" else 4)
     if case == "ap-batch-rollback":
         record_address = log.number("KERNEL_AP_BATCH_RECORD")
         record = cpu.memory(vm,record_address,32)
@@ -216,7 +216,7 @@ def verify(vm, log, case, count):
         if frame[:13] != expected or frame[83] != 6:
             raise RuntimeError("Sealed AP startup record changed")
         if positive:
-            expected_generation = generation_base + ((25 if index in (1, 2) else 15) if case == "ap-concurrent-stress" else (11 if index in (1, 2) else 8) if case == "ap-concurrent" else 4 if case == "ap-timer" else (4 if index == 1 else 3) if case == "admission" else (9 if index == 1 else 6) if case in ("ap-batch", "ap-preempt") else 105)
+            expected_generation = generation_base + ((29 if index <= 4 else 19) if case == "ap-four" else (25 if index in (1, 2) else 15) if case == "ap-concurrent-stress" else (11 if index in (1, 2) else 8) if case == "ap-concurrent" else 4 if case == "ap-timer" else (4 if index == 1 else 3) if case == "admission" else (9 if index == 1 else 6) if case in ("ap-batch", "ap-preempt") else 105)
             values = counters[index * 8:(index + 1) * 8]
             if values != [expected_generation, expected_generation, values[2], top - 576, expected_generation, expected_generation, 0, 0] or values[2] < 1:
                 raise RuntimeError("IPI completion/return/EOI counters differ: " + str(values))
@@ -241,7 +241,7 @@ def verify(vm, log, case, count):
             raise RuntimeError("SMP panic coordinator did not collect all CPUs")
         reason = {"missing-ack": 0x4b34495049544d4f, "stale-ack": 0x4b34495049424144,
                   "panic-idle": 0x4b344950494e4d34, "panic-handler": 0x4b344950494e4d35,
-                  "release-missing-ack": 0x4b34544c4241434b, "ap-batch-rollback": 0x4b34415042415443, "ap-concurrent-incomplete": 0x4b34415042415443}[case]
+                  "release-missing-ack": 0x4b34544c4241434b, "ap-batch-rollback": 0x4b34415042415443, "ap-concurrent-incomplete": 0x4b34415042415443, "ap-four-incomplete": 0x4b34415042415443}[case]
         if log.number("PANIC_REASON_ADDRESS") != reason or log.number("PANIC_MISSING") != 0:
             raise RuntimeError("Different failure reason or missing panic ACK")
         for index in range(count):
@@ -284,9 +284,13 @@ def verify(vm, log, case, count):
         requests = 15 * (count - 1) + 20
     if case == "ap-concurrent-incomplete":
         requests = 3 * (count - 1) + 6
+    if case == "ap-four":
+        requests = 19 * (count - 1) + 40
+    if case == "ap-four-incomplete":
+        requests = 10 * (count - 1 + 4)
     return dict(Case=case, RealCpus=count, Requests=requests, TimerTicks=timer_ticks,
-                PhysicalFree=free, Pinned=True, AdmittedCpus=[1,2] if case in ("ap-concurrent", "ap-concurrent-stress", "ap-concurrent-incomplete") else [1] if case in ("admission", "ap-batch", "ap-preempt") else [],
-                TaskCpus=[1,2] if case in ("ap-concurrent", "ap-concurrent-stress", "ap-concurrent-incomplete") else [1] if case in ("ap-batch", "ap-preempt") else [])
+                PhysicalFree=free, Pinned=True, AdmittedCpus=[1,2,3,4] if case in ("ap-four", "ap-four-incomplete") else [1,2] if case in ("ap-concurrent", "ap-concurrent-stress", "ap-concurrent-incomplete") else [1] if case in ("admission", "ap-batch", "ap-preempt") else [],
+                TaskCpus=[1,2,3,4] if case in ("ap-four", "ap-four-incomplete") else [1,2] if case in ("ap-concurrent", "ap-concurrent-stress", "ap-concurrent-incomplete") else [1] if case in ("ap-batch", "ap-preempt") else [])
 
 
 # ====== capture_failure ======
@@ -302,10 +306,12 @@ def capture_failure(vm, count):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack", "ap-timer", "admission", "ap-batch", "ap-batch-rollback", "ap-preempt", "ap-concurrent", "ap-concurrent-stress", "ap-concurrent-incomplete"), default="ping")
+    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack", "ap-timer", "admission", "ap-batch", "ap-batch-rollback", "ap-preempt", "ap-concurrent", "ap-concurrent-stress", "ap-concurrent-incomplete", "ap-four", "ap-four-incomplete"), default="ping")
     parser.add_argument("--boots", type=int, choices=range(1, 11), default=10)
     parser.add_argument("--smp", type=int, choices=range(2, 65), default=4)
     args = parser.parse_args()
+    if args.case in ("ap-four", "ap-four-incomplete") and args.smp < 5:
+        parser.error("Four AP workers require at least five total CPUs")
     out = transition.ROOT / "kernel/build" / ("ipi-service-" + uuid.uuid4().hex)
     out.mkdir()
     results = []
@@ -316,7 +322,7 @@ def main():
                 try:
                     log = await_terminal(vm, args.case)
                     vm.command("stop")
-                    if args.case not in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt", "ap-concurrent", "ap-concurrent-stress"):
+                    if args.case not in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt", "ap-concurrent", "ap-concurrent-stress", "ap-four"):
                         group_spec = importlib.util.spec_from_file_location("service_group", Path(__file__).parents[2] / "panic/integration/group.py")
                         group = importlib.util.module_from_spec(group_spec)
                         group_spec.loader.exec_module(group)

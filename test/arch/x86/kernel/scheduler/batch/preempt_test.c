@@ -13,9 +13,9 @@ XP_PANIC_NATIVE xp_panic_native;
 const unsigned char x86_scheduler_irq_compute_begin[64] = {0};
 const unsigned char x86_scheduler_irq_compute_end[1] = {0};
 #ifdef KERNEL_TEST_AP_CONCURRENT
-static XAT_PREEMPT second_record;
+static XAT_PREEMPT peer_records[XAT_APS - 1];
 static uint32_t task_offset;
-XAT_PREEMPT *xat_preemption_record(void) { return task_offset ? &second_record : &xat_preempt; }
+XAT_PREEMPT *xat_preemption_record(void) { return task_offset ? &peer_records[task_offset / 2 - 1] : &xat_preempt; }
 #define xat_preempt (*xat_preemption_record())
 #else
 #define task_offset 0U
@@ -127,7 +127,7 @@ static void test_cpu_private(void)
 int main(void)
 {
 #ifdef KERNEL_TEST_AP_CONCURRENT
-    for (task_offset = 0; task_offset < 4; task_offset += 2) { switches = 0; test_cpu_private(); }
+    for (task_offset = 0; task_offset < XAT_TASKS; task_offset += 2) { switches = 0; test_cpu_private(); }
 #else
     test_cpu_private();
 #endif

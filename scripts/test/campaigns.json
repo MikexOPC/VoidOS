@@ -1,6 +1,18 @@
 {
   "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
+    "ap-task-four": {
+      "summary": "Eight tasks preempted on four APs, BSP supervisor, five real CPUs and joint cleanup",
+      "build": ["-TestApService", "ap-four"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-four", "--smp", "5"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "ap-task-four-incomplete": {
+      "summary": "Expected panic when AP4 omits Rust quiescence, with all 128 task pages retained",
+      "build": ["-TestApService", "ap-four-incomplete"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-four-incomplete", "--smp", "5"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
     "ap-task-concurrent-stress": {
       "summary": "Eight preemptions per task and eight PING/shootdown rounds on AP1/AP2",
       "build": ["-TestApService", "ap-concurrent-stress"],

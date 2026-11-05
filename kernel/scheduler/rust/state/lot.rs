@@ -1,4 +1,5 @@
 use super::{Error, Handle, Owner, State, CAPACITY};
+const MAX_PARTICIPANTS: u32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Lot {
@@ -30,7 +31,7 @@ impl Owner {
     pub(super) fn validate_lot(&self) -> bool {
         let Some(lot) = self.lot else { return true; };
         if lot.group == 0 || lot.token == 0 || lot.token != self.last_lot ||
-            lot.participants & 1 != 0 || lot.participants.count_ones() != 2 ||
+            lot.participants & 1 != 0 || !(2..=MAX_PARTICIPANTS).contains(&lot.participants.count_ones()) ||
             lot.participants & !self.all_cpus() != 0 ||
             lot.entered & !lot.participants != 0 || lot.completed & !lot.entered != 0 ||
             lot.quiesced & !lot.completed != 0 { return false; }
@@ -66,7 +67,7 @@ impl Owner {
             next.dispatcher(caller)?;
             if caller != 0 || next.lot.is_some() || next.current.iter().any(Option::is_some) ||
                 group == 0 || token == 0 || token <= next.last_lot || participants & 1 != 0 ||
-                participants.count_ones() != 2 || participants & !next.all_cpus() != 0 {
+                !(2..=MAX_PARTICIPANTS).contains(&participants.count_ones()) || participants & !next.all_cpus() != 0 {
                 return Err(Error::InvalidState);
             }
             let mut lot = Lot { group, token, participants, entered: 0, completed: 0,

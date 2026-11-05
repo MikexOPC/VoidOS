@@ -9,7 +9,7 @@
 
 volatile XAD_NATIVE_RECORD xad_native_record;
 #ifdef KERNEL_TEST_AP_CONCURRENT
-static XAD_NATIVE_RECORD second_record;
+static XAD_NATIVE_RECORD peer_records[XAT_APS - 1];
 #endif
 
 // ====== fail_private ======
@@ -38,7 +38,7 @@ void xad_native_poll(void)
     }
     if (token == XAD_INVALID ||
 #ifdef KERNEL_TEST_AP_CONCURRENT
-        index < 1 || index > 2 ||
+        index < 1 || index > XAT_APS ||
 #else
         index != 1 ||
 #endif
@@ -60,7 +60,7 @@ void xad_native_poll(void)
         local->stats.steps || local->stats.failure ||
         local->owner != (uint64_t)(uintptr_t)xp_panic_native.Contexts[index]) fail_private(index,token,root);
 #ifdef KERNEL_TEST_AP_CONCURRENT
-    volatile XAD_NATIVE_RECORD *record = index == 1 ? &xad_native_record : &second_record;
+    volatile XAD_NATIVE_RECORD *record = index == 1 ? &xad_native_record : &peer_records[index - 2];
 #else
     volatile XAD_NATIVE_RECORD *record = &xad_native_record;
 #endif

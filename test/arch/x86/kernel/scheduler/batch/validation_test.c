@@ -74,11 +74,11 @@ static void test_cpu_private(uint32_t actor_index)
     xp_panic_native.Contexts[actor_index] = &owner; xp_panic_native.Ids[actor_index] = actor_index;
     lapic.Physical = 0xfee00000; xp_panic_native.Lapic = &lapic;
     xis_native.Idtr.Bytes[0] = 255; xis_native.Idtr.Bytes[1] = 15;
-    auth.Self = (uint64_t)(uintptr_t)&auth; auth.Root = root; auth.Ready = 1; auth.PhysicalBits = 40; auth.Cpus = 4;
+    auth.Self = (uint64_t)(uintptr_t)&auth; auth.Root = root; auth.Ready = 1; auth.PhysicalBits = 40; auth.Cpus = XAT_APS == 4 ? 5 : 4;
     auth.Data = (KERNEL_PHYSICAL_LEASE){0}; auth.Tables = (KERNEL_PHYSICAL_LEASE){0};
-    auth.Data.Id = 1; auth.Data.Owner = pool.Self; auth.Data.Base = 0x200000; auth.Data.Pages = 87;
+    auth.Data.Id = 1; auth.Data.Owner = pool.Self; auth.Data.Base = 0x200000; auth.Data.Pages = (auth.Cpus - 1) * 29;
     auth.Tables.Id = 2; auth.Tables.Owner = pool.Self; auth.Tables.Base = 0x300000; auth.Tables.Pages = 3;
-    xat_arena = (X86_AP_SNAPSHOT){auth.Self,auth.Data.Base,87,1,auth.Tables.Base,2,4,3};
+    xat_arena = (X86_AP_SNAPSHOT){auth.Self,auth.Data.Base,auth.Data.Pages,1,auth.Tables.Base,2,auth.Cpus,3};
     cpu.cr0 = 0x80010001; cpu.cr3 = root; cpu.cr4 = 0x200; cpu.apic_base = 0xfee00800;
     cpu.max_leaf = 1; cpu.apic_id = actor_index; cpu.features = (1U << 9) | (1U << 24) | (1U << 25) | (1U << 26);
     for (uint32_t level = 0; level < 3; ++level)
@@ -144,7 +144,7 @@ static void test_cpu_private(uint32_t actor_index)
 
 int main(void)
 {
-    check_private(xad_configure(4,0x10000,0));
+    check_private(xad_configure(XAT_APS == 4 ? 5 : 4,0x10000,0));
     for (uint32_t actor_index = 1; actor_index <= XAT_APS; ++actor_index) test_cpu_private(actor_index);
     printf("AP_GATE_PASS: %u checks, real C validator/Rust protocol, privileged reads and mapping views MOCK\n",checks);
     return 0;
