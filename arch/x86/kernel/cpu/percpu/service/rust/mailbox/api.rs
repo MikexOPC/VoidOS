@@ -3,7 +3,50 @@
 mod state;
 #[path = "../frame/validation.rs"]
 mod frame;
+#[path = "../../../../../scheduler/admission/rust/state/owner.rs"]
+mod admission;
 static SERVICE: state::Service = state::Service::new();
+static ADMISSION: admission::Admission = admission::Admission::new();
+
+// ====== xad_configure ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_configure(count: u32, group: u64, caller: u32) -> u32 {
+    ADMISSION.configure(count,group,caller)
+}
+
+// ====== xad_offer ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_offer(cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
+    ADMISSION.offer(cpu,caller,token,group)
+}
+
+// ====== xad_claim ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_claim(cpu: u32, caller: u32, group: u64) -> u64 {
+    ADMISSION.claim(cpu,caller,group)
+}
+
+// ====== xad_admit ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_admit(cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
+    ADMISSION.admit(cpu,caller,token,group)
+}
+
+// ====== xad_fail ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_fail(cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
+    ADMISSION.fail(cpu,caller,token,group)
+}
+
+// ====== xad_value ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_value(cpu: u32, group: u64) -> u64 { ADMISSION.value(cpu,group) }
 
 // ====== xis_idle_return_valid ======
 

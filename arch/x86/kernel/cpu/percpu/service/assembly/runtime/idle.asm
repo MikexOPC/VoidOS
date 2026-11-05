@@ -12,6 +12,9 @@ section .text
 global xis_service_loop
 %ifdef KERNEL_TEST_AP_SERVICE
 extern xis_native_verified, xis_native_abort
+%ifdef KERNEL_TEST_AP_ADMISSION
+extern xad_native_poll
+%endif
 
 ; ====== xis_service_loop ======
 
@@ -97,6 +100,11 @@ xis_service_loop:
     [warning -reloc-rel-dword]
     call xis_native_verified
     [warning +reloc-rel-dword]
+%ifdef KERNEL_TEST_AP_ADMISSION
+    [warning -reloc-rel-dword]
+    call xad_native_poll
+    [warning +reloc-rel-dword]
+%endif
     jmp .pattern
 
 ; ====== unexpected_context_change ======

@@ -28,7 +28,7 @@ def complete_snapshot(log):
 
 
 def await_terminal(vm, case):
-    positive = case in ("ping", "ap-timer")
+    positive = case in ("ping", "ap-timer", "admission")
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         log = complete_snapshot(vm.log())
@@ -36,7 +36,7 @@ def await_terminal(vm, case):
             raise RuntimeError("Unexpected kernel/VM failure")
         if positive and log.failures():
             raise RuntimeError("Unexpected panic in positive service profile")
-        ready_marker = "KERNEL_AP_TIMER_READY" if case == "ap-timer" else "KERNEL_IPI_SERVICE_READY"
+        ready_marker = {"ap-timer": "KERNEL_AP_TIMER_READY", "admission": "KERNEL_AP_DISPATCH_ADMITTED"}.get(case,"KERNEL_IPI_SERVICE_READY")
         ready = log.has(ready_marker) if positive else "KERNEL_SMP_PANIC_HALTED" in log.text
         if ready and case == "ping" and not log.before("KERNEL_IPI_REMAP_VERIFIED", "KERNEL_IPI_SERVICE_READY"):
             raise RuntimeError("Missing AP remap and release evidence")
@@ -53,7 +53,7 @@ def await_terminal(vm, case):
 # ====== verify ======
 
 def verify(vm, log, case, count):
-    positive = case in ("ping", "ap-timer")
+    positive = case in ("ping", "ap-timer", "admission")
     texts = [launch.registers(vm, index) for index in range(count)]
     mask = (1 << count) - 1
     root = launch.value(texts[0], "CR3")
@@ -128,6 +128,22 @@ def verify(vm, log, case, count):
     if case == "ap-timer" and (len(timer_ticks) != count - 1 or min(timer_ticks) < 3 or
                               log.number("KERNEL_AP_TIMER_RELOAD") != log.number("KERNEL_TIMER_RELOAD")):
         raise RuntimeError("Missing timer progress or BSP calibration")
+    if case == "admission":
+        record_address = log.number("KERNEL_AP_DISPATCH_RECORD")
+        record = cpu.memory(vm,record_address,8)
+        ap_base = log.number("KERNEL_AP_BASE") + 0x40000
+        top = ap_base + 17 * 4096 - 1024
+        local = record[5]
+        if (record[:4] != [record_address,root,1,1] or record[6:] != [root,0] or
+                not ap_base + 8192 <= record[4] < top - 576 or local & 63 or
+                not 0xffffffff80000000 <= local < 0xffffffff80400000 - 704):
+            raise RuntimeError("AP admission native evidence differs")
+        words = cpu.memory(vm,local,88)
+        expected_local = [0] * 88
+        expected_local[80] = 0xffffffff00000000
+        expected_local[82:84] = [local,first]
+        if words != expected_local:
+            raise RuntimeError("AP dispatcher context identity or initial state differs")
     final = vm.physical(log.number("KERNEL_AP_TRANSITION_DATA"), 13)
     for index in range(count):
         text = texts[index]
@@ -152,7 +168,7 @@ def verify(vm, log, case, count):
         if frame[:13] != expected or frame[83] != 6:
             raise RuntimeError("Sealed AP startup record changed")
         if positive:
-            expected_generation = generation_base + (4 if case == "ap-timer" else 105)
+            expected_generation = generation_base + (4 if case == "ap-timer" else (4 if index == 1 else 3) if case == "admission" else 105)
             values = counters[index * 8:(index + 1) * 8]
             if values != [expected_generation, expected_generation, values[2], top - 576, expected_generation, expected_generation, 0, 0] or values[2] < 1:
                 raise RuntimeError("IPI completion/return/EOI counters differ: " + str(values))
@@ -210,8 +226,10 @@ def verify(vm, log, case, count):
         requests = 100 * (count - 1) + 1
     if case == "ap-timer":
         requests = 4 * (count - 1)
+    if case == "admission":
+        requests = 3 * (count - 1) + 1
     return dict(Case=case, RealCpus=count, Requests=requests, TimerTicks=timer_ticks,
-                PhysicalFree=free, Pinned=True)
+                PhysicalFree=free, Pinned=True, AdmittedCpus=[1] if case == "admission" else [])
 
 
 # ====== capture_failure ======
@@ -227,7 +245,7 @@ def capture_failure(vm, count):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack", "ap-timer"), default="ping")
+    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack", "ap-timer", "admission"), default="ping")
     parser.add_argument("--boots", type=int, choices=range(1, 11), default=10)
     parser.add_argument("--smp", type=int, choices=range(2, 65), default=4)
     args = parser.parse_args()
@@ -241,7 +259,7 @@ def main():
                 try:
                     log = await_terminal(vm, args.case)
                     vm.command("stop")
-                    if args.case not in ("ping", "ap-timer"):
+                    if args.case not in ("ping", "ap-timer", "admission"):
                         group_spec = importlib.util.spec_from_file_location("service_group", Path(__file__).parents[2] / "panic/integration/group.py")
                         group = importlib.util.module_from_spec(group_spec)
                         group_spec.loader.exec_module(group)

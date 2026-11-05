@@ -29,6 +29,11 @@ try {
         '/MD','/O2','/UNDEBUG',"/I$project",$source,"/Fe$out/ffi.exe",
         "/Fo$out/ffi.obj","/Fd$out/ffi.pdb",'/link',"$out/mailbox.obj",'/incremental:no','/DEBUG','/WX')
     foreach ($run in 1..20) { Invoke-Checked "$out/ffi.exe" @() }
+    Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/UNDEBUG',"/I$project","$project/test/arch/x86/kernel/scheduler/admission/ffi_test.c",
+        "/Fe$out/admission.exe","/Fo$out/admission.obj","/Fd$out/admission.pdb",'/link',
+        "$out/mailbox.obj",'/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/admission.exe" @()
     $wait = "$project/arch/x86/kernel/cpu/percpu/service/wait.c"
     $test = "$project/test/arch/x86/kernel/cpu/percpu/service/wait_test.c"
     foreach ($part in @(@($wait, 'wait'), @($test, 'wait-test'))) {
@@ -45,14 +50,20 @@ try {
         '-C','panic=abort','-C','opt-level=2',
         "$project/arch/x86/kernel/interrupts/return/rust/frame/validation.rs",'-o',"$out/irq-frame.obj")
     $nativeTest = "$project/test/arch/x86/kernel/cpu/percpu/service/native_test.c"
-    foreach ($part in @(@($native, 'native'), @($nativeTest, 'native-test'))) {
+    $admissionNative = "$project/arch/x86/kernel/scheduler/admission/native.c"
+    $admissionLocal = "$project/arch/x86/kernel/scheduler/integration/local.c"
+    foreach ($part in @(@($native, 'native'), @($nativeTest, 'native-test'),
+        @($admissionNative,'admission-native'), @($admissionLocal,'admission-local'))) {
         Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
             '/MD','/O2','/UNDEBUG','/DKERNEL_TEST_AP_SERVICE=1','/c',"/I$project",$part[0],"/Fo$out/$($part[1]).obj","/Fd$out/native.pdb")
     }
     Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/MD','/fsanitize=address',"/Fe$out/native.exe",
-        "$out/native.obj","$out/native-test.obj","$out/mailbox.obj","$out/irq-frame.obj",'/link','/incremental:no','/DEBUG','/WX')
+        "$out/native.obj","$out/native-test.obj","$out/admission-native.obj","$out/admission-local.obj",
+        "$out/mailbox.obj","$out/irq-frame.obj",'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/native.exe" @()
     Invoke-Cppcheck $project $out @($source, $wait, $test, $native, $nativeTest,
+        $admissionNative, $admissionLocal, "$project/test/arch/x86/kernel/scheduler/admission/probe.c",
+        "$project/test/arch/x86/kernel/scheduler/admission/ffi_test.c",
         "$project/arch/x86/kernel/cpu/percpu/service/native/transport.c",
         "$project/arch/x86/kernel/interrupts/apic/icr/icr.c",
         "$project/test/arch/x86/kernel/cpu/percpu/service/integration/probe.c")

@@ -362,3 +362,55 @@ Limiti: si tratta ancora del frame idle, non di autorizzazione per task
 AP. La verifica C/Rust avviene dopo i salvataggi Assembly: non sostituisce
 guardie, mapping e ownership dello stack. ASan host e accounting fisico
 dei runner sono prove distinte; coverage linee/branch non misurata.
+
+## K4-C4 — Prima ammissione AP fuori IRQ
+
+5 novembre 2026. Scelta utente: stato Rust separato e PING esistente.
+Implementato il diagnostico TestApService admission, campagna
+ap-dispatch-admission. AP1 consuma una richiesta numerata, verifica il
+contesto fuori IRQ, prepara il proprio slot nativo e pubblica ADMITTED.
+Ritorna all'idle con registri, FPU e SIMD verificati. ACK PING e conferma
+di ammissione sono distinti. La mailbox PING/flush/timer non cambia.
+
+- Quindici test Rust in debug e quindici in release, warning come errori
+  e Clippy passati. Cinque nuovi test: limiti/autorità, 63 destinatari,
+  claim concorrenti, 512 corse conferma/fallimento e timeout deterministici
+  prima/dopo il claim. FAILED non si riapre, token e gruppo errati respinti.
+- FFI C/Rust con ASan: tre consumer concorrenti, 300.000 claim ripetuti
+  respinti dopo l'ammissione, handle host chiusi. Test nativo con stack
+  simulato invalido: nessuna pubblicazione del record e FAILED terminale.
+- Regressioni mailbox, nove casi delle attese e dieci casi del runner
+  passati. MSVC /W4 /WX e cppcheck passati, senza diagnostiche bloccanti.
+  Evidenze host: kernel/build/c4-admission-host-836f94b151d249fc9b76d6e43905c0bc.
+- Layout e diff verificati. Il nuovo stato non usa heap; le risorse AP
+  esistenti restano pinned. ASan host non misura leak della RAM fisica.
+
+Campagna finale QEMU/OVMF TCG, quattro CPU reali inizializzate, dieci boot
+consecutivi per profilo complesso. Immagini ricompilate, hash kernel/loader
+ed ESP verificati, accounting e snapshot CPU/memoria nei results.json.
+
+- Ammissione 10/10:
+  kernel/build/ipi-service-a15fab0ead3f42809b98909a70b0630a.
+  Il runner legge il record scritto da AP1 e tutti i 704 byte dello slot
+  locale; controlla owner, root, stack, stato iniziale e ritorno all'idle.
+  Dieci richieste PING/flush per boot, prima/dopo l'ammissione.
+- Ordinario 10/10:
+  kernel/build/ap-runtime-97539af9e6b5432b86542b7df8fe6120.
+- IPI con preservazione GPR/FPU/SIMD 10/10:
+  kernel/build/ipi-service-0d4c5bc8b0b644d7b0edc6488df124df.
+- Timer AP con stop confermato 10/10:
+  kernel/build/ipi-service-600a4b71228445ad8746fd67b7ee6b09.
+- Build, immagini e riepilogo 40/40:
+  kernel/build/qemu-run-814e4ba23bf347a7b5ae150eb3279688.
+
+Dopo la sola aggiunta di separatori al wrapper FFI, ricompilato l'oggetto
+Rust con gli stessi flag: SHA-256 identico all'oggetto del diagnostico
+collaudato. Evidenza in kernel/build/c4-admission-object-check/comparison.json.
+
+Limiti: il punto di ammissione non chiama ancora il motore dispatcher.
+La fase nativa AP resta zero; nessun task, timer scheduler o driver viene
+eseguito su AP1. Il profilo ordinario mantiene lo scheduler BSP. Il test
+positivo non dimostra timeout su hardware: la corsa terminale è provata
+nei test host, non con un timeout QEMU iniettato. Coverage non misurata.
+Restano quattro obiettivi C4: primo lotto AP, preemption AP, dispatcher
+concorrenti e stress/regressioni di chiusura; poi C5 e C6.
