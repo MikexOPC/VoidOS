@@ -54,6 +54,9 @@ try {
     Invoke-Checked $clippy @('--edition=2024','--crate-type=lib','-C','panic=abort',
         '-D','warnings','--emit=metadata',(Join-Path $module 'rust/ffi/gateway.rs'),
         '-o',"$out/gateway-clippy.rmeta")
+    Invoke-Checked $clippy @('--edition=2024','--crate-type=lib','-C','panic=abort',
+        '--cfg','scheduler_core_lock','-D','warnings','--emit=metadata',
+        (Join-Path $module 'rust/ffi/gateway.rs'),'-o',"$out/gateway-smp-clippy.rmeta")
     Invoke-Checked $clippy @('--edition=2024','--test','-D','warnings','--emit=metadata',
         (Join-Path $module 'rust/payload/channel.rs'),'-o',"$out/payload-clippy.rmeta")
     Invoke-Checked $rustc @('--edition=2024','--crate-type=staticlib','--target','x86_64-pc-windows-msvc',

@@ -44,10 +44,28 @@ static PENDING: pending::Pending = pending::Pending::new();
 unsafe extern "C" {
     // Trusted backend must verify BSP/IF=0/DF=0 and dispatcher, outside IRQ/NMI.
     // Host tests mock this predicate; no CPU verification is claimed by Rust.
+    #[cfg(not(scheduler_core_lock))]
     fn kernel_scheduler_context_valid() -> u32;
     fn kernel_scheduler_binding_context_valid() -> u32;
     fn kernel_scheduler_payload_context_valid(consumer: u32, generation: u64) -> u32;
     fn kernel_scheduler_fail_stop() -> !;
+}
+
+#[cfg(scheduler_core_lock)]
+unsafe extern "C" {
+    fn kernel_scheduler_context_valid_on(cpu: u32) -> u32;
+}
+
+// ====== gateway_context_valid_on ======
+
+#[cfg(scheduler_core_lock)]
+fn context_valid_on(cpu: u32) -> bool {
+    unsafe { kernel_scheduler_context_valid_on(cpu) == 1 }
+}
+
+#[cfg(not(scheduler_core_lock))]
+fn context_valid_on(_cpu: u32) -> bool {
+    unsafe { kernel_scheduler_context_valid() == 1 }
 }
 
 #[repr(C)]
@@ -85,7 +103,7 @@ fn apply_on(cpu: u32, operation: u32, index: u32, generation: u64, limit: u32) -
     };
     // SAFETY: the linked backend has the stated C ABI and returns a normalized bit.
     // Callback occurs BEFORE creating any Rust reference to STORAGE.
-    if unsafe { kernel_scheduler_context_valid() } != 1 { return reply(10); }
+    if !context_valid_on(cpu) { return reply(10); }
     if operation > limit { return reply(12); }
     if matches!(operation, 0 | 1 | 4 | 9) && (index != NONE || generation != 0) {
         return reply(12);
@@ -147,7 +165,7 @@ fn event_apply_on(cpu: u32, operation: u32, index: u32, generation: u64,
     let mut output = EventReply { reply: reply(0), epoch: 0, outcome: u32::MAX, woken: 0 };
     let Some(_guard) = core_lock::enter() else { output.reply = reply(9); return output; };
     // SAFETY: trusted ABI callback, before borrowing the exclusively owned storage.
-    if unsafe { kernel_scheduler_context_valid() } != 1 {
+    if !context_valid_on(cpu) {
         output.reply = reply(10); return output;
     }
     if operation > 2 || (operation != 1 && observed != 0) {
@@ -192,7 +210,7 @@ fn stop_apply_on(cpu: u32, operation: u32, index: u32, generation: u64) -> Event
     let mut output = EventReply { reply: reply(0), epoch: 0, outcome: u32::MAX, woken: 0 };
     let Some(_guard) = core_lock::enter() else { output.reply = reply(9); return output; };
     // SAFETY: trusted context callback before creating any storage reference.
-    if unsafe { kernel_scheduler_context_valid() } != 1 { output.reply = reply(10); return output; }
+    if !context_valid_on(cpu) { output.reply = reply(10); return output; }
     if operation > 1 { output.reply = reply(12); return output; }
     // SAFETY: the core_lock guard owns the storage; no callback or switch during this borrow.
     let storage = unsafe { &mut *STORAGE.0.get() };
@@ -232,7 +250,7 @@ pub extern "C" fn kernel_scheduler_irq_drain() -> EventReply {
     let mut output = EventReply { reply: reply(0), epoch: 0, outcome: 4, woken: 0 };
     let Some(_guard) = core_lock::enter() else { output.reply = reply(9); return output; };
     // SAFETY: trusted ABI callback before creating the exclusive owner borrow.
-    if unsafe { kernel_scheduler_context_valid() } != 1 { output.reply = reply(10); return output; }
+    if !context_valid_on(0) { output.reply = reply(10); return output; }
     // SAFETY: identical core_lock discipline; no callbacks while this borrow exists.
     let storage = unsafe { &mut *STORAGE.0.get() };
     let Some(owner) = storage.as_mut() else { output.reply = reply(11); return output; };

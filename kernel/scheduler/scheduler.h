@@ -144,6 +144,7 @@ KERNEL_SCHEDULER_REPLY kernel_scheduler_tick_on(uint32_t cpu);
 
 // Backend symbols provided by x86 scheduler integration; host fixtures mock them.
 uint32_t kernel_scheduler_context_valid(void);
+uint32_t kernel_scheduler_context_valid_on(uint32_t cpu);
 __declspec(noreturn) void kernel_scheduler_fail_stop(void);
 uint32_t kernel_scheduler_lock_acquire(void);
 void kernel_scheduler_lock_release(void);

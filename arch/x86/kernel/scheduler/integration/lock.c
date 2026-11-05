@@ -14,6 +14,14 @@ static const X86_CPU_LOCAL *lock_cpu_private(void)
     return local && local->Index < X86_PERCPU_CAPACITY && local->State == X86_PERCPU_ACTIVE ? local : 0;
 }
 
+// ====== kernel_scheduler_context_valid_on ======
+
+uint32_t kernel_scheduler_context_valid_on(uint32_t cpu)
+{
+    const X86_CPU_LOCAL *local = lock_cpu_private();
+    return local && local->Index == cpu && kernel_scheduler_context_valid() == 1;
+}
+
 // ====== kernel_scheduler_lock_acquire ======
 
 uint32_t kernel_scheduler_lock_acquire(void)
