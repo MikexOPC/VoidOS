@@ -18,9 +18,9 @@ _Static_assert(sizeof(XAT_PREEMPT) == 128,"AP preemption evidence ABI");
 int xat_preempt_quiet(void)
 {
     const uint32_t bit = 1U << (0xd1 % 32), offset = (0xd1 / 32) * 16;
-    return xat_preempt.Stopped == 1 && xat_preempt.Total == 6 &&
-        xat_preempt.Ticks[0] == 3 && xat_preempt.Ticks[1] == 3 &&
-        xat_preempt.Resumed[0] == 3 && xat_preempt.Resumed[1] == 3 &&
+    return xat_preempt.Stopped == 1 && xat_preempt.Total == 2 * XAT_PREEMPT_TARGET &&
+        xat_preempt.Ticks[0] == XAT_PREEMPT_TARGET && xat_preempt.Ticks[1] == XAT_PREEMPT_TARGET &&
+        xat_preempt.Resumed[0] == XAT_PREEMPT_TARGET && xat_preempt.Resumed[1] == XAT_PREEMPT_TARGET &&
         !xis_mmio_read(0x380) && !xis_mmio_read(0x390) &&
         xis_mmio_read(0x320) == 0x300d1 && xis_mmio_read(0x3e0) == 3 &&
         !(xis_mmio_read(0x100 + offset) & bit) && !(xis_mmio_read(0x200 + offset) & bit);
@@ -42,7 +42,7 @@ void xat_preempt_work(uint32_t index)
     }
     if (x86_scheduler_irq_poll(completion[index],xp_panic_native.Source.Port,
         xp_panic_native.Source.Mask,KERNEL_PM_TIMER_HZ / 2) != 1 ||
-        xat_preempt.Resumed[index % 2] != 3) xat_abort();
+        xat_preempt.Resumed[index % 2] != XAT_PREEMPT_TARGET) xat_abort();
 }
 
 // ====== xat_preempt_interrupt ======
@@ -60,11 +60,11 @@ void xat_preempt_interrupt(const X86_IRQ_FRAME *frame)
         if (xis_mmio_read(isr)) xat_abort();
         return;
     }
-    if (index % 2 != xat_preempt.Total % 2 || xat_preempt.Total >= 6 ||
+    if (index % 2 != xat_preempt.Total % 2 || xat_preempt.Total >= 2 * XAT_PREEMPT_TARGET ||
         xat_preempt.Ticks[index % 2] != xat_preempt.Resumed[index % 2] ||
         frame->Rip < (uint64_t)(uintptr_t)x86_scheduler_irq_compute_begin ||
         frame->Rip >= (uint64_t)(uintptr_t)x86_scheduler_irq_compute_end) xat_abort();
-    if (xat_preempt.Total == 5) {
+    if (xat_preempt.Total == 2 * XAT_PREEMPT_TARGET - 1) {
         xis_mmio_write(0x320,0x300d1);
         xis_mmio_write(0x380,0);
         if (xis_mmio_read(0x320) != 0x300d1 || xis_mmio_read(0x380) || xis_mmio_read(0x390)) xat_abort();
@@ -73,7 +73,7 @@ void xat_preempt_interrupt(const X86_IRQ_FRAME *frame)
     xis_mmio_write(0xb0,0);
     if (xis_mmio_read(isr)) xat_abort();
     ++xat_preempt.Total;
-    if (++xat_preempt.Ticks[index % 2] == 3) completion[index][0] = 1;
+    if (++xat_preempt.Ticks[index % 2] == XAT_PREEMPT_TARGET) completion[index][0] = 1;
     xat_preempt.Frame[index % 2] = (uint64_t)(uintptr_t)frame;
     xat_preempt.Rsp[index % 2] = frame->Rsp;
     xat_preempt.Rip[index % 2] = frame->Rip;
@@ -100,6 +100,6 @@ void xat_preempt_after(const X86_IRQ_FRAME *frame)
     x86_scheduler_context_switch(&xat_contexts[index],&local->dispatcher);
     local = x86_scheduler_local_current();
     if (!local || !xat_task_valid() || local->current != index || local->generation != generation ||
-        local->event || xat_preempt.Resumed[index % 2] >= 3) xat_abort();
+        local->event || xat_preempt.Resumed[index % 2] >= XAT_PREEMPT_TARGET) xat_abort();
     ++xat_preempt.Resumed[index % 2];
 }

@@ -181,6 +181,58 @@ class RegisterParsing(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     firmware.concurrent_batch.verify(None, log, 4, *values, lambda vm, address, count: words[address][:count])
 
+    # ====== incomplete_fixture ======
+
+    @staticmethod
+    def incomplete_fixture():
+        from types import SimpleNamespace
+        names, words, values = RegisterParsing.concurrent_fixture()
+        record = words[names["KERNEL_AP_BATCH_RECORD"]]
+        record[5] = 0
+        record[38:40] = [0, 0]
+        words[names["KERNEL_AP_LOT_RECORD"]][6] = 2
+        live = []
+        for task in range(4):
+            frame = 0x400000 + task * 65536
+            live += [frame, 16, task + 1, 0]
+            words[names["KERNEL_AP_BATCH_PTE"]][task * 18 + 1:task * 18 + 17] = [
+                (frame + page * 4096) | 3 | (1 << 63) for page in range(16)]
+        log = SimpleNamespace(number=lambda name: names[name], before=lambda first, second: True)
+        return names, words, log, (*values[:2], values[2] - 64), live, [0x100000001] * 2
+
+    def test_incomplete_quiescence_keeps_live_leases(self):
+        names, words, log, values, live, pins = self.incomplete_fixture()
+        firmware.concurrent_batch.verify_incomplete(None, log, *values, live, pins,
+            lambda vm, address, count: words[address][:count])
+
+    def test_incomplete_quiescence_rejects_releases(self):
+        for fault in range(5):
+            with self.subTest(fault=fault):
+                names, words, log, values, live, pins = self.incomplete_fixture()
+                if fault == 0: words[names["KERNEL_AP_LOT_RECORD"]][6] = 6
+                elif fault == 1: words[names["KERNEL_AP_BATCH_PTE"]][1] = 0
+                elif fault == 2: pins[0] = 0
+                elif fault == 3: live[1] = 0
+                else: words[names["KERNEL_AP_BATCH_RECORD"]][39] = 1
+                with self.assertRaises(RuntimeError):
+                    firmware.concurrent_batch.verify_incomplete(None, log, *values, live, pins,
+                        lambda vm, address, count: words[address][:count])
+
+    def test_stress_requires_higher_counts(self):
+        from types import SimpleNamespace
+        names, words, values = self.concurrent_fixture()
+        log = SimpleNamespace(number=lambda name: names[name])
+        read = lambda vm, address, count: words[address][:count]
+        with self.assertRaises(RuntimeError):
+            firmware.concurrent_batch.verify(None, log, 4, *values, read, 8, 8)
+        for name in ("KERNEL_AP_BATCH_RECORD", "KERNEL_AP_SECOND_RECORD"):
+            record = words[names[name]]
+            record[18], record[27] = 16, 18
+            words[record[33]][74] = 18 | 2 << 32
+        for name in ("KERNEL_AP_PREEMPT_RECORD", "KERNEL_AP_SECOND_PREEMPT"):
+            words[names[name]][1:6] = [8, 8, 8, 8, 16]
+        firmware.concurrent_batch.verify(None, log, 4, *values, read, 8, 8)
+
 
 if __name__ == "__main__":
     result = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(RegisterParsing))

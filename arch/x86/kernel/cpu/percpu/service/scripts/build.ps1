@@ -9,7 +9,7 @@ if ($TestApService -ne 'none') {
     $serviceDefines += '-DKERNEL_TEST_AP_SERVICE=1'
 }
 if ($TestApService -eq 'ping') { $serviceSources += 'arch/x86/mm/dma/arena.c' }
-if ($TestApService -in @('admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent')) {
+if ($TestApService -in @('admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete')) {
     $serviceDefines += '-DKERNEL_TEST_AP_ADMISSION=1'
     $serviceSources += 'arch/x86/kernel/scheduler/admission/native.c'
     if ($TestApService -eq 'admission') { $serviceSources += 'test/arch/x86/kernel/scheduler/admission/probe.c' }
@@ -17,11 +17,11 @@ if ($TestApService -in @('admission','ap-batch','ap-batch-rollback','ap-preempt'
         'arch/x86/kernel/scheduler/batch/runtime.c','arch/x86/kernel/scheduler/batch/work.c',
         'test/arch/x86/kernel/scheduler/batch/probe.c') }
 }
-if ($TestApService -in @('ap-preempt','ap-concurrent')) {
+if ($TestApService -in @('ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete')) {
     $serviceSources += 'arch/x86/kernel/scheduler/batch/preempt.c'
     $serviceDefines += '-DKERNEL_TEST_AP_PREEMPTION=1'
 }
-if ($TestApService -eq 'ap-concurrent') {
+if ($TestApService -in @('ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete')) {
     $serviceSources += 'arch/x86/kernel/scheduler/batch/concurrent.c'
     $serviceDefines += '-DKERNEL_TEST_AP_CONCURRENT=1'
 }

@@ -703,3 +703,57 @@ o latenza universale. ASan misura gli eseguibili host; RAM fisica e
 mapping vengono verificati nel guest. Coverage non misurata, hardware
 fisico non provato. C4 resta aperta per concorrenza e stress finale;
 poi C5 driver SMP e C6 chiusura K4.
+
+
+## K4-C4 — Stress circoscritto e conferma Rust mancante
+
+5 novembre 2026. Aggiunti due profili, senza nuove transizioni o accessi
+hardware. Le scadenze preesistenti restano invariate. Il boot ordinario
+non cambia; questi sono diagnostici del lotto AP1/AP2.
+
+ap-concurrent-stress richiede otto sospensioni/riprese per ciascuno dei
+quattro task: 32 per boot, 320 nei dieci boot. Otto giri PING/shootdown
+portano il totale verificato a 65 richieste IPI per boot oltre alla base
+iniziale del bootstrap. I record controllano anche identità, frame,
+registri/FPU, arresto del timer e restituzione delle 64 pagine task.
+Non misura throughput, jitter o latenza del futuro scheduler ordinario.
+
+ap-concurrent-incomplete omette la sola conferma QUIESCE Rust di AP2,
+dopo la sua verifica fisica. Entrambi gli AP confermano invece QUIESCED
+nell'ammissione. Il BSP vede completed=6 e quiesced=2; un tentativo
+COLLECT viene respinto. Il cleanup ordinario provoca poi il panic
+coordinato prima del primo unmap. Il runner verifica tutte le 64 pagine
+ancora mappate, quattro lease vive da 16 pagine ciascuna con pin=1,
+guardie assenti e intervalli fisici distinti. Causa del panic e ACK NMI
+di tutti i core devono coincidere con il caso previsto.
+
+Non è un AP bloccato o ancora in esecuzione: il guasto riguarda una
+conferma di protocollo mancante. Le risorse restano intenzionalmente
+trattenute fino all'arresto, non vengono dichiarate rilasciate o perdute.
+
+### Evidenze definitive
+
+- Host: kernel/build/ipi-service-host-a2653183328440caba011b5e311bc91f,
+  log kernel/build/k4c-stress-host.log. Suite Rust debug/release e Clippy,
+  C con warning come errori e ASan, cppcheck senza diagnostiche bloccanti.
+  Nuova variante stress: 470 controlli della logica IRQ su due identità
+  simulate, oltre alle precedenti varianti e ai controlli del gate.
+  MMIO e switch di questi fixture sono mock, non prove CPU.
+- Runner: 15 test, inclusi rifiuto dei vecchi conteggi nel profilo stress,
+  conservazione sintetica delle lease e cinque alterazioni del negativo
+  respinte. Non è una misura di copertura linee o branch.
+- QEMU: kernel/build/qemu-run-5ca66c03d13242caba7bdc6a0c43e767.
+  Dieci boot per ciascuno di stress, concurrent e preemption AP1:
+  30 boot positivi senza fault inattesi. Separatamente, dieci test del
+  negativo incomplete con panic atteso e risorse trattenute. Quattro CPU
+  avviate, task sulle sole AP1/AP2, QEMU TCG/OVMF e immagini/ESP verificate.
+- Stress: kernel/build/ipi-service-77a610aad5fa457fb8e05d15cb2855e9.
+  SHA-256 ELF: 236059EEDE4B1F5EDA629B381AFA1992DDDF158E4039A810F284EAC5CB6F1DFC.
+- Conferma mancante: kernel/build/ipi-service-d1fc8b61436c4043bd2fbe91dc0db98d.
+- Layout centralizzato e diff finale verificati. Le regressioni riguardano
+  i profili modificati; i boot BSP/ordinari del blocco precedente restano
+  evidenze delle rispettive immagini, non nuove prove di questo blocco.
+
+ASan riguarda gli eseguibili host; accounting, pin e PTE sono controllati
+nel guest. Valgrind non eseguito, coverage N/D, hardware fisico non provato.
+C4 resta aperta: il carico nativo è ancora su due CPU, non quattro.

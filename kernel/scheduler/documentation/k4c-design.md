@@ -726,6 +726,50 @@ per AP e snapshot finale del lotto consentono al runner di verificare
 identità, stack dei frame, conteggi e raccolta. La quiescenza nativa non
 è dedotta dalla sola coda vuota o dal solo comando Rust.
 
+### Stress circoscritto e conferma mancante
+
+Due ulteriori diagnostici riusano il protocollo approvato, senza nuove
+transizioni o accessi hardware. ap-concurrent-stress richiede otto
+sospensioni/riprese per task e otto giri PING/shootdown prima del permesso
+di conclusione: 32 sospensioni e 65 richieste IPI su quattro CPU totali.
+Solo AP1/AP2 eseguono i quattro task. Le scadenze del poll Assembly,
+del BSP e delle attese task restano invariate. Non è un benchmark di latenza.
+
+ap-concurrent-incomplete omette soltanto QUIESCE Rust di AP2 dopo averne
+verificato la quiescenza fisica. Entrambi gli AP pubblicano invece la
+conferma di ammissione. Il BSP deve vedere completed=6, quiesced=2,
+rifiutare COLLECT e mantenere le 64 pagine pinned. Il cleanup ordinario
+deve poi provocare il panic coordinato prima del primo unmap. Il runner
+controlla PTE, guardie, lease vive e pin, oltre alla causa e agli ACK NMI.
+Non si simula un AP bloccato o ancora in esecuzione: è un test della
+doppia conferma obbligatoria. L'iniezione è limitata al relativo profilo.
+
+### Prossimo blocco: quattro CPU di lavoro, proposta da confermare
+
+Il lotto Rust attuale accetta esattamente due CPU secondarie. La prossima
+estensione richiede una scelta prima del codice:
+
+- A, consigliata: quattro AP di lavoro e BSP supervisore, cinque vCPU
+  totali. Otto task, due per AP, usano tutti gli slot attuali e 128 pagine
+  di stack (512 KiB). Conserva un solo backend IRQ per i task AP e il
+  cleanup sul BSP; non porta i driver sugli AP.
+- B: quattro vCPU totali, con BSP e tre AP di lavoro. Richiede includere
+  il BSP nel protocollo del lotto e spostarne la supervisione fra i
+  callback del dispatcher, integrando anche il suo backend di preemption.
+
+Per A: Owner ammette da due a quattro AP, mantiene due task ad affinità
+singola per partecipante e rifiuta maschere fuori dalle CPU configurate.
+Record e barriera diventano per partecipante; quiescenza completa prima
+di qualsiasi raccolta. Lo stato Rust e i contesti restano separati; non
+si aggiungono migrazione o riarmo del lotto. Un solo lotto per boot.
+
+Perimetro proposto: scheduler Rust e backend x86, ammissione/hook AP,
+soli adattatori build/test necessari. Riusa risorse per-CPU e protocollo
+IPI esistenti; nessun nuovo dispositivo. Accettazione: test delle nuove
+maschere e dei limiti, stress nativo su quattro CPU effettive, negativo
+di conferma mancante con 128 pagine trattenute, dieci boot consecutivi e
+regressioni dei profili precedenti. Proposta, non risultato verificato.
+
 ## Lavoro restante dopo i prerequisiti C4
 
 Stima di pianificazione, non risultati né percentuale di completamento:

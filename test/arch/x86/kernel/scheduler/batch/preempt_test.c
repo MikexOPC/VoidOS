@@ -102,7 +102,7 @@ static void test_cpu_private(void)
     mmio[0x160 / 4] = 0; expect_interrupt_failure(); reset_private();
     local.current = task_offset + 1; expect_interrupt_failure(); reset_private();
     frame.Rip = 0; expect_interrupt_failure(); reset_private();
-    for (uint32_t tick = 0; tick < 6; ++tick) {
+    for (uint32_t tick = 0; tick < 2 * XAT_PREEMPT_TARGET; ++tick) {
         local.current = task_offset + tick % 2; mmio[0x160 / 4] = 1U << 17;
         xat_preempt_interrupt(&frame);
         check_private(xat_preempt.Total == tick + 1 && !mmio[0x160 / 4]);
@@ -113,12 +113,12 @@ static void test_cpu_private(void)
         xat_preempt_after(&frame);
         check_private(xat_preempt.Resumed[tick % 2] == tick / 2 + 1);
     }
-    check_private(switches == 6 && xat_preempt_quiet());
+    check_private(switches == 2 * XAT_PREEMPT_TARGET && xat_preempt_quiet());
     mmio[0x260 / 4] = 1U << 17; check_private(!xat_preempt_quiet()); mmio[0x260 / 4] = 0;
     for (uint32_t tick = 0; tick < 8; ++tick) {
         mmio[0x160 / 4] = 1U << 17; xat_preempt_interrupt(&frame); xat_preempt_after(&frame);
     }
-    check_private(switches == 6 && xat_preempt.Total == 6 && xat_preempt.Late == 8);
+    check_private(switches == 2 * XAT_PREEMPT_TARGET && xat_preempt.Total == 2 * XAT_PREEMPT_TARGET && xat_preempt.Late == 8);
     mmio[0x160 / 4] = 1U << 17; expect_interrupt_failure();
 }
 

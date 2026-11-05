@@ -97,6 +97,13 @@ try {
         "/Fo$out/","/Fe$out/concurrent-barrier.exe","/Fd$out/concurrent-barrier.pdb",'/link',
         '/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/concurrent-barrier.exe" @()
+    Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/UNDEBUG','/DKERNEL_TEST_AP_PREEMPTION=1','/DKERNEL_TEST_AP_CONCURRENT=1',
+        '/DKERNEL_TEST_AP_BATCH_STRESS=1',"/I$project","$project/arch/x86/kernel/scheduler/batch/preempt.c",
+        "$project/test/arch/x86/kernel/scheduler/batch/preempt_test.c",
+        "/Fo$out/","/Fe$out/stress-preempt.exe","/Fd$out/stress-preempt.pdb",'/link',
+        '/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/stress-preempt.exe" @()
     Invoke-Cppcheck $project $out @($source, $wait, $test, $native, $nativeTest,
         $admissionNative, $admissionLocal, "$project/test/arch/x86/kernel/scheduler/admission/probe.c",
         "$project/arch/x86/kernel/scheduler/batch/validation.c","$project/arch/x86/kernel/scheduler/batch/runtime.c",
