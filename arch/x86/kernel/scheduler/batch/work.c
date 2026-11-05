@@ -42,9 +42,14 @@ __declspec(noreturn) void xat_task_start(void)
         checksum += (uint64_t)(index + 1) * step;
         floating += (double)(index + 1);
         ks_atomic_store_release(&xat_record.Progress[index],step);
+#ifndef KERNEL_TEST_AP_PREEMPTION
         interrupt_window_private();
         xat_yield();
+#endif
     }
+#ifdef KERNEL_TEST_AP_PREEMPTION
+    xat_preempt_work(index);
+#endif
     uint32_t released = 0;
     for (uint32_t poll = 0; poll < 4096; ++poll) {
         if (xad_release(1,1,1,xat_record.Root,0)) { released = 1; break; }

@@ -1,6 +1,6 @@
 # K4-C — Scheduler SMP con preemption
 
-4 novembre 2026. Documento di design, senza codice. Chiude K4 insieme a
+Design approvato il 4 novembre 2026, aggiornato il 5 novembre. Chiude K4 insieme a
 K4-A (IPI) e K4-B (shootdown). Decisione di base già presa: D3-A di
 [G7](../../../docs/design/g7-smp-user.md), cioè una coda globale con un
 lock e preemption dal timer LAPIC di ogni CPU, dietro un'interfaccia
@@ -11,7 +11,7 @@ lock e preemption dal timer LAPIC di ogni CPU, dietro un'interfaccia
 Scelte dall'utente: switch via dispatcher (2-A), guard RAII Rust sul
 lock di `kernel/sync` (3-A), tutti i task su qualsiasi CPU (sezione 5).
 
-## Punto di partenza
+## Punto di partenza storico, prima di K4-C
 
 - Lo scheduler è cooperativo e gira solo sul BSP: 8 slot, un solo
   `current`, ogni task torna al dispatcher a ogni yield o exit.
@@ -516,6 +516,62 @@ FXSAVE restano il backend Assembly esistente. Il segnaposto MSVC _fltused
 è definito nel solo profilo sperimentale, senza collegare il runtime CRT.
 Il test non introduce migrazione, preemption o accesso ai driver dall'AP.
 
+## K4-C4 — Preemption AP1
+
+Contratto del 5 novembre 2026: scelta A approvata dall'utente.
+Il lotto cooperativo e il timer AP restano disponibili in profili distinti.
+Il diagnostico ap-preempt li unisce senza promuovere il boot ordinario né i driver.
+
+Due task su AP1 lavorano senza yield durante la fase misurata. Il timer
+locale usa il vettore 0xd1 già riservato e il reload calibrato esistente.
+L'handler verifica stack, generazione e sorgente, completa EOI e prepara
+la sospensione. Il passaggio al dispatcher avviene dall'epilogo Assembly,
+prima di FXRSTOR e IRETQ; il frame resta nello stack pinned del task.
+Il dispatcher applica tick/preempt Rust per CPU 1, poi riprende la
+continuazione salvata. Nessuna mutazione dello scheduler nell'handler C.
+
+Il backend AP attuale ripristina direttamente il frame: occorre un hook
+di uscita dedicato, senza riusare i singleton e le autorità BSP del bridge.
+Preemption vietata con lock detenuti, IF precedente spento o contesto non
+task; PING/flush e IRQ spuri non consumano il timeslice. Durante il lavoro
+PING e flush restano ricevibili. Lo stato C dell'interruzione non mantiene
+riferimenti Rust attraverso lo switch.
+
+Scelta per il primo collaudo:
+
+- A, approvata: AP1 conclude autonomamente la prova dopo tre sospensioni e riprese
+  verificate per task. Ferma il timer locale prima della conclusione;
+  ISR/IRR pendenti devono essere drenati e controllati prima di QUIESCED.
+  Il BSP resta supervisore con deadline e raccoglie soltanto dopo la
+  quiescenza, come nel contratto approvato.
+- B: il BSP ordina la fine della prova mentre il timer resta attivo.
+  Richiede distinguere stop richiesto, timer fermo, continuazioni sospese
+  e loro completamento. Offre prima una prova di stop asincrono, con
+  maggiore superficie di protocollo.
+
+A isola prima la correttezza della ripresa. Sei
+sospensioni sono un obiettivo del test, non sei periodi temporali garantiti:
+gli IRQ possono accorparsi. L'assenza di yield è verificata dal workload;
+registri generali, FPU/SIMD e avanzamento di entrambi sono prove richieste.
+
+Pseudocodice non eseguibile: prepara sul BSP → avvia AP1 → task con IF=1
+→ timer/EOI → epilogo/sospensione → dispatcher/Rust → ripresa/IRETQ
+→ timer fermo e nessuna continuazione sospesa → QUIESCED → cleanup BSP.
+
+Perimetro approvato: scheduler/batch, hook IRQ AP del servizio per-CPU,
+relativi adattatori build e test. Il timer BSP espone soltanto il getter
+del reload calibrato nel nuovo profilo; inizializzazione e watchdog non cambiano.
+Accettazione: test host frame/transizioni/autorità e failure, dieci boot
+del diagnostico, regressioni lotto cooperativo, timer AP, preemption BSP,
+IPI e ordinario; budget fisico e mapping ripristinati. Su timeout o frame
+invalido: panic coordinato, risorse trattenute. Coverage non presunta.
+
+Fonti: Intel SDM 253668-078US §6.14 per frame/IRETQ, §11.5.4 e figure
+11-8/10/11 per LVT (+0x320, maschera16, periodico17), divide (+0x3e0,
+codifica3), initial/current count (+0x380/+0x390), §11.8.5 per EOI
+(+0xb0). Initial Count=0 ferma il conteggio, ma non prova che un IRQ
+precedentemente pendente sia stato consumato. Link nelle fonti sotto.
+
 ## Lavoro restante dopo i prerequisiti C4
 
 Stima di pianificazione, non risultati né percentuale di completamento:
@@ -526,11 +582,14 @@ già pronto viene rilasciato, entrambe le prenotazioni vengono annullate e
 il budget viene verificato prima del panic coordinato. Non simula
 l'esaurimento reale della RAM fisica.
 
-1. Preemption periodica del task AP e ripristino del contesto.
-2. Dispatcher concorrenti e conclusione coordinata del lavoro globale.
-3. Stress e regressioni di chiusura C4.
+La preemption AP1 è verificata nel profilo diagnostico: tre sospensioni
+e riprese per task, timer fermo prima della quiescenza e raccolta BSP.
+Evidenze nella validazione K4-C. Il boot ordinario resta sul BSP.
 
-Sono tre obiettivi di implementazione e validazione: alcuni
+1. Dispatcher concorrenti e conclusione coordinata del lavoro globale.
+2. Stress e regressioni di chiusura C4.
+
+Sono due obiettivi di implementazione e validazione: alcuni
 possono unirsi, i fault possono richiedere un blocco di diagnosi dedicato.
 Poi restano C5 (driver su più CPU) e C6 (chiusura K4). K5 userspace e K6
 caricamento dei programmi non sono inclusi in questa stima.

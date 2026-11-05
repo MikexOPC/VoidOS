@@ -477,3 +477,88 @@ Il boot ordinario mantiene lo scheduler BSP. Questo lotto è diagnostico,
 finito e cooperativo: non dimostra preemption AP, migrazione o dispatcher
 concorrenti. Restano questi ultimi obiettivi e lo stress di chiusura C4;
 poi C5 driver SMP e C6 chiusura K4.
+
+## K4-C4 — Preemption periodica su AP1
+
+5 novembre 2026. Implementata la scelta A: AP1 termina autonomamente
+il collaudo e ferma il timer prima della quiescenza. Il nuovo profilo
+TestApService ap-preempt usa due task senza yield nella fase misurata:
+tre sospensioni e tre riprese per ciascuna, sei in totale. Il timer usa
+il reload BSP già calibrato, senza cambiare il timer o watchdog del BSP.
+
+L'IRQ valida stack, generazione, RIP e sorgente, poi completa EOI.
+Un hook nell'epilogo AP sospende la continuazione prima di FXRSTOR/IRETQ.
+Il dispatcher applica tick/preempt al vero stato Rust per CPU 1 e riprende
+il task. Il frame rimane nel suo stack pinned. PING/flush restano attivi;
+il loro passaggio non consuma un tick dello scheduler. Dopo il terzo
+ritorno ciascun task esce; il BSP raccoglie soltanto dopo QUIESCED.
+L'eventuale attesa finale del permesso BSP resta cooperativa ed è fuori
+dalla fase misurata senza yield.
+
+Al sesto IRQ il timer viene mascherato e Initial Count azzerato.
+Gli IRQ timer già pendenti vengono completati senza nuovi switch, con
+limite diagnostico di otto. Prima della quiescenza si verificano count
+fermo, LVT/divisore, ISR/IRR vuoti per 0xd1 e tutte le riprese concluse.
+Il runner legge anche il record nativo da 128 byte, controlla i sei
+completamenti e gli indirizzi storici dei frame nei rispettivi stack.
+Il budget e gli unmapping seguono le stesse verifiche del lotto precedente.
+
+### Prove host e oggetto Assembly
+
+- Core: Rust debug/release e Clippy, C/ASan, regressioni del dispatcher,
+  cinque stress concorrenti da 20.000 task. Il nuovo test C/Rust esegue
+  4.231 controlli tick/preempt e raccolta retained su 64 identità
+  sequenziali simulate. Evidenze definitive:
+  kernel/build/scheduler-host-7fc09a6612e94a3a888f0b2381eaa54c.
+- Servizio AP: 19 test Rust debug e 19 release, 40 controlli del gate,
+  125 controlli della nuova logica IRQ, ASan e cppcheck passati. Nei
+  nuovi controlli C, MMIO e switch sono simulati; non provano la CPU.
+  Evidenze: kernel/build/ap-preempt-service-final-b8a5d1b2ac7b4b53854187186d5498bc.
+- Oggetto NASM del diagnostico: salvataggio GPR/FXSAVE prima dei callback,
+  hook xat_preempt_after dopo xis_native_dispatch, poi FXRSTOR e IRETQ.
+  Disassemblato e relocation in kernel/build/ap-preempt-entry-audit.
+  L'entry reale è verificata anche dal workload Assembly in QEMU:
+  pattern dei registri generali e confronto dello stato FPU/SIMD salvato.
+
+### Debug prima della campagna finale
+
+Una prima prova non raggiungeva il diagnostico: il flag della preemption
+BSP attivava anche il suo collaudo nel bootstrap. Il nuovo profilo usa un
+flag AP distinto, riconosciuto dal motore senza abilitare il test BSP.
+La prova successiva ha isolato un panic di lettura MMIO: il filtro del
+servizio non ammetteva Initial/Current Count e Divide. L'estensione è
+limitata al nuovo profilo, con Current Count in sola lettura e valori
+LVT/divisore espliciti. Le prove fallite restano nelle rispettive evidenze;
+non vengono contate come boot positivi.
+
+Il test host iniziale aveva inoltre omesso il divisore nello stato MMIO
+simulato; corretto il fixture prima della suite definitiva. Un tentativo
+di fixture con un solo task è stato sostituito da due task: senza un peer
+READY il tick Rust non richiede un cambio di task.
+
+### Campagna finale
+
+Campagna passata in kernel/build/qemu-run-ea96d156073d4e73b4cd37b15394b32e.
+Livello complesso: dieci boot per profilo, QEMU TCG/OVMF con quattro CPU
+inizializzate, immagini ricompilate ed ESP/hash verificati.
+Passati 10/10 per ciascuno dei sette profili: ap-task-preempt,
+ap-task-batch, ap-task-batch-rollback, ap-timer, bsp-periodic, ipi-service
+e ap-runtime. Totale: 60 boot positivi senza crash inattesi e dieci
+negativi con rollback e panic attesi. Le prove iniziali fallite non
+sostituiscono e non entrano nel conteggio della campagna finale.
+
+Preemption AP1: kernel/build/ipi-service-88c243df16524dbd9afc3fff5ce9eddc.
+SHA-256 ELF: C23C5B2931269A5BFD43124216568A6AAAF5D0FDE990F3038F501942706BFF14.
+Riletti anche i record dei dieci monitor salvati: tre tick e tre riprese
+per task, Total=6, Stopped=1 e Late=0 in ogni boot. Riepilogo in
+kernel/build/ap-preempt-entry-audit/records.json. Il ramo IRQ tardivi è
+collaudato con mock host, non con un IRQ tardivo iniettato in QEMU.
+Layout, dimensioni e diff finale verificati. Valgrind non eseguito;
+non viene dichiarata una misura dei leak fisici tramite ASan.
+
+Limiti: primo diagnostico AP1, non dispatcher concorrenti né migrazione.
+Il reload resta un'ipotesi temporale calibrata, non una prova di jitter
+o latenza universale. ASan misura gli eseguibili host; RAM fisica e
+mapping vengono verificati nel guest. Coverage non misurata, hardware
+fisico non provato. C4 resta aperta per concorrenza e stress finale;
+poi C5 driver SMP e C6 chiusura K4.

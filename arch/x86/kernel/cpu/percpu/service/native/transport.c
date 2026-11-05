@@ -8,7 +8,11 @@ uint32_t xis_mmio_read(uint32_t offset) {
     if (!ks_atomic_load_acquire(&xis_native.Published) || (offset & 15) ||
         (offset != 0x20 && offset != 0x30 && offset != 0x80 && offset != 0xf0 &&
         !(offset >= 0x100 && offset <= 0x270) && offset != 0x280 && offset != 0x300 &&
-        offset != 0x2f0 && !(offset >= 0x320 && offset <= 0x370)))
+        offset != 0x2f0 && !(offset >= 0x320 && offset <= 0x370)
+#ifdef KERNEL_TEST_AP_PREEMPTION
+        && offset != 0x380 && offset != 0x390 && offset != 0x3e0
+#endif
+        ))
         xis_native_abort(0x4b34495049524400ULL);
     return *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + offset);
 }
@@ -18,13 +22,19 @@ uint32_t xis_mmio_read(uint32_t offset) {
 // SDM 078US 11.5.1: LVT mask bit16; 11.8.5 EOI +b0=0; 11.9 SVR enable bit8.
 // 11.5.3: ESR +280h accepts only the write of 0 that latches errors.
 // 11.6.1: ICR high dest31:24; fixed low delivery10:8=0, physical11=0, assert14, edge15=0.
+// §11.5.4: timer Initial380h, Divide3e0h; LVT320h periodic17, mask16.
 void xis_mmio_write(uint32_t offset, uint32_t value) {
     if (!ks_atomic_load_acquire(&xis_native.Published) || !(
         (offset == 0xb0 && value == 0) || (offset == 0x80 && value == 0) || (offset == 0x280 && value == 0) ||
         (offset == 0xf0 && value == 0x1ff) ||
         ((offset == 0x2f0 || (offset >= 0x320 && offset <= 0x370 && !(offset & 15))) && value == 0x10040) ||
         (offset == 0x310 && !(value & 0xffffffU) && (value >> 24) < 255) ||
-        (offset == 0x300 && value == (0x4000 | XIS_VECTOR))))
+        (offset == 0x300 && value == (0x4000 | XIS_VECTOR))
+#ifdef KERNEL_TEST_AP_PREEMPTION
+        || (offset == 0x3e0 && value == 3) || offset == 0x380 ||
+        (offset == 0x320 && (value == 0x200d1 || value == 0x300d1))
+#endif
+        ))
         xis_native_abort(0x4b34495049575200ULL);
     *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + offset) = value;
 }

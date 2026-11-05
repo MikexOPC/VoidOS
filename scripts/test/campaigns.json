@@ -13,6 +13,12 @@
       "boots": 10, "smoke": 1, "heavy": true,
       "summary": "BSP timer IRQ suspends the task, runs a peer, and resumes the saved IRQ frame"
     },
+    "ap-task-preempt": {
+      "summary": "AP1 timer preemption, six suspensions, quiescent BSP cleanup",
+      "build": ["-TestApService", "ap-preempt"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-preempt", "--smp", "4"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
     "ap-task-batch-rollback": {
       "build": ["-TestApService", "ap-batch-rollback"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-batch-rollback", "--smp", "4"],

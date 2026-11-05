@@ -107,6 +107,9 @@ static int run_private(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_COMMAND 
     local->phase = 1;
     if (!xat_dispatcher_gate() || local->current != task->index || local->generation != task->generation) return 0;
     command->reason = local->event; local->event = 0;
+#ifdef KERNEL_TEST_AP_PREEMPTION
+    if (command->reason == X86_TASK_PREEMPT) return 1;
+#endif
     return command->reason == X86_TASK_YIELD || command->reason == X86_TASK_EXIT;
 }
 
@@ -151,6 +154,9 @@ void xat_run(void)
         xat_abort();
     xat_record.Local = (uint64_t)(uintptr_t)local;
     xat_record.Steps = local->stats.steps; xat_record.Completed = local->stats.completed;
+#ifdef KERNEL_TEST_AP_PREEMPTION
+    if (!xat_preempt_quiet()) xat_abort();
+#endif
     local->phase = 0;
 }
 

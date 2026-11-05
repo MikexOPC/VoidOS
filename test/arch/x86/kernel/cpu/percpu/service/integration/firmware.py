@@ -28,7 +28,7 @@ def complete_snapshot(log):
 
 
 def await_terminal(vm, case):
-    positive = case in ("ping", "ap-timer", "admission", "ap-batch")
+    positive = case in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt")
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         log = complete_snapshot(vm.log())
@@ -36,7 +36,7 @@ def await_terminal(vm, case):
             raise RuntimeError("Unexpected kernel/VM failure")
         if positive and log.failures():
             raise RuntimeError("Unexpected panic in positive service profile")
-        ready_marker = {"ap-timer": "KERNEL_AP_TIMER_READY", "admission": "KERNEL_AP_DISPATCH_ADMITTED", "ap-batch": "KERNEL_AP_BATCH_READY"}.get(case,"KERNEL_IPI_SERVICE_READY")
+        ready_marker = {"ap-timer": "KERNEL_AP_TIMER_READY", "admission": "KERNEL_AP_DISPATCH_ADMITTED", "ap-batch": "KERNEL_AP_BATCH_READY", "ap-preempt": "KERNEL_AP_PREEMPT_READY"}.get(case,"KERNEL_IPI_SERVICE_READY")
         ready = log.has(ready_marker) if positive else "KERNEL_SMP_PANIC_HALTED" in log.text
         if ready and case == "ping" and not log.before("KERNEL_IPI_REMAP_VERIFIED", "KERNEL_IPI_SERVICE_READY"):
             raise RuntimeError("Missing AP remap and release evidence")
@@ -53,7 +53,7 @@ def await_terminal(vm, case):
 # ====== verify ======
 
 def verify(vm, log, case, count):
-    positive = case in ("ping", "ap-timer", "admission", "ap-batch")
+    positive = case in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt")
     texts = [launch.registers(vm, index) for index in range(count)]
     mask = (1 << count) - 1
     root = launch.value(texts[0], "CR3")
@@ -144,7 +144,7 @@ def verify(vm, log, case, count):
         expected_local[82:84] = [local,first]
         if words != expected_local:
             raise RuntimeError("AP dispatcher context identity or initial state differs")
-    if case == "ap-batch":
+    if case in ("ap-batch", "ap-preempt"):
         record_address = log.number("KERNEL_AP_BATCH_RECORD")
         record = cpu.memory(vm,record_address,32)
         if (record[:2] != [record_address,root] or record[2] != pool or
@@ -152,7 +152,7 @@ def verify(vm, log, case, count):
                 record[6:12] != [16,16,136,272,17,34] or record[12] < 2 or
                 not record[13] or record[13] & ~3 or record[15] >= 2 or
                 not record[17] or not record[18] or record[16] != record[17 + record[15]] or
-                not 34 <= record[19] <= 8192 or record[20] != 2 or record[26:28] != [2,2] or
+                not (8 if case == "ap-preempt" else 34) <= record[19] <= 8192 or record[20] != 2 or record[26:28] != [2,2] or
                 record[28] & 0x7602 != 0x202 or record[29:] != [0xe1,1,0]):
             raise RuntimeError("AP task progress, context, IRQ or cleanup evidence differs: " + str(record))
         base = record[21 + record[15]]
@@ -164,6 +164,18 @@ def verify(vm, log, case, count):
         if (record[23] & 63 or local[74:78] != [record[19] | 2 << 32,0,0,0] or
                 local[78:82] != [0,0,0xffffffff00000000,0] or local[82:84] != [record[23],first]):
             raise RuntimeError("AP dispatcher did not return without a current task")
+    if case == "ap-preempt":
+        preempt_address = log.number("KERNEL_AP_PREEMPT_RECORD")
+        preempt = cpu.memory(vm,preempt_address,16)
+        if (preempt[:7] != [preempt_address,3,3,3,3,6,1] or preempt[7] > 8 or
+                not 0 < preempt[14] <= 0xffffffff or preempt[15]):
+            raise RuntimeError("AP preemption count or stop differs: " + str(preempt))
+        for task in range(2):
+            base = record[21 + task]
+            if (not base + 4096 <= preempt[8 + task] < base + 65536 - 48 or
+                    not base + 4096 <= preempt[10 + task] < base + 65536 or
+                    not 0xffffffff80000000 <= preempt[12 + task] < 0xffffffff80400000):
+                raise RuntimeError("AP preemption frame is not on its owned task stack")
     if case == "ap-batch-rollback":
         record_address = log.number("KERNEL_AP_BATCH_RECORD")
         record = cpu.memory(vm,record_address,32)
@@ -196,7 +208,7 @@ def verify(vm, log, case, count):
         if frame[:13] != expected or frame[83] != 6:
             raise RuntimeError("Sealed AP startup record changed")
         if positive:
-            expected_generation = generation_base + (4 if case == "ap-timer" else (4 if index == 1 else 3) if case == "admission" else (9 if index == 1 else 6) if case == "ap-batch" else 105)
+            expected_generation = generation_base + (4 if case == "ap-timer" else (4 if index == 1 else 3) if case == "admission" else (9 if index == 1 else 6) if case in ("ap-batch", "ap-preempt") else 105)
             values = counters[index * 8:(index + 1) * 8]
             if values != [expected_generation, expected_generation, values[2], top - 576, expected_generation, expected_generation, 0, 0] or values[2] < 1:
                 raise RuntimeError("IPI completion/return/EOI counters differ: " + str(values))
@@ -256,11 +268,11 @@ def verify(vm, log, case, count):
         requests = 4 * (count - 1)
     if case == "admission":
         requests = 3 * (count - 1) + 1
-    if case == "ap-batch":
+    if case in ("ap-batch", "ap-preempt"):
         requests = 6 * (count - 1) + 3
     return dict(Case=case, RealCpus=count, Requests=requests, TimerTicks=timer_ticks,
-                PhysicalFree=free, Pinned=True, AdmittedCpus=[1] if case in ("admission", "ap-batch") else [],
-                TaskCpus=[1] if case == "ap-batch" else [])
+                PhysicalFree=free, Pinned=True, AdmittedCpus=[1] if case in ("admission", "ap-batch", "ap-preempt") else [],
+                TaskCpus=[1] if case in ("ap-batch", "ap-preempt") else [])
 
 
 # ====== capture_failure ======
@@ -276,7 +288,7 @@ def capture_failure(vm, count):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack", "ap-timer", "admission", "ap-batch", "ap-batch-rollback"), default="ping")
+    parser.add_argument("--case", choices=("ping", "missing-ack", "stale-ack", "panic-idle", "panic-handler", "release-missing-ack", "ap-timer", "admission", "ap-batch", "ap-batch-rollback", "ap-preempt"), default="ping")
     parser.add_argument("--boots", type=int, choices=range(1, 11), default=10)
     parser.add_argument("--smp", type=int, choices=range(2, 65), default=4)
     args = parser.parse_args()
@@ -290,7 +302,7 @@ def main():
                 try:
                     log = await_terminal(vm, args.case)
                     vm.command("stop")
-                    if args.case not in ("ping", "ap-timer", "admission", "ap-batch"):
+                    if args.case not in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt"):
                         group_spec = importlib.util.spec_from_file_location("service_group", Path(__file__).parents[2] / "panic/integration/group.py")
                         group = importlib.util.module_from_spec(group_spec)
                         group_spec.loader.exec_module(group)

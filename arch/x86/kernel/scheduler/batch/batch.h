@@ -33,4 +33,16 @@ void xat_cleanup(void);
 void xat_yield(void);
 __declspec(noreturn) void xat_task_start(void);
 __declspec(noreturn) void xat_abort(void);
+#ifdef KERNEL_TEST_AP_PREEMPTION
+typedef __declspec(align(64)) struct {
+    uint64_t Self, Ticks[2], Resumed[2], Total, Stopped, Late;
+    uint64_t Frame[2], Rsp[2], Rip[2], Reload, Reserved;
+} XAT_PREEMPT;
+extern XAT_PREEMPT xat_preempt;
+uint32_t x86_timer_diagnostic_reload(void);
+void xat_preempt_work(uint32_t index);
+void xat_preempt_interrupt(const X86_IRQ_FRAME *frame);
+void xat_preempt_after(const X86_IRQ_FRAME *frame);
+int xat_preempt_quiet(void);
+#endif
 #endif

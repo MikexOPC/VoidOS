@@ -104,6 +104,13 @@ try {
         ("/Fo$out/"),("/Fd$out/engine-cpu.pdb"),("/Fe$out/engine-cpu.exe"),
         '/link','/incremental:no',"$out/scheduler-smp.lib")
     Invoke-Checked "$out/engine-cpu.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/DKERNEL_TEST_AP_PREEMPTION=1',('/I' + $project),
+        (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
+        (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/preempt_cpu_test.c'),
+        ("/Fo$out/"),("/Fd$out/engine-preempt.pdb"),("/Fe$out/engine-preempt.exe"),
+        '/link','/incremental:no',"$out/scheduler-smp.lib")
+    Invoke-Checked "$out/engine-preempt.exe" @()
     $bindingSymbols = & "$bin/dumpbin.exe" /symbols "$out/scheduler-bound.lib" 2>&1
     if ($LASTEXITCODE) { throw 'Production symbol inspection failed' }
     if ($bindingSymbols -match '\| kernel_scheduler_irq_post\s*$') {
@@ -122,6 +129,7 @@ try {
         (Join-Path $module '../../test/kernel/scheduler/ffi/gateway_test.c'),(Join-Path $module '../../test/kernel/scheduler/ffi/binding_test.c'),
         (Join-Path $module '../../test/kernel/scheduler/ffi/payload_test.c'),(Join-Path $module '../../test/kernel/scheduler/ffi/smp_test.c'),
         (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
+        (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/preempt_cpu_test.c'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/cpu_test.c'))
     & $CppcheckPath @cppcheckArguments 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck execution failed' }
@@ -132,6 +140,7 @@ try {
     $sources = @(Get-ChildItem $module -Recurse -File | Where-Object { $_.Extension -in @('.rs','.c','.h','.ps1','.toml') })
     $sources += @(Get-Item (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
         (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.h'),
+        (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/preempt_cpu_test.c'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/cpu_test.c'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/engine_test.c'))
     $sources | ForEach-Object { Get-FileHash -LiteralPath $_.FullName } |
