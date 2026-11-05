@@ -310,6 +310,41 @@ esclusivamente il proprio contesto. Regressioni host e dieci boot per
 profilo ordinario e periodico BSP, con risorse e marker verificati.
 Queste prove non costituiscono ammissione o preemption dei task sugli AP.
 
+## K4-C4 — Validazione del frame di servizio AP
+
+Quarto sottoblocco del 5 novembre 2026. Prima di ammettere stack diversi
+dall'idle, il servizio deve verificare tutta l'area salvata dall'entry
+Assembly, non soltanto i 48 byte visibili al C. Il controllo numerico
+riusa x86_irq_saved_area: 120 byte GPR, allineamento a 16, 32 byte shadow
+space e 512 byte FXSAVE sotto il frame. Si applica prima di leggerne i
+campi; non può annullare scritture già eseguite dall'entry. Guardie e
+proprietà dello stack restano prerequisiti dell'ingresso hardware.
+
+Una funzione Rust senza unsafe verifica poi il frame di ritorno idle:
+RSP uguale a top meno 576, frame a align_down(RSP,16) meno 48, selettori
+8/16 e maschera flags 0x7602. I valori ammessi restano 0x202 ordinario
+e 0x602 diagnostico: bit 1 fisso e IF9, con DF10 solo nel test che ne
+verifica il ripristino; IOPL12:13 e NT14 devono essere zero. Nessuna
+nuova autorizzazione per stack task. Il wrapper FFI riceve soli valori,
+senza riferimenti o letture di puntatori in Rust.
+
+Minacce considerate: puntatore fuori stack prima della lettura C, area
+FXSAVE oltre il limite e frame con posizione incoerente. Il rifiuto è
+terminale e precede MMIO e ACK della mailbox. Non autentica da solo CPU,
+mapping o proprietà: questi restano verificati dal backend. I task kernel
+rimangono fidati e questa modifica non introduce una barriera ring 3.
+
+Intel SDM 078US §6.14.2 documenta SS:RSP incondizionati e allineamento
+prima dei cinque slot CPU. L'entry esistente aggiunge lo slot vettore:
+sei slot da otto byte. §6.14.3 documenta il ripristino con IRETQ. La
+dimensione FXSAVE e lo shadow space sono quelli dell'Assembly esistente.
+
+Accettazione: matrice Rust per selettori, flags, profili e geometria,
+debug/release e Clippy; vero collegamento C/Rust, rifiuto prima della
+dereferenziazione quando frame o spill oltrepassano i limiti. Campagne
+ordinarie, PING/flush con preservazione GPR/FPU/SIMD e timer AP, dieci
+boot consecutivi per profilo. Gli stack dei task restano non ammessi.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):

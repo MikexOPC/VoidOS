@@ -1,7 +1,17 @@
 #![cfg_attr(not(test), no_std)]
 #![deny(unsafe_op_in_unsafe_fn)]
 mod state;
+#[path = "../frame/validation.rs"]
+mod frame;
 static SERVICE: state::Service = state::Service::new();
+
+// ====== xis_idle_return_valid ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xis_idle_return_valid(frame: u64, top: u64, rsp: u64, cs: u64,
+    flags: u64, ss: u64, diagnostic: u32) -> u32 {
+    frame::idle_return_valid(frame,top,rsp,cs,flags,ss,diagnostic)
+}
 
 // ====== xis_configure ======
 

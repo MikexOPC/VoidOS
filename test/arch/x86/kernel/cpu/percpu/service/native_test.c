@@ -2,6 +2,7 @@
 #include <setjmp.h>
 #include <stdio.h>
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#include "arch/x86/kernel/cpu/percpu/startup/private/frame.h"
 
 XP_PANIC_NATIVE xp_panic_native;
 uint64_t xp_panic_armed, xp_panic_output, xp_panic_recursion;
@@ -58,15 +59,28 @@ static void rejected_private(uint32_t operation) {
         if (operation == 0) (void)xis_native_index();
         else if (operation == 1) (void)xis_native_enter(NULL);
         else if (operation == 2) xis_native_dispatch(NULL);
-        else xis_native_verified(NULL);
+        else if (operation == 3) xis_native_verified(NULL);
+        else if (operation == 4) xis_native_dispatch((const X86_IRQ_FRAME *)(uintptr_t)(X86_AP_STACK_FLOOR(1) + 8));
+        else xis_native_dispatch((const X86_IRQ_FRAME *)(uintptr_t)(X86_AP_FRAME(1) - 40));
         assert(0);
     }
     assert(reason);
+    if (operation == 2 || operation >= 4) assert(reason == 0x4b3449504946524dULL);
 }
 
 // ====== main ======
 
 int main(void) {
+    for (uint32_t diagnostic = 0; diagnostic < 2; ++diagnostic) {
+        uint64_t top = X86_AP_FRAME(1), rsp = top - XIS_IDLE_FRAME_BYTES;
+        uint64_t frame = (rsp & ~15ULL) - sizeof(X86_IRQ_FRAME);
+        uint64_t flags = diagnostic ? 0x602 : 0x202;
+        assert(x86_irq_saved_area(frame,X86_AP_STACK_FLOOR(1),top) == 1);
+        assert(xis_idle_return_valid(frame,top,rsp,8,flags,16,diagnostic) == 1);
+        assert(!xis_idle_return_valid(frame + 8,top,rsp,8,flags,16,diagnostic));
+        assert(!xis_idle_return_valid(frame,top,rsp,8,flags,16,2));
+        assert(!x86_irq_saved_area(X86_AP_STACK_FLOOR(1) + 8,X86_AP_STACK_FLOOR(1),top));
+    }
     rejected_private(0);
     assert(!xis_native_prepare());
     xp_panic_armed = 1; xp_panic_native.Count = 4; xp_panic_native.Root = 0x10000;
@@ -97,6 +111,8 @@ int main(void) {
     rejected_private(1);
     rejected_private(2);
     rejected_private(3);
+    rejected_private(4);
+    rejected_private(5);
     assert(xis_value(1, XIS_PHASE) == XIS_PREPARED);
     puts("IPI_NATIVE_HOST_PASS: preparation and rejected CPU/stack contexts; hardware modeled");
     return 0;
