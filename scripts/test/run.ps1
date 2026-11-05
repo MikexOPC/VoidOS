@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $suites = [ordered]@{
+    runner = 'test/tooling/runner/process.ps1'
     boot = 'arch/x86/boot/uefi/scripts/build.ps1'
     kernel = 'test/kernel/host.ps1'
     bootstrap = 'test/kernel/bootstrap/scripts/host.ps1'
