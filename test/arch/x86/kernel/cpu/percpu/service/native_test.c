@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "arch/x86/kernel/cpu/percpu/startup/private/frame.h"
+#include "arch/x86/kernel/scheduler/admission/admission.h"
 
 XP_PANIC_NATIVE xp_panic_native;
 uint64_t xp_panic_armed, xp_panic_output, xp_panic_recursion;
@@ -61,11 +62,13 @@ static void rejected_private(uint32_t operation) {
         else if (operation == 2) xis_native_dispatch(NULL);
         else if (operation == 3) xis_native_verified(NULL);
         else if (operation == 4) xis_native_dispatch((const X86_IRQ_FRAME *)(uintptr_t)(X86_AP_STACK_FLOOR(1) + 8));
-        else xis_native_dispatch((const X86_IRQ_FRAME *)(uintptr_t)(X86_AP_FRAME(1) - 40));
+        else if (operation == 5) xis_native_dispatch((const X86_IRQ_FRAME *)(uintptr_t)(X86_AP_FRAME(1) - 40));
+        else xad_native_poll();
         assert(0);
     }
     assert(reason);
-    if (operation == 2 || operation >= 4) assert(reason == 0x4b3449504946524dULL);
+    if (operation == 2 || operation == 4 || operation == 5) assert(reason == 0x4b3449504946524dULL);
+    if (operation == 6) assert(reason == 0x4b3441444d464149ULL);
 }
 
 // ====== main ======
@@ -113,6 +116,10 @@ int main(void) {
     rejected_private(3);
     rejected_private(4);
     rejected_private(5);
+    assert(xad_configure(4,0x10000,0));
+    assert(xad_offer(1,0,1,0x10000));
+    rejected_private(6);
+    assert(xad_value(1,0x10000) == (1ULL << 3 | XAD_FAILED) && !xad_native_record.Self);
     assert(xis_value(1, XIS_PHASE) == XIS_PREPARED);
     puts("IPI_NATIVE_HOST_PASS: preparation and rejected CPU/stack contexts; hardware modeled");
     return 0;

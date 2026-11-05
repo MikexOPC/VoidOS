@@ -1,4 +1,4 @@
-# Stato corrente — 3 novembre 2026
+# Stato corrente — 5 novembre 2026
 
 Questo è il riferimento breve. I checkpoint storici conservano le prove
 relative alle proprie immagini; non certificano automaticamente la working tree.
@@ -10,8 +10,22 @@ Boot UEFI x86-64, ELF e contratto v5, paging NX/WP, allocatore fisico,
 finestre/arena, heap slab e page-run, GDT/TSS/IST, eccezioni e IRQ.
 Scheduler cooperativo BSP con stack reali; tastiera e mouse PS/2, shell,
 console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
-Non ci sono ancora SMP operativo, processi utente, syscall, VFS o driver disco.
+Lo scheduler non esegue ancora task sugli AP. Mancano processi utente,
+syscall, VFS e driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
+
+## K4-C: preemption BSP e prima ammissione AP
+
+Core Rust con current/affinità per CPU e lock globale verificato in host;
+timer periodico AP e preemption periodica BSP verificati nei diagnostici.
+Motore indirizzabile, contesti nativi per CPU e frame di servizio AP validati.
+
+Il nuovo diagnostico ammette AP1 a un punto d'ingresso fuori IRQ, prepara
+il suo contesto e conferma il ritorno all'idle con PING/flush funzionanti.
+Non chiama ancora il motore dispatcher e non pubblica task sull'AP.
+Campagna finale 40/40 su quattro CPU: ammissione, ordinario, IPI e timer AP.
+Restano task/preemption sugli AP, dispatcher concorrenti, driver SMP e stress.
+Prove e limiti in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
 
 ## K4-B: shootdown TLB prima di ogni riuso
 

@@ -9,6 +9,11 @@ if ($TestApService -ne 'none') {
     $serviceDefines += '-DKERNEL_TEST_AP_SERVICE=1'
 }
 if ($TestApService -eq 'ping') { $serviceSources += 'arch/x86/mm/dma/arena.c' }
+if ($TestApService -eq 'admission') {
+    $serviceDefines += '-DKERNEL_TEST_AP_ADMISSION=1'
+    $serviceSources += @('arch/x86/kernel/scheduler/admission/native.c',
+        'test/arch/x86/kernel/scheduler/admission/probe.c')
+}
 foreach ($source in $serviceSources) {
     $object = Join-Path $output (($source -replace '/', '-') -replace '\.c$', '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$project/$source","/Fo$object"))

@@ -345,6 +345,119 @@ dereferenziazione quando frame o spill oltrepassano i limiti. Campagne
 ordinarie, PING/flush con preservazione GPR/FPU/SIMD e timer AP, dieci
 boot consecutivi per profilo. Gli stack dei task restano non ammessi.
 
+## K4-C4 — Ammissione AP
+
+5 novembre 2026. Scelta A confermata dall'utente. I quattro blocchi
+verificati finora coprono identità del gateway, motore indirizzabile,
+contesto nativo per CPU e frame idle. Nessun AP esegue ancora un task.
+
+### Scelta del canale
+
+**A, scelta:** stato di ammissione separato in Rust, risveglio tramite
+il PING esistente. Non cambia codifica, generazioni o ACK della mailbox
+PING/flush/timer. Richiede di verificare separatamente ACK del PING e
+ammissione al dispatcher. Una sola richiesta di ammissione per CPU nel
+profilo iniziale; nessuna coda generica di callback o puntatori eseguibili.
+
+**B:** nuovo comando nella mailbox di servizio. I due bit operazione sono
+già usati da PING, flush, arm e stop del timer: occorre cambiare la codifica
+e ridurre il campo generazione. Un solo canale di trasporto, ma modifica
+anche un protocollo già verificato da cui dipende il riuso delle pagine.
+L'ACK hardware deve comunque restare distinto dalla fine del lavoro.
+
+Entrambe le alternative fanno entrare nel dispatcher soltanto dopo il
+ritorno dall'IRQ. Nessun cambio di contesto dentro l'handler C.
+
+### Primo profilo e proprietà
+
+Prima ammissione in un diagnostico dedicato, su AP1; gli altri AP mantengono
+il servizio. Nel blocco di ammissione non si pubblicano task: si provano
+ingresso fuori IRQ, contesto locale, conferma e ritorno all'idle. Nel
+blocco successivo il BSP prepara un lotto di task di calcolo con affinità
+AP1. È un vincolo del collaudo, non la politica definitiva delle affinità.
+Estensione ai dispatcher concorrenti dopo la prima esecuzione verificata.
+
+Il BSP possiede configurazione e risorse; le rende stabili prima della
+pubblicazione. Rust possiede generazioni, destinatari e stati atomici.
+C verifica identità, root, stack privato posseduto, descrittori, assenza
+di lock e contesto locale. Assembly chiama il punto di ingresso soltanto
+dal ciclo idle con IF=0 e DF=0, non dall'epilogo IRQ. Il formato del frame
+resta invariato. Nessun callback arbitrario passato nella richiesta.
+
+Protocollo del primo collaudo, pseudocodice non eseguibile:
+
+```text
+BSP: prepara risorse -> pubblica OFFERED con release -> invia PING
+AP:  acquire OFFERED -> claim esclusivo -> verifica contesto nativo
+     -> pubblica ADMITTED con release -> ritorna all'idle di servizio
+BSP: verifica ACK PING e ADMITTED con acquire, entro deadline
+```
+
+Indice CPU, identità del gruppo e generazione devono coincidere. Un
+secondo claim, token vecchio o richiesta da CPU diversa vengono rifiutati.
+FAILED è terminale. Non si riutilizza una generazione e non si azzerano
+stati mentre un AP può ancora osservarli. Nessun borrow Rust o lock può
+attraversare ingresso, IRQ o cambio di contesto.
+
+Dopo la pubblicazione un timeout o errore nativo provoca panic coordinato,
+con risorse trattenute. Non è una cancellazione seguita da rilascio. Il
+successivo protocollo di esecuzione dovrà aggiungere conferma di quiescenza
+prima della raccolta degli stack; ADMITTED da solo non autorizza cleanup.
+
+### Risvegli e limiti
+
+La richiesta è pubblicata prima del PING. Il ciclo idle controlla il
+lavoro con IF=0 prima della sequenza contigua STI/HLT. Se il PING arriva
+fra controllo e sonno, resta pendente e interrompe HLT; se il lavoro era
+già visibile, il punto di ingresso può consumarlo. Il controllo si ripete
+anche dopo ogni risveglio. La scadenza usa il timer PM esistente, con
+limite di poll. Nessuna attesa infinita e nessun riavvio dopo FAILED.
+
+Il primo diagnostico usa TestApService admission e non abilita timer del dispatcher, migrazione o
+accesso ai driver dagli AP. L'autorizzazione dei frame task e la verifica
+del mapping restano gate del blocco di prima esecuzione, non conseguenze
+automatiche di ADMITTED.
+
+### Accettazione e ricerca
+
+Test Rust di transizioni, token/CPU errati, claim concorrenti, timeout
+contro conferma e fallimento terminale; stress C sul vero oggetto Rust.
+Fixture C/Assembly per ingresso fuori IRQ e ritorno ABI. Dieci boot del
+diagnostico con AP1 realmente ammesso e PING/flush funzionanti prima e
+dopo; regressioni ordinarie e timer AP. Nessun PASS basato solo su mock.
+
+Riferimenti consultati: Linux v6.12 kernel/smp.c separa pubblicazione del
+lavoro e invio dell'IPI; riferimento concettuale, senza copiare codice o
+introdurre il suo sistema generale di callback. Intel SDM 078US §6.8.1
+per IF/STI e finestra del risveglio, §6.14 per ritorno dagli IRQ e §11.6.1
+per il trasporto IPI esistente. La scelta A ha preceduto il nuovo codice.
+
+Nel primo collegamento il gruppo è identificato dalla root verificata,
+il token è uno e non esiste riarmo. Gli stati sono COLD=0, OFFERED=1,
+CLAIMED=2, ADMITTED=3, FAILED=4; token a 61 bit e stato nei tre bit bassi.
+La codifica è separata dalla mailbox IPI a due bit, che resta invariata.
+L'entry statica è chiamata dopo IRETQ, verifica dei registri e CLD del
+diagnostico: inizializza il solo slot nativo AP1 e conferma ADMITTED.
+Il record pubblicato include root, token, identità, stack e puntatore
+locale; il runner controlla anche i 704 byte dello slot locale e i
+registri reali dopo il ritorno all'idle. La fase nativa rimane zero:
+il motore scheduler e i frame task non sono ancora autorizzati.
+
+## Lavoro restante dopo i prerequisiti C4
+
+Stima di pianificazione, non risultati né percentuale di completamento:
+
+1. Ammissione AP fuori IRQ, protocollo scelto e collaudo reale.
+2. Primo lotto di task su AP: gate nativi, stack, IRQ PING/flush e cleanup.
+3. Preemption periodica del task AP e ripristino del contesto.
+4. Dispatcher concorrenti e conclusione coordinata del lavoro globale.
+5. Stress e regressioni di chiusura C4.
+
+Sono circa quattro-sei blocchi di implementazione e validazione: alcuni
+possono unirsi, i fault possono richiedere un blocco di diagnosi dedicato.
+Poi restano C5 (driver su più CPU) e C6 (chiusura K4). K5 userspace e K6
+caricamento dei programmi non sono inclusi in questa stima.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):
@@ -353,5 +466,7 @@ boot consecutivi per profilo. Gli stack dei task restano non ammessi.
 - [Linux v6.12, kernel/sched/core.c](https://github.com/torvalds/linux/blob/v6.12/kernel/sched/core.c):
   riferimento per `need_resched` e preemption all'uscita dell'IRQ.
   Nessun codice copiato.
+- [Linux v6.12, kernel/smp.c](https://github.com/torvalds/linux/blob/v6.12/kernel/smp.c):
+  pubblicazione delle richieste e notifica IPI.
 - [xv6-riscv, kernel/proc.c](https://github.com/mit-pdos/xv6-riscv/blob/riscv/kernel/proc.c):
   scheduler per CPU con lock globale e switch verso il dispatcher.
