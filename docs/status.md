@@ -31,6 +31,9 @@ Validazione del blocco: 60 boot positivi e dieci fault intenzionali di rollback,
 distinti dai crash inattesi, su quattro CPU inizializzate.
 Restano dispatcher concorrenti e stress di chiusura C4;
 poi C5 driver SMP e C6 chiusura K4. Il diagnostico non abilita migrazione.
+Per la concorrenza AP1/AP2 sono implementati il protocollo Rust del lotto
+e il percorso retained del motore C, verificati con due thread host.
+Il collegamento nativo sui due AP e la sua prova QEMU restano da fare.
 Prove e limiti in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
 
 ## K4-B: shootdown TLB prima di ogni riuso

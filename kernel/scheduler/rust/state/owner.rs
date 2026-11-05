@@ -2,6 +2,8 @@ mod queue;
 mod wait;
 mod stop;
 mod smp;
+mod lot;
+pub use lot::LotSnapshot;
 pub use queue::{CAPACITY, NONE};
 pub use wait::{EventResult, EVENT_CAPACITY};
 pub use smp::CPUS;
@@ -36,6 +38,8 @@ pub struct Owner {
     epochs: [u64; EVENT_CAPACITY],
     waits: [Option<wait::Token>; CAPACITY],
     stops: [bool; CAPACITY],
+    lot: Option<lot::Lot>,
+    last_lot: u64,
 }
 
 // ====== owner_default ======
@@ -53,6 +57,7 @@ impl Owner {
             ready: Queue::new(), current: [None; CPUS], remaining: [0; CPUS],
             cpus: 1, slice: 1, events: 0,
             epochs: [0; EVENT_CAPACITY], waits: [None; CAPACITY], stops: [false; CAPACITY],
+            lot: None, last_lot: 0,
         }
     }
 
@@ -60,7 +65,7 @@ impl Owner {
 
     pub fn validate(&self) -> bool {
         if !self.ready.validate() || !self.validate_waits() || !self.validate_stops() ||
-            !self.validate_cpus() { return false; }
+            !self.validate_cpus() || !self.validate_lot() { return false; }
         let mut ready = 0;
         let mut running = 0;
         for (index, slot) in self.slots.iter().enumerate() {
@@ -120,7 +125,8 @@ impl Owner {
     fn copy_state(&self) -> Self {
         Self { slots: self.slots, ready: self.ready, current: self.current,
             remaining: self.remaining, cpus: self.cpus, slice: self.slice, events: self.events,
-            epochs: self.epochs, waits: self.waits, stops: self.stops }
+            epochs: self.epochs, waits: self.waits, stops: self.stops,
+            lot: self.lot, last_lot: self.last_lot }
     }
 
     // ====== owner_reserve ======
@@ -131,6 +137,7 @@ impl Owner {
     pub fn reserve_on(&mut self, cpu: u32) -> Result<Handle, Error> {
         self.transaction(|next| {
             next.dispatcher(cpu)?;
+            if next.lot.is_some() { return Err(Error::InvalidState); }
             let index = next.slots.iter().position(|s| s.state == State::Free)
                 .ok_or(Error::Capacity)?;
             let all = next.all_cpus();
@@ -154,6 +161,7 @@ impl Owner {
     pub fn publish_on(&mut self, cpu: u32, handle: Handle) -> Result<(), Error> {
         self.transaction(|next| {
             next.dispatcher(cpu)?;
+            if next.lot.is_some() { return Err(Error::InvalidState); }
             let index = next.handle(handle)?;
             if next.slots[index].state != State::Reserved { return Err(Error::InvalidState); }
             if !next.ready.push(handle.index) { return Err(Error::Corrupt); }
@@ -167,6 +175,10 @@ impl Owner {
     fn release(&mut self, cpu: u32, handle: Handle, expected: State) -> Result<(), Error> {
         self.transaction(|next| {
             next.dispatcher(cpu)?;
+            if next.lot.is_some_and(|lot| cpu != 0 || expected != State::Finished ||
+                lot.failed || lot.quiesced != lot.participants) {
+                return Err(Error::InvalidState);
+            }
             let index = next.handle(handle)?;
             if next.slots[index].state != expected { return Err(Error::InvalidState); }
             next.slots[index].state = State::Free;
@@ -204,6 +216,12 @@ impl Owner {
     pub fn select_on(&mut self, cpu: u32) -> Result<Handle, Error> {
         self.transaction(|next| {
             let at = next.dispatcher(cpu)?;
+            if let Some(lot) = next.lot {
+                let bit = 1u64 << cpu;
+                if lot.failed || lot.entered & bit == 0 || lot.completed & bit != 0 {
+                    return Err(Error::InvalidState);
+                }
+            }
             let slots = next.slots;
             let index = next.ready.take_first(|i| slots[i as usize].affinity & (1 << cpu) != 0)
                 .ok_or_else(|| if next.busy() { Error::Blocked } else { Error::Empty })?;

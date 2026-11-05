@@ -9,6 +9,7 @@ mod binding;
 mod payload;
 mod core_lock;
 mod smp;
+mod lot;
 use core::cell::UnsafeCell;
 use state::{Error, Handle, Owner, NONE};
 

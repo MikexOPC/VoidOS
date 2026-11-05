@@ -572,6 +572,119 @@ codifica3), initial/current count (+0x380/+0x390), §11.8.5 per EOI
 (+0xb0). Initial Count=0 ferma il conteggio, ma non prova che un IRQ
 precedentemente pendente sia stato consumato. Link nelle fonti sotto.
 
+## K4-C4 — Dispatcher concorrenti: contratto approvato
+
+Scelta A confermata dall'utente il 5 novembre 2026.
+La scelta seguente riguarda il primo diagnostico concorrente; non modifica
+la decisione finale di permettere task su tutte le CPU dopo C5.
+
+**A, approvata:** AP1 e AP2 eseguono insieme due task ciascuno, con
+affinità fissa. Il BSP prepara quattro stack, pubblica il lotto e resta
+libero per supervisione, PING e shootdown. AP3 resta nel servizio idle.
+Ogni AP usa contesto dispatcher, statistiche, record IRQ e timer propri.
+La coda e il lock Rust restano globali: non si creano scheduler separati.
+
+**B:** dispatcher concorrenti su BSP e AP1. Verifica prima la combinazione
+dei due backend IRQ, ma il BSP deve alternare task e supervisione del
+lotto. Richiede adattare anche il coordinamento oggi esterno al dispatcher.
+
+### Ownership, completamento e failure
+
+Il BSP possiede i quattro stack e i contesti. Li prepara e verifica tutti
+prima di pubblicare il via; i descrittori condivisi diventano immutabili.
+Ogni task appartiene a un solo AP nel diagnostico. I dati scritti da una
+CPU e letti da un'altra richiedono pubblicazione release/acquire tramite
+il backend atomico esistente; volatile non autorizza la comunicazione.
+Nessun lock o riferimento Rust attraversa un cambio di contesto.
+
+Un record Rust del lotto, protetto dal lock del core, lega gruppo, token,
+CPU partecipanti e task attesi. Ogni AP conferma ingresso e completamento
+del proprio lavoro. I task restano FINISHED; il BSP raccoglie soltanto dopo
+QUIESCED di entrambi gli AP, timer fermo, current assente e nessuna
+continuazione sospesa. La barriera di lotto non sostituisce tali controlli.
+
+Il motore attuale termina con un conteggio locale seguito da SELECT=EMPTY:
+questo è un contratto di lotto esclusivo, non una prova di completamento
+globale. Il nuovo percorso deve distinguere assenza di task eleggibili,
+lavoro ancora attivo altrove e lotto globalmente concluso. Il percorso
+esclusivo esistente conserva il suo contratto. Nessun completamento viene
+dedotto da una singola coda vuota o dal solo conteggio della CPU corrente.
+
+Attese con timer PM e limite di controlli, senza tenere lock. Prima del
+via è possibile rollback; dopo il via un timeout, frame invalido o token
+incoerente causa panic coordinato con risorse trattenute. Nessun rilascio
+su conferma parziale. La revoca dei mapping rimane sul BSP con shootdown.
+
+Pseudocodice non eseguibile: prepara quattro task → ammetti AP1/AP2 →
+pubblica lotto → entrambi confermano ingresso nel workload → esecuzione
+concorrente con preemption → timer locali fermi → due QUIESCED →
+verifica globale → revoca, shootdown e raccolta sul BSP.
+
+### Prove richieste e perimetro proposto
+
+Una barriera iniziale nel workload deve impedire che un AP finisca prima
+che l'altro sia entrato. La prova attesta sovrapposizione delle sessioni,
+non esecuzione fisica simultanea dei vCPU sotto TCG. Occorrono inoltre
+progresso per entrambi, identità CPU reali, nessun task selezionato da due
+CPU, preemption e ripresa per ogni task, preservazione GPR/FPU/SIMD,
+PING/flush durante il lavoro e budget/mapping ripristinati alla fine.
+
+Test Rust per barriera, token vecchi, conferme duplicate, CPU estranea e
+completamento parziale; fixture C concorrente sul vero core Rust e ASan.
+Dieci boot positivi del nuovo diagnostico e regressioni AP1, BSP e IPI;
+negativi per rollback prima del via e mancata quiescenza, distinguendo
+fault attesi da crash. Stress di chiusura C4 resta un obiettivo successivo.
+
+Perimetro approvato: scheduler e backend x86 dello scheduler,
+ammissione/hook IRQ AP nel servizio per-CPU, soli adattatori build e test
+necessari. Nessuna migrazione dei driver, nuovo dispositivo o nuovo
+vettore IRQ. Si riusano i registri LAPIC già documentati nella sezione
+precedente, con autorità verificata separatamente per ogni CPU.
+
+Ricerca: xv6-riscv, kernel/proc.c, funzione scheduler, come riferimento
+per dispatcher locali e selezione protetta; Linux v6.12, kernel/smp.c,
+per pubblicazione del lavoro e notifica IPI separate. Fonti sotto,
+consultate il 5 novembre 2026. Sono confronti concettuali: nessun codice
+copiato e nessuna adozione del loro protocollo di lock attraverso lo switch.
+
+### Primo blocco: protocollo Rust e motore, prima del collegamento AP
+
+Il core conserva il lotto dentro Owner, sotto lo stesso lock RAII della
+coda. OPEN accetta esattamente due CPU secondarie con due task READY a
+testa, ciascuno ad affinità singola. Tutti gli altri slot devono essere
+liberi o ritirati; nessun task può essere già RUNNING. Group non nullo e
+token crescente identificano il lotto. Non si riusano token dopo CLOSE.
+
+Interfaccia in kernel/scheduler/lot.h: OPEN=0, ENTER=1, COMPLETE=2,
+QUIESCE=3, QUERY=4, FAIL=5, CLOSE=6. Solo OPEN riceve la maschera dei
+partecipanti; gli altri comandi richiedono participants=0. Il risultato
+FFI è di 56 byte, con status e failed normalizzati, identità e tre
+maschere. Gli errori azzerano tutti i dati oltre allo status.
+
+ENTER autorizza SELECT sulla CPU partecipante. COMPLETE richiede i due
+task FINISHED e current assente; QUIESCE richiede prima COMPLETE.
+QUIESCE è una dichiarazione del backend fidato: Rust non osserva timer,
+stack o registri. Il collegamento nativo dovrà verificarli prima della
+chiamata. QUERY non cambia stato; CPU estranee e token errati sono respinti.
+
+COLLECT resta negato anche al BSP finché tutte le CPU non sono QUIESCED.
+Dopo tale barriera solo il BSP può raccogliere; CLOSE richiede tutti gli
+slot del lotto FREE. RESERVE, PUBLISH e riconfigurazione restano bloccati
+fino a CLOSE. Un fallimento congela il lotto e impedisce ulteriori SELECT
+e raccolte; non cancella il current eventualmente rimasto dopo un errore.
+
+x86_scheduler_dispatch_lot_on è un percorso retained distinto: ENTER
+prima delle selezioni, conteggio locale di due completamenti, COMPLETE
+prima del ritorno. Non richiede SELECT=EMPTY globale e non pubblica
+QUIESCE. Su errore dopo l'ingresso tenta FAIL, poi restituisce fallimento
+senza cleanup implicito. I chiamanti nativi devono trattarlo come terminale.
+
+Il collegamento AP1/AP2 e la prova QEMU del lotto concorrente restano da
+implementare. Le fixture host usano il vero motore C e il vero Owner Rust,
+ma simulano autorità CPU, stack e interrupt; non certificano il percorso
+Assembly o una quiescenza hardware. Le regressioni QEMU esistenti misurano
+soltanto l'assenza di regressioni dei profili già collegati.
+
 ## Lavoro restante dopo i prerequisiti C4
 
 Stima di pianificazione, non risultati né percentuale di completamento:
