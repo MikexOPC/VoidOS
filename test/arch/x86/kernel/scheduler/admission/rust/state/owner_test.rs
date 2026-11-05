@@ -103,3 +103,86 @@ fn terminal_tokens_and_each_cpu() {
         assert_eq!(owner.value(cpu,9),(token << 3) | FAILED);
     }
 }
+
+// ====== execution_and_quiescence ======
+
+#[test]
+fn execution_and_quiescence() {
+    let owner = Admission::new();
+    assert_eq!(owner.configure(4,9,0),1);
+    assert_eq!(owner.offer(1,0,MAX_TOKEN,9),1);
+    assert_eq!(owner.claim(1,1,9),MAX_TOKEN);
+    assert_eq!(owner.transition(1,0,MAX_TOKEN,9,0),0);
+    assert_eq!(owner.admit(1,1,MAX_TOKEN,9),1);
+    assert_eq!(owner.transition(1,1,MAX_TOKEN,9,0),0);
+    assert_eq!(owner.transition(1,0,MAX_TOKEN,9,0),1);
+    assert_eq!(owner.collect_allowed(1,0,MAX_TOKEN,9),0);
+    assert_eq!(owner.transition(1,0,MAX_TOKEN,9,1),0);
+    assert_eq!(owner.transition(1,1,MAX_TOKEN,9,1),1);
+    assert_eq!(owner.collect_allowed(1,0,MAX_TOKEN,9),0);
+    assert_eq!(owner.release(1,1,MAX_TOKEN,9,1),0);
+    assert_eq!(owner.release(1,1,MAX_TOKEN,9,0),0);
+    for cpu in [0,4,64,u32::MAX] { assert_eq!(owner.release(cpu,0,MAX_TOKEN,9,1),0); }
+    assert_eq!(owner.release(1,0,MAX_TOKEN,9,1),1);
+    assert_eq!(owner.release(1,1,MAX_TOKEN,9,0),1);
+    assert_eq!(owner.transition(1,0,MAX_TOKEN,9,2),0);
+    assert_eq!(owner.transition(1,1,MAX_TOKEN,9,2),1);
+    assert_eq!(owner.value(1,9),MAX_TOKEN << 3 | QUIESCED);
+    assert_ne!(owner.value(1,9),INVALID);
+    assert_eq!(owner.collect_allowed(1,0,MAX_TOKEN,9),1);
+    assert_eq!(owner.collect_allowed(1,1,MAX_TOKEN,9),0);
+    assert_eq!(owner.collect_allowed(1,0,MAX_TOKEN - 1,9),0);
+    assert_eq!(owner.release(1,0,MAX_TOKEN,9,1),0);
+    assert_eq!(owner.transition(1,0,MAX_TOKEN,9,0),0);
+    assert_eq!(owner.fail(1,0,MAX_TOKEN,9),1);
+    assert_eq!(owner.collect_allowed(1,0,MAX_TOKEN,9),0);
+}
+
+// ====== release_and_quiescence_race ======
+
+#[test]
+fn release_and_quiescence_race() {
+    for _ in 0..128 {
+        let owner = Arc::new(Admission::new());
+        assert_eq!(owner.configure(2,9,0),1);
+        assert_eq!(owner.offer(1,0,1,9),1);
+        assert_eq!(owner.claim(1,1,9),1);
+        assert_eq!(owner.admit(1,1,1,9),1);
+        assert_eq!(owner.transition(1,0,1,9,0),1);
+        assert_eq!(owner.transition(1,1,1,9,1),1);
+        let other = Arc::clone(&owner);
+        let worker = thread::spawn(move || {
+            for _ in 0..100000 {
+                if other.release(1,1,1,9,0) == 1 { return other.transition(1,1,1,9,2); }
+                thread::yield_now();
+            }
+            0
+        });
+        assert_eq!(owner.release(1,0,1,9,1),1);
+        assert_eq!(worker.join().unwrap(),1);
+        assert_eq!(owner.collect_allowed(1,0,1,9),1);
+    }
+}
+
+// ====== execution_failure_races ======
+
+#[test]
+fn execution_failure_races() {
+    for operation in 0..3 {
+        for _ in 0..128 {
+            let owner = Arc::new(Admission::new());
+            assert_eq!(owner.configure(2,9,0),1);
+            assert_eq!(owner.offer(1,0,1,9),1);
+            assert_eq!(owner.claim(1,1,9),1);
+            assert_eq!(owner.admit(1,1,1,9),1);
+            for before in 0..operation {
+                assert_eq!(owner.transition(1,if before == 0 {0} else {1},1,9,before),1);
+            }
+            let other = Arc::clone(&owner);
+            let worker = thread::spawn(move || other.transition(1,if operation == 0 {0} else {1},1,9,operation));
+            assert_eq!(owner.fail(1,0,1,9),1);
+            assert!(worker.join().unwrap() <= 1);
+            assert_eq!(owner.value(1,9),1 << 3 | FAILED);
+        }
+    }
+}

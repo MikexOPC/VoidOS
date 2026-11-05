@@ -7,6 +7,9 @@
 #include "kernel/scheduler/kernel.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/diagnostics/log.h"
+#if KERNEL_TEST_AP_SERVICE == 9
+#include "../batch/batch.h"
+#endif
 #ifdef KERNEL_PS2_INPUT
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
 #endif
@@ -88,6 +91,9 @@ static int dispatcher_resume_private(void)
 
 uint32_t kernel_scheduler_context_valid(void)
 {
+#if KERNEL_TEST_AP_SERVICE == 9
+    if (xat_ap_actor()) return xat_dispatcher_gate();
+#endif
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     if (!local) return 0;
     // NMI/DF use IST. IRQ posts never borrow Rust state; mutations stay IF=0
@@ -220,6 +226,9 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
 
 void x86_scheduler_task_start(void)
 {
+#if KERNEL_TEST_AP_SERVICE == 9
+    if (xat_ap_actor()) xat_task_start();
+#endif
     X86_SCHEDULER_LOCAL *local = local_private();
     uint64_t entry = active_profile ? (uint64_t)(uintptr_t)active_profile->entry : 0;
     if (!x86_scheduler_task_valid() || local->event || !x86_scheduler_code_valid(entry))
@@ -474,3 +483,16 @@ uint64_t x86_scheduler_irq_stack_top(uint64_t frame)
     base = x86_task_stack_base(local->current);
     return frame >= base && frame <= base + 65536 - 48 ? base + 65536 : 0;
 }
+
+#if KERNEL_TEST_AP_SERVICE == 9
+// ====== x86_scheduler_batch_resources ======
+
+KERNEL_PHYSICAL_ALLOCATOR *x86_scheduler_batch_resources(uint64_t *root)
+{
+    X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
+    if (!root || !x86_percpu_bsp() || !local || local->phase != 3 ||
+        local->current != KERNEL_SCHEDULER_NONE || !saved_pool || !kernel_physical_validate(saved_pool)) return NULL;
+    *root = saved_root;
+    return saved_pool;
+}
+#endif

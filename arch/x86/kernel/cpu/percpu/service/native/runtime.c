@@ -4,6 +4,9 @@
 #include "../../startup/private/frame.h"
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
 #include "arch/x86/kernel/stack/main.h"
+#if KERNEL_TEST_AP_SERVICE == 9
+#include "arch/x86/kernel/scheduler/batch/batch.h"
+#endif
 
 XIS_NATIVE xis_native;
 #ifdef KERNEL_TEST_AP_SERVICE
@@ -161,10 +164,13 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
 #else
     const uint32_t diagnostic = 0;
 #endif
-    if (!index || ks_irq_state() ||
-        x86_irq_saved_area(address,X86_AP_STACK_FLOOR(index),top) != 1 ||
-        xis_idle_return_valid(address,top,frame->Rsp,frame->Cs,frame->Flags,frame->Ss,diagnostic) != 1 ||
-        !xp_image_contains(frame->Rip, 1))
+    int valid = index && !ks_irq_state() &&
+        x86_irq_saved_area(address,X86_AP_STACK_FLOOR(index),top) == 1 &&
+        xis_idle_return_valid(address,top,frame->Rsp,frame->Cs,frame->Flags,frame->Ss,diagnostic) == 1;
+#if KERNEL_TEST_AP_SERVICE == 9
+    if (!valid && index && !ks_irq_state()) valid = xat_irq_frame(index,frame);
+#endif
+    if (!valid || !xp_image_contains(frame->Rip, 1))
         xis_native_abort(0x4b3449504946524dULL);
     XIS_CPU *cpu = &xis_native.Cpus[index];
     if (frame->Vector == 0xff) {

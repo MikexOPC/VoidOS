@@ -3,6 +3,9 @@
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "arch/x86/kernel/cpu/percpu/startup/private/frame.h"
 #include "arch/x86/kernel/stack/main.h"
+#if KERNEL_TEST_AP_SERVICE == 9
+#include "../batch/batch.h"
+#endif
 
 volatile XAD_NATIVE_RECORD xad_native_record;
 
@@ -21,7 +24,15 @@ void xad_native_poll(void)
     uint32_t index = xis_native_index();
     uint64_t root = x86_kernel_root();
     uint64_t token = xad_claim(index,index,root);
-    if (!token) return;
+    if (!token) {
+#if KERNEL_TEST_AP_SERVICE == 9
+        if (index == 1 && xad_transition(1,1,1,root,1)) {
+            xat_run();
+            if (!xad_transition(1,1,1,root,2)) fail_private(index,1,root);
+        }
+#endif
+        return;
+    }
     if (token == XAD_INVALID || index != 1 || ks_irq_state() || !x86_irq_cpu_state())
         fail_private(index,token,root);
     uint64_t rsp = x86_kernel_stack_pointer();

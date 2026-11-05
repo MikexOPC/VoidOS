@@ -9,10 +9,13 @@ if ($TestApService -ne 'none') {
     $serviceDefines += '-DKERNEL_TEST_AP_SERVICE=1'
 }
 if ($TestApService -eq 'ping') { $serviceSources += 'arch/x86/mm/dma/arena.c' }
-if ($TestApService -eq 'admission') {
+if ($TestApService -in @('admission','ap-batch','ap-batch-rollback')) {
     $serviceDefines += '-DKERNEL_TEST_AP_ADMISSION=1'
-    $serviceSources += @('arch/x86/kernel/scheduler/admission/native.c',
-        'test/arch/x86/kernel/scheduler/admission/probe.c')
+    $serviceSources += 'arch/x86/kernel/scheduler/admission/native.c'
+    if ($TestApService -eq 'admission') { $serviceSources += 'test/arch/x86/kernel/scheduler/admission/probe.c' }
+    else { $serviceSources += @('arch/x86/kernel/scheduler/batch/validation.c',
+        'arch/x86/kernel/scheduler/batch/runtime.c','arch/x86/kernel/scheduler/batch/work.c',
+        'test/arch/x86/kernel/scheduler/batch/probe.c') }
 }
 foreach ($source in $serviceSources) {
     $object = Join-Path $output (($source -replace '/', '-') -replace '\.c$', '.obj')

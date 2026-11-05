@@ -414,3 +414,66 @@ positivo non dimostra timeout su hardware: la corsa terminale è provata
 nei test host, non con un timeout QEMU iniettato. Coverage non misurata.
 Restano quattro obiettivi C4: primo lotto AP, preemption AP, dispatcher
 concorrenti e stress/regressioni di chiusura; poi C5 e C6.
+
+## K4-C4 — Primo lotto reale su AP1
+
+5 novembre 2026. Implementata la scelta utente: raccolta sul BSP dopo
+quiescenza AP. Il diagnostico ap-batch esegue due task cooperativi su AP1,
+sedici yield ciascuno e due exit, con checksum interi e floating point
+verificati. Riceve PING e flush sugli stack task, poi ritorna all'idle.
+Rust verifica autorità, token, transizioni e permesso di raccolta; C
+possiede stack e mapping, lo switch usa il backend Assembly esistente.
+
+Il motore retained conserva FINISHED e i due stack finché AP1 pubblica
+QUIESCED fuori dal dispatcher. Il BSP verifica lo stato, revoca i mapping,
+attende il flush remoto e infine esegue COLLECT. Sono trattenute 32 pagine
+task (128 KiB); il budget iniziale viene ripristinato e le 36 entry,
+comprese le guardie, risultano assenti. Un accesso tramite CPU errata
+viene respinto. Non si autorizza il mapper a mutare risorse dall'AP.
+
+### Prove host
+
+- Core scheduler: test Rust debug/release, Clippy, C/FFI con ASan,
+  undici modalità del motore, 16.837 controlli del routing su 64 identità
+  e cinque stress da 20.000 task con quattro thread host.
+  Evidenze: kernel/build/c4-batch-core-c7a123fe8527472288056307994beefa.
+- Backend x86: contesto Assembly, ruoli BSP/AP, autorità stack e dati
+  locali, warning come errori e analisi statica.
+  Evidenze: kernel/build/c4-batch-backend-9adcb679823e46b994f71e550d2b4aec.
+- Servizio AP e nuovo lotto: 19 test Rust debug e 19 release, Clippy,
+  C/FFI ASan, 40 controlli del gate AP con letture privilegiate simulate,
+  corse completamento/fallimento e rilascio/quiescenza, mailbox e runner.
+  Ultima esecuzione sul sorgente finale:
+  kernel/build/c4-batch-verified-host-3bdb7215e15248ce974eb1c775178ada.
+
+### Campagne QEMU
+
+Livello complesso: dieci boot consecutivi per profilo, QEMU TCG/OVMF,
+quattro CPU inizializzate. Immagini ricompilate ed ESP/hash controllati;
+il runner legge record, registri e mapping, non soltanto i marker seriali.
+
+- Lotto AP1 finale 10/10 positivi:
+  kernel/build/ipi-service-5d5e1cbcebca4c39a0185a2e8e08d301.
+- Rollback finale 10/10 fault intenzionali:
+  kernel/build/ipi-service-b30f696adf504d0aa3c76f04be48c7a6.
+  L'iniezione precede la seconda allocazione: uno stack pronto viene
+  rilasciato, due prenotazioni annullate e budget ripristinato prima
+  del panic coordinato atteso. Non è una prova di esaurimento RAM.
+- Build e riepilogo dei due profili finali:
+  kernel/build/qemu-run-0d9e74ffb3284db28f5827323e8c4c21.
+- Regressioni 10/10 ciascuna: ordinario, preemption BSP, ammissione AP,
+  servizio IPI e timer AP. Cinquanta boot positivi nella campagna
+  kernel/build/qemu-run-b24fd16ce9c64a01b0b19f931a00786e.
+  Il lotto AP precedente presente nella stessa campagna è sostituito
+  dalla prova finale sopra e non viene contato due volte.
+
+Totale pertinente: 60 boot positivi e dieci negativi con panic atteso.
+Nessun crash inatteso nelle campagne positive. Layout e diff verificati.
+ASan riguarda gli eseguibili host; il recupero della RAM fisica è
+verificato separatamente tramite accounting e mapping nel guest.
+Coverage linee/branch non misurata; hardware fisico non provato.
+
+Il boot ordinario mantiene lo scheduler BSP. Questo lotto è diagnostico,
+finito e cooperativo: non dimostra preemption AP, migrazione o dispatcher
+concorrenti. Restano questi ultimi obiettivi e lo stress di chiusura C4;
+poi C5 driver SMP e C6 chiusura K4.

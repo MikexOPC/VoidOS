@@ -10,21 +10,25 @@ Boot UEFI x86-64, ELF e contratto v5, paging NX/WP, allocatore fisico,
 finestre/arena, heap slab e page-run, GDT/TSS/IST, eccezioni e IRQ.
 Scheduler cooperativo BSP con stack reali; tastiera e mouse PS/2, shell,
 console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
-Lo scheduler non esegue ancora task sugli AP. Mancano processi utente,
+Un diagnostico esegue due task cooperativi su AP1 con IRQ attivi;
+nel boot ordinario lo scheduler resta sul BSP. Mancano processi utente,
 syscall, VFS e driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
-## K4-C: preemption BSP e prima ammissione AP
+## K4-C: preemption BSP e primo lotto di task AP
 
 Core Rust con current/affinità per CPU e lock globale verificato in host;
 timer periodico AP e preemption periodica BSP verificati nei diagnostici.
 Motore indirizzabile, contesti nativi per CPU e frame di servizio AP validati.
 
-Il nuovo diagnostico ammette AP1 a un punto d'ingresso fuori IRQ, prepara
-il suo contesto e conferma il ritorno all'idle con PING/flush funzionanti.
-Non chiama ancora il motore dispatcher e non pubblica task sull'AP.
-Campagna finale 40/40 su quattro CPU: ammissione, ordinario, IPI e timer AP.
-Restano task/preemption sugli AP, dispatcher concorrenti, driver SMP e stress.
+Il diagnostico ap-batch esegue due task reali su AP1, con yield/exit,
+contesto floating point e IRQ PING/flush durante il lavoro. Le task restano
+FINISHED con stack allocati fino alla quiescenza AP; il BSP revoca i mapping,
+attende gli shootdown e raccoglie le risorse. Il budget torna al valore iniziale.
+Validazione del blocco: 60 boot positivi e dieci fault intenzionali di rollback,
+distinti dai crash inattesi, su quattro CPU inizializzate.
+Restano preemption AP, dispatcher concorrenti e stress di chiusura C4;
+poi C5 driver SMP e C6 chiusura K4. Il diagnostico non abilita migrazione.
 Prove e limiti in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
 
 ## K4-B: shootdown TLB prima di ogni riuso

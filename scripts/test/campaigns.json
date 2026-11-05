@@ -13,6 +13,18 @@
       "boots": 10, "smoke": 1, "heavy": true,
       "summary": "BSP timer IRQ suspends the task, runs a peer, and resumes the saved IRQ frame"
     },
+    "ap-task-batch-rollback": {
+      "build": ["-TestApService", "ap-batch-rollback"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-batch-rollback", "--smp", "4"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "Expected panic after pre-launch AP batch rollback, empty slots, absent mappings and budget restored"
+    },
+    "ap-task-batch": {
+      "build": ["-TestApService", "ap-batch"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-batch", "--smp", "4"],
+      "boots": 10, "smoke": 1, "heavy": true,
+      "summary": "Two real AP1 tasks, active IRQ PING/flush, retained FINISHED and BSP cleanup after quiescence"
+    },
     "ap-dispatch-admission": {
       "build": ["-TestApService", "admission"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "admission", "--smp", "4"],

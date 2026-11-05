@@ -1,8 +1,8 @@
 #include "context.h"
 
-// ====== x86_scheduler_cpu_valid ======
+// ====== cpu_valid_private ======
 
-int x86_scheduler_cpu_valid(const X86_TASK_CPU *cpu, uint64_t expected_root, uint32_t bsp_id)
+static int cpu_valid_private(const X86_TASK_CPU *cpu, uint64_t expected_root, uint32_t bsp_id, uint32_t bsp)
 {
     const uint32_t features = (1U << 9) | (1U << 24) | (1U << 25) | (1U << 26);
     if (!cpu || cpu->reserved || cpu->cpl || cpu->max_leaf < 1 || bsp_id > 255 ||
@@ -18,6 +18,21 @@ int x86_scheduler_cpu_valid(const X86_TASK_CPU *cpu, uint64_t expected_root, uin
         ((UINT64_C(1) << 16) | (UINT64_C(1) << 31)) || !(cpu->cr4 & (UINT64_C(1) << 9)) ||
         (cpu->cr4 & ((UINT64_C(1) << 12) | (UINT64_C(1) << 23))) ||
         (cpu->flags & ((UINT64_C(1) << 9) | (UINT64_C(1) << 10))) ||
-        !(cpu->apic_base & (UINT64_C(1) << 8))) return 0;
+        ((cpu->apic_base >> 8) & 1) != bsp) return 0;
     return 1;
+}
+
+// ====== x86_scheduler_cpu_valid ======
+
+int x86_scheduler_cpu_valid(const X86_TASK_CPU *cpu, uint64_t root, uint32_t id)
+{
+    return cpu_valid_private(cpu,root,id,1);
+}
+
+// ====== x86_scheduler_ap_cpu_valid ======
+
+// Intel SDM 078US §11.4.4: IA32_APIC_BASE.BSP8 is clear on APs.
+int x86_scheduler_ap_cpu_valid(const X86_TASK_CPU *cpu, uint64_t root, uint32_t id)
+{
+    return cpu_valid_private(cpu,root,id,0);
 }

@@ -49,6 +49,13 @@ static void cpu_policy_private(void)
     valid.features = (1U << 9) | (1U << 24) | (1U << 25) | (1U << 26);
     valid.apic_id = 2;
     check_private(x86_scheduler_cpu_valid(&valid, valid.cr3, 2));
+    check_private(!x86_scheduler_ap_cpu_valid(&valid,valid.cr3,2));
+    bad = valid; bad.apic_base &= ~(1ULL << 8);
+    check_private(x86_scheduler_ap_cpu_valid(&bad,bad.cr3,2));
+    check_private(!x86_scheduler_cpu_valid(&bad,bad.cr3,2));
+    check_private(!x86_scheduler_ap_cpu_valid(&bad,bad.cr3,3));
+    bad.flags |= 512;
+    check_private(!x86_scheduler_ap_cpu_valid(&bad,bad.cr3,2));
     for (bit = 0; bit < 32; ++bit) {
         bad = valid;
         bad.features &= ~(1U << bit);

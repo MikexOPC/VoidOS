@@ -51,5 +51,6 @@ typedef struct {
 // Failure preserves resources/state; caller decides terminal handling, no retry
 // or implicit cleanup. idle must be supervised, finish with IF=0 and no borrow.
 int x86_scheduler_dispatch_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
+int x86_scheduler_dispatch_retained_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
 int x86_scheduler_dispatch(const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
 #endif

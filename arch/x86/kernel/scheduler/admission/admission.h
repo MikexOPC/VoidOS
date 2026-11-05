@@ -6,6 +6,9 @@
 #define XAD_CLAIMED 2ULL
 #define XAD_ADMITTED 3ULL
 #define XAD_FAILED 4ULL
+#define XAD_START 5ULL
+#define XAD_RUNNING 6ULL
+#define XAD_QUIESCED 7ULL
 
 // ====== admission_protocol ======
 
@@ -15,6 +18,9 @@ uint64_t xad_claim(uint32_t cpu, uint32_t caller, uint64_t group);
 uint32_t xad_admit(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group);
 uint32_t xad_fail(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group);
 uint64_t xad_value(uint32_t cpu, uint64_t group);
+uint32_t xad_transition(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group, uint32_t operation);
+uint32_t xad_release(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group, uint32_t write);
+uint32_t xad_collect_allowed(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group);
 
 typedef __declspec(align(64)) struct {
     uint64_t  Self, Group, Token, Cpu, Rsp, Local, Root, Irq;

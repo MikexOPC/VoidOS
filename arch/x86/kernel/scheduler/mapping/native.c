@@ -1,5 +1,8 @@
 #include "native.h"
 #include "arch/x86/configs/layout.h"
+#if KERNEL_TEST_AP_SERVICE == 9
+#include "../batch/batch.h"
+#endif
 #ifdef KERNEL_AP_RUNTIME
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "arch/x86/mm/paging/inventory.h"
@@ -26,6 +29,10 @@ uint32_t x86_scheduler_zero_fault_used(void) { return zero_fault_used; }
 int x86_scheduler_native_gate(void)
 {
     X86_TASK_CPU cpu = {0};
+#if KERNEL_TEST_AP_SERVICE == 9
+    if (bound_pool && xat_ap_actor()) return x86_scheduler_cpu_capture(&cpu) &&
+        xat_ap_gate(bound_pool,bound_root,&cpu);
+#endif
     return bound_pool && x86_scheduler_cpu_capture(&cpu) &&
         x86_scheduler_cpu_valid(&cpu, bound_root, bound_bsp) &&
         !(cpu.cr4 & ((UINT64_C(1) << 7) | (UINT64_C(1) << 17))) &&
@@ -185,6 +192,9 @@ int x86_task_stack_zero(const X86_TASK_STACK *owner)
 int x86_scheduler_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base, uint64_t bytes)
 {
     if (!bound_contexts || bytes != 65536) return 0;
+#if KERNEL_TEST_AP_SERVICE == 9
+    if (xat_ap_actor()) return xat_stack_authority(context,base,bytes);
+#endif
     if (base == X86_KERNEL_MAIN_BASE && x86_scheduler_dispatcher_context_is(context) == 1) {
         volatile BOOT_U64 *entries;
         uint64_t physical;

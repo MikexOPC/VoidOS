@@ -48,12 +48,40 @@ pub extern "C" fn xad_fail(cpu: u32, caller: u32, token: u64, group: u64) -> u32
 #[unsafe(no_mangle)]
 pub extern "C" fn xad_value(cpu: u32, group: u64) -> u64 { ADMISSION.value(cpu,group) }
 
+// ====== xad_transition ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_transition(cpu: u32, caller: u32, token: u64, group: u64, operation: u32) -> u32 {
+    ADMISSION.transition(cpu,caller,token,group,operation)
+}
+
+// ====== xad_release ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_release(cpu: u32, caller: u32, token: u64, group: u64, write: u32) -> u32 {
+    ADMISSION.release(cpu,caller,token,group,write)
+}
+
+// ====== xad_collect_allowed ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_collect_allowed(cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
+    ADMISSION.collect_allowed(cpu,caller,token,group)
+}
+
 // ====== xis_idle_return_valid ======
 
 #[unsafe(no_mangle)]
 pub extern "C" fn xis_idle_return_valid(frame: u64, top: u64, rsp: u64, cs: u64,
     flags: u64, ss: u64, diagnostic: u32) -> u32 {
     frame::idle_return_valid(frame,top,rsp,cs,flags,ss,diagnostic)
+}
+
+// ====== xis_task_return_valid ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xis_task_return_valid(frame: u64, rsp: u64, cs: u64, flags: u64, ss: u64) -> u32 {
+    frame::task_return_valid(frame,rsp,cs,flags,ss)
 }
 
 // ====== xis_configure ======
