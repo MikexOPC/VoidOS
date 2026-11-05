@@ -321,3 +321,44 @@ Migrazione preemptiva, orchestrazione concorrente e driver SMP restano
 da collegare. ASan host non certifica leak della RAM fisica; nessuna
 coverage linee/branch misurata. Rust conserva le decisioni sui task;
 C possiede gli oggetti ABI e Assembly effettua gli switch già verificati.
+
+## K4-C4 — Frame di servizio AP verificato in Rust
+
+5 novembre 2026. Quarto sottoblocco. Prima di leggere il frame, C riusa
+il validatore Rust dell'intera area salvata: frame, GPR, allineamento,
+shadow space e FXSAVE. La geometria del ritorno idle, i selettori e i
+flags passano a un modulo Rust con forbid(unsafe_code). Il wrapper FFI
+riceve soli interi. Nessun nuovo accesso MMIO o cambiamento Assembly.
+Verificati Intel SDM 078US §6.14.2/3 e il formato dell'entry esistente.
+
+- Suite del servizio passata sulla revisione finale. Dieci test Rust
+  in debug e dieci in release: tre nuovi casi coprono geometria, profili,
+  selettori e 131.072 combinazioni flags/profilo per configurazione.
+  Clippy con warning come errori passato.
+- Vero collegamento C/Rust con ASan: casi validi e invalidi, frame/spill
+  fuori stack respinti prima della dereferenziazione. Il test verifica
+  anche il motivo preciso dell'arresto; MMIO resta mock e non viene usato
+  dai rifiuti. Memoria del nuovo validatore senza allocazioni dinamiche.
+- Regressioni mailbox: venti esecuzioni da 15.000 richieste concorrenti,
+  nove casi di attesa e dieci test del runner firmware passati.
+- MSVC /W4 /WX, cppcheck senza error/warning/performance/portability,
+  layout centralizzato e diff passati. Sorgenti modificati fino a 261
+  righe; cartelle funzionali entro otto file. Evidenze host:
+  kernel/build/c4-ap-frame-host-4bd8396297434daba8b6d2d69f597667.
+
+Campagna QEMU/OVMF TCG a quattro vCPU, livello complesso, dieci boot
+consecutivi per profilo e immagini ricompilate con hash ESP verificati:
+
+- Ordinario 10/10:
+  kernel/build/ap-runtime-f3d765934cbf40f8b3912eb225c31cf6.
+- PING/flush e preservazione GPR/FPU/SIMD AP 10/10:
+  kernel/build/ipi-service-d495d1c672fd4c578967a2e79d4147be.
+- Timer periodico sui tre AP, PING/flush e stop verificato 10/10:
+  kernel/build/ipi-service-bba2c695889c42b3a304ba1e9375e4d0.
+- Build, immagini e riepilogo:
+  kernel/build/qemu-run-1d5020a2d2614bf79d83ab45a4c0a2ad.
+
+Limiti: si tratta ancora del frame idle, non di autorizzazione per task
+AP. La verifica C/Rust avviene dopo i salvataggi Assembly: non sostituisce
+guardie, mapping e ownership dello stack. ASan host e accounting fisico
+dei runner sono prove distinte; coverage linee/branch non misurata.

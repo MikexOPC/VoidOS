@@ -12,6 +12,11 @@ $api = "$project/arch/x86/kernel/cpu/percpu/service/rust/mailbox/api.rs"
 
 Invoke-Checked rustc @('--edition=2024','--test','-D','warnings',$api,'-o',"$out/state.exe")
 Invoke-Checked "$out/state.exe" @('--test-threads=1')
+Invoke-Checked rustc @('--edition=2024','--test','-D','warnings','-C','opt-level=2',
+    '-C','overflow-checks=yes',$api,'-o',"$out/state-release.exe")
+Invoke-Checked "$out/state-release.exe" @('--test-threads=1')
+Invoke-Checked clippy-driver @('--edition=2024','--crate-type=lib','--emit=metadata',
+    '-D','warnings',$api,'-o',"$out/mailbox-clippy.rmeta")
 Invoke-Checked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
     '-C','panic=abort','-C','opt-level=2',$api,'-o',"$out/mailbox.obj")
 
@@ -36,13 +41,16 @@ try {
         Invoke-Checked "$out/wait.exe" @($case)
     }
     $native = "$project/arch/x86/kernel/cpu/percpu/service/native/runtime.c"
+    Invoke-Checked rustc @('--edition=2024','--crate-type=lib','--emit=obj','-D','warnings',
+        '-C','panic=abort','-C','opt-level=2',
+        "$project/arch/x86/kernel/interrupts/return/rust/frame/validation.rs",'-o',"$out/irq-frame.obj")
     $nativeTest = "$project/test/arch/x86/kernel/cpu/percpu/service/native_test.c"
     foreach ($part in @(@($native, 'native'), @($nativeTest, 'native-test'))) {
         Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
             '/MD','/O2','/UNDEBUG','/DKERNEL_TEST_AP_SERVICE=1','/c',"/I$project",$part[0],"/Fo$out/$($part[1]).obj","/Fd$out/native.pdb")
     }
     Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/MD','/fsanitize=address',"/Fe$out/native.exe",
-        "$out/native.obj","$out/native-test.obj","$out/mailbox.obj",'/link','/incremental:no','/DEBUG','/WX')
+        "$out/native.obj","$out/native-test.obj","$out/mailbox.obj","$out/irq-frame.obj",'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/native.exe" @()
     Invoke-Cppcheck $project $out @($source, $wait, $test, $native, $nativeTest,
         "$project/arch/x86/kernel/cpu/percpu/service/native/transport.c",

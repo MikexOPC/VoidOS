@@ -157,13 +157,14 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     uint32_t index = xis_native_index();
     uint64_t top = X86_AP_FRAME(index), address = (uint64_t)frame;
 #ifdef KERNEL_TEST_AP_SERVICE
-    const uint64_t idle_flags = 0x602;
+    const uint32_t diagnostic = 1;
 #else
-    const uint64_t idle_flags = 0x202;
+    const uint32_t diagnostic = 0;
 #endif
-    if (!index || ks_irq_state() || (address & 7) || address < X86_AP_STACK_FLOOR(index) || address > top - sizeof(*frame) ||
-        frame->Cs != 8 || frame->Ss != 16 || frame->Rsp != top - XIS_IDLE_FRAME_BYTES ||
-        (frame->Flags & 0x7602) != idle_flags || !xp_image_contains(frame->Rip, 1))
+    if (!index || ks_irq_state() ||
+        x86_irq_saved_area(address,X86_AP_STACK_FLOOR(index),top) != 1 ||
+        xis_idle_return_valid(address,top,frame->Rsp,frame->Cs,frame->Flags,frame->Ss,diagnostic) != 1 ||
+        !xp_image_contains(frame->Rip, 1))
         xis_native_abort(0x4b3449504946524dULL);
     XIS_CPU *cpu = &xis_native.Cpus[index];
     if (frame->Vector == 0xff) {
