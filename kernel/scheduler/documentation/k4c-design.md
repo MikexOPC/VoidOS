@@ -219,6 +219,33 @@ su un AP nel medesimo diagnostico. Dimostra prima il lavoro su un
 core secondario, ma unisce la validazione dello switch ripetuto,
 dell'identità CPU e dei nuovi stack nello stesso collaudo.
 
+## K4-C4 — Autorità del chiamante
+
+Primo sottoblocco del 5 novembre 2026. Prima di ammettere dispatcher AP,
+il gateway deve confrontare il parametro CPU con il contesto locale
+verificato dal backend. Il controllo avviene sotto il lock del core e
+prima di prendere riferimenti allo stato Rust. Il risultato del backend
+è accettato soltanto se vale uno. Un rifiuto restituisce DENIED, lascia
+intatto lo stato e rilascia il lock.
+
+Il backend x86 riusa l'accessor per CPU e il gate del dispatcher esistenti.
+Questo sottoblocco conserva il requisito corrente del dispatcher BSP.
+L'ammissione degli stack dispatcher AP sarà una modifica successiva.
+Le API con suffisso _on richiedono il core indicato. INIT, configure,
+API legacy e drain IRQ restano autorizzati dal contesto della CPU zero.
+
+Il collegamento è richiesto nel profilo scheduler_core_lock usato dalla
+build kernel. I test host senza quel profilo conservano il loro modello
+di contesto. Lo stress host con lock deve invece modellare un'identità
+distinta per thread e passare dallo stesso gate della build kernel.
+
+Accettazione di questo sottoblocco. Rifiuto di identità diversa, contesto
+assente e risultato non normalizzato, su apply, eventi, stop, tick e
+affinità. Rifiuto delle operazioni BSP da un thread AP. Prove positive
+degli eventi sulle quattro identità, lock bilanciati e stress sul vero
+oggetto Rust. Regressioni scheduler e dieci boot per profilo ordinario e
+periodico BSP. Queste prove precedono il vero dispatcher AP.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):

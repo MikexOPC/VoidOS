@@ -183,3 +183,56 @@ Il primo tentativo si è fermato prima dell'armamento: lo slot di
 profilo 5 attivava il controllo budget PS/2 anche senza quel driver.
 Il controllo ora è condizionato al profilo PS/2. Il diagnostico usa
 il solo BSP. Jitter, preemption su AP e stress restano da provare.
+
+## K4-C4 — Gate dell'identità CPU
+
+5 novembre 2026. Primo sottoblocco di C4. Nel profilo kernel con
+scheduler_core_lock il gateway verifica il contesto locale e il parametro
+CPU prima di accedere allo stato Rust. Identità diversa, contesto assente
+o risposta diversa da uno restituiscono DENIED. La verifica avviene sotto
+il lock, che viene rilasciato anche dopo un rifiuto. Il gate BSP esistente
+rimane un requisito del backend nativo.
+
+- Suite scheduler e x86-scheduler passate sull'ultima revisione. MSVC e
+  Rust con warning come errori, ASan sui fixture C previsti dalle suite,
+  Clippy anche con scheduler_core_lock e cppcheck senza diagnostiche
+  error/warning/performance/portability. Evidenza congiunta in
+  kernel/build/c4-authority-host-4db516b353a041d4a7eeb89ef877a79c.
+- Test Rust di stato, binding e payload in debug e release, 42 casi per
+  configurazione. Le regressioni FFI e dispatcher usano il vero oggetto
+  Rust e backend host modellati.
+- 136 controlli sul vero gate C con accessor CPU e predicate dispatcher
+  mock. Limiti CPU, identità diversa, stato non attivo, accessor assente
+  e risultato non normalizzato. Il fixture non alloca memoria dinamica.
+- Stress FFI con lock, cinque esecuzioni da 20.000 task su quattro thread.
+  Identità per thread, eventi e stop sulle quattro identità, rifiuto delle
+  operazioni BSP da thread AP e contatori di acquire/release bilanciati.
+  Le generazioni delle prime prenotazioni verificano che i rifiuti non
+  abbiano consumato slot. Evidenze in
+  kernel/build/scheduler-host-f24376a62b6d4964ae2e4b2cfb2d27a9.
+- Backend C e Assembly, preservazione dei registri, stack e regressioni
+  IRQ passati nella suite x86-scheduler. Evidenze in
+  kernel/build/scheduler-context-d2e688e03dc748c39e84afd7f74be453.
+- Controllo layout centralizzato passato.
+
+Campagne QEMU/OVMF sulla revisione finale, TCG, quattro vCPU. Livello
+complesso, dieci boot consecutivi per profilo. Entrambe le immagini sono
+ricompilate e confrontate con la copia ESP. Hash di kernel e loader e
+verifiche di CPU, memoria e cleanup nei results.json dei runner.
+
+- Ordinario, 10/10. Evidenza in
+  kernel/build/ap-runtime-3a8b897886ef4382a6e938d46d7707c1.
+- Preemption periodica BSP, 10/10. Marker di sospensione, ripresa e stop
+  periodico verificati in ogni boot. Evidenza in
+  kernel/build/ap-runtime-7de6b469d1734edcb41d2cce864357cd.
+- Campagna con immagini e log di build in
+  kernel/build/qemu-run-95dfc8d5101b4b44927fd72769f5f0b5.
+
+Diff finale verificato. I sorgenti modificati rispettano il limite di
+1.000 righe e le cartelle funzionali restano entro otto file.
+
+Limiti della prova. I thread host modellano le CPU. Gli AP dei profili
+QEMU rimangono nel servizio PING/flush. Il dispatcher e lo switch dei task
+sugli AP sono i prossimi collegamenti di C4. Coverage non misurata.
+Le prove ASan host e i contatori dei lock hanno un ambito distinto
+dall'accounting della memoria fisica verificato dal profilo firmware.

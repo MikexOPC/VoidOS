@@ -1,4 +1,4 @@
-use super::{apply_on, core_lock, event_apply_on, kernel_scheduler_context_valid, reply,
+use super::{apply_on, context_valid_on, core_lock, event_apply_on, reply,
     stop_apply_on, EventReply, Reply, STORAGE};
 use super::state::Handle;
 
@@ -28,9 +28,9 @@ pub extern "C" fn kernel_scheduler_stop_apply_on(cpu: u32, operation: u32, index
 
 // ====== gateway_with_owner ======
 
-fn with_owner(action: impl FnOnce(&mut super::Owner) -> Result<u32, super::Error>) -> (u32, u32) {
+fn with_owner(cpu: u32, action: impl FnOnce(&mut super::Owner) -> Result<u32, super::Error>) -> (u32, u32) {
     let Some(_guard) = core_lock::enter() else { return (9, 0); };
-    if unsafe { kernel_scheduler_context_valid() } != 1 { return (10, 0); }
+    if !context_valid_on(cpu) { return (10, 0); }
     let storage = unsafe { &mut *STORAGE.0.get() };
     let Some(owner) = storage.as_mut() else { return (11, 0); };
     match action(owner) {
@@ -43,21 +43,21 @@ fn with_owner(action: impl FnOnce(&mut super::Owner) -> Result<u32, super::Error
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_scheduler_configure(cpus: u32, slice: u32) -> u32 {
-    with_owner(|owner| owner.configure(cpus, slice).map(|()| 0)).0
+    with_owner(0, |owner| owner.configure(cpus, slice).map(|()| 0)).0
 }
 
 // ====== gateway_affinity ======
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_scheduler_affinity_on(cpu: u32, index: u32, generation: u64, mask: u64) -> u32 {
-    with_owner(|owner| owner.set_affinity_on(cpu, Handle { index, generation }, mask).map(|()| 0)).0
+    with_owner(cpu, |owner| owner.set_affinity_on(cpu, Handle { index, generation }, mask).map(|()| 0)).0
 }
 
 // ====== gateway_tick ======
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_scheduler_tick_on(cpu: u32) -> Reply {
-    let (status, preempt) = with_owner(|owner| owner.tick_on(cpu).map(u32::from));
+    let (status, preempt) = with_owner(cpu, |owner| owner.tick_on(cpu).map(u32::from));
     let mut output = reply(status);
     if status == 0 { output.state = preempt; }
     output
