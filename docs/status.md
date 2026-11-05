@@ -29,13 +29,18 @@ FINISHED con stack allocati fino alla quiescenza AP; il BSP revoca i mapping,
 attende gli shootdown e raccoglie le risorse. Il budget torna al valore iniziale.
 Validazione del blocco: 60 boot positivi e dieci fault intenzionali di rollback,
 distinti dai crash inattesi, su quattro CPU inizializzate.
-Restano stress e regressioni di chiusura C4;
+Restano lavoro nativo su quattro CPU e regressioni di chiusura C4;
 poi C5 driver SMP e C6 chiusura K4. Il diagnostico non abilita migrazione.
 Il profilo ap-concurrent collega il lotto Rust ai dispatcher nativi di
 AP1/AP2: due task ciascuno, tre sospensioni/riprese per task, timer fermati
 dagli AP e raccolta sul BSP soltanto dopo la quiescenza di entrambi.
 Il primo lotto concorrente passa dieci boot; non è ancora lo stress di
 chiusura né una promozione dello scheduler ordinario a tutte le CPU.
+Lo stress circoscritto AP1/AP2 passa altri dieci boot con otto riprese
+per task e otto giri PING/shootdown. Il nuovo negativo omette la conferma
+Rust di AP2: dieci panic attesi, con tutte le 64 pagine task ancora pinned.
+Questa campagna conta 30 boot positivi e dieci negativi, separati; non
+simula un AP fisicamente bloccato e non chiude C4.
 Prove e limiti in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
 
 ## K4-B: shootdown TLB prima di ogni riuso

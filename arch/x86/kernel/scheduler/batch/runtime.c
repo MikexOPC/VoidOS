@@ -172,6 +172,9 @@ void xat_run(void)
     if (!xat_preempt_quiet()) xat_abort();
 #endif
 #ifdef KERNEL_TEST_AP_CONCURRENT
+#ifdef KERNEL_TEST_AP_NO_QUIESCE
+    if (cpu != 2)
+#endif
     if (kernel_scheduler_lot_on(cpu,KERNEL_LOT_QUIESCE,xat_record.Root,1,0).status) xat_abort();
 #endif
     local->phase = 0;

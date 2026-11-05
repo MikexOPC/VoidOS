@@ -5,6 +5,13 @@
 #include "../admission/admission.h"
 #include "arch/x86/kernel/cpu/percpu/resources/paging/authority.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
+#ifdef KERNEL_TEST_AP_BATCH_STRESS
+#define XAT_PREEMPT_TARGET 8U
+#define XAT_REQUEST_ROUNDS 8U
+#else
+#define XAT_PREEMPT_TARGET 3U
+#define XAT_REQUEST_ROUNDS 1U
+#endif
 #ifdef KERNEL_TEST_AP_CONCURRENT
 #define XAT_TASKS 4U
 #define XAT_APS 2U

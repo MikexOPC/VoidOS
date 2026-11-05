@@ -1,6 +1,6 @@
 # ====== verify_concurrent ======
 
-def verify(vm, log, count, root, pool, free, first, memory):
+def verify(vm, log, count, root, pool, free, first, memory, target=3, rounds=1):
     if count < 3:
         raise RuntimeError("Concurrent profile requires two started APs")
     addresses = [log.number("KERNEL_AP_BATCH_RECORD"), log.number("KERNEL_AP_SECOND_RECORD")]
@@ -23,9 +23,9 @@ def verify(vm, log, count, root, pool, free, first, memory):
         raise RuntimeError("Concurrent evidence records overlap")
     for slot, record in enumerate(records):
         lower = slot * 2
-        if (record[18] < 2 or not record[19] or record[19] & ~(3 << lower) or
+        if (record[18] < 2 * rounds or not record[19] or record[19] & ~(3 << lower) or
                 not lower <= record[21] < lower + 2 or
-                record[22] != shared[23 + record[21]] or not 8 <= record[27] <= 8192 or
+                record[22] != shared[23 + record[21]] or not 2 * target + 2 <= record[27] <= 8192 or
                 record[28] != 2 or record[40] & 0x7602 != 0x202 or record[41:44] != [0xe1, 1, 0]):
             raise RuntimeError("Concurrent IRQ identity or dispatcher counters differ")
         if not bases[record[21]] + 4096 <= record[20] < bases[record[21]] + 65536:
@@ -38,7 +38,7 @@ def verify(vm, log, count, root, pool, free, first, memory):
             raise RuntimeError("Concurrent dispatcher did not quiesce on its private CPU")
         address = preempt_addresses[slot]
         preempt = memory(vm, address, 16)
-        if (address & 63 or preempt[:7] != [address, 3, 3, 3, 3, 6, 1] or preempt[7] > 8 or
+        if (address & 63 or preempt[:7] != [address, target, target, target, target, 2 * target, 1] or preempt[7] > 8 or
                 not 0 < preempt[14] <= 0xffffffff or preempt[15]):
             raise RuntimeError("Concurrent timer preemption or stop differs")
         for task in range(2):
@@ -52,3 +52,34 @@ def verify(vm, log, count, root, pool, free, first, memory):
     if (memory(vm, log.number("KERNEL_AP_LOT_RECORD"), 7) != [0, root, 1, 6, 6, 6, 6] or
             memory(vm, log.number("KERNEL_AP_LOT_ARRIVED"), 2) != [1, 1]):
         raise RuntimeError("Global completion or workload overlap barrier differs")
+
+
+# ====== verify_incomplete ======
+
+def verify_incomplete(vm, log, root, pool, free, live, pins, memory):
+    address = log.number("KERNEL_AP_BATCH_RECORD")
+    record = memory(vm, address, 48)
+    if (not log.before("KERNEL_AP_LOT_INCOMPLETE", "KERNEL_SMP_PANIC") or
+            record[:3] != [address, root, pool] or record[3] < 64 or
+            record[4] != record[3] - 64 or record[5] != 0 or free != record[4] or
+            record[6:18] != [16, 16, 16, 16, 136, 272, 408, 544, 17, 34, 51, 68] or
+            record[28] != 2 or record[38:40] != [0, 0] or any(record[44:]) or
+            memory(vm, log.number("KERNEL_AP_LOT_RECORD"), 7) != [0, root, 1, 6, 6, 6, 2]):
+        raise RuntimeError("Incomplete quiescence did not retain the complete task batch")
+    entries = memory(vm, log.number("KERNEL_AP_BATCH_PTE"), 72)
+    frames = []
+    for task in range(4):
+        leaves = entries[task * 18:(task + 1) * 18]
+        frame = leaves[1] & 0x000ffffffffff000
+        if (leaves[0] or leaves[17] or not frame or
+                any((leaves[page + 1] & ~0x60) != ((frame + page * 4096) | 3 | (1 << 63))
+                    for page in range(16))):
+            raise RuntimeError("Retained task mapping or guard changed before panic")
+        matches = [i for i in range(len(live) // 4) if live[4 * i] == frame and live[4 * i + 2]]
+        if (len(matches) != 1 or live[4 * matches[0] + 1] != 16 or
+                (pins[matches[0] // 2] >> (32 * (matches[0] % 2))) & 0xffffffff != 1):
+            raise RuntimeError("Retained task lease is missing or unpinned")
+        frames.append(frame)
+    frames.sort()
+    if any(frames[i] + 65536 > frames[i + 1] for i in range(3)):
+        raise RuntimeError("Retained task frames overlap")

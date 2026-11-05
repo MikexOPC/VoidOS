@@ -1,6 +1,18 @@
 {
   "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
+    "ap-task-concurrent-stress": {
+      "summary": "Eight preemptions per task and eight PING/shootdown rounds on AP1/AP2",
+      "build": ["-TestApService", "ap-concurrent-stress"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-concurrent-stress", "--smp", "4"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "ap-task-concurrent-incomplete": {
+      "summary": "Expected BSP panic on missing Rust quiescence, with all four task leases retained and pinned",
+      "build": ["-TestApService", "ap-concurrent-incomplete"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-concurrent-incomplete", "--smp", "4"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
     "ap-task-concurrent": {
       "summary": "AP1/AP2 native dispatchers, twelve timer suspensions, joint quiescence and BSP cleanup",
       "build": ["-TestApService", "ap-concurrent"],
