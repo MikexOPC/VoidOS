@@ -233,3 +233,59 @@ fn failure_after_partial_collection_keeps_remaining_slots() {
     assert_eq!(owner.reserve_on(0), Err(Error::InvalidState));
     assert!(owner.validate());
 }
+
+
+// ====== two_to_four_participants_require_joint_quiescence ======
+
+#[test]
+fn two_to_four_participants_require_joint_quiescence() {
+    for aps in 2..=4u32 {
+        let mut owner = Owner::new();
+        owner.configure(aps + 1, 1).unwrap();
+        let mask = (1u64 << (aps + 1)) - 2;
+        let mut tasks = Vec::new();
+        for cpu in 1..=aps {
+            for _ in 0..2 {
+                let h = owner.reserve_on(0).unwrap();
+                owner.set_affinity_on(0, h, 1 << cpu).unwrap();
+                owner.publish_on(0, h).unwrap();
+                tasks.push(h);
+            }
+        }
+        owner.lot_open(0, 0x1000, 1, mask).unwrap();
+        for cpu in 1..=aps { owner.lot_transition(cpu, 0x1000, 1, 1).unwrap(); }
+        let active: Vec<_> = (1..=aps).map(|cpu| owner.select_on(cpu).unwrap()).collect();
+        for (at, h) in active.iter().enumerate() {
+            let cpu = at as u32 + 1;
+            assert_eq!(owner.tick_on(cpu), Ok(true));
+            owner.preempt_on(cpu, *h).unwrap();
+        }
+        for cpu in 1..=aps {
+            for _ in 0..2 {
+                let h = owner.select_on(cpu).unwrap();
+                owner.exit_on(cpu, h).unwrap();
+            }
+            owner.lot_transition(cpu, 0x1000, 1, 2).unwrap();
+            if cpu < aps { owner.lot_transition(cpu, 0x1000, 1, 3).unwrap(); }
+        }
+        assert_eq!(owner.lot_snapshot(0, 0x1000, 1).unwrap().completed, mask);
+        for h in &tasks { assert_eq!(owner.collect_on(0, *h), Err(Error::InvalidState)); }
+        owner.lot_transition(aps, 0x1000, 1, 3).unwrap();
+        for h in tasks { owner.collect_on(0, h).unwrap(); }
+        owner.lot_transition(0, 0x1000, 1, 6).unwrap();
+        assert!(owner.validate());
+    }
+}
+
+// ====== participant_capacity_and_bsp_membership_are_rejected ======
+
+#[test]
+fn participant_capacity_and_bsp_membership_are_rejected() {
+    let mut owner = Owner::new();
+    owner.configure(6, 1).unwrap();
+    for mask in [0, 2, 7, 0x3e, 1 << 63] {
+        let before = owner.copy_state();
+        assert!(owner.lot_open(0, 0x1000, 1, mask).is_err());
+        assert_eq!(owner, before);
+    }
+}

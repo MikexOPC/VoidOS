@@ -173,7 +173,7 @@ void xat_run(void)
 #endif
 #ifdef KERNEL_TEST_AP_CONCURRENT
 #ifdef KERNEL_TEST_AP_NO_QUIESCE
-    if (cpu != 2)
+    if (cpu != XAT_APS)
 #endif
     if (kernel_scheduler_lot_on(cpu,KERNEL_LOT_QUIESCE,xat_record.Root,1,0).status) xat_abort();
 #endif
@@ -191,8 +191,9 @@ void xat_cleanup(void)
             !x86_task_stack_validate(&xat_stacks[index])) xat_abort();
     }
 #ifdef KERNEL_TEST_AP_CONCURRENT
-    if (xad_collect_allowed(2,0,1,xat_record.Root) != 1 ||
-        kernel_scheduler_lot_on(0,KERNEL_LOT_QUERY,xat_record.Root,1,0).quiesced != 6) xat_abort();
+    for (uint32_t cpu = 2; cpu <= XAT_APS; ++cpu)
+        if (xad_collect_allowed(cpu,0,1,xat_record.Root) != 1) xat_abort();
+    if (kernel_scheduler_lot_on(0,KERNEL_LOT_QUERY,xat_record.Root,1,0).quiesced != XAT_PARTICIPANTS) xat_abort();
 #endif
     xat_record.Retained = XAT_TASKS;
     for (uint32_t index = 0; index < XAT_TASKS; ++index) {

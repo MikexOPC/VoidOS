@@ -3,7 +3,7 @@
 #include "kernel/diagnostics/log.h"
 #include "kernel/scheduler/lot.h"
 #ifdef KERNEL_TEST_AP_CONCURRENT
-extern uint64_t xat_arrived[2];
+extern uint64_t xat_arrived[XAT_APS];
 static KERNEL_LOT_REPLY lot_final;
 #endif
 
@@ -51,12 +51,15 @@ __declspec(noreturn) void xat_batch_probe(void)
     xat_preempt.Reload = x86_timer_diagnostic_reload();
     if (!xat_preempt.Reload) xat_abort();
 #ifdef KERNEL_TEST_AP_CONCURRENT
-    xat_preempt_second.Self = (uint64_t)(uintptr_t)&xat_preempt_second;
-    xat_preempt_second.Reload = xat_preempt.Reload;
+    for (uint32_t cpu = 2; cpu <= XAT_APS; ++cpu) {
+        XAT_PREEMPT *state = xat_preemption_at(cpu);
+        state->Self = (uint64_t)(uintptr_t)state;
+        state->Reload = xat_preempt.Reload;
+    }
 #endif
 #endif
 #ifdef KERNEL_TEST_AP_CONCURRENT
-    if (kernel_scheduler_lot_on(0,KERNEL_LOT_OPEN,root,1,6).status) xat_abort();
+    if (kernel_scheduler_lot_on(0,KERNEL_LOT_OPEN,root,1,XAT_PARTICIPANTS).status) xat_abort();
 #endif
     for (uint32_t cpu = 1; cpu <= XAT_APS; ++cpu)
         if (!xad_transition(cpu,0,1,root,0)) xat_abort();
@@ -68,22 +71,24 @@ __declspec(noreturn) void xat_batch_probe(void)
     }
     if (ks_atomic_load_acquire(&xat_record.Irqs) < 2 * XAT_REQUEST_ROUNDS) xat_abort();
 #ifdef KERNEL_TEST_AP_CONCURRENT
-    if (ks_atomic_load_acquire(&xat_second_record.Irqs) < 2 * XAT_REQUEST_ROUNDS) xat_abort();
+    for (uint32_t cpu = 2; cpu <= XAT_APS; ++cpu)
+        if (ks_atomic_load_acquire(&xat_record_at(cpu)->Irqs) < 2 * XAT_REQUEST_ROUNDS) xat_abort();
 #endif
     for (uint32_t cpu = 1; cpu <= XAT_APS; ++cpu)
         if (!xad_release(cpu,0,1,root,1)) xat_abort();
     for (uint32_t cpu = 1; cpu <= XAT_APS; ++cpu) wait_private(cpu,XAD_QUIESCED,0);
 #ifdef KERNEL_TEST_AP_CONCURRENT
     lot_final = kernel_scheduler_lot_on(0,KERNEL_LOT_QUERY,root,1,0);
-    if (lot_final.status || lot_final.failed || lot_final.participants != 6 ||
-        lot_final.entered != 6 || lot_final.completed != 6 || lot_final.quiesced !=
+    if (lot_final.status || lot_final.failed || lot_final.participants != XAT_PARTICIPANTS ||
+        lot_final.entered != XAT_PARTICIPANTS || lot_final.completed != XAT_PARTICIPANTS || lot_final.quiesced !=
 #ifdef KERNEL_TEST_AP_NO_QUIESCE
-        2
+        (XAT_PARTICIPANTS & ~(1ULL << XAT_APS))
 #else
-        6
+        XAT_PARTICIPANTS
 #endif
-        ||
-        ks_atomic_load_acquire(&xat_arrived[0]) != 1 || ks_atomic_load_acquire(&xat_arrived[1]) != 1) xat_abort();
+        ) xat_abort();
+    for (uint32_t cpu = 0; cpu < XAT_APS; ++cpu)
+        if (ks_atomic_load_acquire(&xat_arrived[cpu]) != 1) xat_abort();
 #endif
 #ifdef KERNEL_TEST_AP_NO_QUIESCE
     if (kernel_scheduler_apply(KERNEL_SCHEDULER_COLLECT,0,xat_record.Generations[0]).status != KERNEL_SCHEDULER_BAD_STATE ||
@@ -121,6 +126,17 @@ __declspec(noreturn) void xat_batch_probe(void)
         !kernel_text("\nKERNEL_AP_LOT_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&lot_final) ||
         !kernel_text("\nKERNEL_AP_LOT_ARRIVED: ") || !kernel_number((uint64_t)(uintptr_t)xat_arrived) ||
         !kernel_text("\n") || !kernel_log(0,"KERNEL_AP_CONCURRENT_READY")) xat_abort();
+#endif
+#ifdef KERNEL_TEST_AP_FOUR
+    for (uint32_t cpu = 1; cpu <= XAT_APS; ++cpu) {
+        XAT_RECORD *record = xat_record_at(cpu);
+        if (record->Completed != 2 || record->Steps < 2 * XAT_PREEMPT_TARGET + 2 ||
+            xad_value(cpu,root) != (1ULL << 3 | XAD_QUIESCED) ||
+            !kernel_text("KERNEL_AP_CPU_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)record) ||
+            !kernel_text("\nKERNEL_AP_CPU_PREEMPT: ") || !kernel_number((uint64_t)(uintptr_t)xat_preemption_at(cpu)) ||
+            !kernel_text("\n")) xat_abort();
+    }
+    if (!kernel_log(0,"KERNEL_AP_FOUR_READY")) xat_abort();
 #endif
     x86_kernel_stop(0x4b34495049504153ULL);
 }

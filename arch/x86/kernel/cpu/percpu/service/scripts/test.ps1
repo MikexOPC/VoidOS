@@ -104,6 +104,23 @@ try {
         "/Fo$out/","/Fe$out/stress-preempt.exe","/Fd$out/stress-preempt.pdb",'/link',
         '/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/stress-preempt.exe" @()
+    $fourFlags = @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',
+        '/UNDEBUG','/DKERNEL_TEST_AP_CONCURRENT=1','/DKERNEL_TEST_AP_PREEMPTION=1',
+        '/DKERNEL_TEST_AP_BATCH_STRESS=1','/DKERNEL_TEST_AP_FOUR=1',"/I$project","/Fo$out/")
+    Invoke-Checked "$($saved.Bin)/cl.exe" ($fourFlags + @(
+        "$project/arch/x86/kernel/scheduler/batch/validation.c",$admissionLocal,
+        "$project/arch/x86/kernel/scheduler/capabilities.c",
+        "$project/test/arch/x86/kernel/scheduler/batch/validation_test.c",
+        "/Fe$out/four-gate.exe","/Fd$out/four-gate.pdb",'/link',"$out/mailbox.obj","$out/irq-frame.obj",
+        '/incremental:no','/DEBUG','/WX'))
+    Invoke-Checked "$out/four-gate.exe" @()
+    foreach ($part in @('preempt','concurrent')) {
+        Invoke-Checked "$($saved.Bin)/cl.exe" ($fourFlags + @(
+            "$project/arch/x86/kernel/scheduler/batch/$part.c",
+            "$project/test/arch/x86/kernel/scheduler/batch/${part}_test.c",
+            "/Fe$out/four-$part.exe","/Fd$out/four-$part.pdb",'/link','/incremental:no','/DEBUG','/WX'))
+        Invoke-Checked "$out/four-$part.exe" @()
+    }
     Invoke-Cppcheck $project $out @($source, $wait, $test, $native, $nativeTest,
         $admissionNative, $admissionLocal, "$project/test/arch/x86/kernel/scheduler/admission/probe.c",
         "$project/arch/x86/kernel/scheduler/batch/validation.c","$project/arch/x86/kernel/scheduler/batch/runtime.c",

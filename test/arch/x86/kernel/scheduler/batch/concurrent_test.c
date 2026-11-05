@@ -7,7 +7,7 @@
 XAT_RECORD xat_record;
 XAT_PREEMPT xat_preempt;
 XP_PANIC_NATIVE xp_panic_native;
-extern uint64_t xat_arrived[2];
+extern uint64_t xat_arrived[XAT_APS];
 static uint32_t actor = 1, valid = 1, clock_mode, polls, checks;
 static jmp_buf failure;
 
@@ -29,7 +29,7 @@ int xis_native_now(void *context, uint32_t *value)
     *value = polls++ && clock_mode == 2 ? KERNEL_PM_TIMER_HZ : 0;
     return clock_mode != 1;
 }
-void ks_pause(void) { xat_arrived[2 - actor] = 1; }
+void ks_pause(void) { for (uint32_t peer = 0; peer < XAT_APS; ++peer) xat_arrived[peer] = 1; }
 
 // ====== expect_failure ======
 
@@ -44,25 +44,29 @@ static void expect_failure(uint32_t index)
 int main(void)
 {
     xp_panic_native.Source.Mask = 0xffffff;
-    for (actor = 1; actor <= 2; ++actor) {
+    for (actor = 1; actor <= XAT_APS; ++actor) {
         uint32_t index = (actor - 1) * 2;
-        check_private(xat_cpu_record() == (actor == 1 ? &xat_record : &xat_second_record));
-        check_private(xat_preemption_record() == (actor == 1 ? &xat_preempt : &xat_preempt_second));
-        xat_arrived[0] = xat_arrived[1] = 0; polls = 0;
+        check_private(xat_cpu_record() == xat_record_at(actor));
+        for (uint32_t peer = 1; peer < actor; ++peer)
+            check_private(xat_record_at(peer) != xat_cpu_record());
+        check_private(xat_preemption_record() == xat_preemption_at(actor));
+        for (uint32_t peer = 1; peer < actor; ++peer)
+            check_private(xat_preemption_at(peer) != xat_preemption_record());
+        for (uint32_t peer = 0; peer < XAT_APS; ++peer) xat_arrived[peer] = 0; polls = 0;
         xat_concurrent_barrier(index);
-        check_private(xat_arrived[0] == 1 && xat_arrived[1] == 1);
+        for (uint32_t peer = 0; peer < XAT_APS; ++peer) check_private(xat_arrived[peer] == 1);
         expect_failure(index);
         expect_failure(index ^ 2);
-        expect_failure(4);
-        xat_arrived[0] = xat_arrived[1] = 0;
+        expect_failure(XAT_TASKS);
+        for (uint32_t peer = 0; peer < XAT_APS; ++peer) xat_arrived[peer] = 0;
         xat_concurrent_barrier(index + 1);
-        check_private(!xat_arrived[0] && !xat_arrived[1]);
+        for (uint32_t peer = 0; peer < XAT_APS; ++peer) check_private(!xat_arrived[peer]);
         valid = 0; expect_failure(index); valid = 1;
         clock_mode = 1; expect_failure(index);
         clock_mode = 2; polls = 0; expect_failure(index);
         clock_mode = 0;
     }
-    for (actor = 0; actor <= 3; actor += 3) {
+    for (actor = 0; actor <= XAT_APS + 1; actor += XAT_APS + 1) {
         if (!setjmp(failure)) { (void)xat_cpu_record(); check_private(0); } else check_private(1);
         if (!setjmp(failure)) { (void)xat_preemption_record(); check_private(0); } else check_private(1);
     }

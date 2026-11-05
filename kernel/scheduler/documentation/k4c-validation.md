@@ -757,3 +757,77 @@ trattenute fino all'arresto, non vengono dichiarate rilasciate o perdute.
 ASan riguarda gli eseguibili host; accounting, pin e PTE sono controllati
 nel guest. Valgrind non eseguito, coverage N/D, hardware fisico non provato.
 C4 resta aperta: il carico nativo è ancora su due CPU, non quattro.
+
+
+## K4-C4 — Chiusura del backend diagnostico su quattro AP
+
+5 novembre 2026. Scelta A approvata e implementata: quattro AP di lavoro,
+BSP supervisore, cinque vCPU totali. Otto task con affinità fissa, due
+per AP; tutti gli otto slot disponibili sono usati. Un solo lotto per
+boot, nessun driver migrato o riarmo. C4 è completata entro questo profilo
+fidato; C5 e C6 restano aperte e il boot ordinario continua sul BSP.
+
+Rust ora accetta da due a quattro AP, verifica maschere, capacità e due
+task per partecipante, conserva i token e vieta qualsiasi raccolta prima
+della quiescenza completa. Record, barriera e ammissione nativi hanno
+stato distinto per AP. Ogni AP verifica il proprio contesto e i propri
+stack; nessun lock o borrow Rust attraversa il context switch.
+
+### Risultati
+
+- ap-four: otto sospensioni/riprese per task, 64 per boot e 640 nei dieci
+  boot; 116 richieste IPI per boot, oltre alla base del bootstrap. Le
+  128 pagine task tornano al budget iniziale, con 144 PTE task/guardie
+  assenti dopo raccolta e shootdown. Frame, GPR e stato FPU/SIMD sono
+  controllati dal workload e dai record nativi dei quattro AP.
+- ap-four-incomplete: AP4 omette la sola conferma Rust dopo la quiescenza
+  fisica. completed=30, quiesced=14. COLLECT viene respinto e il cleanup
+  ordinario entra nel panic previsto prima del primo unmap. Il runner
+  verifica otto lease vive da 16 pagine, pin=1, mapping e guardie corretti,
+  intervalli distinti e ACK NMI da tutti i quattro AP.
+
+Il formato del record è 576 byte nel nuovo profilo; i formati precedenti
+restano invariati. Il runner deriva gli indici dal numero di task e
+rifiuta il profilo a quattro AP con meno di cinque CPU totali.
+
+### Evidenze definitive
+
+- Core: kernel/build/scheduler-host-c5875f178d8146a48861d4e7472c5595,
+  log kernel/build/ap-four-core-host.log. 46 test Rust debug e 46 release,
+  Clippy, C/ASan, cinque stress da 20.000 task e regressioni FFI/motore.
+  Il modello prova lotti di due, tre e quattro partecipanti, selezione,
+  preemption e raccolta negata finché manca l'ultima quiescenza.
+- Backend: kernel/build/ipi-service-host-3b196097b90d4bac89fa87258874ee13,
+  log kernel/build/ap-four-service-host.log. Nuovo gate: 173 controlli;
+  preemption su quattro identità: 940; selettori e barriera: 80. CPU,
+  MMIO, clock e switch dei fixture C sono mock. C con warning come errori,
+  ASan e cppcheck passati; style/information restano nel relativo XML.
+- Runner finale: kernel/build/ap-four-runner-host.log, 18 test passati.
+  Include l'ultimo AP, l'ultima lease e il rifiuto della topologia errata.
+- QEMU: kernel/build/qemu-run-c9f04c98cb5348ddb280e7d9ea11537e.
+  Livello complesso: dieci boot per profilo, QEMU TCG/OVMF, immagini
+  ricompilate ed ESP/hash verificati. Passati ap-task-four,
+  ap-task-concurrent-stress, ap-task-preempt, bsp-periodic e ap-runtime:
+  50 boot positivi senza crash inattesi. Separatamente, 10/10 per
+  ap-task-four-incomplete e 10/10 per ap-task-concurrent-incomplete:
+  20 negativi con panic e risorse trattenute previsti.
+- Quattro AP: kernel/build/ipi-service-64e60a96d30b4a39a9b4239d5fd3be03;
+  SHA-256 ELF F4967B1EF95CB80E415DDA18BB965C5D39EC2C4E2FE0C0A90BD159C1DC4CB906.
+- Conferma AP4 assente: kernel/build/ipi-service-845983f412bf4a83870f9ebced4cc5c0;
+  SHA-256 ELF F4C456060266A0FFCA0A9A927111645E332CFC2E232C136CA04D584EB191A790.
+
+Review del perimetro: descrittori condivisi immutabili dopo il via,
+contesti e record scritti dal solo AP proprietario, pubblicazione con
+acquire/release, stato scheduler sotto guard Rust, mutazioni paging sul
+solo BSP dopo tutte le quiescenze. I task di calcolo non accedono ai driver.
+Audit G5 globale e sicurezza SMP dei driver restano C6/C5, non risultati
+di questa revisione circoscritta. Layout e diff finale verificati.
+
+Limiti: il test nativo usa due o quattro AP; tre partecipanti sono provati
+nel modello Rust. Sotto TCG si dimostra sovrapposizione delle sessioni,
+non parallelismo fisico dei vCPU host. Non sono benchmark di jitter o
+throughput, né stress di lunga durata; nessun AP fisicamente bloccato
+viene iniettato. ASan riguarda i programmi host, non i leak fisici.
+Accounting e pin sono osservati nel guest; Valgrind non eseguito,
+coverage N/D e hardware reale non provato. I checkpoint precedenti
+restano evidenze delle proprie immagini, non dello stato corrente.

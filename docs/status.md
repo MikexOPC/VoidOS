@@ -10,37 +10,30 @@ Boot UEFI x86-64, ELF e contratto v5, paging NX/WP, allocatore fisico,
 finestre/arena, heap slab e page-run, GDT/TSS/IST, eccezioni e IRQ.
 Scheduler cooperativo BSP con stack reali; tastiera e mouse PS/2, shell,
 console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
-Un diagnostico esegue quattro task su AP1/AP2, sospesi dal timer senza yield
+Un diagnostico esegue otto task su AP1/AP2/AP3/AP4, sospesi dal timer senza yield
 durante la fase misurata, con IRQ PING/flush attivi;
 nel boot ordinario lo scheduler resta sul BSP. Mancano processi utente,
 syscall, VFS e driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
-## K4-C: preemption diagnostica BSP e dispatcher AP1/AP2
+## K4-C4 completata: dispatcher AP per task fidati
 
-Core Rust con current/affinità per CPU e lock globale verificato in host;
-timer periodico AP e preemption periodica BSP verificati nei diagnostici.
-Motore indirizzabile, contesti nativi per CPU e frame di servizio AP validati.
+Il profilo ap-four esegue otto task su quattro AP, con il BSP supervisore:
+cinque CPU totali realmente avviate. Due task per AP, affinità fissa e
+una sola coda Rust sotto lock. Ogni task viene sospeso e ripreso otto volte
+senza yield nella fase misurata: 64 sospensioni/riprese e 116 richieste IPI
+per boot. Timer fermati dagli AP; il BSP raccoglie le 128 pagine degli
+stack soltanto dopo tutte le conferme di quiescenza. Il budget è ripristinato.
 
-Il diagnostico ap-preempt sospende e riprende due task reali su AP1,
-tre volte ciascuno, con controllo dei registri e dello stato FPU/SIMD.
-AP1 ferma il timer prima della quiescenza. Le task restano
-FINISHED con stack allocati fino alla quiescenza AP; il BSP revoca i mapping,
-attende gli shootdown e raccoglie le risorse. Il budget torna al valore iniziale.
-Validazione del blocco: 60 boot positivi e dieci fault intenzionali di rollback,
-distinti dai crash inattesi, su quattro CPU inizializzate.
-Restano lavoro nativo su quattro CPU e regressioni di chiusura C4;
-poi C5 driver SMP e C6 chiusura K4. Il diagnostico non abilita migrazione.
-Il profilo ap-concurrent collega il lotto Rust ai dispatcher nativi di
-AP1/AP2: due task ciascuno, tre sospensioni/riprese per task, timer fermati
-dagli AP e raccolta sul BSP soltanto dopo la quiescenza di entrambi.
-Il primo lotto concorrente passa dieci boot; non è ancora lo stress di
-chiusura né una promozione dello scheduler ordinario a tutte le CPU.
-Lo stress circoscritto AP1/AP2 passa altri dieci boot con otto riprese
-per task e otto giri PING/shootdown. Il nuovo negativo omette la conferma
-Rust di AP2: dieci panic attesi, con tutte le 64 pagine task ancora pinned.
-Questa campagna conta 30 boot positivi e dieci negativi, separati; non
-simula un AP fisicamente bloccato e non chiude C4.
+Il negativo ap-four-incomplete omette la conferma Rust di AP4 dopo la sua
+quiescenza fisica: COLLECT è negato e il kernel entra nel panic previsto
+con tutte le 128 pagine ancora vive e pinned. Non simula un AP bloccato.
+Core Rust verificato con 46 test debug/release, host C/ASan e stress.
+Campagna definitiva: 50 boot positivi e 20 negativi previsti, separati.
+
+C4 è chiusa per il backend diagnostico con task kernel fidati; il boot
+ordinario resta sul BSP e non c'è migrazione. K4 resta aperta per C5
+(driver sicuri su più CPU) e C6 (audit G5, integrazione e chiusura finale).
 Prove e limiti in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
 
 ## K4-B: shootdown TLB prima di ogni riuso

@@ -13,14 +13,20 @@
 #define XAT_REQUEST_ROUNDS 1U
 #endif
 #ifdef KERNEL_TEST_AP_CONCURRENT
+#ifdef KERNEL_TEST_AP_FOUR
+#define XAT_TASKS 8U
+#define XAT_APS 4U
+#else
 #define XAT_TASKS 4U
 #define XAT_APS 2U
+#endif
 #define XAT_CPU(index) ((index) / 2U + 1U)
 #else
 #define XAT_TASKS 2U
 #define XAT_APS 1U
 #define XAT_CPU(index) 1U
 #endif
+#define XAT_PARTICIPANTS ((1ULL << (XAT_APS + 1)) - 2)
 
 typedef __declspec(align(64)) struct {
     uint64_t Self, Root, Pool, Budget, Held, Final;
@@ -32,11 +38,12 @@ typedef __declspec(align(64)) struct {
     uint64_t Reserved[4];
 #endif
 } XAT_RECORD;
-_Static_assert(sizeof(XAT_RECORD) == (XAT_TASKS == 4 ? 384 : 256),"AP batch evidence ABI");
+_Static_assert(sizeof(XAT_RECORD) == (XAT_TASKS == 8 ? 576 : XAT_TASKS == 4 ? 384 : 256),"AP batch evidence ABI");
 extern XAT_RECORD xat_record;
 #ifdef KERNEL_TEST_AP_CONCURRENT
 extern XAT_RECORD xat_second_record;
 XAT_RECORD *xat_cpu_record(void);
+XAT_RECORD *xat_record_at(uint32_t cpu);
 void xat_concurrent_barrier(uint32_t index);
 #endif
 extern X86_TASK_STACK xat_stacks[8];
@@ -66,6 +73,7 @@ extern XAT_PREEMPT xat_preempt;
 #ifdef KERNEL_TEST_AP_CONCURRENT
 extern XAT_PREEMPT xat_preempt_second;
 XAT_PREEMPT *xat_preemption_record(void);
+XAT_PREEMPT *xat_preemption_at(uint32_t cpu);
 #endif
 uint32_t x86_timer_diagnostic_reload(void);
 void xat_preempt_work(uint32_t index);
