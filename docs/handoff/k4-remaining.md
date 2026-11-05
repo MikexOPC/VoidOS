@@ -92,8 +92,13 @@ Da fare quando capita, in ordine di utilità:
 - **Codici di abort con nome** al posto dei magic number a 64 bit.
 - **Leggibilità** dei file più densi (`runtime.c`, `dispatch.c`, `percpu.c`).
 - **Validazione ripetuta** fra funzioni interne fidate: tenerla ai confini.
-- **Build:** script manuale da circa 680 righe; passare a un manifest dei
-  sorgenti o a un build incrementale fra una milestone e l'altra.
+- **Build:** primo blocco tra K4 e K5. Spostare in un tool Rust la
+  risoluzione dei profili e confrontare, senza compilare, flag, sorgenti
+  e ordine degli argomenti con il percorso attuale. Partire dai profili
+  ordinario, BSP periodico e AP timer, più le combinazioni rifiutate.
+  Dopo la parità, usare il piano Rust nel comando di build e rimuovere
+  la logica PowerShell corrispondente. I runner Python si migrano per
+  responsabilità, partendo dagli helper condivisi e conservando le prove.
 - **Documentazione storica** da accorpare (circa 30 documenti di K3,
   31 file in `console/video/documentation`).
 - **Rust:** un unico crate `no_std` del kernel al confine K4/K5, come fonte

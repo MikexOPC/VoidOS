@@ -19,4 +19,5 @@ int x86_irq_cpu_state(void);
 int x86_irq_return_test(void);
 int x86_irq_spurious_test(void);
 void x86_irq_dispatch(const X86_IRQ_FRAME *frame);
+void x86_irq_after(const X86_IRQ_FRAME *frame);
 #endif

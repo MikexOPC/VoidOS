@@ -67,7 +67,7 @@ static void reset_private(void)
     memset(&xat_preempt,0,sizeof(xat_preempt)); memset(&local,0,sizeof(local));
     memset(&locks,0,sizeof(locks)); memset(mmio,0,sizeof(mmio));
     memset(&frame,0,sizeof(frame)); actor = valid = resume = 1; irq = 0;
-    local.current = task_offset; local.generation = 4; frame.Vector = 0xd1; frame.Flags = 512;
+    local.current = task_offset; local.generation = 4; frame.Vector = XIS_TIMER_VECTOR; frame.Flags = 512;
     frame.Rip = (uint64_t)(uintptr_t)x86_scheduler_irq_compute_begin;
     mmio[0x160 / 4] = 1U << 17;
     mmio[0x3e0 / 4] = 3;

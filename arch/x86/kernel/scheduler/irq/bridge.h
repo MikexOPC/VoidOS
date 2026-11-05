@@ -1,6 +1,8 @@
 #ifndef X86_SCHEDULER_IRQ_BRIDGE_H
 #define X86_SCHEDULER_IRQ_BRIDGE_H
 #include "arch/x86/kernel/timer/lapic/timer.h"
+#include "arch/x86/kernel/interrupts/return/table.h"
+#include "arch/x86/kernel/interrupts/apic/lvt.h"
 // ====== timer_owned_session ======
 
 #ifdef KERNEL_TEST_SCHEDULER_PERIODIC
@@ -11,6 +13,9 @@ int x86_scheduler_run_periodic(void);
 #endif
 int x86_scheduler_timer_tasks(X86_LAPIC_TIMER *source);
 int x86_scheduler_timer_notify(const X86_LAPIC_TIMER *source);
+#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
+void x86_scheduler_irq_after(const X86_IRQ_FRAME *frame);
+#endif
 uint64_t x86_scheduler_irq_stack_top(uint64_t frame);
 int x86_scheduler_irq_record(uint64_t vector, uint64_t rip, uint64_t rsp, uint64_t flags);
 int x86_scheduler_irq_compute(const volatile uint32_t *source, uint32_t port,

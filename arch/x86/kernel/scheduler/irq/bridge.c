@@ -35,13 +35,13 @@ int x86_scheduler_irq_record(uint64_t vector, uint64_t rip, uint64_t rsp, uint64
 #ifdef KERNEL_TEST_SCHEDULER_PERIODIC
     if (periodic_source) {
         uint32_t index = x86_scheduler_index();
-        return vector == 0x41 && index < 2 && x86_scheduler_task_valid() &&
+        return vector == X86_TIMER_VECTOR && index < 2 && x86_scheduler_task_valid() &&
             (flags & 0x600) == 0x200 &&
             rip >= (uint64_t)x86_scheduler_irq_compute_begin && rip < (uint64_t)x86_scheduler_irq_compute_end &&
             rsp >= x86_task_stack_base(index) + 4096 && rsp < x86_task_stack_base(index) + 65536;
     }
 #endif
-    if (!timer_source || vector != 0x41 || irq_rip || x86_scheduler_index() != 1 ||
+    if (!timer_source || vector != X86_TIMER_VECTOR || irq_rip || x86_scheduler_index() != 1 ||
         !x86_scheduler_task_valid() || !(flags & 512) || (flags & 1024) ||
         rip < (uint64_t)x86_scheduler_irq_compute_begin || rip >= (uint64_t)x86_scheduler_irq_compute_end ||
         rsp < x86_task_stack_base(1) + 4096 || rsp >= x86_task_stack_base(1) + 65536 ||
@@ -69,7 +69,7 @@ int x86_scheduler_timer_notify(const X86_LAPIC_TIMER *source)
 void x86_scheduler_irq_after(const X86_IRQ_FRAME *frame)
 {
 #ifdef KERNEL_TEST_SCHEDULER_PERIODIC
-    if (periodic_source && frame->Vector == 0x41) {
+    if (periodic_source && frame->Vector == X86_TIMER_VECTOR) {
         uint32_t index = x86_scheduler_index();
         const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
         if (index >= 2 || !locks || locks->Depth || ks_irq_state() || !(frame->Flags & 512) ||
@@ -80,7 +80,7 @@ void x86_scheduler_irq_after(const X86_IRQ_FRAME *frame)
         return;
     }
 #endif
-    if (!timer_source || frame->Vector != 0x41 || !posted || suspended) return;
+    if (!timer_source || frame->Vector != X86_TIMER_VECTOR || !posted || suspended) return;
     const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
     if (!locks || locks->Depth || ks_irq_state() || frame->Rip != irq_rip ||
         frame->Rsp != irq_rsp || frame->Flags != irq_flags || !(frame->Flags & 512) ||
@@ -200,7 +200,7 @@ static int periodic_quiet(void)
 {
     BOOT_U32 value;
     const X86_LAPIC_MAPPING *mapping = periodic_source->Mapping;
-    return x86_timer_read(mapping,0x320,&value) && value == 0x10041 &&
+    return x86_timer_read(mapping,0x320,&value) && value == (X86_LVT_MASK | X86_TIMER_VECTOR) &&
         x86_timer_read(mapping,0x380,&value) && !value &&
         x86_timer_read(mapping,0x390,&value) && !value && x86_lapic_idle(mapping);
 }
@@ -213,7 +213,7 @@ static int periodic_irq(void)
     if (!periodic_source || index >= 2 || index != periodic_total % 2 ||
         periodic_ticks[index] >= 3 || periodic_total >= 6) return 0;
     if (periodic_total == 5 && !x86_timer_stop(periodic_source->Mapping)) return 0;
-    if (!x86_lapic_eoi_vector(periodic_source->Mapping,0x41)) return 0;
+    if (!x86_lapic_eoi_vector(periodic_source->Mapping,X86_TIMER_VECTOR)) return 0;
     ++periodic_total;
     if (++periodic_ticks[index] == 3) periodic_completion[index][0] = 1;
     return 1;
@@ -227,7 +227,7 @@ void x86_scheduler_periodic_task(uint32_t index)
     if (index == 0) {
         const X86_LAPIC_MAPPING *mapping = periodic_source->Mapping;
         // Intel SDM 078US Vol. 3A §11.5.4: +320h periodic mode, +380h starts counting.
-        if (!x86_timer_confirm_write(mapping,0x320,0x20041) ||
+        if (!x86_timer_confirm_write(mapping,0x320,(X86_LVT_TIMER_PERIODIC | X86_TIMER_VECTOR)) ||
             !x86_timer_confirm_write(mapping,0x380,periodic_source->Reload)) kernel_scheduler_fail_stop();
     }
     if (x86_scheduler_irq_poll(periodic_completion[index],periodic_source->Clock.Port,
@@ -251,7 +251,7 @@ int x86_scheduler_periodic_run(const X86_LAPIC_TIMER *source)
     const X86_LAPIC_MAPPING *mapping = source->Mapping;
     periodic_source = source;
     if (!x86_timer_stop(mapping) || !x86_timer_confirm_write(mapping,0x3e0,3) || !periodic_quiet() ||
-        !x86_irq_registry_bind(x86_irq_registry(),0x41,periodic_irq,periodic_quiet,&periodic_token) ||
+        !x86_irq_registry_bind(x86_irq_registry(),X86_TIMER_VECTOR,periodic_irq,periodic_quiet,&periodic_token) ||
         !x86_scheduler_run_periodic() || x86_irq_registry_deliveries(x86_irq_registry(),&periodic_token) != 6 ||
         !x86_irq_registry_unbind(x86_irq_registry(),&periodic_token) ||
         !x86_timer_confirm_write(mapping,0x3e0,source->OriginalDivide) ||
