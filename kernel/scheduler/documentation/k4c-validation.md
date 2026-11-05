@@ -236,3 +236,47 @@ QEMU rimangono nel servizio PING/flush. Il dispatcher e lo switch dei task
 sugli AP sono i prossimi collegamenti di C4. Coverage non misurata.
 Le prove ASan host e i contatori dei lock hanno un ambito distinto
 dall'accounting della memoria fisica verificato dal profilo firmware.
+
+## K4-C4 — Motore indirizzabile per CPU
+
+5 novembre 2026. Secondo sottoblocco. dispatch_on inoltra le operazioni
+alla CPU verificata e usa una guardia d'ingresso per identità. Il percorso
+legacy rimane BSP. La chiusura del lotto resta esclusiva: non è ancora
+il protocollo per dispatcher AP concorrenti.
+
+- Suite scheduler passata: test Rust in debug/release, regressioni C/FFI,
+  dieci modalità del motore e cinque stress da 20.000 task su quattro
+  thread. Evidenze in
+  kernel/build/scheduler-host-0e66afd1ed8c4cfbadbf07c4a0550ecb.
+- Nuovo fixture: 16.581 controlli su 64 identità CPU sequenziali,
+  vero Owner Rust con scheduler_core_lock. Affinità, yield, eventi,
+  wait con epoca cambiata, stop/query, exit e raccolta. Rifiutati CPU
+  falsa, indici fuori limite, gate zero/non normalizzato, rientro e
+  drain IRQ AP. Il gate viene ricontrollato dopo il callback run;
+  una nuova sessione verifica il rilascio della guardia dopo errore.
+  Acquisizioni/rilasci del lock bilanciati; callback fuori dal lock.
+- Suite x86-scheduler passata, inclusi preservazione dei registri,
+  stack, IRQ e 136 controlli del gate nativo. Evidenze in
+  kernel/build/scheduler-context-86bb8e0f61cf45dcb61d7320cd13f483.
+- MSVC /W4 /WX e Rust -D warnings, ASan sui fixture C, Clippy e
+  cppcheck senza error/warning/performance/portability. Le segnalazioni
+  informative cppcheck sono conservate nei report XML.
+- Layout centralizzato e git diff --check passati. Sorgenti modificati
+  fino a 180 righe; cartelle funzionali entro otto file.
+
+Campagna QEMU/OVMF TCG a quattro vCPU, livello complesso: immagini
+ricompilate, hash confrontati con ESP e dieci boot consecutivi per
+profilo. Verifiche di CPU, memoria e cleanup nei results.json.
+
+- Ordinario 10/10:
+  kernel/build/ap-runtime-4de40aa6350a430294e7a3509c53ad2b.
+- Preemption periodica BSP 10/10:
+  kernel/build/ap-runtime-fa3d5acae1134ffa84d487e9782ec920.
+- Build, immagini e riepilogo:
+  kernel/build/qemu-run-5627ac9414e244cea257e6be1693a722.
+
+Limiti: nel nuovo fixture CPU, stack e risorse native sono mock; nessuna
+allocazione dinamica è introdotta. ASan non misura leak della RAM fisica.
+Il kernel mantiene un solo dispatcher BSP e tre AP nel servizio esistente.
+Nessuna prova di switch task sugli AP o di lotti concorrenti è dichiarata.
+Coverage linee/branch non misurata. Nessun nuovo accesso hardware.

@@ -45,10 +45,11 @@ typedef struct {
 
 // ====== dispatcher_engine_contract ======
 
-// Private BSP/IF=0 API, immutable trusted config and owned stable zeroed stats.
-// Caller has published exactly task_count owned tasks and has no RUNNING task.
-// Native callbacks validate ownership/ABI and may not recursively enter engine.
+// IF=0 API, verified calling CPU; immutable config and private zeroed stats.
+// Exclusive batch: exactly task_count published tasks, no other dispatcher batch.
+// Callbacks validate ownership/ABI; no reentry on the same CPU, no IRQ drain on AP.
 // Failure preserves resources/state; caller decides terminal handling, no retry
 // or implicit cleanup. idle must be supervised, finish with IF=0 and no borrow.
+int x86_scheduler_dispatch_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
 int x86_scheduler_dispatch(const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
 #endif
