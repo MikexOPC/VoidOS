@@ -1,0 +1,42 @@
+#include "batch.h"
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+
+XAT_RECORD xat_second_record;
+XAT_PREEMPT xat_preempt_second;
+uint64_t xat_arrived[2];
+
+// ====== xat_cpu_record ======
+
+XAT_RECORD *xat_cpu_record(void)
+{
+    uint32_t cpu = xis_native_index();
+    if (cpu < 1 || cpu > 2) xat_abort();
+    return cpu == 1 ? &xat_record : &xat_second_record;
+}
+
+// ====== xat_preemption_record ======
+
+XAT_PREEMPT *xat_preemption_record(void)
+{
+    uint32_t cpu = xis_native_index();
+    if (cpu < 1 || cpu > 2) xat_abort();
+    return cpu == 1 ? &xat_preempt : &xat_preempt_second;
+}
+
+// ====== xat_concurrent_barrier ======
+
+void xat_concurrent_barrier(uint32_t index)
+{
+    if (index >= 4 || xis_native_index() != XAT_CPU(index) || !xat_task_valid()) xat_abort();
+    if (index & 1) return;
+    uint32_t start, now, slot = XAT_CPU(index) - 1;
+    if (ks_atomic_load_acquire(&xat_arrived[slot]) || !xis_native_now(NULL,&start)) xat_abort();
+    ks_atomic_store_release(&xat_arrived[slot],1);
+    for (uint32_t poll = 0; poll < 1000000; ++poll) {
+        if (ks_atomic_load_acquire(&xat_arrived[1 - slot]) == 1) return;
+        if (!xis_native_now(NULL,&now) || ((now - start) & xp_panic_native.Source.Mask) >= KERNEL_PM_TIMER_HZ)
+            xat_abort();
+        ks_pause();
+    }
+    xat_abort();
+}

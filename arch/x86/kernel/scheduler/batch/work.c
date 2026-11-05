@@ -8,7 +8,7 @@ void xat_yield(void)
 {
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     if (!local || !xat_task_valid() || local->event ||
-        !x86_scheduler_context_resume_valid(&local->dispatcher,X86_AP_STACK_BASE(1),65536,
+        !x86_scheduler_context_resume_valid(&local->dispatcher,X86_AP_STACK_BASE(XAT_CPU(local->current)),65536,
             X86_KERNEL_IMAGE_BASE,X86_KERNEL_IMAGE_LIMIT,xat_mask)) xat_abort();
     uint32_t index = local->current;
     uint64_t generation = local->generation;
@@ -48,11 +48,14 @@ __declspec(noreturn) void xat_task_start(void)
 #endif
     }
 #ifdef KERNEL_TEST_AP_PREEMPTION
+#ifdef KERNEL_TEST_AP_CONCURRENT
+    xat_concurrent_barrier(index);
+#endif
     xat_preempt_work(index);
 #endif
     uint32_t released = 0;
     for (uint32_t poll = 0; poll < 4096; ++poll) {
-        if (xad_release(1,1,1,xat_record.Root,0)) { released = 1; break; }
+        if (xad_release(XAT_CPU(index),XAT_CPU(index),1,xat_record.Root,0)) { released = 1; break; }
         if (!xis_native_now(NULL,&now) || ((now - start) & xp_panic_native.Source.Mask) >= KERNEL_PM_TIMER_HZ)
             xat_abort();
         interrupt_window_private(); xat_yield();
@@ -62,7 +65,7 @@ __declspec(noreturn) void xat_task_start(void)
         floating != (double)(17 * (index + 1))) xat_abort();
     xat_record.Checksums[index] = checksum;
     xat_record.Floating[index] = (uint64_t)floating;
-    if (!x86_scheduler_context_resume_valid(&local->dispatcher,X86_AP_STACK_BASE(1),65536,
+    if (!x86_scheduler_context_resume_valid(&local->dispatcher,X86_AP_STACK_BASE(XAT_CPU(local->current)),65536,
         X86_KERNEL_IMAGE_BASE,X86_KERNEL_IMAGE_LIMIT,xat_mask)) xat_abort();
     local->event = X86_TASK_EXIT;
     x86_scheduler_context_switch(&xat_contexts[index],&local->dispatcher);

@@ -12,6 +12,14 @@ uint32_t xat_mask;
 XP_PANIC_NATIVE xp_panic_native;
 const unsigned char x86_scheduler_irq_compute_begin[64] = {0};
 const unsigned char x86_scheduler_irq_compute_end[1] = {0};
+#ifdef KERNEL_TEST_AP_CONCURRENT
+static XAT_PREEMPT second_record;
+static uint32_t task_offset;
+XAT_PREEMPT *xat_preemption_record(void) { return task_offset ? &second_record : &xat_preempt; }
+#define xat_preempt (*xat_preemption_record())
+#else
+#define task_offset 0U
+#endif
 static X86_SCHEDULER_LOCAL local;
 static KERNEL_LOCK_CONTEXT locks;
 static X86_IRQ_FRAME frame;
@@ -59,7 +67,7 @@ static void reset_private(void)
     memset(&xat_preempt,0,sizeof(xat_preempt)); memset(&local,0,sizeof(local));
     memset(&locks,0,sizeof(locks)); memset(mmio,0,sizeof(mmio));
     memset(&frame,0,sizeof(frame)); actor = valid = resume = 1; irq = 0;
-    local.generation = 4; frame.Vector = 0xd1; frame.Flags = 512;
+    local.current = task_offset; local.generation = 4; frame.Vector = 0xd1; frame.Flags = 512;
     frame.Rip = (uint64_t)(uintptr_t)x86_scheduler_irq_compute_begin;
     mmio[0x160 / 4] = 1U << 17;
     mmio[0x3e0 / 4] = 3;
@@ -81,21 +89,21 @@ static void expect_resume_failure(void)
     else check_private(1);
 }
 
-// ====== main ======
+// ====== test_cpu_private ======
 
-int main(void)
+static void test_cpu_private(void)
 {
     reset_private(); check_private(!xat_preempt_quiet());
     actor = 0; expect_interrupt_failure(); reset_private();
     valid = 0; expect_interrupt_failure(); reset_private();
-    local.current = 2; expect_interrupt_failure(); reset_private();
+    local.current = XAT_TASKS; expect_interrupt_failure(); reset_private();
     frame.Vector = 0xe1; expect_interrupt_failure(); reset_private();
     irq = 512; expect_interrupt_failure(); reset_private();
     mmio[0x160 / 4] = 0; expect_interrupt_failure(); reset_private();
-    local.current = 1; expect_interrupt_failure(); reset_private();
+    local.current = task_offset + 1; expect_interrupt_failure(); reset_private();
     frame.Rip = 0; expect_interrupt_failure(); reset_private();
     for (uint32_t tick = 0; tick < 6; ++tick) {
-        local.current = tick % 2; mmio[0x160 / 4] = 1U << 17;
+        local.current = task_offset + tick % 2; mmio[0x160 / 4] = 1U << 17;
         xat_preempt_interrupt(&frame);
         check_private(xat_preempt.Total == tick + 1 && !mmio[0x160 / 4]);
         locks.Depth = 1; expect_resume_failure(); locks.Depth = 0;
@@ -112,6 +120,17 @@ int main(void)
     }
     check_private(switches == 6 && xat_preempt.Total == 6 && xat_preempt.Late == 8);
     mmio[0x160 / 4] = 1U << 17; expect_interrupt_failure();
+}
+
+// ====== main ======
+
+int main(void)
+{
+#ifdef KERNEL_TEST_AP_CONCURRENT
+    for (task_offset = 0; task_offset < 4; task_offset += 2) { switches = 0; test_cpu_private(); }
+#else
+    test_cpu_private();
+#endif
     printf("AP_PREEMPT_PASS: %u checks; real C policy, MMIO and switch MOCK\n",checks);
     return 0;
 }

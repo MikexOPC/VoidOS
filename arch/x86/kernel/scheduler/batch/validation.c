@@ -2,14 +2,22 @@
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "arch/x86/kernel/cpu/percpu/resources/resources.h"
 
+// ====== cpu_private ======
+
+static uint32_t cpu_private(void)
+{
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    return owner ? owner->Index : UINT32_MAX;
+}
+
 // ====== xat_ap_actor ======
 
 int xat_ap_actor(void)
 {
     const X86_CPU_LOCAL *owner = x86_percpu_current_local();
-    return owner && owner->Index == 1 && owner == xp_panic_native.Contexts[1] &&
+    return owner && owner->Index >= 1 && owner->Index <= XAT_APS && owner == xp_panic_native.Contexts[owner->Index] &&
         owner->State == X86_PERCPU_ACTIVE && owner->Self == (uint64_t)(uintptr_t)owner &&
-        xad_value(1,xat_record.Root) == (1ULL << 3 | XAD_RUNNING);
+        xad_value(owner->Index,xat_record.Root) == (1ULL << 3 | XAD_RUNNING);
 }
 
 // ====== xat_ap_gate ======
@@ -19,7 +27,7 @@ int xat_ap_actor(void)
 int xat_ap_gate(const KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, const X86_TASK_CPU *cpu)
 {
     if (!xat_ap_actor() || !cpu || !xp_panic_native.Lapic || pool != xat_pool || root != xat_record.Root ||
-        !x86_scheduler_ap_cpu_valid(cpu,root,xp_panic_native.Ids[1]) ||
+        !x86_scheduler_ap_cpu_valid(cpu,root,xp_panic_native.Ids[cpu_private()]) ||
         (cpu->cr4 & ((1ULL << 7) | (1ULL << 17))) ||
         cpu->apic_base != (xp_panic_native.Lapic->Physical | 0x800ULL)) return 0;
     const X86_AP_AUTH *auth = x86_ap_owner();
@@ -35,10 +43,10 @@ int xat_ap_gate(const KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, const X86_
     x86_kernel_segments_read(&gdtr); x86_exception_read_idt(&idtr);
     uint64_t gdt_base = 0;
     for (uint32_t byte = 0; byte < 8; ++byte) gdt_base |= (uint64_t)gdtr.Bytes[byte + 2] << (byte * 8);
-    if (gdtr.Bytes[0] != 39 || gdtr.Bytes[1] || gdt_base != X86_AP_METADATA(1)) return 0;
+    if (gdtr.Bytes[0] != 39 || gdtr.Bytes[1] || gdt_base != X86_AP_METADATA(cpu_private())) return 0;
     for (uint32_t byte = 0; byte < 10; ++byte)
         if (idtr.Bytes[byte] != xis_native.Idtr.Bytes[byte]) return 0;
-    uint64_t base = X86_AP_STACK_BASE(1);
+    uint64_t base = X86_AP_STACK_BASE(cpu_private());
     for (uint32_t level = 0; level < 3; ++level) {
         volatile uint64_t *entries = x86_scheduler_code_entries(level,base);
         uint32_t at = (uint32_t)((base >> (39 - level * 9)) & 511);
@@ -59,7 +67,7 @@ int xat_dispatcher_gate(void)
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     uint64_t rsp = x86_kernel_stack_pointer();
     return xat_ap_actor() && local && local->phase == 1 &&
-        rsp >= X86_AP_STACK_FLOOR(1) && rsp < X86_AP_FRAME(1) - XIS_IDLE_FRAME_BYTES &&
+        rsp >= X86_AP_STACK_FLOOR(cpu_private()) && rsp < X86_AP_FRAME(cpu_private()) - XIS_IDLE_FRAME_BYTES &&
         x86_scheduler_native_gate();
 }
 
@@ -69,12 +77,13 @@ int xat_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base, uint64_t
 {
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     if (!xat_ap_actor() || !local || bytes != 65536 || !x86_scheduler_native_gate()) return 0;
-    if (context == &local->dispatcher && base == X86_AP_STACK_BASE(1)) {
+    if (context == &local->dispatcher && base == X86_AP_STACK_BASE(cpu_private())) {
         const X86_AP_AUTH *auth = x86_ap_owner();
         return auth && kernel_physical_is_pinned(xat_pool,&auth->Data) == 1 &&
             kernel_physical_is_pinned(xat_pool,&auth->Tables) == 1;
     }
-    for (uint32_t index = 0; index < 2; ++index) {
+    for (uint32_t index = 0; index < XAT_TASKS; ++index) {
+        if (XAT_CPU(index) != cpu_private()) continue;
         X86_TASK_STACK *owner = &xat_stacks[index];
         if (context == &xat_contexts[index] && base == x86_task_stack_base(index))
             return owner->self == (uint64_t)(uintptr_t)owner && owner->pool == xat_pool &&
@@ -91,7 +100,8 @@ int xat_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base, uint64_t
 int xat_task_valid(void)
 {
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
-    if (!local || local->phase != 2 || local->current >= 2 ||
+    if (!local || local->phase != 2 || local->current >= XAT_TASKS ||
+        XAT_CPU(local->current) != cpu_private() ||
         local->generation != xat_record.Generations[local->current]) return 0;
     uint64_t base = x86_task_stack_base(local->current), rsp = x86_kernel_stack_pointer();
     return rsp >= base + 4096 && rsp < base + 65536 &&
@@ -103,7 +113,7 @@ int xat_task_valid(void)
 int xat_irq_frame(uint32_t cpu, const X86_IRQ_FRAME *frame)
 {
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
-    if (cpu != 1 || !local || local->current >= 2 || !xat_task_valid()) return 0;
+    if (cpu < 1 || cpu > XAT_APS || cpu != cpu_private() || !local || local->current >= XAT_TASKS || !xat_task_valid()) return 0;
     uint64_t base = x86_task_stack_base(local->current);
     if (x86_irq_saved_area((uint64_t)(uintptr_t)frame,base + 4096,base + 65536) != 1 ||
         xis_task_return_valid((uint64_t)(uintptr_t)frame,frame->Rsp,frame->Cs,frame->Flags,frame->Ss) != 1 ||
@@ -112,12 +122,17 @@ int xat_irq_frame(uint32_t cpu, const X86_IRQ_FRAME *frame)
     if (frame->Vector == 0xd1) return 1;
 #endif
     if (frame->Vector != XIS_VECTOR) return frame->Vector == 0xff;
-    uint64_t count = ks_atomic_load_relaxed(&xat_record.Irqs);
+#ifdef KERNEL_TEST_AP_CONCURRENT
+    XAT_RECORD *record = xat_cpu_record();
+#else
+    XAT_RECORD *record = &xat_record;
+#endif
+    uint64_t count = ks_atomic_load_relaxed(&record->Irqs);
     if (count == UINT64_MAX) return 0;
-    xat_record.FrameRsp = frame->Rsp; xat_record.FrameIndex = local->current;
-    xat_record.FrameGeneration = local->generation;
-    xat_record.IrqFlags = frame->Flags; xat_record.IrqVector = frame->Vector;
-    ks_atomic_store_release(&xat_record.IrqMask,xat_record.IrqMask | (1ULL << local->current));
-    ks_atomic_store_release(&xat_record.Irqs,count + 1);
+    record->FrameRsp = frame->Rsp; record->FrameIndex = local->current;
+    record->FrameGeneration = local->generation;
+    record->IrqFlags = frame->Flags; record->IrqVector = frame->Vector;
+    ks_atomic_store_release(&record->IrqMask,record->IrqMask | (1ULL << local->current));
+    ks_atomic_store_release(&record->Irqs,count + 1);
     return 1;
 }

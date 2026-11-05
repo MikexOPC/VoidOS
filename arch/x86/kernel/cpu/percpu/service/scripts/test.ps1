@@ -75,11 +75,34 @@ try {
         "/Fo$out/","/Fe$out/ap-preempt.exe","/Fd$out/ap-preempt.pdb",'/link',
         '/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/ap-preempt.exe" @()
+    Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/UNDEBUG','/DKERNEL_TEST_AP_CONCURRENT=1',"/I$project",
+        "$project/arch/x86/kernel/scheduler/batch/validation.c",$admissionLocal,
+        "$project/arch/x86/kernel/scheduler/capabilities.c",
+        "$project/test/arch/x86/kernel/scheduler/batch/validation_test.c",
+        "/Fo$out/","/Fe$out/concurrent-gate.exe","/Fd$out/concurrent-gate.pdb",'/link',
+        "$out/mailbox.obj","$out/irq-frame.obj",'/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/concurrent-gate.exe" @()
+    Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/UNDEBUG','/DKERNEL_TEST_AP_PREEMPTION=1','/DKERNEL_TEST_AP_CONCURRENT=1',"/I$project",
+        "$project/arch/x86/kernel/scheduler/batch/preempt.c",
+        "$project/test/arch/x86/kernel/scheduler/batch/preempt_test.c",
+        "/Fo$out/","/Fe$out/concurrent-preempt.exe","/Fd$out/concurrent-preempt.pdb",'/link',
+        '/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/concurrent-preempt.exe" @()
+    Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/UNDEBUG','/DKERNEL_TEST_AP_PREEMPTION=1','/DKERNEL_TEST_AP_CONCURRENT=1',"/I$project",
+        "$project/arch/x86/kernel/scheduler/batch/concurrent.c",
+        "$project/test/arch/x86/kernel/scheduler/batch/concurrent_test.c",
+        "/Fo$out/","/Fe$out/concurrent-barrier.exe","/Fd$out/concurrent-barrier.pdb",'/link',
+        '/incremental:no','/DEBUG','/WX')
+    Invoke-Checked "$out/concurrent-barrier.exe" @()
     Invoke-Cppcheck $project $out @($source, $wait, $test, $native, $nativeTest,
         $admissionNative, $admissionLocal, "$project/test/arch/x86/kernel/scheduler/admission/probe.c",
         "$project/arch/x86/kernel/scheduler/batch/validation.c","$project/arch/x86/kernel/scheduler/batch/runtime.c",
-        "$project/arch/x86/kernel/scheduler/batch/work.c","$project/arch/x86/kernel/scheduler/batch/preempt.c",
-        "$project/test/arch/x86/kernel/scheduler/batch/preempt_test.c","$project/test/arch/x86/kernel/scheduler/batch/probe.c",
+        "$project/arch/x86/kernel/scheduler/batch/work.c","$project/arch/x86/kernel/scheduler/batch/concurrent.c","$project/arch/x86/kernel/scheduler/batch/preempt.c",
+        "$project/test/arch/x86/kernel/scheduler/batch/preempt_test.c","$project/test/arch/x86/kernel/scheduler/batch/concurrent_test.c",
+        "$project/test/arch/x86/kernel/scheduler/batch/probe.c",
         "$project/test/arch/x86/kernel/scheduler/batch/validation_test.c",
         "$project/test/arch/x86/kernel/scheduler/admission/ffi_test.c",
         "$project/arch/x86/kernel/cpu/percpu/service/native/transport.c",

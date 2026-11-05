@@ -679,11 +679,52 @@ prima del ritorno. Non richiede SELECT=EMPTY globale e non pubblica
 QUIESCE. Su errore dopo l'ingresso tenta FAIL, poi restituisce fallimento
 senza cleanup implicito. I chiamanti nativi devono trattarlo come terminale.
 
-Il collegamento AP1/AP2 e la prova QEMU del lotto concorrente restano da
-implementare. Le fixture host usano il vero motore C e il vero Owner Rust,
+Questo primo blocco precedeva il collegamento AP1/AP2, descritto sotto.
+Le fixture host usano il vero motore C e il vero Owner Rust,
 ma simulano autorità CPU, stack e interrupt; non certificano il percorso
 Assembly o una quiescenza hardware. Le regressioni QEMU esistenti misurano
 soltanto l'assenza di regressioni dei profili già collegati.
+
+### Collegamento nativo AP1/AP2
+
+Il profilo TestApService ap-concurrent prepara quattro stack sul BSP,
+assegna i task 0/1 ad AP1 e 2/3 ad AP2 e apre un solo lotto Rust.
+Pubblica entrambi i via prima delle notifiche PING. Ogni AP entra nel
+proprio dispatcher, continuando a ricevere PING e flush sui task.
+
+Prima di armare il timer, il primo task di ciascun AP pubblica la propria
+presenza e attende quella dell'altro con acquire/release, scadenza PM e
+limite di controlli. Nessun lock viene trattenuto. Entrambe le sessioni
+devono quindi essere entrate nel workload prima che una possa terminare;
+non si afferma esecuzione fisica simultanea delle istruzioni sotto TCG.
+La barriera iniziale lavora con IF=0, prima del timer e delle richieste
+di flush durante il lavoro; non è un servizio di attesa per i driver.
+
+Ogni CPU possiede record IRQ, stato del timer e statistiche distinti.
+Ogni task possiede stack, contesto e contatori di completamento propri.
+I descrittori condivisi sono immutabili durante il lotto; il BSP legge
+i risultati ordinari soltanto dopo la quiescenza pubblicata dall'AP.
+Le letture di progresso durante il lavoro usano il backend atomico.
+
+Il gate verifica identità CPU, GDT e stack dell'AP corrente; una CPU non
+può autorizzare lo stack task dell'altra. Rust conserva la stessa
+affinità e vieta la selezione doppia. Sei sospensioni per AP, tre per
+task, riusano l'epilogo Assembly già collaudato: dodici sospensioni in
+totale. Non si introducono vettori o accessi LAPIC diversi dai precedenti.
+
+Al ritorno il dispatcher verifica current assente, timer fermo, riprese
+concluse e ISR/IRR drenati, poi pubblica QUIESCE nel lotto Rust e infine
+QUIESCED nell'ammissione AP. Il BSP richiede entrambe le conferme per
+entrambi gli AP prima di revocare i quattro stack, attendere gli
+shootdown, raccogliere e chiudere il lotto. Il budget atteso è di 64
+pagine task, tutte restituite. Timeout o errori mantengono il fail-stop.
+
+Il diagnostico richiede almeno due AP; il collaudo corrente usa quattro
+CPU totali. Il record task è di 384 byte nel solo nuovo profilo, con
+padding esplicito; i vecchi profili mantengono 256 byte. Record separati
+per AP e snapshot finale del lotto consentono al runner di verificare
+identità, stack dei frame, conteggi e raccolta. La quiescenza nativa non
+è dedotta dalla sola coda vuota o dal solo comando Rust.
 
 ## Lavoro restante dopo i prerequisiti C4
 
@@ -695,15 +736,14 @@ già pronto viene rilasciato, entrambe le prenotazioni vengono annullate e
 il budget viene verificato prima del panic coordinato. Non simula
 l'esaurimento reale della RAM fisica.
 
-La preemption AP1 è verificata nel profilo diagnostico: tre sospensioni
-e riprese per task, timer fermo prima della quiescenza e raccolta BSP.
+La preemption AP1 e il lotto concorrente AP1/AP2 sono verificati nei
+profili diagnostici: tre sospensioni e riprese per task, timer fermo
+prima della quiescenza e raccolta BSP.
 Evidenze nella validazione K4-C. Il boot ordinario resta sul BSP.
 
-1. Dispatcher concorrenti e conclusione coordinata del lavoro globale.
-2. Stress e regressioni di chiusura C4.
-
-Sono due obiettivi di implementazione e validazione: alcuni
-possono unirsi, i fault possono richiedere un blocco di diagnosi dedicato.
+Restano stress e regressioni di chiusura C4, ampliando il lavoro nativo
+oltre il primo lotto su due AP. Evidenze nella validazione. I fault
+possono richiedere un blocco di diagnosi dedicato.
 Poi restano C5 (driver su più CPU) e C6 (chiusura K4). K5 userspace e K6
 caricamento dei programmi non sono inclusi in questa stima.
 
