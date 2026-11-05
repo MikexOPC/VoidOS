@@ -121,6 +121,11 @@ try {
         (Join-Path $project 'test/arch/x86/kernel/scheduler/integration/authority_test.c'),
         ("/Fo$out/"),("/Fd$out/authority.pdb"),("/Fe$out/authority.exe"),'/link','/incremental:no')
     Invoke-Test 'authority'
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
+        '/fsanitize=address',('/I' + $project),(Join-Path $module 'integration/local.c'),
+        (Join-Path $project 'test/arch/x86/kernel/scheduler/integration/local_test.c'),
+        ("/Fo$out/"),("/Fd$out/local.pdb"),("/Fe$out/local.exe"),'/link','/incremental:no')
+    Invoke-Test 'local'
     if (!(Test-Path $cppcheck)) { throw 'Cppcheck unavailable' }
     $inputs = @('context.c','capabilities.c','stacks.c','../../../../test/arch/x86/kernel/scheduler/stacks/resources_test.c',
         'mapping/native.c','mapping/access.c','integration/kernel.c','integration/workload.c','irq/bridge.c','runtime/memory.c','runtime/payload.c',
@@ -128,6 +133,7 @@ try {
         'idle/idle.c','integration/report.c','persistent/workload.c','../../../../test/arch/x86/kernel/scheduler/fault/fault.c',
         'dispatcher/engine.c','diagnostic/profiles.c','../../../../test/arch/x86/kernel/scheduler/dispatcher/engine_test.c',
         'integration/lock.c','../../../../test/arch/x86/kernel/scheduler/integration/authority_test.c',
+        'integration/local.c','../../../../test/arch/x86/kernel/scheduler/integration/local_test.c',
         '../../../../test/arch/x86/kernel/scheduler/idle/idle_test.c','../../../../test/arch/x86/kernel/scheduler/idle/budget_test.c') |
         ForEach-Object { Join-Path $module $_ }
     Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `

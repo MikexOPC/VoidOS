@@ -77,7 +77,7 @@ if ($TestVgpuInitialization) {
 foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/scheduler/capabilities.c',
     'arch/x86/kernel/scheduler/stacks.c','arch/x86/kernel/scheduler/mapping/native.c',
     'arch/x86/kernel/scheduler/mapping/access.c',
-    'arch/x86/kernel/scheduler/integration/kernel.c','arch/x86/kernel/scheduler/integration/lock.c','arch/x86/kernel/scheduler/integration/workload.c',
+    'arch/x86/kernel/scheduler/integration/kernel.c','arch/x86/kernel/scheduler/integration/local.c','arch/x86/kernel/scheduler/integration/lock.c','arch/x86/kernel/scheduler/integration/workload.c',
     'arch/x86/kernel/scheduler/integration/report.c','arch/x86/kernel/scheduler/integration/validation.c','arch/x86/kernel/scheduler/idle/idle.c',
     'arch/x86/kernel/scheduler/persistent/workload.c',
     'arch/x86/kernel/scheduler/dispatcher/engine.c','arch/x86/kernel/scheduler/diagnostic/profiles.c',

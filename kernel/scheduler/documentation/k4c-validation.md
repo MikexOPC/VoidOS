@@ -280,3 +280,44 @@ allocazione dinamica è introdotta. ASan non misura leak della RAM fisica.
 Il kernel mantiene un solo dispatcher BSP e tre AP nel servizio esistente.
 Nessuna prova di switch task sugli AP o di lotti concorrenti è dichiarata.
 Coverage linee/branch non misurata. Nessun nuovo accesso hardware.
+
+## K4-C4 — Contesti nativi separati
+
+5 novembre 2026. Terzo sottoblocco. Contesto del dispatcher, fase,
+task/generazione, richiesta e statistiche sono ora per CPU. Slot di
+704 byte allineati a 64, 45.056 byte statici complessivi. Owner e self
+devono corrispondere all'identità verificata. Preparazione ripetuta senza
+reset dei dati; nessun nuovo allocatore o lease. Dopo gli switch espliciti
+il codice dei task riacquisisce il contesto locale.
+
+- Nuovo test C con ASan: 2.486 controlli, 64 slot distinti, limiti e
+  identità incoerenti rifiutati, rebind vietato, contesti preservati.
+  Quattro thread aggiornano i propri slot per 100.000 iterazioni ciascuno.
+  Accessor CPU simulato; nessuna misura di esecuzione AP in questo test.
+- Suite x86-scheduler passata, con prove Assembly di preservazione,
+  stack, IRQ, gate CPU e watchdog. MSVC /W4 /WX e cppcheck senza
+  diagnostiche error/warning/performance/portability. Evidenze in
+  kernel/build/scheduler-context-eb2df731dc4b44b9a0ef6281dd65fe2c.
+- Suite scheduler passata: Rust debug/release, Clippy, FFI con ASan,
+  stress a quattro thread, dispatcher e identità CPU. Evidenze in
+  kernel/build/scheduler-host-cb65441ff0534d18a8f9fe72f3f6557f.
+- Layout centralizzato e diff verificati. integration contiene otto
+  sorgenti/header; kernel.c è di 476 righe. Formato Assembly invariato.
+
+QEMU/OVMF TCG a quattro vCPU: immagini ricompilate e hash ESP verificati,
+livello complesso con dieci boot consecutivi per profilo, nessun panic
+inatteso. Accounting e risorse verificati dai runner.
+
+- Ordinario 10/10:
+  kernel/build/ap-runtime-db76108ff64647d6865182fec7d17e07.
+- Periodico BSP 10/10, con marker preemption e stop periodico:
+  kernel/build/ap-runtime-b24f02a81b3d4c2fb8d554eecd8ed35d.
+- Build, immagini e riepilogo:
+  kernel/build/qemu-run-2ad0584d9e0b47b0acf99088e10e1a16.
+
+Limiti: scheduler ancora sul solo BSP; tre AP nel servizio esistente.
+Gli stack dispatcher AP e il loro ingresso non sono ancora ammessi.
+Migrazione preemptiva, orchestrazione concorrente e driver SMP restano
+da collegare. ASan host non certifica leak della RAM fisica; nessuna
+coverage linee/branch misurata. Rust conserva le decisioni sui task;
+C possiede gli oggetti ABI e Assembly effettua gli switch già verificati.

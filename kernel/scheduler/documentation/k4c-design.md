@@ -275,6 +275,41 @@ AP vietato e rilascio della guardia dopo fallimento. CPU, stack e
 risorse del nuovo test restano mock; il kernel continua a usare solo
 l'adattatore BSP. Regressioni host e dieci boot ordinari e periodici.
 
+## K4-C4 — Contesto nativo per CPU
+
+Terzo sottoblocco del 5 novembre 2026. Il contesto Assembly del dispatcher,
+fase, task corrente, generazione, richiesta pendente e statistiche passano
+in uno slot per CPU. Gli slot sono statici, allineati a 64 byte e non
+condividono linee di cache. Non richiedono nuove lease né allocazioni heap.
+Gli otto contesti dei task e le risposte degli eventi restano indicizzati
+per task; coda, proprietà logica e transizioni restano nel core Rust.
+
+L'accessor usa l'identità per CPU già verificata. Rifiuta indice fuori
+limite, CPU non attiva, self incoerente e owner diverso da quello della
+prima preparazione. La preparazione riguarda soltanto il proprio slot,
+prima del suo uso e con IF=0; una chiamata ripetuta conserva il contesto.
+Non inizializzare da IRQ/NMI e non pubblicare puntatori agli altri core.
+Gli aggiornamenti del singolo slot restano del suo core; non sostituiscono
+il lock Rust o il futuro protocollo di ammissione.
+
+Nel percorso dei task il puntatore locale viene riacquisito dopo yield,
+richieste di eventi, sospensione IRQ e ritorno dall'entry del task.
+Questo evita di trattenere il riferimento precedente attraverso uno
+switch esplicito. La migrazione preemptiva fra CPU richiederà anche la
+revisione delle sezioni native che usano dati per CPU con IF=1.
+
+Il bootstrap dello scheduler conserva il requisito BSP. Budget, profilo
+di test e binding del mapper restano nell'orchestrazione BSP; il gate
+nativo continua a rifiutare gli AP. Nessun cambio al formato FXSAVE o
+all'Assembly. C possiede questi oggetti ABI; Rust mantiene gli stati dei
+task. Nessun wrapper C++ aggiunto in assenza di una responsabilità utile.
+
+Accettazione: slot separati e allineati su 64 identità host, rifiuto di
+rebind, dati conservati alla ripreparazione e quattro thread che aggiornano
+esclusivamente il proprio contesto. Regressioni host e dieci boot per
+profilo ordinario e periodico BSP, con risorse e marker verificati.
+Queste prove non costituiscono ammissione o preemption dei task sugli AP.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):
