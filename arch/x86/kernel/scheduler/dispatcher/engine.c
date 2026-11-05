@@ -1,4 +1,5 @@
 #include "engine.h"
+#include "kernel/scheduler/lot.h"
 
 static unsigned char entered[64];
 
@@ -73,7 +74,8 @@ static int limit_valid_private(uint32_t limit, uint32_t minimum, uint32_t maximu
 
 // ====== dispatch_private ======
 
-static int dispatch_private(uint32_t cpu, uint32_t retained, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
+static int dispatch_private(uint32_t cpu, uint32_t retained, uint64_t group, uint64_t token,
+    const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
 {
     if (cpu >= 64 || kernel_scheduler_context_valid_on(cpu) != 1 || entered[cpu] ||
         !config || !stats || !config->run || !config->collect || !config->reply || !config->release_actor ||
@@ -83,6 +85,8 @@ static int dispatch_private(uint32_t cpu, uint32_t retained, const X86_DISPATCH_
         (cpu && config->drain_irq) || (!config->idle && config->idle_limit) ||
         stats->steps || stats->completed || stats->waiting_count || stats->changed_count ||
         stats->signal_count || stats->stop_waits || stats->idle_calls || stats->failure) return 0;
+    if (group && (!retained || config->task_count != 2 ||
+        kernel_scheduler_lot_on(cpu,KERNEL_LOT_ENTER,group,token,0).status)) return 0;
     entered[cpu] = 1;
     while (stats->completed < config->task_count) {
         KERNEL_SCHEDULER_REPLY task;
@@ -112,12 +116,15 @@ static int dispatch_private(uint32_t cpu, uint32_t retained, const X86_DISPATCH_
         if (config->drain_irq && kernel_scheduler_irq_drain().reply.status != KERNEL_SCHEDULER_OK) goto failure;
     }
     stats->failure = 7;
-    if (kernel_scheduler_apply_on(cpu,KERNEL_SCHEDULER_SELECT,KERNEL_SCHEDULER_NONE,0).status != KERNEL_SCHEDULER_EMPTY)
-        goto failure;
+    if (group) {
+        if (kernel_scheduler_lot_on(cpu,KERNEL_LOT_COMPLETE,group,token,0).status) goto failure;
+    } else if (kernel_scheduler_apply_on(cpu,KERNEL_SCHEDULER_SELECT,KERNEL_SCHEDULER_NONE,0).status !=
+        KERNEL_SCHEDULER_EMPTY) goto failure;
     stats->failure = 0;
     entered[cpu] = 0;
     return 1;
 failure:
+    if (group) (void)kernel_scheduler_lot_on(cpu,KERNEL_LOT_FAIL,group,token,0);
     entered[cpu] = 0;
     return 0;
 }
@@ -126,14 +133,23 @@ failure:
 
 int x86_scheduler_dispatch_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
 {
-    return dispatch_private(cpu,0,config,stats);
+    return dispatch_private(cpu,0,0,0,config,stats);
 }
 
 // ====== x86_scheduler_dispatch_retained_on ======
 
 int x86_scheduler_dispatch_retained_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
 {
-    return dispatch_private(cpu,1,config,stats);
+    return dispatch_private(cpu,1,0,0,config,stats);
+}
+
+// ====== x86_scheduler_dispatch_lot_on ======
+
+int x86_scheduler_dispatch_lot_on(uint32_t cpu, uint64_t group, uint64_t token,
+    const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
+{
+    if (!group || !token) return 0;
+    return dispatch_private(cpu,1,group,token,config,stats);
 }
 
 // ====== x86_scheduler_dispatch ======

@@ -478,6 +478,72 @@ finito e cooperativo: non dimostra preemption AP, migrazione o dispatcher
 concorrenti. Restano questi ultimi obiettivi e lo stress di chiusura C4;
 poi C5 driver SMP e C6 chiusura K4.
 
+## K4-C4 — Protocollo del lotto concorrente e motore retained
+
+5 novembre 2026. Primo blocco del contratto AP1/AP2 approvato:
+implementati protocollo Rust, ABI C e percorso del motore C. Il
+collegamento nativo di entrambi gli AP resta da fare; questo blocco non
+dimostra ancora dispatcher concorrenti nel guest.
+
+Il lotto vive dentro Owner, sotto il lock globale esistente. Registra
+identità, generazioni, CPU partecipanti, ingressi, completamenti e
+quiescenze. Solo il BSP raccoglie dopo tutte le quiescenze; conferme
+parziali, token vecchi e doppie transizioni non autorizzano rilascio.
+FAIL è terminale e conserva anche un current rimasto dopo un errore.
+QUIESCE deve essere preceduto da controlli hardware nel futuro backend;
+Rust controlla il protocollo, non misura autonomamente timer o stack.
+
+Il motore concorrente conclude il proprio lotto locale con COMPLETE,
+senza pretendere SELECT=EMPTY globale. Non pubblica QUIESCE e non libera
+gli stack. Le API esclusive precedenti conservano il controllo EMPTY.
+
+### Evidenze host definitive
+
+kernel/build/scheduler-host-956a9e6d8e0c4127a7f0c480ae392ebd:
+
+- 44 test dello stato Rust in debug e 44 in release, più suite binding
+  e payload; warning come errori e Clippy passati.
+- Dieci nuovi casi Rust: completamento parziale, duplicati, identità,
+  rollback delle transizioni respinte, fallimento con current vivo,
+  fallimento dopo raccolta parziale, corruzione, CPU 63 e token massimo.
+- Fixture C/ASan con vero motore e vero core Rust: 100 lotti, 400 task,
+  3.200 transizioni tick/preempt e 9.733 controlli. Due thread con
+  identità CPU distinte; lock host SRW al posto del backend kernel.
+  Il secondo thread resta nel primo callback finché il primo dispatcher
+  non ha concluso: la conclusione con un altro current vivo è quindi
+  obbligatoria, non affidata al caso. Non sono interrupt hardware.
+- Negativo del motore: callback di esecuzione fallito, lotto FAILED,
+  current conservato e raccolta negata. Nessun cleanup simulato spacciato
+  per rilascio fisico.
+- Regressioni C/ASan e cinque stress da 20.000 task su quattro thread;
+  fixture preemption e CPU; cppcheck senza error, warning, performance
+  o portability bloccanti. Style/information restano nel report XML.
+
+Prime esecuzioni: Clippy ha respinto un if annidato nel controllo di
+raccolta; corretto prima della suite definitiva, senza sopprimere il lint.
+
+Owner passa da 2.312 a 2.600 byte (+288) sul target host x64 corrente;
+misura e sorgenti temporanei in kernel/build/lot-core/sizes.log. Nessuna
+nuova allocazione dinamica nel protocollo. ASan riguarda i fixture host;
+Valgrind e copertura linee/branch non misurati. Il costo della validazione
+del lotto attivo non è un benchmark del futuro percorso AP concorrente.
+
+### Regressioni QEMU
+
+Campagna passata: kernel/build/qemu-run-d1d98950fe424e51a6e9632041cb9ac7.
+Livello complesso: 10/10 ap-task-preempt, 10/10 bsp-periodic e 10/10
+ap-runtime; 30 boot positivi, nessun fault inatteso. QEMU TCG/OVMF,
+quattro CPU inizializzate, immagini ricompilate e ESP/hash verificati
+dai runner. Evidenze rispettivamente in kernel/build/ipi-service-0c3e857b4a2441ef89fc656afdcdad0f,
+kernel/build/ap-runtime-63c91c8ef27841bca0b841f77c4cd9ac e
+kernel/build/ap-runtime-b1ac680bd8864deabd23d94c5d1fb4af.
+
+Il nuovo protocollo non è chiamato dai profili esistenti: i boot verdi
+dimostrano regressioni e accounting dei percorsi già collegati. Non
+provano il completamento o il cleanup hardware del nuovo lotto AP1/AP2.
+Layout centralizzato e diff finale verificati. Nessuna nuova prova di
+hardware fisico, migrazione o driver SMP. C4 resta aperta.
+
 ## K4-C4 — Preemption periodica su AP1
 
 5 novembre 2026. Implementata la scelta A: AP1 termina autonomamente

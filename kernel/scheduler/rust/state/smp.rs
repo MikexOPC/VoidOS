@@ -49,6 +49,7 @@ impl Owner {
 
     pub fn configure(&mut self, cpus: u32, slice: u32) -> Result<(), Error> {
         self.transaction(|next| {
+            if next.lot.is_some() { return Err(Error::InvalidState); }
             if cpus == 0 || cpus as usize > CPUS || slice == 0 || slice > SLICE_MAX {
                 return Err(Error::InvalidCpu);
             }

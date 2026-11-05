@@ -46,11 +46,13 @@ typedef struct {
 // ====== dispatcher_engine_contract ======
 
 // IF=0 API, verified calling CPU; immutable config and private zeroed stats.
-// Exclusive batch: exactly task_count published tasks, no other dispatcher batch.
+// Exclusive APIs require one batch; lot API uses Rust completion instead of global EMPTY.
 // Callbacks validate ownership/ABI; no reentry on the same CPU, no IRQ drain on AP.
 // Failure preserves resources/state; caller decides terminal handling, no retry
 // or implicit cleanup. idle must be supervised, finish with IF=0 and no borrow.
 int x86_scheduler_dispatch_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
 int x86_scheduler_dispatch_retained_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
+int x86_scheduler_dispatch_lot_on(uint32_t cpu, uint64_t group, uint64_t token,
+    const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
 int x86_scheduler_dispatch(const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
 #endif

@@ -99,6 +99,13 @@ try {
         '/link','/incremental:no',"$out/scheduler-smp.lib")
     foreach ($run in 1..5) { Invoke-Checked "$out/smp-test.exe" @() }
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2','/DKERNEL_TEST_AP_PREEMPTION=1',('/I' + $project),
+        (Join-Path $project 'test/kernel/scheduler/ffi/lot_test.c'),
+        (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
+        ("/Fo$out/"),("/Fd$out/lot-test.pdb"),("/Fe$out/lot-test.exe"),
+        '/link','/incremental:no',"$out/scheduler-smp.lib")
+    Invoke-Checked "$out/lot-test.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
         '/MD','/O2',('/I' + $project),(Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/cpu_test.c'),
         ("/Fo$out/"),("/Fd$out/engine-cpu.pdb"),("/Fe$out/engine-cpu.exe"),
@@ -128,6 +135,7 @@ try {
         '--std=c11','--xml','--xml-version=2','-DSCHEDULER_HOST_UNBOUND',('-I' + $project),
         (Join-Path $module '../../test/kernel/scheduler/ffi/gateway_test.c'),(Join-Path $module '../../test/kernel/scheduler/ffi/binding_test.c'),
         (Join-Path $module '../../test/kernel/scheduler/ffi/payload_test.c'),(Join-Path $module '../../test/kernel/scheduler/ffi/smp_test.c'),
+        (Join-Path $project 'test/kernel/scheduler/ffi/lot_test.c'),
         (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/preempt_cpu_test.c'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/cpu_test.c'))
@@ -139,6 +147,8 @@ try {
     Write-Output 'Cppcheck: zero error/warning/performance/portability; inspect style/information in cppcheck.xml'
     $sources = @(Get-ChildItem $module -Recurse -File | Where-Object { $_.Extension -in @('.rs','.c','.h','.ps1','.toml') })
     $sources += @(Get-Item (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
+        (Join-Path $project 'test/kernel/scheduler/state/lot_test.rs'),
+        (Join-Path $project 'test/kernel/scheduler/ffi/lot_test.c'),
         (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.h'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/preempt_cpu_test.c'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/cpu_test.c'),
