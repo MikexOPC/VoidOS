@@ -3,6 +3,7 @@
 #include "../service.h"
 #include "../../panic/native/runtime.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
+#include "arch/x86/kernel/interrupts/apic/lvt.h"
 
 #if KERNEL_TEST_AP_SERVICE >= 1 && KERNEL_TEST_AP_SERVICE <= 3
 #define XIS_REMAP_TEST 1
@@ -33,6 +34,7 @@ uint32_t x86_timer_diagnostic_reload(void);
 #endif
 
 #define XIS_VECTOR 0xe1U
+#define XIS_TIMER_VECTOR 0xd1U
 // Stack bytes reserved by xis_service_loop (idle.asm: sub rsp, 576) below the private frame.
 #define XIS_IDLE_FRAME_BYTES 576ULL
 uint32_t xis_idle_return_valid(uint64_t frame, uint64_t top, uint64_t rsp, uint64_t cs,
@@ -59,6 +61,7 @@ int xis_native_prepare(void);
 uint32_t xis_native_enter(void *frame);
 int xis_native_flush_context(void);
 void xis_native_dispatch(const X86_IRQ_FRAME *frame);
+void xis_irq_after(const X86_IRQ_FRAME *frame);
 void xis_native_verified(const unsigned char *fx);
 int xis_native_shootdown(void);
 uint64_t xis_native_shootdowns(void);

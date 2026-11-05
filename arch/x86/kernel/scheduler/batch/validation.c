@@ -119,7 +119,7 @@ int xat_irq_frame(uint32_t cpu, const X86_IRQ_FRAME *frame)
         xis_task_return_valid((uint64_t)(uintptr_t)frame,frame->Rsp,frame->Cs,frame->Flags,frame->Ss) != 1 ||
         !x86_scheduler_code_valid(frame->Rip)) return 0;
 #ifdef KERNEL_TEST_AP_PREEMPTION
-    if (frame->Vector == 0xd1) return 1;
+    if (frame->Vector == XIS_TIMER_VECTOR) return 1;
 #endif
     if (frame->Vector != XIS_VECTOR) return frame->Vector == 0xff;
 #ifdef KERNEL_TEST_AP_CONCURRENT

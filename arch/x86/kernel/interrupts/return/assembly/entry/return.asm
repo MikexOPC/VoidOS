@@ -1,8 +1,6 @@
 option casemap:none
 EXTERN x86_irq_dispatch:PROC
-IFDEF KERNEL_TEST_SCHEDULER_PREEMPTION
-EXTERN x86_scheduler_irq_after:PROC
-ENDIF
+EXTERN x86_irq_after:PROC
 .code
 
 ; ====== vettore esplicito senza error code CPU ===== ;
@@ -51,10 +49,8 @@ irq_common LABEL BYTE
     pxor xmm15, xmm15
 irq_call:
     call x86_irq_dispatch
-IFDEF KERNEL_TEST_SCHEDULER_PREEMPTION
     lea rcx, [r12+120]
-    call x86_scheduler_irq_after
-ENDIF
+    call x86_irq_after
     fxrstor64 [rsp+32]
     mov rsp, r12
     pop r15

@@ -9,10 +9,7 @@ bits 64
 default rel
 section .text
 global xis_irq_begin, xis_irq_end
-extern xis_native_dispatch
-%ifdef KERNEL_TEST_AP_PREEMPTION
-extern xat_preempt_after
-%endif
+extern xis_native_dispatch, xis_irq_after
 
 ; ====== vector_entries ======
 
@@ -60,12 +57,10 @@ xis_common:
     [warning -reloc-rel-dword]
     call xis_native_dispatch
     [warning +reloc-rel-dword]
-%ifdef KERNEL_TEST_AP_PREEMPTION
     lea rcx, [r12+120]
     [warning -reloc-rel-dword]
-    call xat_preempt_after
+    call xis_irq_after
     [warning +reloc-rel-dword]
-%endif
     fxrstor64 [rsp+32]
     mov rsp, r12
     pop r15

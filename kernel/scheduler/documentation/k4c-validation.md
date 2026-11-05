@@ -831,3 +831,21 @@ viene iniettato. ASan riguarda i programmi host, non i leak fisici.
 Accounting e pin sono osservati nel guest; Valgrind non eseguito,
 coverage N/D e hardware reale non provato. I checkpoint precedenti
 restano evidenze delle proprie immagini, non dello stato corrente.
+
+## K4-C4 — Review: hook di uscita IRQ e costanti
+
+Dopo la review, prima della chiusura di C4.
+
+- **Hook unico all'uscita dell'IRQ.** `return.asm` (BSP) e
+  `interrupt.asm` (AP) chiamano sempre `x86_irq_after` e
+  `xis_irq_after`, dopo il dispatch e prima di FXRSTOR/IRETQ. La scelta
+  del comportamento diagnostico è in un solo punto C; senza profili di
+  preemption l'hook non fa nulla. È il punto di aggancio della
+  preemption ordinaria di C6.
+- **Comando PREEMPT del motore sempre disponibile.** Prima era compilato
+  solo nei profili diagnostici; resta raggiungibile solo dagli hook di
+  preemption.
+- **Costanti con nome.** `interrupts/apic/lvt.h` definisce maschera LVT,
+  modalità periodica, placeholder mascherato e vettore del timer BSP;
+  `XIS_TIMER_VECTOR` è l'unica definizione del vettore del timer AP.
+  Sostituiti i valori scritti a mano nei file di C2–C4.

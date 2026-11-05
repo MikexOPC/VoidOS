@@ -20,7 +20,6 @@ static int dispatch_command_private(uint32_t cpu, uint32_t retained, const X86_D
 {
     KERNEL_SCHEDULER_REPLY reply;
     KERNEL_EVENT_REPLY result;
-#if defined(KERNEL_TEST_SCHEDULER_PREEMPTION) || defined(KERNEL_TEST_AP_PREEMPTION)
     if (command->reason == X86_TASK_PREEMPT) {
         if (command->target || command->token) return 0;
         reply = kernel_scheduler_tick_on(cpu);
@@ -29,7 +28,6 @@ static int dispatch_command_private(uint32_t cpu, uint32_t retained, const X86_D
         return reply.status == KERNEL_SCHEDULER_OK && reply.state == KERNEL_TASK_READY &&
             reply.index == task->index && reply.generation == task->generation;
     }
-#endif
     if (command->reason < X86_TASK_YIELD || command->reason > X86_TASK_STOP_QUERY) return 0;
     if (command->reason >= X86_TASK_STOP) {
         if (!dispatch_apply_private(cpu,KERNEL_SCHEDULER_YIELD,task,&reply)) return 0;

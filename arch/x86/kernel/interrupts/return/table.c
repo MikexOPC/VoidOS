@@ -231,6 +231,17 @@ void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
     }
 }
 
+// ====== x86_irq_after ======
+
+void x86_irq_after(const X86_IRQ_FRAME *frame)
+{
+#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
+    x86_scheduler_irq_after(frame);
+#else
+    (void)frame;
+#endif
+}
+
 // ====== registro persistente accessibile dopo installazione sul BSP con IF zero ===== //
 
 X86_IRQ_REGISTRY *x86_irq_registry(void)

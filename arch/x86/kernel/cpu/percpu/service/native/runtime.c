@@ -70,8 +70,8 @@ uint32_t xis_native_enter(void *private_frame) {
     for (uint32_t lvt = 0; lvt <= maximum; ++lvt) {
         uint32_t offset = x86_irq_lvt(maximum, lvt);
         if (!offset) xis_native_abort(0x4b344950494c5601ULL);
-        xis_mmio_write(offset, 0x10040);
-        if (xis_mmio_read(offset) != 0x10040) xis_native_abort(0x4b344950494c5602ULL);
+        xis_mmio_write(offset, X86_LVT_MASKED_IDLE);
+        if (xis_mmio_read(offset) != X86_LVT_MASKED_IDLE) xis_native_abort(0x4b344950494c5602ULL);
     }
     x86_exception_load_idt(&xis_native.Idtr);
     X86_KERNEL_IDTR actual;
@@ -97,9 +97,6 @@ int xis_native_flush_context(void) {
 }
 
 #if KERNEL_TEST_AP_SERVICE == 7
-#define XIS_TIMER_VECTOR 0xd1U
-#define XIS_TIMER_PERIODIC (1U << 17)
-#define XIS_TIMER_MASKED (1U << 16)
 uint64_t xis_timer_reload;
 uint64_t xis_timer_ticks[64];
 static uint8_t timer_state[64];
@@ -114,11 +111,11 @@ static int timer_command(uint32_t index, uint32_t operation)
     volatile uint32_t *initial = (volatile uint32_t *)(X86_LAPIC_VIRTUAL + 0x380);
     volatile const uint32_t *current = (volatile const uint32_t *)(X86_LAPIC_VIRTUAL + 0x390);
     volatile uint32_t *divide = (volatile uint32_t *)(X86_LAPIC_VIRTUAL + 0x3e0);
-    uint32_t periodic = XIS_TIMER_PERIODIC | XIS_TIMER_VECTOR;
+    uint32_t periodic = X86_LVT_TIMER_PERIODIC | XIS_TIMER_VECTOR;
 
     if (operation == XIS_ARM_TIMER && !timer_state[index]) {
         uint64_t reload = ks_atomic_load_acquire(&xis_timer_reload);
-        if (!reload || reload > UINT32_MAX || *initial || *current || *lvt != 0x10040) return 0;
+        if (!reload || reload > UINT32_MAX || *initial || *current || *lvt != X86_LVT_MASKED_IDLE) return 0;
         *divide = 3;
         *lvt = periodic;
         *initial = (uint32_t)reload;
@@ -127,9 +124,9 @@ static int timer_command(uint32_t index, uint32_t operation)
         return 1;
     }
     if (operation == XIS_STOP_TIMER && timer_state[index] == 1) {
-        *lvt = periodic | XIS_TIMER_MASKED;
+        *lvt = periodic | X86_LVT_MASK;
         *initial = 0;
-        if (*lvt != (periodic | XIS_TIMER_MASKED) || *initial || *current) return 0;
+        if (*lvt != (periodic | X86_LVT_MASK) || *initial || *current) return 0;
         timer_state[index] = 2;
         return 1;
     }
@@ -153,6 +150,16 @@ static void timer_interrupt(uint32_t index)
     ks_atomic_store_release(&xis_timer_ticks[index], count + 1);
 }
 #endif
+
+// ====== xis_irq_after ======
+
+void xis_irq_after(const X86_IRQ_FRAME *frame) {
+#ifdef KERNEL_TEST_AP_PREEMPTION
+    xat_preempt_after(frame);
+#else
+    (void)frame;
+#endif
+}
 
 // ====== xis_native_dispatch ======
 
@@ -188,7 +195,7 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     }
 #endif
 #ifdef KERNEL_TEST_AP_PREEMPTION
-    if (frame->Vector == 0xd1) {
+    if (frame->Vector == XIS_TIMER_VECTOR) {
         xat_preempt_interrupt(frame);
         return;
     }

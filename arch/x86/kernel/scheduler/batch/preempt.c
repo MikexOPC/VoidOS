@@ -4,6 +4,8 @@
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 
 extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_compute_end[];
+#define XAT_LVT_RUNNING (X86_LVT_TIMER_PERIODIC | XIS_TIMER_VECTOR)
+#define XAT_LVT_STOPPED (X86_LVT_MASK | XAT_LVT_RUNNING)
 XAT_PREEMPT xat_preempt;
 #ifdef KERNEL_TEST_AP_CONCURRENT
 #define xat_preempt (*xat_preemption_record())
@@ -17,12 +19,12 @@ _Static_assert(sizeof(XAT_PREEMPT) == 128,"AP preemption evidence ABI");
 // LVT mask16 and periodic17; divide encoding3 is /16. §11.8.5 EOI=b0h.
 int xat_preempt_quiet(void)
 {
-    const uint32_t bit = 1U << (0xd1 % 32), offset = (0xd1 / 32) * 16;
+    const uint32_t bit = 1U << (XIS_TIMER_VECTOR % 32), offset = (XIS_TIMER_VECTOR / 32) * 16;
     return xat_preempt.Stopped == 1 && xat_preempt.Total == 2 * XAT_PREEMPT_TARGET &&
         xat_preempt.Ticks[0] == XAT_PREEMPT_TARGET && xat_preempt.Ticks[1] == XAT_PREEMPT_TARGET &&
         xat_preempt.Resumed[0] == XAT_PREEMPT_TARGET && xat_preempt.Resumed[1] == XAT_PREEMPT_TARGET &&
         !xis_mmio_read(0x380) && !xis_mmio_read(0x390) &&
-        xis_mmio_read(0x320) == 0x300d1 && xis_mmio_read(0x3e0) == 3 &&
+        xis_mmio_read(0x320) == XAT_LVT_STOPPED && xis_mmio_read(0x3e0) == 3 &&
         !(xis_mmio_read(0x100 + offset) & bit) && !(xis_mmio_read(0x200 + offset) & bit);
 }
 
@@ -33,11 +35,11 @@ void xat_preempt_work(uint32_t index)
     if (index >= XAT_TASKS || !xat_task_valid() || xat_preempt.Ticks[index % 2] ||
         xat_preempt.Resumed[index % 2] || !xat_preempt.Reload || xat_preempt.Reload > UINT32_MAX) xat_abort();
     if (!(index & 1)) {
-        if (xis_mmio_read(0x380) || xis_mmio_read(0x390) || xis_mmio_read(0x320) != 0x10040) xat_abort();
+        if (xis_mmio_read(0x380) || xis_mmio_read(0x390) || xis_mmio_read(0x320) != X86_LVT_MASKED_IDLE) xat_abort();
         xis_mmio_write(0x3e0,3);
-        xis_mmio_write(0x320,0x200d1);
+        xis_mmio_write(0x320,XAT_LVT_RUNNING);
         xis_mmio_write(0x380,(uint32_t)xat_preempt.Reload);
-        if (xis_mmio_read(0x3e0) != 3 || xis_mmio_read(0x320) != 0x200d1 ||
+        if (xis_mmio_read(0x3e0) != 3 || xis_mmio_read(0x320) != XAT_LVT_RUNNING ||
             xis_mmio_read(0x380) != xat_preempt.Reload) xat_abort();
     }
     if (x86_scheduler_irq_poll(completion[index],xp_panic_native.Source.Port,
@@ -51,8 +53,8 @@ void xat_preempt_interrupt(const X86_IRQ_FRAME *frame)
 {
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     uint32_t index = local ? local->current : UINT32_MAX;
-    const uint32_t bit = 1U << (0xd1 % 32), isr = 0x100 + (0xd1 / 32) * 16;
-    if (!xat_ap_actor() || !xat_task_valid() || index >= XAT_TASKS || frame->Vector != 0xd1 ||
+    const uint32_t bit = 1U << (XIS_TIMER_VECTOR % 32), isr = 0x100 + (XIS_TIMER_VECTOR / 32) * 16;
+    if (!xat_ap_actor() || !xat_task_valid() || index >= XAT_TASKS || frame->Vector != XIS_TIMER_VECTOR ||
         xis_mmio_read(isr) != bit || ks_irq_state()) xat_abort();
     if (xat_preempt.Stopped) {
         if (++xat_preempt.Late > 8) xat_abort();
@@ -65,9 +67,9 @@ void xat_preempt_interrupt(const X86_IRQ_FRAME *frame)
         frame->Rip < (uint64_t)(uintptr_t)x86_scheduler_irq_compute_begin ||
         frame->Rip >= (uint64_t)(uintptr_t)x86_scheduler_irq_compute_end) xat_abort();
     if (xat_preempt.Total == 2 * XAT_PREEMPT_TARGET - 1) {
-        xis_mmio_write(0x320,0x300d1);
+        xis_mmio_write(0x320,XAT_LVT_STOPPED);
         xis_mmio_write(0x380,0);
-        if (xis_mmio_read(0x320) != 0x300d1 || xis_mmio_read(0x380) || xis_mmio_read(0x390)) xat_abort();
+        if (xis_mmio_read(0x320) != XAT_LVT_STOPPED || xis_mmio_read(0x380) || xis_mmio_read(0x390)) xat_abort();
         xat_preempt.Stopped = 1;
     }
     xis_mmio_write(0xb0,0);
@@ -84,7 +86,7 @@ void xat_preempt_interrupt(const X86_IRQ_FRAME *frame)
 // Intel SDM 078US §6.14: suspend only after EOI, before FXRSTOR/IRETQ.
 void xat_preempt_after(const X86_IRQ_FRAME *frame)
 {
-    if (frame->Vector != 0xd1) return;
+    if (frame->Vector != XIS_TIMER_VECTOR) return;
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
     uint32_t index = local ? local->current : UINT32_MAX;

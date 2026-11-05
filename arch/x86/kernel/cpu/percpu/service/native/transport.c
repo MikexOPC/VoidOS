@@ -27,12 +27,13 @@ void xis_mmio_write(uint32_t offset, uint32_t value) {
     if (!ks_atomic_load_acquire(&xis_native.Published) || !(
         (offset == 0xb0 && value == 0) || (offset == 0x80 && value == 0) || (offset == 0x280 && value == 0) ||
         (offset == 0xf0 && value == 0x1ff) ||
-        ((offset == 0x2f0 || (offset >= 0x320 && offset <= 0x370 && !(offset & 15))) && value == 0x10040) ||
+        ((offset == 0x2f0 || (offset >= 0x320 && offset <= 0x370 && !(offset & 15))) && value == X86_LVT_MASKED_IDLE) ||
         (offset == 0x310 && !(value & 0xffffffU) && (value >> 24) < 255) ||
         (offset == 0x300 && value == (0x4000 | XIS_VECTOR))
 #ifdef KERNEL_TEST_AP_PREEMPTION
         || (offset == 0x3e0 && value == 3) || offset == 0x380 ||
-        (offset == 0x320 && (value == 0x200d1 || value == 0x300d1))
+        (offset == 0x320 && (value == (X86_LVT_TIMER_PERIODIC | XIS_TIMER_VECTOR) ||
+            value == (X86_LVT_MASK | X86_LVT_TIMER_PERIODIC | XIS_TIMER_VECTOR)))
 #endif
         ))
         xis_native_abort(0x4b34495049575200ULL);
