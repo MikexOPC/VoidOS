@@ -47,10 +47,22 @@ $running = @()
 
 function Record-Campaign([string]$Name, [int]$Count, [int]$Code) {
     $log = Join-Path $output ($Name + '.log')
+    $reportPattern = '^# ====== Boot [0-9]+ ====== #$|^\[ (Pass|Fail) \]$|^Causa: |^Boot non eseguiti: '
     $script:results += [pscustomobject]@{ Campaign = $Name; Boots = $Count; ExitCode = $Code; Log = $log }
     $script:results | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
+    if (Test-Path -LiteralPath $log) {
+        foreach ($line in Get-Content -LiteralPath $log) {
+            if ($line -eq '[ Pass ]') { Write-Host $line -ForegroundColor Green }
+            elseif ($line -eq '[ Fail ]') { Write-Host $line -ForegroundColor Red }
+            elseif ($line -match '^# ====== Boot [0-9]+ ====== #$|^Causa: |^Boot non eseguiti: ') {
+                Write-Output $line
+            }
+        }
+    }
     if ($Code) {
-        if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 15 }
+        if (Test-Path -LiteralPath $log) {
+            Get-Content -LiteralPath $log -Tail 15 | Where-Object { $_ -notmatch $reportPattern }
+        }
         Write-Output "[ FAIL ] Campaign $Name; log: $log"
     }
     else { Write-Output "[ OK ] Campaign $Name; log: $log" }

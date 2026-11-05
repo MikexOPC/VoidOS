@@ -46,6 +46,33 @@ che toccano il kernel, non una campagna completa di affidabilità.
 Gli script di build dipendono dalla toolchain prevista dal componente.
 Per dettagli sui test vedere [test/README.md](../test/README.md).
 
+Le campagne che usano `lib/qemu.py` mostrano, al termine delle verifiche,
+un separatore per ciascun boot e il relativo esito.
+
+```text
+# ====== Boot 1 ====== #
+[ Pass ]
+
+# ====== Boot 2 ====== #
+[ Fail ]
+Causa: Missing KERNEL_READY
+```
+
+Solo `[ Pass ]` e `[ Fail ]` sono colorati, rispettivamente in verde e
+rosso. I log su file restano testo semplice. Dopo un errore il riepilogo
+indica quanti boot sono rimasti non eseguiti. La causa riporta l'errore
+rilevato dal test; le evidenze e il traceback conservano i dettagli.
+La suite host `runner` verifica esiti, colori, log e codici di uscita.
+
+Verifica del 5 novembre 2026 per questo blocco di reporting. Sei test
+Python, regressioni PowerShell della suite `runner` e controllo layout
+passati. Tre boot ordinari consecutivi su QEMU/OVMF, quattro CPU e immagine
+ricompilata, passati. Evidenze in
+`kernel/build/qemu-run-9318ba92fcf049a6af9f6929f809c509` e
+`kernel/build/ap-runtime-67cf571e0298416dab80e4725583ac72`.
+Queste prove riguardano il reporting e il profilo ordinario esistente.
+Il dispatcher sugli AP di K4-C4 richiede ancora implementazione e collaudo.
+
 # #=======================================================================================================================================# #
 
 ## Artefatti e pulizia

@@ -30,3 +30,10 @@ foreach ($code in @(0,7)) {
     }
 }
 Write-Output 'PASS: stderr preserved, zero exit accepted, nonzero exit retained, paths with spaces'
+
+# ============ boot reporting ============
+
+$python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+& $python -B -m unittest discover -s (Join-Path $PSScriptRoot '.') -p '*_test.py' -v
+if ($LASTEXITCODE -ne 0) { throw 'Boot report regression failed' }
+& (Join-Path $PSScriptRoot 'report.ps1')

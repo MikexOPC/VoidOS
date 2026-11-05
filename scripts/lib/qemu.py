@@ -7,9 +7,11 @@ read through scripts/lib/serial.py.
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -160,6 +162,25 @@ class Vm:
         raise TimeoutError("Physical memory read missing")
 
 
+# ====== report_boots ======
+
+def report_boots(results, passed, total):
+    color = sys.stdout.isatty() and "NO_COLOR" not in os.environ
+    for index, result in enumerate(results, 1):
+        success = index <= passed and "Failure" not in result
+        label = "[ Pass ]" if success else "[ Fail ]"
+        if color:
+            label = ("\033[32m" if success else "\033[31m") + label + "\033[0m"
+        print(f"\n# ====== Boot {index} ====== #", flush=True)
+        print(label, flush=True)
+        if not success:
+            cause = str(result.get("Failure", "Verifiche non superate; consultare le evidenze."))
+            cause = " ".join(cause.split()) or "Errore senza messaggio; consultare le evidenze."
+            print("Causa: " + cause, flush=True)
+    if total > len(results):
+        print(f"Boot non eseguiti: {total - len(results)}", flush=True)
+
+
 # ====== finish ======
 
 def finish(out, runner, image, results, passed, total):
@@ -167,6 +188,7 @@ def finish(out, runner, image, results, passed, total):
     report = dict(Runner=runner, Image=image_hash(image), Loader=image_hash(LOADER),
         Passed=passed, Total=total, Results=results)
     (Path(out) / "results.json").write_text(json.dumps(report, indent=2))
+    report_boots(results, passed, total)
     print(f"RESULT {'PASS' if passed == total else 'FAIL'} {runner} {passed}/{total}", flush=True)
     print("Evidence: " + str(out), flush=True)
     return passed == total
