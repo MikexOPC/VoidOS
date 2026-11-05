@@ -69,6 +69,7 @@ int x86_scheduler_context_prepare(X86_TASK_CONTEXT *output, uint64_t base, uint6
 int x86_scheduler_context_resume_valid(const X86_TASK_CONTEXT *context, uint64_t base,
     uint64_t bytes, uint64_t code_begin, uint64_t code_end, uint32_t mxcsr_mask);
 int x86_scheduler_cpu_valid(const X86_TASK_CPU *cpu, uint64_t expected_root, uint32_t bsp_id);
+int x86_scheduler_ap_cpu_valid(const X86_TASK_CPU *cpu, uint64_t expected_root, uint32_t apic_id);
 int x86_scheduler_cpu_capture(X86_TASK_CPU *output);
 int x86_scheduler_fp_template(unsigned char *output);
 

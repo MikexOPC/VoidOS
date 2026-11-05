@@ -121,7 +121,9 @@ int main(void)
             config.drain_irq = 0;
         }
         check_private(!stats.steps && !stats.failure && !locked);
-        check_private(x86_scheduler_dispatch_on(cpu,&config,&stats));
+        check_private(x86_scheduler_dispatch_retained_on(cpu,&config,&stats));
+        check_private(apply_private(KERNEL_SCHEDULER_QUERY).state == KERNEL_TASK_FINISHED);
+        check_private(apply_private(KERNEL_SCHEDULER_COLLECT).status == 0);
         check_private(stats.steps == 7 && stats.completed == 1 && !stats.failure &&
             stats.changed_count == 1 && stats.signal_count == 1 && !stats.waiting_count &&
             replies == 5 && collected == 1);

@@ -96,8 +96,9 @@ $ApRuntime = $TestApTransition -eq 'none' -and $TestSmpPanic -eq 'none' -and !$T
 if ($ApRuntime) { $flags += '/DKERNEL_AP_RUNTIME=1' }
 if ($TestApService -ne 'none') {
     if (!$ApRuntime) { throw 'AP service requires ordinary AP admission.' }
-    $serviceMode = switch ($TestApService) { 'ping' {1} 'missing-ack' {2} 'stale-ack' {3} 'panic-idle' {4} 'panic-handler' {5} 'release-missing-ack' {6} 'ap-timer' {7} 'admission' {8} }
+    $serviceMode = switch ($TestApService) { 'ping' {1} 'missing-ack' {2} 'stale-ack' {3} 'panic-idle' {4} 'panic-handler' {5} 'release-missing-ack' {6} 'ap-timer' {7} 'admission' {8} 'ap-batch' {9} 'ap-batch-rollback' {9} }
     $flags += "/DKERNEL_TEST_AP_SERVICE=$serviceMode"
+    if ($TestApService -eq 'ap-batch-rollback') { $flags += '/DKERNEL_TEST_AP_BATCH_ROLLBACK=1' }
 }
 if ($TestApStress -ne 'none') {
     if (!$ApRuntime -or $TestPanic) { throw 'AP stress requires ordinary AP startup and its own panic trigger.' }

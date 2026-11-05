@@ -16,3 +16,10 @@ pub fn idle_return_valid(frame: u64, top: u64, rsp: u64, cs: u64,
 #[cfg(test)]
 #[path = "../../../../../../../../test/arch/x86/kernel/cpu/percpu/service/rust/frame/validation_test.rs"]
 mod tests;
+
+// ====== task_return_valid ======
+
+pub fn task_return_valid(frame: u64, rsp: u64, cs: u64, flags: u64, ss: u64) -> u32 {
+    u32::from((rsp & !15).checked_sub(48) == Some(frame) && cs == 8 && ss == 16 &&
+        flags & 0x7602 == 0x202)
+}

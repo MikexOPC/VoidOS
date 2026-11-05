@@ -1,4 +1,22 @@
 use super::idle_return_valid;
+use super::task_return_valid;
+
+// ====== task_geometry_and_flags ======
+
+#[test]
+fn task_geometry_and_flags() {
+    for low in 0..16 {
+        let rsp = 0xffff_9000_1000_8000u64 + low;
+        let frame = (rsp & !15) - 48;
+        assert_eq!(task_return_valid(frame,rsp,8,0x202,16),1);
+        assert_eq!(task_return_valid(frame + 8,rsp,8,0x202,16),0);
+        assert_eq!(task_return_valid(frame,rsp,0x1b,0x202,16),0);
+        assert_eq!(task_return_valid(frame,rsp,8,0x202,0x23),0);
+        for flags in [0,2,0x602,0x3202,0x4202] {
+            assert_eq!(task_return_valid(frame,rsp,8,flags,16),0);
+        }
+    }
+}
 
 // ====== ordinary_and_diagnostic ======
 

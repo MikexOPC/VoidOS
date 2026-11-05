@@ -6,10 +6,13 @@ pub const OFFERED: u64 = 1;
 pub const CLAIMED: u64 = 2;
 pub const ADMITTED: u64 = 3;
 pub const FAILED: u64 = 4;
-const MAX_TOKEN: u64 = (1 << 61) - 1;
+pub const START: u64 = 5;
+pub const RUNNING: u64 = 6;
+pub const QUIESCED: u64 = 7;
+const MAX_TOKEN: u64 = (1 << 61) - 2;
 
 #[repr(align(64))]
-struct Slot { value: AtomicU64 }
+struct Slot { value: AtomicU64, release: AtomicU64 }
 pub struct Admission {
     count: AtomicU64,
     group: AtomicU64,
@@ -21,7 +24,7 @@ impl Admission {
 
     pub const fn new() -> Self {
         Self { count: AtomicU64::new(0), group: AtomicU64::new(0),
-            slots: [const { Slot { value: AtomicU64::new(0) } }; 64] }
+            slots: [const { Slot { value: AtomicU64::new(0), release: AtomicU64::new(0) } }; 64] }
     }
 
     // ====== admission_configure ======
@@ -77,9 +80,9 @@ impl Admission {
     pub fn fail(&self, cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
         let Some(slot) = self.slot(cpu,group) else { return 0; };
         if (caller != 0 && caller != cpu) || token == 0 || token > MAX_TOKEN { return 0; }
-        for _ in 0..4 {
+        for _ in 0..8 {
             let value = slot.load(Acquire);
-            if value >> 3 != token || !(OFFERED..=FAILED).contains(&(value & 7)) { return 0; }
+            if value >> 3 != token || !(OFFERED..=QUIESCED).contains(&(value & 7)) { return 0; }
             if value & 7 == FAILED { return 1; }
             if slot.compare_exchange(value,(token << 3) | FAILED,AcqRel,Acquire).is_ok() { return 1; }
         }
@@ -90,6 +93,41 @@ impl Admission {
 
     pub fn value(&self, cpu: u32, group: u64) -> u64 {
         self.slot(cpu,group).map_or(INVALID,|slot| slot.load(Acquire))
+    }
+
+    // ====== execution_transition ======
+
+    pub fn transition(&self, cpu: u32, caller: u32, token: u64, group: u64, operation: u32) -> u32 {
+        let Some(slot) = self.slot(cpu,group) else { return 0; };
+        let (actor, before, after) = match operation {
+            0 => (0,ADMITTED,START), 1 => (cpu,START,RUNNING),
+            2 => (cpu,RUNNING,QUIESCED), _ => return 0,
+        };
+        if caller != actor || token == 0 || token > MAX_TOKEN { return 0; }
+        u32::from(slot.compare_exchange((token << 3) | before,(token << 3) | after,
+            AcqRel,Acquire).is_ok())
+    }
+
+    // ====== execution_release ======
+
+    pub fn release(&self, cpu: u32, caller: u32, token: u64, group: u64, write: u32) -> u32 {
+        if token == 0 || token > MAX_TOKEN || self.value(cpu,group) != (token << 3 | RUNNING) {
+            return 0;
+        }
+        if write == 1 && caller == 0 {
+            self.slots[cpu as usize].release.store(token,Release);
+            let value = self.value(cpu,group);
+            u32::from(value == (token << 3 | RUNNING) || value == (token << 3 | QUIESCED))
+        } else if write == 0 && caller == cpu {
+            u32::from(self.slots[cpu as usize].release.load(Acquire) == token)
+        } else { 0 }
+    }
+
+    // ====== execution_collect_allowed ======
+
+    pub fn collect_allowed(&self, cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
+        u32::from(caller == 0 && token != 0 && token <= MAX_TOKEN &&
+            self.value(cpu,group) == (token << 3 | QUIESCED))
     }
 }
 

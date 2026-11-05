@@ -37,6 +37,7 @@ uint32_t x86_timer_diagnostic_reload(void);
 #define XIS_IDLE_FRAME_BYTES 576ULL
 uint32_t xis_idle_return_valid(uint64_t frame, uint64_t top, uint64_t rsp, uint64_t cs,
     uint64_t flags, uint64_t ss, uint32_t diagnostic);
+uint32_t xis_task_return_valid(uint64_t frame, uint64_t rsp, uint64_t cs, uint64_t flags, uint64_t ss);
 typedef struct {
     _Alignas(64) uint64_t Delivered;
     uint64_t  Verified, Spurious, FrameRsp, Eois, Entered, Reserved[2];

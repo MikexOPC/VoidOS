@@ -443,17 +443,94 @@ locale; il runner controlla anche i 704 byte dello slot locale e i
 registri reali dopo il ritorno all'idle. La fase nativa rimane zero:
 il motore scheduler e i frame task non sono ancora autorizzati.
 
+## K4-C4 — Primo lotto AP
+
+Primo profilo su AP1, due task di calcolo con affinità fissa. Il BSP
+prepara stack, contesti e coda Rust prima del via; i task usano yield,
+poi exit. Niente migrazione, driver o timer di preemption in questo
+blocco. Gli IRQ PING/flush devono restare utilizzabili durante i task,
+con frame autorizzati dallo stack e dalla generazione correnti.
+
+**Scelta A, confermata dall'utente:** rilascio sul BSP dopo quiescenza. Il dispatcher AP
+mantiene gli slot FINISHED e le lease vive; non esegue COLLECT. Il via
+e la conclusione usano stati separati nel protocollo Rust. La conferma
+QUIESCED viene pubblicata soltanto dopo il ritorno dal dispatcher,
+con current assente, nessun lock e nessun accesso futuro agli stack task.
+Il BSP verifica FINISHED, revoca le pagine, attende il flush di tutti
+i core e soltanto dopo esegue COLLECT. Prima della quiescenza non si
+riusano slot, contesti o frame. Timeout: panic e risorse trattenute.
+
+**Alternativa B:** raccolta direttamente dall'AP. Richiede un servizio
+di shootdown iniziabile dagli AP, coordinamento con il BSP e una revisione
+più ampia del mapper. Non basta abilitare COLLECT sul core secondario.
+
+Il motore mantiene il comportamento attuale come default. Un percorso
+esplicito può lasciare FINISHED senza liberarli, preservando il contratto
+Rust che richiede cleanup nativo prima di COLLECT. Il gate CPU distingue
+BSP e AP senza richiedere APIC_BASE.BSP sugli AP; stack dispatcher e
+stack task mantengono autorità e controlli differenti. Il gate del mapper
+per mutazioni resta BSP. Nessun riferimento Rust attraversa lo switch.
+
+Accettazione: casi host per FINISHED trattenuti, rifiuto di raccolta
+prematura e completamento/timeout concorrenti; due task reali su AP1,
+yield/exit e contesto preservato. PING/flush su stack task, ritorno del
+budget dopo quiescenza e raccolta BSP. Dieci boot del profilo e regressioni
+ordinarie, ammissione e timer AP. La scelta A/B precede il codice.
+
+Il profilo TestApService ap-batch esegue due task su AP1: sedici yield
+ciascuno, checksum intero e accumulatore floating point, poi exit.
+La finestra con IF=1 usa il backend esistente e non tiene lock. Il BSP
+attende progresso di entrambi, invia PING/flush durante il lavoro e
+autorizza la conclusione. Il ritorno del task non dipende dall'ACK idle:
+durante il lavoro si attende l'ACK dopo EOI; il controllo dei registri
+idle si verifica soltanto dopo il ritorno al ciclo di servizio.
+
+Stati aggiunti: START=5 pubblicato dal BSP, RUNNING=6 acquisito da AP1,
+QUIESCED=7 pubblicato dall'AP dopo il ritorno del dispatcher. FAILED=4
+resta terminale. Il token massimo è riservato per evitare che QUIESCED
+coincida con INVALID. Il permesso di raccolta è verificato in Rust:
+caller BSP, gruppo/token corrispondenti e QUIESCED. Il segnale di fine
+lavoro accetta anche una quiescenza già avvenuta dopo il suo invio:
+una conclusione rapida non diventa un errore spurio.
+
+Il motore retained lascia FINISHED senza COLLECT; l'API ordinaria mantiene
+la raccolta immediata. Le risorse preparate prima della pubblicazione
+dei task possono essere revocate con ABORT; dopo il via gli errori sono
+terminali e non autorizzano cleanup. La raccolta BSP revoca entrambi gli
+stack, attende gli shootdown e poi esegue COLLECT. Si verifica il budget
+intero prima, durante la ritenzione e dopo il rilascio.
+
+Il gate AP usa una fotografia dell'arena acquisita dal BSP e trattenuta
+per l'esecuzione. Controlla identità, root, GDT/IDT, parent e foglie dello
+stack AP, guardie e ownership. Non acquisisce il lock fisico mentre il
+lock scheduler è tenuto; il pinning viene verificato fuori dal lock e
+la durata è garantita dalla ritenzione delle risorse. Le mutazioni del
+mapper restano BSP. Intel SDM 078US §11.4.4: APIC_BASE.BSP8 deve essere
+zero sugli AP; non viene simulato il bit BSP. Gli altri prerequisiti
+CPU restano quelli del percorso esistente.
+
+L'IRQ task verifica prima l'intera area salvata, poi geometria, selettori
+e flags in Rust; C lega il frame allo stack e alla generazione correnti
+e verifica RIP RX. Non cambia stack nell'handler. Context switch e
+FXSAVE restano il backend Assembly esistente. Il segnaposto MSVC _fltused
+è definito nel solo profilo sperimentale, senza collegare il runtime CRT.
+Il test non introduce migrazione, preemption o accesso ai driver dall'AP.
+
 ## Lavoro restante dopo i prerequisiti C4
 
 Stima di pianificazione, non risultati né percentuale di completamento:
 
-1. Ammissione AP fuori IRQ, protocollo scelto e collaudo reale.
-2. Primo lotto di task su AP: gate nativi, stack, IRQ PING/flush e cleanup.
-3. Preemption periodica del task AP e ripristino del contesto.
-4. Dispatcher concorrenti e conclusione coordinata del lavoro globale.
-5. Stress e regressioni di chiusura C4.
+Ammissione e primo lotto AP sono implementati nel diagnostico. Il negativo
+di rollback inietta un errore prima della seconda allocazione: uno stack
+già pronto viene rilasciato, entrambe le prenotazioni vengono annullate e
+il budget viene verificato prima del panic coordinato. Non simula
+l'esaurimento reale della RAM fisica.
 
-Sono circa quattro-sei blocchi di implementazione e validazione: alcuni
+1. Preemption periodica del task AP e ripristino del contesto.
+2. Dispatcher concorrenti e conclusione coordinata del lavoro globale.
+3. Stress e regressioni di chiusura C4.
+
+Sono tre obiettivi di implementazione e validazione: alcuni
 possono unirsi, i fault possono richiedere un blocco di diagnosi dedicato.
 Poi restano C5 (driver su più CPU) e C6 (chiusura K4). K5 userspace e K6
 caricamento dei programmi non sono inclusi in questa stima.

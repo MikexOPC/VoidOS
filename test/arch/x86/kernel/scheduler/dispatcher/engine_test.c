@@ -130,7 +130,7 @@ int main(int argc, char **argv)
     X86_DISPATCH_STATS stats = {0};
     check_private(argc == 2);
     mode = (uint32_t)strtoul(argv[1],NULL,10);
-    check_private(mode <= 9);
+    check_private(mode <= 10);
     check_private(apply_private(KERNEL_SCHEDULER_INIT,NULL).status == 0);
     if (mode <= 1) {
         for (cycle = 0; cycle < 1000; ++cycle) {
@@ -155,6 +155,20 @@ int main(int argc, char **argv)
             check_private(apply_private(KERNEL_SCHEDULER_SELECT,NULL).status == KERNEL_SCHEDULER_EMPTY);
             check_private(!x86_scheduler_dispatch(&config,&stats)); // Stats cannot silently reuse a finished run.
         }
+    } else if (mode == 10) {
+        prepare_private(2);
+        check_private(x86_scheduler_dispatch_retained_on(0,&config,&stats));
+        check_private(stats.completed == 2 && collected == 2 && !stats.failure);
+        for (uint32_t index = 0; index < 2; ++index)
+            check_private(apply_private(KERNEL_SCHEDULER_QUERY,&handles[index]).state == KERNEL_TASK_FINISHED);
+        KERNEL_SCHEDULER_REPLY reserved = apply_private(KERNEL_SCHEDULER_RESERVE,NULL);
+        check_private(reserved.status == 0 && reserved.index == 2);
+        check_private(apply_private(KERNEL_SCHEDULER_ABORT,&reserved).status == 0);
+        for (uint32_t index = 0; index < 2; ++index)
+            check_private(apply_private(KERNEL_SCHEDULER_COLLECT,&handles[index]).status == 0);
+        prepare_private(1);
+        stats = (X86_DISPATCH_STATS){0};
+        check_private(x86_scheduler_dispatch(&config,&stats) && stats.completed == 1);
     } else if (mode == 9) {
         // B1: an operational session has no fixed length; per-operation timeouts live in idle().
         prepare_private(1);

@@ -14,7 +14,7 @@ static int dispatch_apply_private(uint32_t cpu, uint32_t operation, const KERNEL
 
 // ====== dispatch_command_private ======
 
-static int dispatch_command_private(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats,
+static int dispatch_command_private(uint32_t cpu, uint32_t retained, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats,
     const KERNEL_SCHEDULER_REPLY *task, const X86_DISPATCH_COMMAND *command)
 {
     KERNEL_SCHEDULER_REPLY reply;
@@ -55,7 +55,7 @@ static int dispatch_command_private(uint32_t cpu, const X86_DISPATCH_CONFIG *con
         KERNEL_SCHEDULER_YIELD,task,&reply)) return 0;
     if (command->reason == X86_TASK_EXIT) {
         if (reply.state != KERNEL_TASK_FINISHED || !config->collect(&reply) ||
-            !dispatch_apply_private(cpu,KERNEL_SCHEDULER_COLLECT,task,&reply)) return 0;
+            (!retained && !dispatch_apply_private(cpu,KERNEL_SCHEDULER_COLLECT,task,&reply))) return 0;
         ++stats->completed;
     }
     return 1;
@@ -71,9 +71,9 @@ static int limit_valid_private(uint32_t limit, uint32_t minimum, uint32_t maximu
     return limit == X86_DISPATCH_UNLIMITED || (limit >= minimum && limit <= maximum);
 }
 
-// ====== x86_scheduler_dispatch_on ======
+// ====== dispatch_private ======
 
-int x86_scheduler_dispatch_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
+static int dispatch_private(uint32_t cpu, uint32_t retained, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
 {
     if (cpu >= 64 || kernel_scheduler_context_valid_on(cpu) != 1 || entered[cpu] ||
         !config || !stats || !config->run || !config->collect || !config->reply || !config->release_actor ||
@@ -106,7 +106,7 @@ int x86_scheduler_dispatch_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X
         stats->failure = 4;
         if (!config->run(&task,&command) || kernel_scheduler_context_valid_on(cpu) != 1) goto failure;
         stats->failure = 5;
-        if (!dispatch_command_private(cpu,config,stats,&task,&command)) goto failure;
+        if (!dispatch_command_private(cpu,retained,config,stats,&task,&command)) goto failure;
         stats->failure = 6;
         if (!config->release_actor() || kernel_scheduler_context_valid_on(cpu) != 1) goto failure;
         if (config->drain_irq && kernel_scheduler_irq_drain().reply.status != KERNEL_SCHEDULER_OK) goto failure;
@@ -120,6 +120,20 @@ int x86_scheduler_dispatch_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X
 failure:
     entered[cpu] = 0;
     return 0;
+}
+
+// ====== x86_scheduler_dispatch_on ======
+
+int x86_scheduler_dispatch_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
+{
+    return dispatch_private(cpu,0,config,stats);
+}
+
+// ====== x86_scheduler_dispatch_retained_on ======
+
+int x86_scheduler_dispatch_retained_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats)
+{
+    return dispatch_private(cpu,1,config,stats);
 }
 
 // ====== x86_scheduler_dispatch ======
