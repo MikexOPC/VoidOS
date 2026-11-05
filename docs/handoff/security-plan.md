@@ -1,0 +1,86 @@
+# Piano sicurezza dei sottosistemi
+
+Stato: da avviare. Questo file e il punto di partenza per chi lavora sulla
+sicurezza; va aggiornato a ogni passo.
+
+## Obiettivo
+
+Ogni sottosistema deve essere sicuro. L'impegno e proporzionale a quanto il
+sottosistema e grande ed esposto: memoria, interrupt, SMP, driver con DMA e
+futuri syscall/user mode vengono prima di console o layout.
+
+## Regole di lavoro
+
+1. **Decidere prima cosa mettere in sicurezza.** Leggere documentazione e
+   sorgenti del progetto, poi scrivere una classifica in questo file:
+   sottosistema, rischio, motivo, priorita.
+2. **Un sottosistema alla volta** (direttive-locali, Constraint 1). Non si apre il
+   successivo finche quello corrente non ha test e documentazione chiusi.
+3. **Per ogni sottosistema:** leggere → decidere → agire → testare →
+   documentare → commit.
+4. **Fonti obbligatorie** per ogni accesso hardware o protezione CPU
+   (Constraint 4) e riferimento verificato
+   [R-003](../review/instructions/security.md).
+5. **Niente protezioni dichiarate senza prova.** SMEP, SMAP, KPTI, CET ecc.
+   si dichiarano solo se abilitate, verificate via CPUID e testate in QEMU.
+6. **Sicurezza in Rust.** Primitive, controlli e decisioni di sicurezza si
+   scrivono in Rust; C/asm solo dove serve la CPU.
+7. **Su misura.** Si studiano le soluzioni esistenti (Linux, seL4, Redox,
+   ecc.) ma le protezioni si progettano per questo kernel, per averne il
+   pieno controllo. Eccezione: gli algoritmi crittografici non si inventano;
+   si implementano algoritmi standard e verificati, testati con i vettori
+   ufficiali.
+
+## Dove va il codice
+
+| Livello | Cartella | Contenuto |
+|---|---|---|
+| Comune | `lib/security/<funzione>/` | Primitive indipendenti dall'architettura: bounds e aritmetica controllata, validazione range/indici, confronto a tempo costante, azzeramento sicuro, canary, generazione/handle |
+| Architettura | `arch/x86/security/<funzione>/` | Protezioni della CPU: NX/XD, WP, SMEP/SMAP, UMIP, CET, mitigazioni speculative, validazione frame di interrupt |
+| Sottosistema | cartella del modulo | Uso delle primitive e invarianti propri del modulo |
+
+- Le cartelle `<funzione>` si creano solo quando esiste il modulo, senza
+  segnaposto. Massimo 6-8 file per cartella.
+- Test in `test/lib/security/...` e `test/arch/x86/security/...`.
+- `lib/security` non sostituisce i controlli dei moduli: fornisce gli
+  strumenti, ogni modulo resta responsabile dei propri invarianti.
+
+## Test richiesti
+
+- Test host: casi positivi, confini, overflow, input ostili, rollback.
+- Test negativi: l'attacco o l'errore deve essere bloccato e registrato.
+- QEMU: 10 boot per protezioni CPU, interrupt, paging, SMP; altrimenti 3/5
+  (Constraint 6).
+
+## Documentazione
+
+Per ogni sottosistema una voce breve in fondo a questo file: cosa e stato
+protetto, come, quali test, cosa resta aperto. Niente documenti separati per
+ogni passo.
+
+## Classifica
+
+Prima stesura, 2026-11-06, da sola lettura del codice e di `docs/status.md`.
+Da confermare prima di aprire ciascun passo.
+
+**Gia presente:** paging NX/WP, guard page sugli stack e IST, heap con canary e
+rifiuto del double free, autorizzazione DMA e base VT-d, TLB shootdown prima
+del riuso.
+
+**Mancante:** stack canary (tutto compila con `/GS-`), sorgente di entropia,
+W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
+
+| # | Passo | Rischio | Motivo |
+|---|---|---|---|
+| 1 | `lib/security/entropy` + `arch/x86/security/entropy` | Alto | Base per canary e randomizzazione: RDRAND/RDSEED via CPUID, validazione e fallback in Rust |
+| 2 | Stack canary del kernel | Alto | Oggi nessuna protezione sull'overflow di stack in C; richiede supporto `/GS` freestanding o canary propri |
+| 3 | W^X dell'immagine kernel | Alto | Verificare e imporre `.text` RX, `.rdata` RO+NX, dati RW+NX; test negativo su scrittura in `.text` |
+| 4 | Primitive comuni `lib/security/bounds` | Medio-alto | Aritmetica controllata e validazione range/indici riusabili da mm, driver, ACPI |
+| 5 | Input non fidati: ACPI, VirtIO, PS/2, shell | Medio | Tabelle firmware e device sono input esterni: limiti, lunghezze, checksum |
+| 6 | SMEP/SMAP/UMIP | Medio, ora | Utili davvero con lo user mode; abilitabili prima solo se CPUID li offre e il kernel non tocca pagine user |
+| 7 | DMA: VT-d attivo per i device | Medio | Il DMA bypassa il paging della CPU; da collegare a VirtIO |
+| 8 | Syscall, user copy, KPTI | Futuro | Solo quando esiste lo user mode |
+
+## Progressi
+
+Nessuno.
