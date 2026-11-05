@@ -314,7 +314,7 @@ cleanup:
     return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);
 }
 
-#if KERNEL_TEST_AP_SERVICE == 7
+#if KERNEL_TEST_AP_SERVICE == 7 || defined(KERNEL_TEST_AP_PREEMPTION)
 // ====== x86_timer_diagnostic_reload ======
 
 uint32_t x86_timer_diagnostic_reload(void)

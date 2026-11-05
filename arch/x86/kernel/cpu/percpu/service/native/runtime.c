@@ -187,6 +187,12 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
         return;
     }
 #endif
+#ifdef KERNEL_TEST_AP_PREEMPTION
+    if (frame->Vector == 0xd1) {
+        xat_preempt_interrupt(frame);
+        return;
+    }
+#endif
     if (frame->Vector != XIS_VECTOR) xis_native_abort(0x4b34495049564543ULL);
     for (uint32_t word = 0; word < 8; ++word)
         if (xis_mmio_read(0x100 + word * 16) != (word == XIS_VECTOR / 32 ? 1U << (XIS_VECTOR % 32) : 0))

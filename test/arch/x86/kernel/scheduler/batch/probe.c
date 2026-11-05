@@ -39,6 +39,11 @@ __declspec(noreturn) void xat_batch_probe(void)
     if (!xad_offer(1,0,1,root)) xat_abort();
     request_private(1,1); wait_private(XAD_ADMITTED,0);
     xat_prepare();
+#ifdef KERNEL_TEST_AP_PREEMPTION
+    xat_preempt.Self = (uint64_t)(uintptr_t)&xat_preempt;
+    xat_preempt.Reload = x86_timer_diagnostic_reload();
+    if (!xat_preempt.Reload) xat_abort();
+#endif
     if (!xad_transition(1,0,1,root,0)) xat_abort();
     request_private(1,0); wait_private(XAD_RUNNING,1);
     request_private(1,0);
@@ -47,10 +52,21 @@ __declspec(noreturn) void xat_batch_probe(void)
     wait_private(XAD_QUIESCED,0);
     xat_cleanup();
     for (uint32_t index = 1; index < xis_native.Count; ++index) request_private(index,1);
-    if (xat_record.Completed != 2 || xat_record.Steps < 34 || xat_record.Collected != 2 ||
+    if (xat_record.Completed != 2 || xat_record.Steps <
+#ifdef KERNEL_TEST_AP_PREEMPTION
+        8
+#else
+        34
+#endif
+         || xat_record.Collected != 2 ||
         xad_value(1,root) != (1ULL << 3 | XAD_QUIESCED) ||
         !kernel_text("KERNEL_AP_BATCH_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&xat_record) ||
         !kernel_text("\nKERNEL_AP_BATCH_PTE: ") || !kernel_number((uint64_t)(uintptr_t)&x86_stack_entries(3)[320]) ||
         !kernel_text("\n") || !kernel_log(0,"KERNEL_AP_BATCH_READY")) xat_abort();
+#ifdef KERNEL_TEST_AP_PREEMPTION
+    if (!kernel_text("KERNEL_AP_PREEMPT_RECORD: ") ||
+        !kernel_number((uint64_t)(uintptr_t)&xat_preempt) ||
+        !kernel_text("\n") || !kernel_log(0,"KERNEL_AP_PREEMPT_READY")) xat_abort();
+#endif
     x86_kernel_stop(0x4b34495049504153ULL);
 }
