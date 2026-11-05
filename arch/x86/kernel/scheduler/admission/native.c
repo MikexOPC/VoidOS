@@ -8,6 +8,9 @@
 #endif
 
 volatile XAD_NATIVE_RECORD xad_native_record;
+#ifdef KERNEL_TEST_AP_CONCURRENT
+static XAD_NATIVE_RECORD second_record;
+#endif
 
 // ====== fail_private ======
 
@@ -26,14 +29,20 @@ void xad_native_poll(void)
     uint64_t token = xad_claim(index,index,root);
     if (!token) {
 #if KERNEL_TEST_AP_SERVICE == 9
-        if (index == 1 && xad_transition(1,1,1,root,1)) {
+        if (index >= 1 && index <= XAT_APS && xad_transition(index,index,1,root,1)) {
             xat_run();
-            if (!xad_transition(1,1,1,root,2)) fail_private(index,1,root);
+            if (!xad_transition(index,index,1,root,2)) fail_private(index,1,root);
         }
 #endif
         return;
     }
-    if (token == XAD_INVALID || index != 1 || ks_irq_state() || !x86_irq_cpu_state())
+    if (token == XAD_INVALID ||
+#ifdef KERNEL_TEST_AP_CONCURRENT
+        index < 1 || index > 2 ||
+#else
+        index != 1 ||
+#endif
+        ks_irq_state() || !x86_irq_cpu_state())
         fail_private(index,token,root);
     uint64_t rsp = x86_kernel_stack_pointer();
     if (rsp < X86_AP_STACK_FLOOR(index) || rsp >= X86_AP_FRAME(index) - XIS_IDLE_FRAME_BYTES)
@@ -50,9 +59,14 @@ void xad_native_poll(void)
     if (!local || local->phase || local->current != UINT32_MAX || local->generation || local->event ||
         local->stats.steps || local->stats.failure ||
         local->owner != (uint64_t)(uintptr_t)xp_panic_native.Contexts[index]) fail_private(index,token,root);
-    xad_native_record.Self = (uint64_t)(uintptr_t)&xad_native_record;
-    xad_native_record.Group = root; xad_native_record.Token = token; xad_native_record.Cpu = index;
-    xad_native_record.Rsp = rsp; xad_native_record.Local = (uint64_t)(uintptr_t)local;
-    xad_native_record.Root = root; xad_native_record.Irq = ks_irq_state();
+#ifdef KERNEL_TEST_AP_CONCURRENT
+    volatile XAD_NATIVE_RECORD *record = index == 1 ? &xad_native_record : &second_record;
+#else
+    volatile XAD_NATIVE_RECORD *record = &xad_native_record;
+#endif
+    record->Self = (uint64_t)(uintptr_t)record;
+    record->Group = root; record->Token = token; record->Cpu = index;
+    record->Rsp = rsp; record->Local = (uint64_t)(uintptr_t)local;
+    record->Root = root; record->Irq = ks_irq_state();
     if (!xad_admit(index,index,token,root)) fail_private(index,token,root);
 }

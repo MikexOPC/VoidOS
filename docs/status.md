@@ -10,13 +10,13 @@ Boot UEFI x86-64, ELF e contratto v5, paging NX/WP, allocatore fisico,
 finestre/arena, heap slab e page-run, GDT/TSS/IST, eccezioni e IRQ.
 Scheduler cooperativo BSP con stack reali; tastiera e mouse PS/2, shell,
 console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
-Un diagnostico esegue due task su AP1, sospesi dal timer senza yield
+Un diagnostico esegue quattro task su AP1/AP2, sospesi dal timer senza yield
 durante la fase misurata, con IRQ PING/flush attivi;
 nel boot ordinario lo scheduler resta sul BSP. Mancano processi utente,
 syscall, VFS e driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
-## K4-C: preemption diagnostica BSP e AP1
+## K4-C: preemption diagnostica BSP e dispatcher AP1/AP2
 
 Core Rust con current/affinità per CPU e lock globale verificato in host;
 timer periodico AP e preemption periodica BSP verificati nei diagnostici.
@@ -29,11 +29,13 @@ FINISHED con stack allocati fino alla quiescenza AP; il BSP revoca i mapping,
 attende gli shootdown e raccoglie le risorse. Il budget torna al valore iniziale.
 Validazione del blocco: 60 boot positivi e dieci fault intenzionali di rollback,
 distinti dai crash inattesi, su quattro CPU inizializzate.
-Restano dispatcher concorrenti e stress di chiusura C4;
+Restano stress e regressioni di chiusura C4;
 poi C5 driver SMP e C6 chiusura K4. Il diagnostico non abilita migrazione.
-Per la concorrenza AP1/AP2 sono implementati il protocollo Rust del lotto
-e il percorso retained del motore C, verificati con due thread host.
-Il collegamento nativo sui due AP e la sua prova QEMU restano da fare.
+Il profilo ap-concurrent collega il lotto Rust ai dispatcher nativi di
+AP1/AP2: due task ciascuno, tre sospensioni/riprese per task, timer fermati
+dagli AP e raccolta sul BSP soltanto dopo la quiescenza di entrambi.
+Il primo lotto concorrente passa dieci boot; non è ancora lo stress di
+chiusura né una promozione dello scheduler ordinario a tutte le CPU.
 Prove e limiti in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
 
 ## K4-B: shootdown TLB prima di ogni riuso

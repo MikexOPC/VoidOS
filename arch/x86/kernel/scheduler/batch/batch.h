@@ -5,16 +5,33 @@
 #include "../admission/admission.h"
 #include "arch/x86/kernel/cpu/percpu/resources/paging/authority.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
+#ifdef KERNEL_TEST_AP_CONCURRENT
+#define XAT_TASKS 4U
+#define XAT_APS 2U
+#define XAT_CPU(index) ((index) / 2U + 1U)
+#else
+#define XAT_TASKS 2U
+#define XAT_APS 1U
+#define XAT_CPU(index) 1U
+#endif
 
 typedef __declspec(align(64)) struct {
     uint64_t Self, Root, Pool, Budget, Held, Final;
-    uint64_t Progress[2], Checksums[2], Floating[2];
+    uint64_t Progress[XAT_TASKS], Checksums[XAT_TASKS], Floating[XAT_TASKS];
     uint64_t Irqs, IrqMask, FrameRsp, FrameIndex, FrameGeneration;
-    uint64_t Generations[2], Steps, Completed, Bases[2], Local, Contexts[2];
+    uint64_t Generations[XAT_TASKS], Steps, Completed, Bases[XAT_TASKS], Local, Contexts[XAT_TASKS];
     uint64_t Retained, Collected, IrqFlags, IrqVector, DeniedForeignCpu, Aborted;
+#ifdef KERNEL_TEST_AP_CONCURRENT
+    uint64_t Reserved[4];
+#endif
 } XAT_RECORD;
-_Static_assert(sizeof(XAT_RECORD) == 256,"AP batch evidence ABI");
+_Static_assert(sizeof(XAT_RECORD) == (XAT_TASKS == 4 ? 384 : 256),"AP batch evidence ABI");
 extern XAT_RECORD xat_record;
+#ifdef KERNEL_TEST_AP_CONCURRENT
+extern XAT_RECORD xat_second_record;
+XAT_RECORD *xat_cpu_record(void);
+void xat_concurrent_barrier(uint32_t index);
+#endif
 extern X86_TASK_STACK xat_stacks[8];
 extern X86_TASK_CONTEXT xat_contexts[8];
 extern KERNEL_PHYSICAL_ALLOCATOR *xat_pool;
@@ -39,6 +56,10 @@ typedef __declspec(align(64)) struct {
     uint64_t Frame[2], Rsp[2], Rip[2], Reload, Reserved;
 } XAT_PREEMPT;
 extern XAT_PREEMPT xat_preempt;
+#ifdef KERNEL_TEST_AP_CONCURRENT
+extern XAT_PREEMPT xat_preempt_second;
+XAT_PREEMPT *xat_preemption_record(void);
+#endif
 uint32_t x86_timer_diagnostic_reload(void);
 void xat_preempt_work(uint32_t index);
 void xat_preempt_interrupt(const X86_IRQ_FRAME *frame);

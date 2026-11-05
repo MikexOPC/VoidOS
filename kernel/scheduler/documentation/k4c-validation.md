@@ -544,6 +544,81 @@ provano il completamento o il cleanup hardware del nuovo lotto AP1/AP2.
 Layout centralizzato e diff finale verificati. Nessuna nuova prova di
 hardware fisico, migrazione o driver SMP. C4 resta aperta.
 
+## K4-C4 — Primo lotto nativo concorrente AP1/AP2
+
+5 novembre 2026. Il profilo TestApService ap-concurrent esegue quattro
+task reali: due su AP1 e due su AP2, con affinità fissa e un solo Owner
+Rust. Il BSP prepara, sorveglia e raccoglie; AP3 resta nel servizio idle.
+Il boot ordinario dello scheduler resta BSP. Questo chiude il primo
+collegamento concorrente, non lo stress finale di C4.
+
+La barriera con acquire/release prova l'ingresso di entrambe le sessioni
+nel workload prima dell'armamento dei timer. Ogni AP verifica tre
+sospensioni e riprese per task, sei per AP, dodici complessive. Il
+backend Assembly esistente controlla i pattern GPR e lo stato FPU/SIMD.
+Gli IRQ PING e flush restano ricevibili durante il lavoro. Record IRQ,
+timer, contesti e statistiche sono separati; nessuno stack dell'altro AP
+può essere autorizzato dal gate corrente.
+
+Ogni AP completa il lotto locale, verifica current assente, timer fermo,
+ISR/IRR drenati e tutte le riprese concluse; poi pubblica la quiescenza
+Rust e quella dell'ammissione. Il BSP controlla entrambe per entrambi gli
+AP prima di revocare quattro stack, attendere gli shootdown, raccogliere
+gli slot e chiudere il lotto. Le 64 pagine task tornano al budget iniziale.
+Il runner legge record nativi, snapshot finale del lotto e 72 PTE assenti.
+
+### Prove host
+
+kernel/build/ipi-service-host-ba917eb9adf044b6a1be1ec9d0a01682,
+log esterno kernel/build/ap-concurrent-host-final.log:
+
+- 19 test Rust debug e 19 release, Clippy, mailbox e attese concorrenti.
+- Gate precedente: 41 controlli; versione AP1/AP2: 87 controlli, inclusi
+  GDT, identità e rifiuto di stack e frame dell'altra CPU.
+- Preemption precedente: 125 controlli; due stati timer distinti:
+  250 controlli. MMIO, switch e letture privilegiate sono simulati.
+- Barriera e selettori dei record: 24 controlli C, con CPU, clock e
+  atomiche simulate; identità errata, duplicati, input invalido e timeout.
+- C compilato con warning come errori e ASan; cppcheck senza diagnostiche
+  error/warning/performance/portability bloccanti. Le informazioni sugli
+  header di sistema mancanti restano nel file XML: non è analisi esaustiva.
+- Dodici test del runner, inclusa la verifica sintetica positiva dei
+  record concorrenti e dieci mutazioni respinte (barriera, quiescenza,
+  budget, identità IRQ, preemption, mapping e padding).
+
+Debug iniziale: il nuovo record allineato richiedeva padding esplicito
+per evitare C4324; aggiunto senza disabilitare il warning. Il fixture
+del gate concorrente mancava del selettore del record IRQ simulato:
+corretto prima della suite finale. Nessuna di queste prove fallite è
+conteggiata come successo. Il vecchio formato del record resta invariato
+nei profili precedenti.
+
+### Campagna QEMU
+
+Campagna definitiva passata: kernel/build/qemu-run-843e13ebbfab4704904c08c30d7375d7.
+Livello complesso, dieci boot consecutivi per profilo, QEMU TCG/OVMF con
+quattro CPU avviate, immagini ricompilate ed ESP/hash verificati.
+Passati 10/10 per ap-task-concurrent, ap-task-preempt, ap-task-batch,
+ap-dispatch-admission, bsp-periodic e ap-runtime: 60 boot positivi senza
+fault inattesi. Separatamente, 10/10 ap-task-batch-rollback con panic
+atteso e risorse ripristinate. I test negativi non sono boot positivi.
+Il nuovo profilo ha evidenze in
+kernel/build/ipi-service-4d4c587b14774a9cb3e378e2b76da963.
+ELF SHA-256: ABE7BB9C084B3870F043A074C8B629395CA00F08DFECDFF40C3FA27D32A0626F.
+Il risultato riporta TaskCpus=[1,2], quattro CPU realmente inizializzate
+e 30 richieste IPI per boot oltre alla base del bootstrap.
+Layout centralizzato e diff finale verificati; massimo 390 righe nei
+sorgenti e script modificati, cartelle funzionali entro otto file.
+
+Limiti: sessioni sovrapposte sotto TCG, non prova di esecuzione fisica
+simultanea dei vCPU host. Nessuna migrazione o task sul BSP/AP3 nel nuovo
+lotto. Il timeout della barriera è collaudato con mock host; non è stata
+iniettata una mancata quiescenza AP nel guest. Il negativo QEMU di rollback
+resta quello precedente, con errore iniettato prima della seconda
+allocazione. ASan riguarda gli eseguibili host; l'accounting fisico e i
+mapping sono verificati nel guest. Valgrind non eseguito, coverage N/D,
+hardware fisico non provato. C4 resta aperta per lo stress di chiusura.
+
 ## K4-C4 — Preemption periodica su AP1
 
 5 novembre 2026. Implementata la scelta A: AP1 termina autonomamente

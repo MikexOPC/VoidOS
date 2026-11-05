@@ -122,6 +122,65 @@ class RegisterParsing(unittest.TestCase):
                     group.settle(object(), origin, count)
             read.assert_not_called()
 
+    # ====== concurrent_fixture ======
+
+    @staticmethod
+    def concurrent_fixture():
+        root, pool, free, first = 0x1000, 0x2000, 1000, 0xffffffff80105000
+        names = dict(KERNEL_AP_BATCH_RECORD=0xffffffff80110000, KERNEL_AP_SECOND_RECORD=0xffffffff80110400,
+                     KERNEL_AP_PREEMPT_RECORD=0xffffffff80110800, KERNEL_AP_SECOND_PREEMPT=0xffffffff80110c00,
+                     KERNEL_AP_BATCH_PTE=0xffffffff80111000, KERNEL_AP_LOT_RECORD=0xffffffff80111400,
+                     KERNEL_AP_LOT_ARRIVED=0xffffffff80111800)
+        bases = [0xffff810000000000 + i * 18 * 4096 for i in range(4)]
+        words = {names["KERNEL_AP_BATCH_PTE"]: [0] * 72,
+                 names["KERNEL_AP_LOT_RECORD"]: [0, root, 1, 6, 6, 6, 6],
+                 names["KERNEL_AP_LOT_ARRIVED"]: [1, 1]}
+        for slot in range(2):
+            lower = slot * 2
+            address = names["KERNEL_AP_BATCH_RECORD" if slot == 0 else "KERNEL_AP_SECOND_RECORD"]
+            record = [0] * 48
+            record[18:23] = [2, 1 << lower, bases[lower] + 8192, lower, 1]
+            local = 0xffffffff80112000 + slot * 1024
+            record[27:29] = [8, 2]
+            record[33] = local
+            record[40:44] = [0x202, 0xe1, 1, 0]
+            if slot == 0:
+                record[:6] = [address, root, pool, free, free - 64, free]
+                record[6:18] = [16] * 4 + [136, 272, 408, 544, 17, 34, 51, 68]
+                record[23:27] = [1] * 4
+                record[29:33] = bases
+                record[34:38] = [0xffffffff80113000 + i * 1024 for i in range(4)]
+                record[38:40] = [4, 4]
+            words[address] = record
+            words[local] = [0] * 88
+            words[local][74] = 8 | 2 << 32
+            words[local][80] = 0xffffffff00000000
+            words[local][82:84] = [local, first + slot * 448]
+            address = names["KERNEL_AP_PREEMPT_RECORD" if slot == 0 else "KERNEL_AP_SECOND_PREEMPT"]
+            words[address] = [address, 3, 3, 3, 3, 6, 1, 0] + [bases[lower + i] + 8192 for i in range(2)] * 2 + [0xffffffff80001000] * 2 + [1000, 0]
+        return names, words, (root, pool, free, first)
+
+    def test_concurrent_evidence(self):
+        from types import SimpleNamespace
+        names, words, values = self.concurrent_fixture()
+        log = SimpleNamespace(number=lambda name: names[name])
+        firmware.concurrent_batch.verify(None, log, 4, *values, lambda vm, address, count: words[address][:count])
+
+    def test_concurrent_evidence_rejects_corruption(self):
+        from types import SimpleNamespace
+        mutations = [("KERNEL_AP_LOT_ARRIVED", 1, 0), ("KERNEL_AP_LOT_RECORD", 6, 2),
+                     ("KERNEL_AP_BATCH_RECORD", 4, 1000), ("KERNEL_AP_BATCH_RECORD", 38, 2),
+                     ("KERNEL_AP_SECOND_RECORD", 21, 0), ("KERNEL_AP_SECOND_RECORD", 42, 0),
+                     ("KERNEL_AP_SECOND_PREEMPT", 5, 5), ("KERNEL_AP_SECOND_PREEMPT", 6, 0),
+                     ("KERNEL_AP_BATCH_PTE", 71, 1), ("KERNEL_AP_BATCH_RECORD", 44, 1)]
+        for name, index, value in mutations:
+            with self.subTest(name=name, index=index):
+                names, words, values = self.concurrent_fixture()
+                words[names[name]][index] = value
+                log = SimpleNamespace(number=lambda name: names[name])
+                with self.assertRaises(RuntimeError):
+                    firmware.concurrent_batch.verify(None, log, 4, *values, lambda vm, address, count: words[address][:count])
+
 
 if __name__ == "__main__":
     result = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(RegisterParsing))
