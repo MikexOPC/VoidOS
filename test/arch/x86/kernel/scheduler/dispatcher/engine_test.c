@@ -18,6 +18,7 @@ static void check_private(int condition)
 // ====== mocked_cpu_boundary ======
 
 uint32_t kernel_scheduler_context_valid(void) { return context; }
+uint32_t kernel_scheduler_context_valid_on(uint32_t cpu) { return cpu == 0 ? context : 0; }
 uint32_t kernel_scheduler_binding_context_valid(void) { return context; }
 // ====== payload_context_mock ======
 

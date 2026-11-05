@@ -246,6 +246,35 @@ degli eventi sulle quattro identità, lock bilanciati e stress sul vero
 oggetto Rust. Regressioni scheduler e dieci boot per profilo ordinario e
 periodico BSP. Queste prove precedono il vero dispatcher AP.
 
+## K4-C4 — Motore indirizzabile per CPU
+
+Secondo sottoblocco del 5 novembre 2026. Il motore espone dispatch_on(cpu)
+e inoltra selezione, yield, eventi, stop, raccolta e tick alle API _on.
+L'ingresso legacy resta un adattatore per CPU zero. Il backend deve
+confermare l'identità con risultato esattamente uno prima di accedere
+alla guardia d'ingresso della CPU. Il gate viene ricontrollato dopo
+run, idle e release_actor. Una guardia distinta per ciascuna delle 64
+identità impedisce il rientro sul medesimo core; non sostituisce il lock
+globale Rust. Il chiamante resta a IF=0, fuori da IRQ/NMI, sulla stessa
+CPU per tutta la chiamata. Configurazione e statistiche sono possedute
+dal chiamante e restano stabili.
+
+Il drain delle notifiche IRQ rimane esclusivo della CPU zero: una
+configurazione AP che lo richiede viene respinta senza mutare lo stato.
+Il lotto resta esclusivo, con esattamente task_count task pubblicati:
+la condizione finale EMPTY riguarda ancora la coda globale. Questo
+blocco non autorizza lanci concorrenti di lotti né modifica stack,
+contesti nativi e ammissione degli AP. La chiusura coordinata dei
+dispatcher concorrenti richiederà il successivo collegamento AP.
+
+Accettazione: ciclo completo sul vero Owner Rust con lock e identità
+host da zero a 63, affinità singola, yield, observe/signal/wait con
+generazione cambiata, stop/query, exit e raccolta. Provare identità
+falsa, indici fuori limite, gate zero/non normalizzato, rientro, drain
+AP vietato e rilascio della guardia dopo fallimento. CPU, stack e
+risorse del nuovo test restano mock; il kernel continua a usare solo
+l'adattatore BSP. Regressioni host e dieci boot ordinari e periodici.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):
