@@ -1,6 +1,6 @@
 # Piano sicurezza dei sottosistemi
 
-Stato: avviato (bounds e health test entropia pronti). Questo file e il punto di partenza per chi lavora sulla
+Stato: avviato (bounds, health test entropia e SHA-256 pronti). Questo file e il punto di partenza per chi lavora sulla
 sicurezza; va aggiornato a ogni passo.
 
 ## Ordine concordato — 6 novembre 2026
@@ -116,3 +116,9 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   `security`: 16 test, cutoff confrontati con la Table 2 dello
   standard. Aperto: sorgente x86, condizionamento/DRBG. Dettagli in
   [entropy.md](../../lib/security/entropy/documentation/entropy.md).
+- **2026-11-07 — `lib/security/hash/sha256`.** SHA-256 FIPS 180-4, primo
+  anello della catena SHA-256 → HMAC → HMAC_DRBG verso i canary. Rust
+  `no_std`, API Rust. Suite `security`: 8 test, costanti ricalcolate dai
+  primi, vettori NIST, confronto con Windows CNG. Aperto: azzeramento dello
+  stato con `lib/security/memory`. Dettagli in
+  [sha256.md](../../lib/security/hash/sha256/documentation/sha256.md).

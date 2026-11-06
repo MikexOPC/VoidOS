@@ -11,7 +11,7 @@ struct Module {
     test   : &'static str,
 }
 
-const MODULES: [Module; 2] = [
+const MODULES: [Module; 3] = [
     Module {
         name   : "bounds",
         source : "lib/security/bounds/rust/bounds.rs",
@@ -21,6 +21,11 @@ const MODULES: [Module; 2] = [
         name   : "entropy",
         source : "lib/security/entropy/rust/health.rs",
         test   : "test/lib/security/entropy/rust/health_test.rs",
+    },
+    Module {
+        name   : "sha256",
+        source : "lib/security/hash/sha256/rust/sha256.rs",
+        test   : "test/lib/security/hash/sha256/rust/sha256_test.rs",
     },
 ];
 
