@@ -157,7 +157,7 @@ __declspec(dllexport) int run_apic_control_tests(void)
 int x86_lapic_native_eoi(void)
 {
     if ((test_lapic_entry() & 0x000ffffffffff000ULL) != 0xfee00000 ||
-        (in_service != 1 && in_service != 2 && in_service != 4) || (in_service == 1 && ier && !tx_writes)) return 0;
+        (in_service != 1 && in_service != 2 && in_service != 4 && in_service != 8) || (in_service == 1 && ier && !tx_writes)) return 0;
     ++eois;
     if (uart_bad != 2) in_service = 0;
     return 1;
@@ -207,17 +207,25 @@ __declspec(dllexport) int run_lapic_timer_eoi_tests(void)
     uart_bad = 0;
     if (!x86_lapic_eoi_vector(state.Mapping,0x42) || in_service) return 9;
     if (!x86_lapic_idle(state.Mapping) || !x86_lapic_idle_except(state.Mapping,0) ||
-        !x86_lapic_idle_except(state.Mapping,6) || x86_lapic_idle_except(state.Mapping,8)) return 10;
+        !x86_lapic_idle_except(state.Mapping,6) || x86_lapic_idle_except(state.Mapping,16)) return 10;
     irr_pending = 2;
     if (x86_lapic_idle(state.Mapping) || x86_lapic_idle_except(state.Mapping,4) ||
         !x86_lapic_idle_except(state.Mapping,2) || !x86_lapic_idle_except(state.Mapping,6)) return 11;
     irr_pending = 6;
     if (x86_lapic_idle_except(state.Mapping,2) || !x86_lapic_idle_except(state.Mapping,6)) return 12;
     irr_pending = 8;
-    if (x86_lapic_idle_except(state.Mapping,7)) return 13;
+    if (x86_lapic_idle_except(state.Mapping,7) || !x86_lapic_idle_except(state.Mapping,8)) return 13;
     irr_pending = 0; in_service = 2;
     if (x86_lapic_idle_except(state.Mapping,2) || eois != 3) return 14;
-    in_service = 0;
+    in_service = 8;
+    if (x86_lapic_eoi_vector(state.Mapping,0x44) || x86_lapic_eoi_vector(state.Mapping,0x42) ||
+        !x86_lapic_eoi_vector(state.Mapping,0x43) || in_service || eois != 4) return 15;
+    in_service = 9;
+    if (x86_lapic_eoi_vector(state.Mapping,0x43) || eois != 4 || in_service != 9) return 16;
+    in_service = 8; uart_bad = 2;
+    if (x86_lapic_eoi_vector(state.Mapping,0x43) || eois != 5 || in_service != 8) return 17;
+    uart_bad = 0;
+    if (!x86_lapic_eoi_vector(state.Mapping,0x43) || in_service || eois != 6) return 18;
     return 0;
 }
 

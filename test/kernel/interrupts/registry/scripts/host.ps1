@@ -31,3 +31,18 @@ if ($result -ne 0) { throw "Test registro IRQ fallito: $result" }
 if ($LASTEXITCODE -ne 0) { throw 'Compilazione test subscription IRQ Rust fallita.' }
 & ($OutputDirectory+'/irq-registry-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test subscription IRQ Rust fallito.' }
+
+# ============ ASan on the actual four-slot registry ============
+
+. (Join-Path $project 'scripts/lib/common.ps1')
+$saved = Use-Msvc
+try {
+    $asanSources = @('arch/x86/kernel/interrupts/registry/registry.c',
+        'test/kernel/interrupts/registry/registry_test.c','lib/memory/address_ranges.c',
+        'test/kernel/interrupts/registry/asan.c') | ForEach-Object { Join-Path $project $_ }
+    Invoke-Checked "$($saved.Bin)/cl.exe" (@('/nologo','/TC','/std:c11','/W4','/WX',
+        '/fsanitize=address','/Zi','/MD','/O2',"/I$project","/Fo$OutputDirectory/",
+        "/Fd$OutputDirectory/irq-registry-asan.pdb","/Fe$OutputDirectory/irq-registry-asan.exe") +
+        $asanSources + @('/link',"$OutputDirectory/irq-registry-state.obj",'/incremental:no','/WX'))
+    Invoke-Checked "$OutputDirectory/irq-registry-asan.exe" @()
+} finally { Restore-Msvc $saved }

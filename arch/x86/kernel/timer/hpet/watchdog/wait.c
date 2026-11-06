@@ -30,13 +30,13 @@ static int source_valid(const volatile BOOT_U32 *source, const volatile BOOT_U32
 
 // ====== wake_lapic_valid ======
 
-// Only vectors41h/42h with a live registry token may remain pending in IRR.
+// Only owned vectors41h..43h with a live registry token may remain pending in IRR.
 static int wake_lapic_valid(const X86_HPET_WATCHDOG *owner)
 {
     const X86_IRQ_REGISTRY *registry = x86_irq_registry();
     BOOT_U32 allowed = 0, index;
     if (!x86_irq_registry_validate(registry) || registry->Busy) return 0;
-    for (index = 1; index <= 2; ++index) {
+    for (index = 1; index < X86_IRQ_CAPACITY; ++index) {
         const X86_IRQ_SUBSCRIPTION *item = &registry->Slots[index];
         X86_IRQ_TOKEN token = {item->Id, item->Vector, 0};
         if (item->Id) {

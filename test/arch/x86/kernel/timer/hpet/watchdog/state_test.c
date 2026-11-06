@@ -133,6 +133,12 @@ int run_watchdog_tests(void)
         test_mode = 0;
         if (!x86_watchdog_close() || !restored()) return (int)(800 + mode);
     }
+    watchdog_test_reset(80);
+    if (!x86_watchdog_open(&test_env) || !x86_watchdog_idle(test_source) ||
+        x86_watchdog_wake_detail() || x86_watchdog_failure() ||
+        x86_watchdog_result() != X86_WATCHDOG_EVENT || x86_watchdog_close()) return 51;
+    test_mode = 0;
+    if (!x86_watchdog_close() || !restored()) return 52;
     for (mode = 71; mode <= 74; ++mode) {
         watchdog_test_reset(mode);
         if (!x86_watchdog_open(&test_env)) return (int)(1000 + mode);

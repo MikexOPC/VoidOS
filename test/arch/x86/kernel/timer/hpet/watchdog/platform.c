@@ -95,7 +95,7 @@ int x86_lapic_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *va
     if (offset == 0x220) {
         if (test_mode == 34 || test_mode == 60 || test_mode == 62 || test_mode == 69) *value = 2;
         if (test_mode == 61) *value = 6;
-        if (test_mode == 64) *value = 8;
+        if (test_mode == 64 || test_mode == 80) *value = 8;
         if (test_mode == 65) *value = 1;
     }
     return 1;
@@ -107,7 +107,7 @@ int x86_lapic_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *va
 int x86_lapic_idle_except(const X86_LAPIC_MAPPING *owner, BOOT_U32 pending)
 {
     BOOT_U32 index, value;
-    if (pending & ~7U) return 0;
+    if (pending & ~15U) return 0;
     for (index = 0; index < 8; ++index) {
         if (!x86_lapic_read(owner,0x100+index*16,&value) || value ||
             !x86_lapic_read(owner,0x200+index*16,&value) ||
@@ -258,7 +258,7 @@ int x86_irq_registry_token_live(const X86_IRQ_REGISTRY *r, const X86_IRQ_TOKEN *
 {
     if (r != &registry || !handler || !token || token->Reserved) return 0;
     if (token->Id == 1 && token->Vector == 0x40) return 1;
-    return test_mode != 69 && token->Vector >= 0x41 && token->Vector <= 0x42 &&
+    return test_mode != 69 && token->Vector >= 0x41 && token->Vector <= 0x43 &&
         r->Slots[token->Vector - 0x40].Id == token->Id && token->Id != 0;
 }
 int x86_irq_registry_validate(const X86_IRQ_REGISTRY *r)
@@ -290,6 +290,9 @@ BOOT_U32 x86_irq_sleep(volatile BOOT_U32 *source, BOOT_U32 goal, BOOT_U32 budget
     if (test_mode == 60 || test_mode == 61 || test_mode == 69) {
         registry.Slots[1].Id = 2; registry.Slots[1].Vector = 0x41;
         if (test_mode == 61) { registry.Slots[2].Id = 3; registry.Slots[2].Vector = 0x42; }
+    }
+    if (test_mode == 80) {
+        registry.Slots[3].Id = 4; registry.Slots[3].Vector = 0x43;
     }
     if (test_mode == 68) registry.Busy = 1;
     if (test_mode == 36 || test_mode == 38) {

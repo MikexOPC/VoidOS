@@ -221,7 +221,7 @@ void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
         !x86_scheduler_irq_record(frame->Vector,frame->Rip,frame->Rsp,frame->Flags))
         x86_kernel_stop(0x4b495251554e0005ULL);
 #endif
-    if (frame->Vector >= 0x40 && frame->Vector <= 0x42) {
+    if (frame->Vector >= 0x40 && frame->Vector <= 0x43) {
         if (!x86_irq_registry_deliver(&irq_registry,(BOOT_U32)frame->Vector)) x86_kernel_stop(0x4b495251554e0004ULL);
     } else if (frame->Vector == 0xf0) {
         if (!armed || returned) x86_kernel_stop(0x4b495251554e0002ULL);

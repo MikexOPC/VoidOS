@@ -117,7 +117,7 @@ static int invalid(void)
     if (!reset()) return 1;
     save();
     for (vector = 0; vector < 256; ++vector) {
-        if (vector >= 0x40 && vector <= 0x42) continue;
+        if (vector >= 0x40 && vector <= 0x43) continue;
         if (x86_irq_registry_bind(&registry,vector,handler,quiet,&output) || !unchanged()) return 2;
     }
     if (x86_irq_registry_bind(&registry,0x40,0,quiet,&output) ||
@@ -223,6 +223,30 @@ static int three_subscriptions(void)
     return x86_irq_registry_validate(&registry) ? 0 : 6;
 }
 
+// ====== fourth_subscription_lifetime ======
+
+static int fourth_subscription(void)
+{
+    X86_IRQ_TOKEN third = {0}, fourth = {0}, stale;
+    if (!reset() || !x86_irq_registry_bind(&registry,0x40,handler,quiet,&first) ||
+        !x86_irq_registry_bind(&registry,0x41,handler,quiet,&second) ||
+        !x86_irq_registry_bind(&registry,0x42,handler,quiet,&third) ||
+        !x86_irq_registry_bind(&registry,0x43,handler,quiet,&fourth)) return 1;
+    if (fourth.Id != 4 || !x86_irq_registry_deliver(&registry,0x43) ||
+        x86_irq_registry_deliveries(&registry,&fourth) != 1 ||
+        x86_irq_registry_deliveries(&registry,&third)) return 2;
+    registry.Slots[3].Id = first.Id;
+    if (x86_irq_registry_validate(&registry)) return 3;
+    registry.Slots[3].Id = fourth.Id; stale = fourth;
+    if (!x86_irq_registry_unbind(&registry,&fourth) || x86_irq_registry_token_live(&registry,&stale) ||
+        !x86_irq_registry_bind(&registry,0x43,handler,quiet,&fourth) || fourth.Id != 5 ||
+        x86_irq_registry_unbind(&registry,&stale)) return 4;
+    if (!x86_irq_registry_unbind(&registry,&fourth) || !x86_irq_registry_unbind(&registry,&third) ||
+        !x86_irq_registry_unbind(&registry,&second) || !x86_irq_registry_unbind(&registry,&first)) return 5;
+    if (x86_irq_registry_deliver(&registry,0x43)) return 6;
+    return x86_irq_registry_validate(&registry) ? 0 : 7;
+}
+
 // ====== gruppi di verifiche con esito diagnostico distinto ===== //
 
 __declspec(dllexport) int run_irq_registry_tests(void)
@@ -235,5 +259,6 @@ __declspec(dllexport) int run_irq_registry_tests(void)
     result = generations(); if (result) return 500+result;
     result = tokens(); if (result) return 600+result;
     result = three_subscriptions(); if (result) return 700+result;
+    result = fourth_subscription(); if (result) return 800+result;
     return 0;
 }
