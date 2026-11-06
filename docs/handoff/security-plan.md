@@ -3,6 +3,24 @@
 Stato: da avviare. Questo file e il punto di partenza per chi lavora sulla
 sicurezza; va aggiornato a ogni passo.
 
+## Ordine concordato — 6 novembre 2026
+
+Decisione dell'utente: completare prima i punti K, poi affrontare il
+consolidamento iniziale della sicurezza e infine la GUI.
+
+1. K4-C5: driver sicuri su più CPU; K4-C6: integrazione e chiusura K4.
+2. K5: syscall, confini di privilegio e user copy; K6: primo programma
+   utente ELF e gestione dei suoi fault.
+3. Review e consolidamento iniziale della sicurezza descritti qui.
+4. GUI, dopo i relativi prerequisiti di input, output e servizi.
+
+Questa sequenza rinvia la campagna dedicata, non i controlli necessari
+alle implementazioni. Ownership, bounds, sincronizzazione e transizioni
+di privilegio devono essere verificati nei rispettivi punti K. Le
+protezioni richieste dal profilo userspace vanno implementate e provate
+con K5/K6, prima di eseguire programmi utente; non aspettano la review.
+La classifica sotto resta una prima stesura da rivalutare dopo i punti K.
+
 ## Obiettivo
 
 Ogni sottosistema deve essere sicuro. L'impegno e proporzionale a quanto il
