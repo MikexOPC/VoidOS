@@ -59,6 +59,7 @@ $suites = [ordered]@{
     'virtio-resources' = 'kernel/drivers/video/virtio/resources/scripts/test.ps1'
     lib = 'lib/scripts/test.ps1'
     'security-bounds' = 'lib/security/bounds/scripts/test.ps1'
+    'security-entropy' = 'lib/security/entropy/scripts/test.ps1'
     heap = 'kernel/mm/heap/scripts/test.ps1'
     clock = 'kernel/time/scripts/test.ps1'
     layout = 'scripts/test/layout-check.ps1'
