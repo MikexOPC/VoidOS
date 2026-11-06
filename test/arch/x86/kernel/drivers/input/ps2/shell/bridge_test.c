@@ -88,13 +88,13 @@ int main(void)
         assert(kernel_ps2_command_pop(&owner.Commands,&command) == KERNEL_PS2_QUEUE_OK);
     x86_ps2_shell_close(); assert(kernel_ps2_command_closed_empty(&owner.Commands));
 #ifdef KERNEL_CONSOLE_SHELL
-    assert(submitted == 1);
+    assert(submitted == 2);
     owner = (X86_PS2_SESSION){0}; cancel = 0; submit_failed = 1;
     owner.Line.Data[0] = 'x'; owner.Line.Length = 1;
     {
         uint32_t before = data_signals;
-        assert(!x86_ps2_shell_submit() && data_signals == before && submitted == 2);
-        assert(kernel_ps2_command_pop(&owner.Commands,&command) == KERNEL_PS2_QUEUE_OK);
+        assert(!x86_ps2_shell_submit() && data_signals == before && submitted == 3);
+        assert(kernel_ps2_command_pop(&owner.Commands,&command) == KERNEL_PS2_QUEUE_EMPTY);
     }
 #endif
     owner = (X86_PS2_SESSION){0}; actor = 2; feed = 1;
