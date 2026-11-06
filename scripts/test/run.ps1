@@ -49,6 +49,7 @@ $suites = [ordered]@{
     'x86-vgpu-present' = 'arch/x86/kernel/drivers/video/virtio/iommu/scripts/test.ps1'
     'dma-arena' = 'arch/x86/mm/dma/scripts/test.ps1'
     pointer = 'kernel/console/video/scripts/pointer/test.ps1'
+    'console-requests' = 'kernel/console/video/scripts/requests/test.ps1'
     diagnostics = 'kernel/diagnostics/scripts/test.ps1'
     'ps2-mouse' = 'kernel/drivers/input/ps2/scripts/mouse/test.ps1'
     'virtio-discovery' = 'kernel/drivers/video/virtio/discovery/scripts/test.ps1'
