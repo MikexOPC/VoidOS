@@ -61,6 +61,9 @@ int x86_scheduler_code_valid(uint64_t target) { (void)target; return 1; }
 int x86_scheduler_task_valid(void) { return (int)shared_valid; }
 uint64_t ks_atomic_load_relaxed(const uint64_t *value) { return *value; }
 void ks_atomic_store_release(uint64_t *value, uint64_t next) { *value = next; }
+uint64_t ks_atomic_load_acquire(const uint64_t *value) { return *value; }
+static X86_CPU_LOCAL bsp;
+const X86_CPU_LOCAL *x86_percpu_bsp(void) { return &bsp; }
 
 // ====== test_cpu_private ======
 
@@ -80,6 +83,7 @@ static void test_cpu_private(uint32_t actor_index)
     auth.Data.Id = 1; auth.Data.Owner = pool.Self; auth.Data.Base = 0x200000; auth.Data.Pages = (auth.Cpus - 1) * 29;
     auth.Tables.Id = 2; auth.Tables.Owner = pool.Self; auth.Tables.Base = 0x300000; auth.Tables.Pages = 3;
     xat_arena = (X86_AP_SNAPSHOT){auth.Self,auth.Data.Base,auth.Data.Pages,1,auth.Tables.Base,2,auth.Cpus,3};
+    x86_ap_scope_unbind();
     cpu.cr0 = 0x80010001; cpu.cr3 = root; cpu.cr4 = 0x200; cpu.apic_base = 0xfee00800;
     cpu.max_leaf = 1; cpu.apic_id = actor_index; cpu.features = (1U << 9) | (1U << 24) | (1U << 25) | (1U << 26);
     for (uint32_t level = 0; level < 3; ++level)
@@ -90,6 +94,8 @@ static void test_cpu_private(uint32_t actor_index)
     check_private(xad_claim(actor_index,actor_index,root) == 1 && xad_admit(actor_index,actor_index,1,root));
     check_private(!xat_ap_gate(&pool,root,&cpu));
     check_private(xad_transition(actor_index,0,1,root,0) && xad_transition(actor_index,actor_index,1,root,1));
+    check_private(!xat_ap_gate(&pool,root,&cpu) && !x86_ap_scope());
+    check_private(xat_scope_bind() && !xat_scope_bind() && x86_ap_scope());
     check_private(xat_ap_gate(&pool,root,&cpu));
     for (uint32_t level = 0; level < 3; ++level) {
         uint32_t where = (uint32_t)((base >> (39 - level * 9)) & 511);

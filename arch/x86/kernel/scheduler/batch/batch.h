@@ -4,6 +4,7 @@
 #include "../integration/control.h"
 #include "../mapping/native.h"
 #include "../admission/admission.h"
+#include "../remote/scope.h"
 #include "arch/x86/kernel/cpu/percpu/resources/paging/authority.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #ifdef KERNEL_TEST_AP_BATCH_STRESS
@@ -50,6 +51,7 @@ void xat_concurrent_barrier(uint32_t index);
 extern KERNEL_PHYSICAL_ALLOCATOR *xat_pool;
 extern X86_AP_SNAPSHOT xat_arena;
 KERNEL_PHYSICAL_ALLOCATOR *x86_scheduler_batch_resources(uint64_t *root);
+int xat_scope_bind(void);
 int xat_ap_actor(void);
 int xat_ap_gate(const KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, const X86_TASK_CPU *cpu);
 int xat_dispatcher_gate(void);

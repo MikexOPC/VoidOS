@@ -62,7 +62,7 @@ try {
         "$out/mailbox.obj","$out/irq-frame.obj",'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/native.exe" @()
     Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
-        '/MD','/O2','/UNDEBUG',"/I$project","$project/arch/x86/kernel/scheduler/batch/validation.c",
+        '/MD','/O2','/UNDEBUG',"/I$project","$project/arch/x86/kernel/scheduler/batch/validation.c","$project/arch/x86/kernel/scheduler/remote/scope.c",
         "$project/arch/x86/kernel/scheduler/integration/local.c","$project/arch/x86/kernel/scheduler/capabilities.c",
         "$project/test/arch/x86/kernel/scheduler/batch/validation_test.c",
         "/Fo$out/","/Fe$out/ap-gate.exe","/Fd$out/ap-gate.pdb",'/link',
@@ -77,7 +77,7 @@ try {
     Invoke-Checked "$out/ap-preempt.exe" @()
     Invoke-Checked "$($saved.Bin)/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
         '/MD','/O2','/UNDEBUG','/DKERNEL_TEST_AP_CONCURRENT=1',"/I$project",
-        "$project/arch/x86/kernel/scheduler/batch/validation.c",$admissionLocal,
+        "$project/arch/x86/kernel/scheduler/batch/validation.c","$project/arch/x86/kernel/scheduler/remote/scope.c",$admissionLocal,
         "$project/arch/x86/kernel/scheduler/capabilities.c",
         "$project/test/arch/x86/kernel/scheduler/batch/validation_test.c",
         "/Fo$out/","/Fe$out/concurrent-gate.exe","/Fd$out/concurrent-gate.pdb",'/link',
@@ -108,7 +108,7 @@ try {
         '/UNDEBUG','/DKERNEL_TEST_AP_CONCURRENT=1','/DKERNEL_TEST_AP_PREEMPTION=1',
         '/DKERNEL_TEST_AP_BATCH_STRESS=1','/DKERNEL_TEST_AP_FOUR=1',"/I$project","/Fo$out/")
     Invoke-Checked "$($saved.Bin)/cl.exe" ($fourFlags + @(
-        "$project/arch/x86/kernel/scheduler/batch/validation.c",$admissionLocal,
+        "$project/arch/x86/kernel/scheduler/batch/validation.c","$project/arch/x86/kernel/scheduler/remote/scope.c",$admissionLocal,
         "$project/arch/x86/kernel/scheduler/capabilities.c",
         "$project/test/arch/x86/kernel/scheduler/batch/validation_test.c",
         "/Fe$out/four-gate.exe","/Fd$out/four-gate.pdb",'/link',"$out/mailbox.obj","$out/irq-frame.obj",
@@ -123,7 +123,7 @@ try {
     }
     Invoke-Cppcheck $project $out @($source, $wait, $test, $native, $nativeTest,
         $admissionNative, $admissionLocal, "$project/test/arch/x86/kernel/scheduler/admission/probe.c",
-        "$project/arch/x86/kernel/scheduler/batch/validation.c","$project/arch/x86/kernel/scheduler/batch/runtime.c",
+        "$project/arch/x86/kernel/scheduler/batch/validation.c","$project/arch/x86/kernel/scheduler/remote/scope.c","$project/arch/x86/kernel/scheduler/batch/runtime.c",
         "$project/arch/x86/kernel/scheduler/batch/work.c","$project/arch/x86/kernel/scheduler/batch/concurrent.c","$project/arch/x86/kernel/scheduler/batch/preempt.c",
         "$project/test/arch/x86/kernel/scheduler/batch/preempt_test.c","$project/test/arch/x86/kernel/scheduler/batch/concurrent_test.c",
         "$project/test/arch/x86/kernel/scheduler/batch/probe.c",

@@ -2,7 +2,8 @@
 
 $serviceSources = @('arch/x86/kernel/cpu/percpu/service/wait.c',
     'arch/x86/kernel/cpu/percpu/service/native/runtime.c',
-    'arch/x86/kernel/cpu/percpu/service/native/transport.c')
+    'arch/x86/kernel/cpu/percpu/service/native/transport.c',
+    'arch/x86/kernel/scheduler/remote/scope.c')
 $serviceDefines = @()
 if ($TestApService -ne 'none') {
     $serviceSources += 'test/arch/x86/kernel/cpu/percpu/service/integration/probe.c'

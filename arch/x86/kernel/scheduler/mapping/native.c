@@ -1,7 +1,7 @@
 #include "native.h"
 #include "arch/x86/configs/layout.h"
-#if KERNEL_TEST_AP_SERVICE == 9
-#include "../batch/batch.h"
+#ifdef KERNEL_AP_RUNTIME
+#include "../remote/scope.h"
 #endif
 #ifdef KERNEL_AP_RUNTIME
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
@@ -29,9 +29,9 @@ uint32_t x86_scheduler_zero_fault_used(void) { return zero_fault_used; }
 int x86_scheduler_native_gate(void)
 {
     X86_TASK_CPU cpu = {0};
-#if KERNEL_TEST_AP_SERVICE == 9
-    if (bound_pool && xat_ap_actor()) return x86_scheduler_cpu_capture(&cpu) &&
-        xat_ap_gate(bound_pool,bound_root,&cpu);
+#ifdef KERNEL_AP_RUNTIME
+    if (bound_pool && x86_ap_actor()) return x86_scheduler_cpu_capture(&cpu) &&
+        x86_ap_gate(bound_pool,bound_root,&cpu);
 #endif
     return bound_pool && x86_scheduler_cpu_capture(&cpu) &&
         x86_scheduler_cpu_valid(&cpu, bound_root, bound_bsp) &&
@@ -187,13 +187,35 @@ int x86_task_stack_zero(const X86_TASK_STACK *owner)
     return slot_private(owner, 1);
 }
 
+#ifdef KERNEL_AP_RUNTIME
+// ====== ap_authority_private ======
+
+static int ap_authority_private(const X86_TASK_CONTEXT *context, uint64_t base)
+{
+    const X86_CPU_LOCAL *cpu = x86_percpu_current_local();
+    if (!cpu || !cpu->Index || !x86_scheduler_native_gate()) return 0;
+    if (x86_scheduler_dispatcher_context_is(context) == 1)
+        return base == X86_AP_STACK_BASE(cpu->Index) && x86_ap_dispatcher_authority();
+    for (uint32_t index = 0; index < 8; ++index) {
+        const X86_TASK_STACK *owner = &bound_owners[index];
+        if (context != &bound_contexts[index] || base != x86_task_stack_base(index)) continue;
+        return owner->self == (uint64_t)(uintptr_t)owner && owner->pool == bound_pool &&
+            owner->root == bound_root && owner->index == index && owner->generation &&
+            owner->stage == X86_TASK_STACK_READY && owner->lease.Pages == 16 &&
+            owner->lease.Owner == bound_pool->Self && slot_private(owner, 1) &&
+            kernel_physical_is_pinned(bound_pool, &owner->lease) == 1;
+    }
+    return 0;
+}
+#endif
+
 // ====== x86_scheduler_stack_authority ======
 
 int x86_scheduler_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base, uint64_t bytes)
 {
     if (!bound_contexts || bytes != 65536) return 0;
-#if KERNEL_TEST_AP_SERVICE == 9
-    if (xat_ap_actor()) return xat_stack_authority(context,base,bytes);
+#ifdef KERNEL_AP_RUNTIME
+    if (x86_ap_actor()) return ap_authority_private(context,base);
 #endif
     if (base == X86_KERNEL_MAIN_BASE && x86_scheduler_dispatcher_context_is(context) == 1) {
         volatile BOOT_U64 *entries;
