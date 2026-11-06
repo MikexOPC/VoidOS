@@ -15,6 +15,7 @@ static const char payload[] = "test";
 
 uint32_t x86_scheduler_index(void) { return index; }
 int x86_scheduler_task_valid(void) { return live != 0; }
+int x86_scheduler_driver_task_valid(void) { return x86_scheduler_task_valid(); }
 __declspec(noreturn) void kernel_scheduler_fail_stop(void) { abort(); }
 
 // ====== x86_scheduler_event_request ======

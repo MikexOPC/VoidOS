@@ -19,6 +19,7 @@ __declspec(noreturn) void x86_scheduler_exit(void);
 uint32_t x86_scheduler_index(void);
 uint64_t x86_scheduler_generation(void);
 int x86_scheduler_task_valid(void);
+int x86_scheduler_driver_task_valid(void);
 void x86_scheduler_yield(void);
 KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uint64_t token);
 void x86_scheduler_workload(void);

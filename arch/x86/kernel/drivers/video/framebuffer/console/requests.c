@@ -25,7 +25,7 @@ __declspec(noreturn) void kernel_console_requests_fail_stop(void) { kernel_sched
 
 int x86_console_requests_send(X86_CONSOLE *self, uint32_t operation,
     const void *text, uint32_t length, uint32_t capacity) {
-    if (!self || !x86_scheduler_task_valid() ||
+    if (!self || !x86_scheduler_driver_task_valid() ||
         (x86_scheduler_index() != 0 && x86_scheduler_index() != 2)) return 0;
     for (uint32_t retries = 0; retries < 1024; ++retries) {
         KERNEL_EVENT_REPLY observed = x86_scheduler_event_request(X86_TASK_OBSERVE, event_id(), 0);
@@ -43,7 +43,7 @@ int x86_console_requests_send(X86_CONSOLE *self, uint32_t operation,
 // ====== x86_console_requests_step ======
 
 int x86_console_requests_step(X86_CONSOLE *self) {
-    if (!self || !x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    if (!self || !x86_scheduler_driver_task_valid() || x86_scheduler_index() != 1) return 0;
     if (self->RequestsClosed) return 1;
     for (uint32_t index = 0; index < 8; ++index) {
         uint32_t result = kernel_console_requests_consume(&self->Requests, &self->Service);
@@ -57,7 +57,7 @@ int x86_console_requests_step(X86_CONSOLE *self) {
 
 int x86_console_requests_pending(X86_CONSOLE *self) {
     KERNEL_CONSOLE_REQUEST_INFO info;
-    if (!self || !x86_scheduler_task_valid() || x86_scheduler_index() != 1) return -1;
+    if (!self || !x86_scheduler_driver_task_valid() || x86_scheduler_index() != 1) return -1;
     if (self->RequestsClosed) return 0;
     if (kernel_console_requests_query(&self->Requests, &info) != KCR_OK || info.State != KCR_OPEN) return -1;
     if (info.Pending) return 1;

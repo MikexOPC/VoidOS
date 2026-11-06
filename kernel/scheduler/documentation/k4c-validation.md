@@ -880,3 +880,20 @@ Limiti noti: `kernel-boot` fallisce già sul commit di partenza (inventario
 paging diverso dalla fotografia), indipendente da questo lavoro. Il test
 `ps2/shell/bridge_test.c` è stato allineato all'ordine SUBMIT-prima-del-push
 introdotto in 177dcab.
+
+## K4-C5 — Driver solo su CPU 0, 6 novembre 2026
+
+Scelta dell'utente: owner unico BSP, imposto dal codice. I 15 punti
+d'ingresso di PS/2, shell, console e framebuffer/VirtIO usano
+`x86_scheduler_driver_task_valid()`: task valido, assegnato alla CPU 0 e in
+esecuzione sulla CPU 0. Il watchdog rifiuta già gli AP tramite il confronto
+di `IA32_APIC_BASE` con il profilo BSP.
+
+Prova in guest: nel diagnostico `ap-console-ipi` i produttori su AP1 hanno
+task valido ma controllo driver negato; il worker BSP li ha entrambi.
+Suite host ps2, console, console-requests, x86-framebuffer, x86-scheduler,
+pointer e layout PASS. QEMU: v2c, shell-text e ap-console-ipi 10/10 boot
+(`qemu-run-debf8b7543a44943ad61d21278e355a2`); console-active, ap-console,
+ap-runtime, ap-console-ipi-no-ack e fallback 3/3
+(`qemu-run-953fb45aba6e4adaa57d1de48a257abd`). `kernel.c` non ha un harness
+host eseguibile: la regola è provata solo in guest.

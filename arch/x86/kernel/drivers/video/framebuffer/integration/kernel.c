@@ -22,7 +22,7 @@ static X86_FB_MAPPING mapping;
 #ifdef KERNEL_CONSOLE_SHELL
 int x86_fb_kernel_audit(void)
 {
-    if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    if (!x86_scheduler_driver_task_valid() || x86_scheduler_index() != 1) return 0;
     return x86_fb_live_audit(&mapping);
 }
 #endif
@@ -34,7 +34,7 @@ int x86_fb_kernel_group_pointer(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *s
     BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks,
     BOOT_U32 caret, const KERNEL_POINTER_IMAGE *pointer)
 {
-    if (!pointer || !x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    if (!pointer || !x86_scheduler_driver_task_valid() || x86_scheduler_index() != 1) return 0;
     return x86_fb_live_group_pointer(&mapping, column, row, scalars, count, foreground, background, ticks, caret, pointer);
 }
 #endif
@@ -45,10 +45,10 @@ int x86_fb_kernel_group_caret(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *sca
     BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks, BOOT_U32 caret)
 {
 #if defined(KERNEL_CONSOLE_SHELL)
-    if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    if (!x86_scheduler_driver_task_valid() || x86_scheduler_index() != 1) return 0;
     return x86_fb_live_group_caret(&mapping, column, row, scalars, count, foreground, background, ticks, caret);
 #elif defined(KERNEL_TEST_CONSOLE_DRAW)
-    if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    if (!x86_scheduler_driver_task_valid() || x86_scheduler_index() != 1) return 0;
     if (caret != ~0U) return 0;
     return kernel_console_active_group(&mapping, x86_scheduler_live_stack_pages(),
         column, row, scalars, count, foreground, background, ticks);
@@ -83,7 +83,7 @@ int x86_fb_kernel_cell(BOOT_U32 column, BOOT_U32 row, BOOT_U32 scalar,
     BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
 {
 #ifdef KERNEL_TEST_CONSOLE_DRAW
-    if (!x86_scheduler_task_valid() || x86_scheduler_index() != 1) return 0;
+    if (!x86_scheduler_driver_task_valid() || x86_scheduler_index() != 1) return 0;
     return kernel_console_active_cell(&mapping, x86_scheduler_live_stack_pages(),
         column, row, scalar, foreground, background, ticks);
 #else

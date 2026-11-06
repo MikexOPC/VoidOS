@@ -67,7 +67,7 @@ static X86_CONSOLE *console_private(X86_PS2_SESSION *session)
 static int task_valid(const X86_CONSOLE *self, X86_PS2_SESSION *session, uint32_t index)
 {
     return self && self->Source && session == self->Source && session == x86_ps2_session() && session->Active &&
-        !session->Error && !session->Losses && x86_scheduler_task_valid() && x86_scheduler_index() == index;
+        !session->Error && !session->Losses && x86_scheduler_driver_task_valid() && x86_scheduler_index() == index;
 }
 
 // ====== wake ======

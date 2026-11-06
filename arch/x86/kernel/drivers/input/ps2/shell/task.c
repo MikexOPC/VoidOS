@@ -21,7 +21,7 @@ int x86_ps2_shell_submit(void)
 {
     X86_PS2_SESSION *owner = x86_ps2_session();
     KERNEL_PS2_COMMAND command;
-    if (x86_scheduler_index() != 0 || !x86_scheduler_task_valid()) return 0;
+    if (x86_scheduler_index() != 0 || !x86_scheduler_driver_task_valid()) return 0;
     command.Line = owner->Line; command.Truncated = owner->LineTruncated;
 #ifdef KERNEL_CONSOLE_SHELL
     if (!owner->Stop && !x86_console_submit(owner)) { kernel_ps2_command_clear(&command); return 0; }
@@ -43,7 +43,7 @@ int x86_ps2_shell_submit(void)
 
 void x86_ps2_shell_close(void)
 {
-    if (x86_scheduler_index() != 0 || !x86_scheduler_task_valid() ||
+    if (x86_scheduler_index() != 0 || !x86_scheduler_driver_task_valid() ||
         !kernel_ps2_command_close(&x86_ps2_session()->Commands)) kernel_scheduler_fail_stop();
     (void)event_private(X86_TASK_SIGNAL,5,0);
 }
@@ -54,7 +54,7 @@ void x86_ps2_shell_task(void)
 {
     X86_PS2_SESSION *owner = x86_ps2_session();
     KERNEL_PS2_COMMAND command = {0};
-    if (x86_scheduler_index() != 2 || !x86_scheduler_task_valid() ||
+    if (x86_scheduler_index() != 2 || !x86_scheduler_driver_task_valid() ||
         !kernel_log(1,"SHELL_TASK2_READY")) kernel_scheduler_fail_stop();
     for (;;) {
         KERNEL_EVENT_REPLY observed = event_private(X86_TASK_OBSERVE,5,0);

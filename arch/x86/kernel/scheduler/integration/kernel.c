@@ -218,6 +218,15 @@ int x86_scheduler_task_valid(void)
     return rsp >= base && rsp < base + 65536 && live_private(index);
 }
 
+// ====== x86_scheduler_driver_task_valid ======
+
+int x86_scheduler_driver_task_valid(void)
+{
+    X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
+    return local && local->current < 8 && !task_cpus[local->current] && !cpu_private() &&
+        x86_percpu_bsp() && x86_scheduler_task_valid();
+}
+
 // ====== x86_scheduler_yield ======
 
 void x86_scheduler_yield(void)

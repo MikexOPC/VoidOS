@@ -14,6 +14,7 @@ static jmp_buf stopped;
 X86_PS2_SESSION *x86_ps2_session(void) { return &session; }
 uint64_t x86_scheduler_generation(void) { return 1; }
 int x86_scheduler_task_valid(void) { return injected != 5; }
+int x86_scheduler_driver_task_valid(void) { return x86_scheduler_task_valid(); }
 int kernel_log(uint32_t level, const char *message) { (void)level; return message != 0; }
 __declspec(noreturn) void kernel_scheduler_fail_stop(void)
 {

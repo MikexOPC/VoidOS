@@ -34,6 +34,7 @@ __declspec(noreturn) void kernel_scheduler_fail_stop(void) { CHECK(0); abort(); 
 uint32_t x86_pm_read(unsigned short port) { (void)port; CHECK(0); return 0; }
 uint32_t x86_scheduler_index(void) { return task_index; }
 int x86_scheduler_task_valid(void) { return task_live != 0; }
+int x86_scheduler_driver_task_valid(void) { return x86_scheduler_task_valid(); }
 int kernel_console_service_clip(KERNEL_CONSOLE_SERVICE *owner, uint32_t columns, uint32_t rows)
 { (void)owner; (void)columns; (void)rows; CHECK(0); return 0; }
 int kernel_ps2_shell_output_bind(KERNEL_SHELL_OUTPUT callback, void *context)
