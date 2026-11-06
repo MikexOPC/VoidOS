@@ -1,5 +1,11 @@
 #![cfg_attr(not(test), no_std)]
 
+#[allow(dead_code)]
+#[path = "../../../memory/rust/wipe.rs"]
+mod wipe;
+
+use wipe::wipe;
+
 // ====== costanti FIPS 180-4 ======
 
 pub const DIGEST_BYTES          : usize = 32;
@@ -93,6 +99,7 @@ fn compress(state: &mut [u32; 8], block: &[u8; BLOCK_BYTES]) {
     for (value, working) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
         *value = value.wrapping_add(working);
     }
+    wipe(&mut schedule);
 }
 
 // ====== Sha256 ======
@@ -115,7 +122,9 @@ impl Sha256 {
 
     #[cfg(test)]
     pub fn with_length(length: u64) -> Self {
-        Self { length, ..Self::new() }
+        let mut hasher = Self::new();
+        hasher.length = length;
+        hasher
     }
 
 // ====== Sha256::update ======
@@ -136,8 +145,7 @@ impl Sha256 {
             if self.buffered < BLOCK_BYTES {
                 return Ok(());
             }
-            let block = self.buffer;
-            compress(&mut self.state, &block);
+            compress(&mut self.state, &self.buffer);
             self.buffered = 0;
         }
         let (blocks, tail) = rest.as_chunks::<BLOCK_BYTES>();
@@ -156,18 +164,27 @@ impl Sha256 {
         self.buffer[self.buffered] = 0x80;
         self.buffer[self.buffered + 1..].fill(0);
         if self.buffered >= BLOCK_BYTES - 8 {
-            let block = self.buffer;
-            compress(&mut self.state, &block);
+            compress(&mut self.state, &self.buffer);
             self.buffer.fill(0);
         }
         self.buffer[BLOCK_BYTES - 8..].copy_from_slice(&bits.to_be_bytes());
-        let block = self.buffer;
-        compress(&mut self.state, &block);
+        compress(&mut self.state, &self.buffer);
         let mut digest = [0u8; DIGEST_BYTES];
         for (bytes, word) in digest.as_chunks_mut::<4>().0.iter_mut().zip(self.state) {
             *bytes = word.to_be_bytes();
         }
         digest
+    }
+}
+
+// ====== Sha256::drop ======
+
+impl Drop for Sha256 {
+    fn drop(&mut self) {
+        wipe(&mut self.state);
+        wipe(&mut self.buffer);
+        wipe(&mut self.buffered);
+        wipe(&mut self.length);
     }
 }
 
