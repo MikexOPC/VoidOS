@@ -1,4 +1,3 @@
-#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 use core::sync::atomic::{AtomicU64, Ordering};
 
