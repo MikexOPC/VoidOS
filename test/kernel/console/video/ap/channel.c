@@ -46,7 +46,7 @@ void kca_prepare(void) {
 void kca_produce(uint32_t index) {
     uint32_t start, now;
     uint64_t token = xat_record.Root;
-    if (xis_native_index() != 1 || index >= 2 || !xat_task_valid() ||
+    if (xis_native_index() != 1 || index >= 2 || !xat_task_valid() || x86_scheduler_driver_task_valid() ||
         !kernel_console_ap_channel(1,1,token,index) || !xis_native_now(NULL,&start)) xat_abort();
     for (uint32_t sequence = 0; sequence < 1000; ++sequence) {
         char text[8] = {'P',(char)('0' + index),':',
@@ -139,7 +139,8 @@ void kca_capture(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *conte
 // ====== worker_private ======
 
 static void worker_private(uint32_t index) {
-    if (index != KCW_TASK || xis_native_index() || !x86_scheduler_task_valid()) xat_abort();
+    if (index != KCW_TASK || xis_native_index() || !x86_scheduler_task_valid() ||
+        !x86_scheduler_driver_task_valid()) xat_abort();
     while (kca_record.Consumed[0] + kca_record.Consumed[1] < 2000) {
         KERNEL_EVENT_REPLY observed = x86_scheduler_event_request(X86_TASK_OBSERVE,XCN_EVENT,0);
         if (observed.outcome) xat_abort();

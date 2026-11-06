@@ -319,6 +319,28 @@ stop con notifica in volo devono negare il rilascio. Regressioni dei tre
 vettori esistenti e console. La forma del collegamento ordinario dipende
 anche dalla verifica dei binding; non e dichiarata completa dal solo IPI.
 
+### Integrazione ordinaria: comando `ap`, scelta A1 del 6 novembre 2026
+
+L'utente ha scelto un comando della shell che esegue lavoro su AP1, con un
+task nuovo per ogni comando (A1), non un worker permanente sugli AP.
+
+- `ap <n>`: la shell (task BSP) riserva un task con affinità AP1, ne prepara
+  lo stack e chiede ad AP1 di eseguirlo con il protocollo di ammissione di C4.
+- Il task su AP1 calcola somma e checksum di 1..n, accoda le righe di
+  risultato nella coda console e notifica il BSP con l'IPI 0x43, poi esce.
+- La shell attende in WAIT sull'evento 7: l'idle della sessione PS/2 ammette
+  la sorgente 0x43 e il drain sveglia la shell. A lavoro concluso la shell
+  aspetta la quiescenza di AP1, raccoglie lo stack (con shootdown) e segnala
+  il worker per il disegno.
+- AP1 torna in idle di servizio. Nessun idle HLT sugli AP, nessun driver
+  sugli AP: i task AP parlano con la console solo tramite coda e notifica.
+- Il ciclo di vita (ammissione, esecuzione, quiescenza, raccolta) passa dal
+  codice diagnostico di `batch/` a un modulo di produzione; i carichi di
+  prova restano in `test/`.
+
+Gate: `v2c` con il comando digitato, output in ordine, nessun evento perso,
+budget e stack ripristinati; negativi su invio non confermato.
+
 ### Nucleo delle notifiche e quarto slot IRQ
 
 `rust/requests/notify.rs` e `no_std`, senza unsafe e senza allocazioni.

@@ -26,6 +26,7 @@ int x86_console_submit(X86_PS2_SESSION *session)
 X86_PS2_SESSION *x86_ps2_session(void) { return &owner; }
 uint32_t x86_scheduler_index(void) { return actor; }
 int x86_scheduler_task_valid(void) { return 1; }
+int x86_scheduler_driver_task_valid(void) { return x86_scheduler_task_valid(); }
 __declspec(noreturn) void kernel_scheduler_fail_stop(void) { abort(); }
 int kernel_log(unsigned level, const char *text) { (void)level; (void)text; return 1; }
 int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2_SHELL_STATUS *status)

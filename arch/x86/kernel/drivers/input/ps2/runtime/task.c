@@ -83,7 +83,7 @@ static void worker_private(void)
         if (!x86_scheduler_irq_poll(&owner->Ready,owner->Clock.Port,owner->Clock.Mask,poll_ticks))
             worker_failure_private(3, owner);
         if (owner->Error) worker_failure_private(4, owner);
-        if (!x86_scheduler_task_valid()) worker_failure_private(5, owner);
+        if (!x86_scheduler_driver_task_valid()) worker_failure_private(5, owner);
 #ifdef KERNEL_CONSOLE_SHELL
         if (x86_console_pending(owner)) { x86_scheduler_yield(); continue; }
 #endif
@@ -97,7 +97,7 @@ static void worker_private(void)
 
 void x86_ps2_task(uint32_t index)
 {
-    if (!x86_ps2_session()->Active || !x86_scheduler_task_valid()) kernel_scheduler_fail_stop();
+    if (!x86_ps2_session()->Active || !x86_scheduler_driver_task_valid()) kernel_scheduler_fail_stop();
 #ifdef KERNEL_PS2_MOUSE
     if (index == 3) { x86_ps2_mouse_task(); return; }
 #endif

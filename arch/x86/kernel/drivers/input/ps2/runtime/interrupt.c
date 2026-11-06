@@ -100,7 +100,7 @@ int x86_ps2_irq_record(BOOT_U64 vector, BOOT_U64 rip, BOOT_U64 rsp, BOOT_U64 fla
 {
     X86_PS2_SESSION *owner = x86_ps2_session();
     if ((vector != 0x40 && vector != 0x41 && vector != 0x42) || x86_scheduler_index() != 1 ||
-        !x86_scheduler_task_valid() || !(flags & 512) || (flags & 1024) ||
+        !x86_scheduler_driver_task_valid() || !(flags & 512) || (flags & 1024) ||
         rip < (BOOT_U64)x86_scheduler_irq_compute_begin || rip >= (BOOT_U64)x86_scheduler_irq_compute_end ||
         rsp < x86_task_stack_base(1) + 4096 || rsp >= x86_task_stack_base(1) + 65536 ||
         !x86_scheduler_code_valid(rip) || owner->TaskIrqs == ~0U) return 0;
