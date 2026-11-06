@@ -298,7 +298,7 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
             vm.wait_text('PS2_KEY: ',5,count)
         vm.wait_text('SHELL_HELP:')
         log = exit_input(vm)
-        for marker in ['KERNEL_POINTER_CLEAN','KERNEL_CONSOLE_SHELL_CLEAN',
+        for marker in ['KERNEL_POINTER_CLEAN','KERNEL_CONSOLE_SHELL_CLEAN','KERNEL_CONSOLE_REQUESTS_CLEAN',
             'KERNEL_PS2_MOUSE_CLEANUP_OK','KERNEL_PS2_INPUT_CLEANUP_OK','KERNEL_INPUT_TASKS_COLLECTED']:
             if not log.has(marker): raise RuntimeError('Missing '+marker)
         if 'MOUSE_EVENT:' in log.text or 'KERNEL_POINTER_FRAME' in log.text:

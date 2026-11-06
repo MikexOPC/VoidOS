@@ -1,6 +1,60 @@
-# Shell video operativa — verifica, 11 ottobre 2026
+# Console video: validazione
 
-## K4-C5: gateway C/Rust e lock, 6 novembre 2026
+## K4-C5: worker BSP collegato, 6 novembre 2026
+
+Input e shell accodano le operazioni; solo il worker applica testo e riga
+al servizio C. Implementati attesa per spazio con generazioni, invii copiati,
+massimo otto applicazioni per turno e drain/close prima del teardown.
+La shell pubblica il comando solo dopo aver accodato il SUBMIT video.
+
+Verifiche sulla modifica finale:
+
+- Suite host console completa a PASS in `kernel/build/c5-worker-suite-final.log`:
+  Rust debug/release, Clippy, MSVC W4/WX con ASan C, quattro report cppcheck
+  e verifica separata del gateway con lock reale e quattro produttori.
+- Test del consumer reale C: EDIT applicato solo all'estrazione, WRITE
+  conserva la riga, SUBMIT la consegna; errore applicativo rende FAILED
+  irreversibile. Il vecchio test della sessione usa mock del nuovo confine;
+  non viene dichiarato prova del protocollo della coda.
+- Build nativa con nodefaultlib e audit simboli passati. Le prime prove di
+  link hanno individuato funzioni core Rust mancanti e dipendenze Windows:
+  risolte usando staticlib con LTO, senza stub o librerie Windows aggiunte.
+- QEMU GOP/mouse: 10/10 boot consecutivi, q35/TCG/OVMF, quattro CPU
+  inizializzate e tre AP parcheggiati. Pixel, movimento, tastiera, shell,
+  Esc, raccolta degli stack e budget fisico prima/dopo verificati.
+  Il runner richiede anche `KERNEL_CONSOLE_REQUESTS_CLEAN`.
+- Tastiera senza mouse: 10/10 boot consecutivi, testo italiano, shell,
+  IRQ, idle e cleanup; marker della nuova coda verificato nei dieci log.
+  Fallback seriale senza video: 3/3 boot sulla stessa immagine tastiera.
+- Adattatore nativo compilato nei due profili tastiera/mouse, C con ASan:
+  FULL, segnale prima del WAIT, risveglio senza spazio, limite dei tentativi,
+  massimo otto applicazioni e stop solo dopo la fine di entrambi i producer.
+  Usa il vero `console/requests.c`, con coda/scheduler mock; il test separato
+  del gateway usa invece lock e nucleo Rust reali.
+
+Immagine GOP SHA-256:
+`2C3F0DC6B6F8442099BF57926244EF0C3664D9191387845E74CC4E5C19AD683A`.
+Loader: `37F4DE1FCDB792D2684D1F1C8B37F7EFD8DB75F0CA47AE3B7887088BAB119854`.
+Campagna finale: `kernel/build/pointer-interactive-check-515792a252fb4e5190f8a1bc4dac7c1a/`;
+log `kernel/build/c5-worker-qemu-final.log`. Smoke 1/1 separato in
+`pointer-interactive-check-71d62dc614fa45d6968ef4c4159e4518/`.
+
+Immagine tastiera SHA-256:
+`0836BC2AB151841A255B4AA07EA8DC8CBF4F5CF206DFB24BCAE3A7F9274FD7E5`.
+Campagna `kernel/build/qemu-run-ee85fab4707b4d629da90be313e6bbc5/`,
+prove `kernel/build/ps2-input-firmware-57fedd6115644d12a18d6c0a5764a7f0/`;
+fallback `kernel/build/ps2-input-firmware-4503eeacf30147cab3f0b9819ecfa7d9/`.
+Test protocollo e analisi statica finali: `kernel/build/c5-worker-protocol-final-check/`
+e relativo `.log`. Il layout centralizzato e il diff passano i controlli;
+il sorgente modificato piu lungo resta `runtime.c`, 455 righe.
+
+I produttori nativi restano sul BSP: manca il collegamento dei task AP agli invii e ai risvegli
+della sessione. Mouse e altri driver non diventano SMP-safe con questo
+blocco; C5 resta aperta. Nessuna prova su hardware reale o VirtIO in questo
+blocco. ASan copre il C host, non Rust/guest; Valgrind non eseguito e
+coverage linee/branch N/D. Accounting fisico guest distinto dai test host.
+
+## K4-C5: checkpoint precedente del gateway C/Rust
 
 Implementato il gateway per sessione in `requests/queue.c` e
 `rust/ffi/requests.rs`. Usa il vero ticket lock K2 con contesto distinto

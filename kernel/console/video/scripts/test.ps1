@@ -229,6 +229,8 @@ try {
         Invoke-CppcheckRaw "$out/cppcheck-shell-$profile.xml" @profileFlags --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
             -DKERNEL_CONSOLE_SHELL=1 -DKERNEL_PS2_INPUT=1 -DKERNEL_SCHEDULER_IRQ=1 ("-I$project") `
             "$project/kernel/console/video/service/console.c" "$project/kernel/shell/shell.c" `
+            "$project/kernel/console/video/requests/queue.c" "$project/kernel/console/video/requests/consumer.c" `
+            "$project/arch/x86/kernel/drivers/video/framebuffer/console/requests.c" `
             "$project/arch/x86/kernel/drivers/video/framebuffer/live/group.c" `
             "$project/arch/x86/kernel/drivers/video/framebuffer/console/runtime.c" `
             "$project/arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c" `

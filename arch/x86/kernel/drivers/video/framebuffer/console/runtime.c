@@ -88,7 +88,7 @@ static int output(void *context, const char *data, uint32_t length)
     X86_CONSOLE *self = context;
 
     return self && task_valid(self, self->Source, 2) &&
-        kernel_console_service_write(&self->Service, data, length, length) && wake();
+        x86_console_requests_send(self, KCR_WRITE, data, length, length);
 }
 
 // ====== clock_read ======
@@ -183,7 +183,8 @@ int x86_console_open(X86_PS2_SESSION *session, KERNEL_DISPLAY display)
     uint32_t rows = (target ? target->Height : fb->Height) / KERNEL_CONSOLE_CELL_HEIGHT;
     if (columns > KERNEL_CONSOLE_COLUMNS) columns = KERNEL_CONSOLE_COLUMNS;
     if (rows > KERNEL_CONSOLE_ROWS) rows = KERNEL_CONSOLE_ROWS;
-    if (!kernel_console_service_init(&self->Service, &self->View, columns, rows) ||
+    if (!kernel_console_requests_initialize(&self->Requests) ||
+        !kernel_console_service_init(&self->Service, &self->View, columns, rows) ||
         !kernel_text("KERNEL_CONSOLE_GRID: ") || !kernel_number(columns) || !kernel_text("x") ||
         !kernel_number(rows) || !kernel_text("\n")) return 0;
 #ifdef KERNEL_PS2_MOUSE
@@ -224,8 +225,8 @@ int x86_console_edit(X86_PS2_SESSION *session)
     X86_CONSOLE *self = console_private(session);
     if (!task_valid(self, session, 0)) return 0;
     if (self->Absent || session->Stop) return 1;
-    return kernel_console_service_edit(&self->Service, session->Line.Data, session->Line.Length,
-        sizeof(session->Line.Data)) && wake();
+    return x86_console_requests_send(self, KCR_EDIT, session->Line.Data, session->Line.Length,
+        sizeof(session->Line.Data));
 }
 
 // ====== x86_console_submit ======
@@ -235,7 +236,7 @@ int x86_console_submit(X86_PS2_SESSION *session)
     X86_CONSOLE *self = console_private(session);
     if (!task_valid(self, session, 0)) return 0;
     if (self->Absent || session->Stop) return 1;
-    return kernel_console_service_submit(&self->Service) && wake();
+    return x86_console_requests_send(self, KCR_SUBMIT, NULL, 0, 0);
 }
 
 // ====== x86_console_pending ======
@@ -248,6 +249,8 @@ int x86_console_pending(X86_PS2_SESSION *session)
     if (!self->Absent && session->Quiet && !kernel_pointer_hide(&self->Pointer)) return -1;
 #endif
     if (self->Absent) return 0;
+    int requests = x86_console_requests_pending(self);
+    if (requests != 0) return requests;
     int pending = kernel_console_service_pending(&self->Service);
     if (pending == 0 && self->Display.Ops && self->Display.Ops->Busy(self->Display.Self)) return 1;
 #ifdef KERNEL_PS2_MOUSE
@@ -350,6 +353,7 @@ int x86_console_flush(X86_PS2_SESSION *session)
     if (display->Ops && !display->Ops->Check(display->Self)) return flush_failure(self, 1);
     X86_PROFILE_END(X86_PROFILE_POLL, poll_start);
     if (self->Absent) return 1;
+    if (!x86_console_requests_step(self)) return flush_failure(self, 8);
     // R1-A: the update in flight advances (or a recovery runs) before anything is drawn. After a
     // target change (bring-up or GOP fallback) every cell is drawn again on the new target.
     if (display->Ops && (!display->Ops->Poll(display->Self) ||
@@ -423,10 +427,11 @@ int x86_console_finish(X86_PS2_SESSION *session)
         !kernel_number(self->Pointer.Moves) || !kernel_text("\n") || !kernel_log(0, "KERNEL_POINTER_CLEAN")) return 0;
 #endif
     const KERNEL_CONSOLE_MEASUREMENT *measured = &self->Measured;
-    if (kernel_console_service_pending(&self->Service) != 0 || measured->Failed || self->Batch.Failed ||
+    if (!self->RequestsClosed || kernel_console_service_pending(&self->Service) != 0 || measured->Failed || self->Batch.Failed ||
         !measured->Cells || self->Render.CellsDone != measured->Cells || !self->Batch.Groups ||
         !kernel_ps2_shell_output_unbind(output, self) || !kernel_console_service_close(&self->Service)) return 0;
-    return kernel_text("KERNEL_CONSOLE_SHELL_CELLS: ") && kernel_number(measured->Cells) &&
+    return kernel_log(0, "KERNEL_CONSOLE_REQUESTS_CLEAN") &&
+        kernel_text("KERNEL_CONSOLE_SHELL_CELLS: ") && kernel_number(measured->Cells) &&
         kernel_text("\nKERNEL_CONSOLE_SHELL_GROUPS: ") && kernel_number(self->Batch.Groups) &&
         kernel_text("\nKERNEL_CONSOLE_SHELL_MAX_PM: ") && kernel_number(measured->MaxTicks) &&
         kernel_text("\nKERNEL_CONSOLE_SHELL_OVERRUNS: ") && kernel_number(measured->Overruns) &&

@@ -23,13 +23,13 @@ int x86_ps2_shell_submit(void)
     KERNEL_PS2_COMMAND command;
     if (x86_scheduler_index() != 0 || !x86_scheduler_task_valid()) return 0;
     command.Line = owner->Line; command.Truncated = owner->LineTruncated;
+#ifdef KERNEL_CONSOLE_SHELL
+    if (!owner->Stop && !x86_console_submit(owner)) { kernel_ps2_command_clear(&command); return 0; }
+#endif
     while (!owner->Stop) {
         KERNEL_EVENT_REPLY observed = event_private(X86_TASK_OBSERVE,6,0);
         uint32_t result = kernel_ps2_command_push(&owner->Commands,&command);
         if (result == KERNEL_PS2_QUEUE_OK) {
-#ifdef KERNEL_CONSOLE_SHELL
-            if (!x86_console_submit(owner)) { kernel_ps2_command_clear(&command); return 0; }
-#endif
             (void)event_private(X86_TASK_SIGNAL,5,0);
             kernel_ps2_command_clear(&command); return 1;
         }
