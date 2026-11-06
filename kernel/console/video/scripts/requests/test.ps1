@@ -15,6 +15,11 @@ Invoke-Checked "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dep
 
 $rustc = "$env:USERPROFILE/.cargo/bin/rustc.exe"
 $gateway = "$project/kernel/console/video/rust/ffi/requests.rs"
+$notify = "$project/kernel/console/video/rust/requests/notify.rs"
+Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024','--test',
+    '-D','warnings','--emit=metadata',$notify,'-o',"$out/notify-tests.rmeta")
+Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024','--crate-type=lib',
+    '-D','warnings','--emit=metadata',$notify,'-o',"$out/notify.rmeta")
 Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024','--test',
     '-D','warnings','--emit=metadata',"$project/test/kernel/console/video/rust/requests/channel_test.rs",
     '-o',"$out/channel-tests.rmeta")
@@ -22,6 +27,9 @@ Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024
     '--crate-type=lib','--emit=metadata','--cfg','console_ap_diagnostic','-D','warnings',$gateway,'-o',"$out/ffi.rmeta")
 foreach ($profile in @('debug','release')) {
     $optimization = if ($profile -eq 'release') { 2 } else { 0 }
+    Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
+        '-C','overflow-checks=yes',$notify,'-o',"$out/notify-$profile.exe")
+    Invoke-Checked "$out/notify-$profile.exe" @()
     Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
         '-C','overflow-checks=yes',"$project/test/kernel/console/video/rust/requests/channel_test.rs",
         '-o',"$out/channel-$profile.exe")

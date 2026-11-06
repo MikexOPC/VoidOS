@@ -231,14 +231,17 @@ con rustc 1.98.1); [Linux v6.12 workqueue, Introduction e The Design](https://do
 come riferimento per separare accodamento e consumer. Non si copiano
 codice, worker pool o politica di scheduling Linux.
 
-### Risveglio AP -> BSP: proposta da scegliere
+### Risveglio AP -> BSP: scelta A approvata
 
-Prerequisiti verificati nel codice: `xis_native_send` accetta solo mittente
-BSP e destinazione AP; `xis_mmio_write` autorizza l'ICR del servizio
-esistente con vettore 0xe1. Il registro IRQ BSP contiene tre subscription
-e la validazione Rust accetta solo 0x40..0x42. Il percorso di eventi della
-console usa contesto e stack del task chiamante: non e un accesso remoto
-al dispatcher BSP. Non basta chiamarlo da AP1.
+L'utente ha scelto l'IPI dedicato AP1 -> BSP. Il registro IRQ ora contiene
+quattro subscription, con validatori, EOI e watchdog estesi a 0x43.
+Il nucleo Rust della notifica e collaudato host, ma non e ancora collegato
+al kernel. Restano da implementare trasporto ICR, handler e worker.
+
+`xis_native_send` continua ad accettare solo mittente BSP e destinazione AP;
+`xis_mmio_write` autorizza ancora soltanto il vettore 0xe1 del servizio.
+Il percorso di eventi della console usa contesto e stack del task chiamante:
+non basta chiamarlo da AP1 per modificare il dispatcher BSP.
 
 Alternative:
 
@@ -250,7 +253,7 @@ Alternative:
   Richiede meno adattatori hardware, ma aggiunge latenza e controlli
   periodici. Il periodo va misurato nel profilo; non e un risveglio IPI.
 
-Contratto proposto per A, non ancora implementato:
+Contratto approvato per A, integrazione hardware ancora da completare:
 
 - Un solo canale AP1 -> BSP, token e descrittore stabili. WRITE viene
   prima copiato nella coda; solo dopo il rilascio del lock si pubblica
@@ -293,7 +296,7 @@ accodamento del lavoro e invio IPI quando la lista cambia stato. Qui si
 conservano coda limitata, owner BSP e failure terminali; niente copia del
 codice Linux, callback arbitrarie o framework generico per tutti i driver.
 
-Perimetro richiesto: console/video, backend ICR/AP, registro e ritorno IRQ
+Perimetro approvato: console/video, backend ICR/AP, registro e ritorno IRQ
 BSP, adattatori di dispatcher/idle/watchdog e soli binding, build e test
 necessari. L'unificazione dei binding BSP/AP resta un prerequisito per
 usare i produttori AP nella console ordinaria; non si abilita aggirando
@@ -306,6 +309,35 @@ nessun evento perso e budget ripristinato. Negativi: invio/ack mancante e
 stop con notifica in volo devono negare il rilascio. Regressioni dei tre
 vettori esistenti e console. La forma del collegamento ordinario dipende
 anche dalla verifica dei binding; non e dichiarata completa dal solo IPI.
+
+### Nucleo delle notifiche e quarto slot IRQ
+
+`rust/requests/notify.rs` e `no_std`, senza unsafe e senza allocazioni.
+Contiene un token immutabile, sequenze pubblicate/osservate, pending atomico
+e due record di invio, uno per produttore AP1. I parametri CPU identificano
+il ruolo: il futuro adattatore nativo deve verificare la CPU reale, IF e
+lifetime; il solo valore passato a Rust non dimostra questi prerequisiti.
+
+LIVE accetta invii; SEALED li vieta ma permette di terminare quelli gia
+prenotati. CLOSED richiede zero invii in corso, pending vuoto, sequenze
+confermate, coda vuota e hardware quiescente attestati dal backend.
+Overflow e guasti interni rendono lo stato terminale, senza riuso.
+Un invio restituisce sequenza e bit che richiede l'IPI; il mittente deve
+confermare esattamente quel record dopo l'invio, anche quando raggruppato.
+Ogni ciclo CAS e limitato a 32 tentativi; il rifiuto e esplicito.
+
+La presa azzera pending prima di leggere la sequenza. La chiusura acquisisce
+prima SEALED con zero riferimenti e solo dopo controlla pending e sequenze:
+impedisce di usare snapshot precedenti all'ultimo mittente. `query` e una
+lettura diagnostica per campo, non uno snapshot coerente o un permesso di
+rilascio. Nessuno stato Rust attesta da solo una scrittura ICR o un EOI.
+
+Il registro conserva token generazionali, rifiuto di ID duplicati e handler
+non posseduti. Il watchdog ammette il bit IRR del vettore 0x43 solo con
+subscription valida; continua a rifiutare sorgenti sconosciute. L'EOI
+richiede il solo ISR atteso e il readback vuoto. ISR120h/IRR220h bit3 e
+EOI b0h sono descritti nel SDM 078US, §11.8.4/Fig11-20 e §11.8.5/Fig11-21.
+Questo blocco non abilita una sorgente hardware o un nuovo produttore.
 
 ## Checkpoint storico: servizio BSP del 10 ottobre 2026
 

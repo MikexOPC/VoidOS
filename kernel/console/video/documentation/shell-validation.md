@@ -1,12 +1,41 @@
 # Console video: validazione
 
-## K4-C5: diagnostico AP1 -> coda -> BSP, 6 novembre 2026
+## K4-C5: base Rust e quarto slot IRQ, 6 novembre 2026
 
-Prossimo contratto da scegliere: notifica IPI AP1 -> BSP oppure controllo
-tramite timer, in [shell-design.md](shell-design.md). Review del trasporto,
-del registro IRQ e delle fonti completata; nessuna nuova notifica hardware
-implementata. Questo aggiornamento e solo documentale: diff/fonti verificati,
-build e QEMU N/A. I conteggi sotto restano le prove del diagnostico a yield.
+Scelta IPI AP1 -> BSP acquisita. Nucleo della notifica verificato host e
+registro BSP esteso a quattro slot. Trasporto ICR, handler e risveglio del
+worker restano da collegare: nessun boot sotto dimostra gia un IPI 0x43.
+
+| Controllo | Risultato | Evidenza in `kernel/build/` |
+| --- | --- | --- |
+| Rust Notify | 7/7 debug e 7/7 release, overflow checks e Clippy; 500 gare seal/invio e 4.000 pubblicazioni concorrenti per profilo | `c5-wake-notify-final.log`, `c5-wake-requests/` |
+| Gateway C/Rust e adattatori esistenti | ASan C, quattro produttori e 8.000 richieste per profilo; handles stabili, due profili nativi e cppcheck | `c5-wake-requests-host.log` |
+| Suite host kernel | warning come errori, registro a quattro slot, validatori IRQ e EOI 0x43 | `c5-wake-kernel-host.log` |
+| Registro IRQ ASan | 100 ripetizioni di otto gruppi; quarto slot, ID duplicati, token vecchi, distacco e consegna non posseduta | `c5-wake-registry-asan.log` |
+| Watchdog host | ASan C, 100 ripetizioni, pendente 0x43 owned accettato e unowned rifiutato; rollback e adattatore MMIO | `c5-wake-watchdog-host.log` |
+| Analisi statica adattatori IRQ/watchdog | nessun error/warning/performance/portability bloccante | `c5-wake-static/cppcheck.xml` |
+| Regressione AP console | 10/10 consecutivi, quattro CPU reali, 2.000 WRITE per boot, FIFO, FULL e 32 pagine stack recuperate | `ap-console-fe4be9b040b7426998c384764704726b/` |
+| Regressione console ordinaria | 3/3 consecutivi, quattro CPU, tastiera/mouse, pixel, shell e cleanup | `pointer-interactive-check-8602a6bfe8064a1a8abe20daf6c35e3b/` |
+
+Livello adattivo complesso: dieci boot positivi del profilo AP, piu tre
+regressioni video. QEMU q35/TCG/OVMF, ESP privata per VM. ELF AP:
+`49C4D38BC589E7F57EE398C68119D2AE367E9E59CF443F61F6BF5104D998BAA8`;
+ELF console `5FC91822714552CF62394D91FA4C0D655F06BDCC1E6B6D450CE637E2B72021C1`.
+Loader `37F4DE1FCDB792D2684D1F1C8B37F7EFD8DB75F0CA47AE3B7887088BAB119854`.
+
+Audit simboli: `c5-wake-symbols.log`, diagnostico presente nella sua immagine
+e assente in quella ordinaria. Layout centralizzato: 505 sorgenti test,
+massimo 490 righe, zero violazioni. Diff finale senza trailing whitespace;
+sorgenti modificati massimo 349 righe.
+
+ASan strumenta il C host, non Rust o la RAM fisica guest. I test Rust usano
+thread host e ruoli CPU simulati, non l'IPI hardware. Notify non alloca;
+accounting guest e ripristino degli stack appartengono al diagnostico
+preesistente. Valgrind non disponibile su questo host; coverage N/D.
+Restano necessarie prove QEMU di WAIT/HLT, IRQ/EOI reali e rifiuto del
+cleanup con ack o invio mancanti prima di dichiarare completo il risveglio.
+
+## K4-C5: diagnostico AP1 -> coda -> BSP, 6 novembre 2026
 
 Due task su AP1 inviano 1.000 WRITE ciascuno al consumer BSP in RAM.
 Il drain inizia solo dopo un FULL osservato da entrambi. Il consumer
