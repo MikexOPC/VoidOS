@@ -1,6 +1,6 @@
 # Piano sicurezza dei sottosistemi
 
-Stato: avviato (bounds, health test entropia, SHA-256 e memory pronti). Questo file e il punto di partenza per chi lavora sulla
+Stato: avviato (bounds, health test entropia, SHA-256, memory e HMAC pronti). Questo file e il punto di partenza per chi lavora sulla
 sicurezza; va aggiornato a ogni passo.
 
 ## Ordine concordato — 6 novembre 2026
@@ -128,3 +128,9 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   sonda sull'assembly che dimostra che l'azzeramento resta in release.
   Aperto: tempo costante solo "best effort". Dettagli in
   [memory.md](../../lib/security/memory/documentation/memory.md).
+- **2026-11-07 — `lib/security/mac/hmac`.** HMAC-SHA-256 FIPS 198-1, secondo
+  anello verso HMAC_DRBG. Chiave, pad e stato precalcolato azzerati. Rust
+  `no_std`, API Rust; SHA-256 diviso in radice + `engine.rs` per poterlo
+  includere. Suite `security`: 8 test, vettori RFC 4231 e confronto con
+  Windows CNG. Dettagli in
+  [hmac.md](../../lib/security/mac/hmac/documentation/hmac.md).
