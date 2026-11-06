@@ -41,9 +41,8 @@ errore e allora `value = 0`. Le altre restituiscono `1` (ok) o `0`.
 
 ## Test
 
-`scripts/test/run.ps1 -Suite security-bounds` (script
-`lib/security/bounds/scripts/test.ps1`, test in
-`test/lib/security/bounds/rust/`). Esegue 14 test in debug e release con
+`scripts/test/run.ps1 -Suite security` (driver Rust
+`test/lib/security/runner.rs`, test in `test/lib/security/bounds/rust/`). Esegue 14 test in debug e release con
 overflow checks: oracolo a 128 bit su griglia di valori limite, casi di
 policy, 200 000 input ostili generati, layout ABI. Poi clippy `-D warnings`
 e build dell'oggetto `no_std` per `x86_64-pc-windows-msvc` con
