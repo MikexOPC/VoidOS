@@ -2,7 +2,7 @@
 #include "lib/memory/address_ranges.h"
 
 static KERNEL_PHYSICAL_ALLOCATOR *loan_pool;
-static KERNEL_PHYSICAL_LEASE loans[4];
+static KERNEL_PHYSICAL_LEASE loans[X86_WATCHDOG_LOANS];
 static uint32_t loan_count;
 
 // ====== x86_watchdog_budget_active ======
@@ -17,7 +17,7 @@ int x86_watchdog_budget_valid(void)
     const KERNEL_PHYSICAL_ALLOCATOR *pool;
     if (!owner->Env.Window || !(pool = owner->Env.Window->Pool)) return 0;
     if (!loan_pool) return kernel_physical_budget_matches(pool, owner->Budget);
-    if (loan_count < 2 || loan_count > 4 || pool != loan_pool ||
+    if (loan_count < 2 || loan_count > X86_WATCHDOG_LOANS || pool != loan_pool ||
         owner->Budget < 16 * loan_count || !kernel_physical_budget_matches(pool, owner->Budget - 16 * loan_count) ||
         !kernel_physical_validate(pool)) return 0;
     for (uint32_t index = 0; index < loan_count; ++index)
@@ -31,7 +31,7 @@ static void clear_private(void)
 {
     KERNEL_PHYSICAL_LEASE empty = {0};
     loan_pool = NULL; loan_count = 0;
-    for (uint32_t index = 0; index < 4; ++index) loans[index] = empty;
+    for (uint32_t index = 0; index < X86_WATCHDOG_LOANS; ++index) loans[index] = empty;
 }
 
 // ====== x86_watchdog_budget_begin ======
@@ -86,4 +86,38 @@ int x86_watchdog_budget_end(void)
     // device operations until the caller restores all scoped allocations to the pool.
     clear_private();
     return 1;
+}
+
+// ====== x86_watchdog_budget_lend ======
+
+int x86_watchdog_budget_lend(const KERNEL_PHYSICAL_LEASE *lease)
+{
+    X86_HPET_WATCHDOG *owner = x86_watchdog_state();
+    if (!loan_pool || !lease || loan_count >= X86_WATCHDOG_LOANS || owner->Armed || owner->Error ||
+        lease->Pages != 16 || kernel_physical_is_pinned(loan_pool,lease) != 1 ||
+        owner->Budget < 16 * (loan_count + 1) ||
+        !kernel_physical_budget_matches(loan_pool, owner->Budget - 16 * (loan_count + 1))) return 0;
+    for (uint32_t index = 0; index < loan_count; ++index)
+        if (loans[index].Id == lease->Id ||
+            os_address_ranges_overlap(loans[index].Base,65536,lease->Base,65536)) return 0;
+    loans[loan_count++] = *lease;
+    if (x86_watchdog_valid()) return 1;
+    loans[--loan_count] = (KERNEL_PHYSICAL_LEASE){0};
+    return 0;
+}
+
+// ====== x86_watchdog_budget_return ======
+
+int x86_watchdog_budget_return(const KERNEL_PHYSICAL_LEASE *lease)
+{
+    X86_HPET_WATCHDOG *owner = x86_watchdog_state();
+    if (!loan_pool || !lease || loan_count <= 2 || owner->Armed || owner->Error ||
+        !x86_watchdog_valid()) return 0;
+    for (uint32_t index = 2; index < loan_count; ++index) {
+        if (loans[index].Id != lease->Id || loans[index].Base != lease->Base) continue;
+        loans[index] = loans[loan_count - 1];
+        loans[--loan_count] = (KERNEL_PHYSICAL_LEASE){0};
+        return 1;
+    }
+    return 0;
 }
