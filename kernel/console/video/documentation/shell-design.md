@@ -5,8 +5,8 @@
 Il servizio attuale non e sicuro per chiamate concorrenti: `Busy` in
 `service/console.c` rileva il rientro, ma non e atomico e non sostituisce
 un lock. Le garanzie BSP descritte sotto restano il contratto implementato.
-L'utente ha scelto A. Il nucleo Rust e separato dal binding SMP:
-non prova ancora chiamate concorrenti dal kernel o integrazione del worker.
+L'utente ha scelto A. Coda e worker BSP sono collegati e verificati;
+le chiamate concorrenti dai task AP non sono ancora collegate al kernel.
 
 Riferimento: [Linux v6.12, Lock types, CPU local locks](https://www.kernel.org/doc/html/v6.12/locking/locktypes.html#cpu-local-locks).
 Disabilitare interrupt o preemption protegge soltanto la CPU locale.
@@ -88,7 +88,8 @@ richiede depth zero; non si ammette alcun lock esterno gia detenuto.
 Acquisizione, deadline e ticket usano le primitive K2 senza modifiche.
 L'accesso Rust finisce prima del release; un errore di release o un panic
 Rust chiama il terminale `kernel_console_requests_fail_stop`, senza cleanup
-o ripristino artificiale del lock. Il terminale nativo resta da collegare.
+o ripristino artificiale del lock. Il terminale nativo usa il fail-stop
+dello scheduler nel collegamento BSP verificato.
 
 I buffer di invio vengono copiati in un pacchetto locale prima del lock.
 L'output e copiato dopo il release, prima del ripristino di IF. Errori di
@@ -138,6 +139,68 @@ Il collegamento Rust nativo usa una staticlib con LTO e panic abort per
 includere le funzioni core necessarie senza dipendenze dal runtime Windows.
 Il linker mantiene nodefaultlib: non si aggiungono stub di runtime per
 nascondere simboli mancanti. Il terminale panic usa il fail-stop esistente.
+
+### Proposta successiva: primo produttore AP, scelta ancora richiesta
+
+L'ostacolo attuale e il binding dello scheduler, non il lock della coda.
+`scheduler/mapping/native.c` mantiene un solo insieme collegato di stack
+e contesti; `batch/runtime.c` lo usa per il diagnostico AP, mentre
+`integration/kernel.c` lo collega al profilo ordinario della console.
+Non si possono avviare i due percorsi insieme cambiando solo un controllo
+CPU: uno potrebbe sovrascrivere le autorita di stack dell'altro.
+
+Alternative:
+
+- A, consigliata: diagnostico dedicato AP1 -> coda -> BSP. Riusa il lotto
+  di due task AP gia verificato, con BSP supervisore e consumer della sola
+  griglia RAM. La console ordinaria e il rendering restano nel profilo
+  attuale. Dimostra prima il passaggio reale fra CPU e il lifetime.
+- B: integrazione direttamente nella console ordinaria. Richiede prima
+  un unico binding dei task BSP/AP, ammissione concorrente, notifiche e
+  risvegli tra CPU, e revisione del teardown input/video. Il perimetro e
+  piu ampio; non e una semplice sostituzione del mittente.
+
+Contratto proposto per A, non ancora implementato:
+
+- Un descrittore del canale, inizializzato dal BSP prima dell'ammissione,
+  pubblicato con release e acquisito dagli AP con acquire. Identita e
+  token della sessione non cambiano durante il lotto. Nessun puntatore
+  alla sessione PS/2, alla griglia o al renderer viene prestato ai task AP.
+- Due task su AP1 inviano 1.000 WRITE ciascuno con identita e sequenza;
+  la coda conserva otto posti da 256 byte e le copie gia verificate.
+  EDIT e SUBMIT restano di proprieta dell'input BSP in questa prima prova.
+- FULL conserva la richiesta e restituisce il task al suo dispatcher
+  tramite lo yield AP esistente. Nessuna attesa sul dispatcher BSP, nessun
+  nuovo IPI, IRQ o registro. Non dimostra ancora WAIT/HLT cross-CPU.
+- Il BSP consuma al massimo otto richieste tra due controlli di progresso,
+  applicandole al servizio C in RAM. Usa deadline e limite di controlli
+  esistenti; contesa, attese e istruzioni hardware non cambiano contratto.
+- Fine degli invii e quiescenza della CPU sono prove distinte. Il BSP
+  aspetta fine di entrambi i produttori, quiescenza AP verificata e coda
+  svuotata prima di close, revoca e raccolta degli stack. Un errore dopo
+  l'avvio trattiene le risorse e termina il diagnostico.
+- Rust gestisce identita/stati del canale e regole di ammissione; C
+  collega risorse e contesti esistenti. L'Assembly di switch si riusa.
+  Il primo blocco non estende automaticamente i permessi degli altri driver.
+
+Perimetro richiesto: console/video e soli adattatori del lotto/ammissione
+AP, supervisione BSP, build e test. Nessun refactor generale dello
+scheduler, del mapper o dei driver PS/2/VirtIO.
+
+Accettazione: test host dei token e degli stati, thread concorrenti,
+FULL e completamento incompleto; poi dieci boot consecutivi del nuovo
+profilo con 2.000 WRITE esatte, ordine per produttore, CPU AP attestata,
+riempimento forzato della coda prima del primo drain per provare FULL,
+nessuna applicazione sul core produttore e budget fisico ripristinato.
+Un negativo omette una conferma e deve negare la raccolta. Regressione
+console BSP separata. L'integrazione ordinaria con wakeup SMP resta il
+blocco successivo e richiede il proprio contratto.
+
+Fonti: [Rust Ordering, Acquire e Release](https://doc.rust-lang.org/core/sync/atomic/enum.Ordering.html)
+(documentazione consultata 1.99.1; verificare sul compilatore locale prima
+del codice); [Linux v6.12 workqueue, Introduction e The Design](https://docs.kernel.org/6.12/core-api/workqueue.html)
+come riferimento per separare accodamento e consumer. Non si copiano
+codice, worker pool o politica di scheduling Linux.
 
 ## Checkpoint storico: servizio BSP del 10 ottobre 2026
 

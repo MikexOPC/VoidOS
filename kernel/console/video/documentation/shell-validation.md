@@ -2,6 +2,14 @@
 
 ## K4-C5: worker BSP collegato, 6 novembre 2026
 
+Prossimo blocco: proposta AP1 -> coda -> consumer BSP in
+[shell-design.md](shell-design.md), ancora in attesa della scelta.
+La review conferma che batch AP e console ordinaria usano binding di
+stack distinti sullo stesso mapper: non e stato abilitato alcun invio AP.
+Per questo aggiornamento solo documentale: fonti, riferimenti e diff
+verificati; build, sanitizer e QEMU N/A. Le prove sotto restano quelle
+del blocco BSP gia completato, non del nuovo diagnostico proposto.
+
 Input e shell accodano le operazioni; solo il worker applica testo e riga
 al servizio C. Implementati attesa per spazio con generazioni, invii copiati,
 massimo otto applicazioni per turno e drain/close prima del teardown.
