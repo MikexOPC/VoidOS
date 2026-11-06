@@ -12,7 +12,7 @@ pub const QUIESCED: u64 = 7;
 const MAX_TOKEN: u64 = (1 << 61) - 2;
 
 #[repr(align(64))]
-struct Slot { value: AtomicU64, release: AtomicU64 }
+struct Slot { value: AtomicU64, release: AtomicU64, last: AtomicU64 }
 pub struct Admission {
     count: AtomicU64,
     group: AtomicU64,
@@ -24,7 +24,8 @@ impl Admission {
 
     pub const fn new() -> Self {
         Self { count: AtomicU64::new(0), group: AtomicU64::new(0),
-            slots: [const { Slot { value: AtomicU64::new(0), release: AtomicU64::new(0) } }; 64] }
+            slots: [const { Slot { value: AtomicU64::new(0), release: AtomicU64::new(0),
+                last: AtomicU64::new(0) } }; 64] }
     }
 
     // ====== admission_configure ======
@@ -50,7 +51,8 @@ impl Admission {
 
     pub fn offer(&self, cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
         let Some(slot) = self.slot(cpu,group) else { return 0; };
-        if caller != 0 || token == 0 || token > MAX_TOKEN { return 0; }
+        if caller != 0 || token == 0 || token > MAX_TOKEN ||
+            token <= self.slots[cpu as usize].last.load(Acquire) { return 0; }
         u32::from(slot.compare_exchange(0,(token << 3) | OFFERED,Release,Relaxed).is_ok())
     }
 
@@ -121,6 +123,18 @@ impl Admission {
         } else if write == 0 && caller == cpu {
             u32::from(self.slots[cpu as usize].release.load(Acquire) == token)
         } else { 0 }
+    }
+
+    // ====== execution_rearm ======
+
+    pub fn rearm(&self, cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
+        let Some(slot) = self.slot(cpu,group) else { return 0; };
+        if caller != 0 || token == 0 || token > MAX_TOKEN { return 0; }
+        let entry = &self.slots[cpu as usize];
+        if slot.compare_exchange((token << 3) | QUIESCED,0,AcqRel,Acquire).is_err() { return 0; }
+        entry.last.store(token,Release);
+        entry.release.store(0,Release);
+        1
     }
 
     // ====== execution_collect_allowed ======

@@ -186,3 +186,51 @@ fn execution_failure_races() {
         }
     }
 }
+
+// ====== rearm_after_quiescence ======
+
+#[test]
+fn rearm_after_quiescence() {
+    let owner = Admission::new();
+    assert_eq!(owner.configure(4,0x1000,0),1);
+    assert_eq!(owner.rearm(1,0,7,0x1000),0);
+    assert_eq!(owner.offer(1,0,7,0x1000),1);
+    assert_eq!(owner.rearm(1,0,7,0x1000),0);
+    assert_eq!(owner.claim(1,1,0x1000),7);
+    assert_eq!(owner.admit(1,1,7,0x1000),1);
+    assert_eq!(owner.rearm(1,0,7,0x1000),0);
+    assert_eq!(owner.transition(1,0,7,0x1000,0),1);
+    assert_eq!(owner.transition(1,1,7,0x1000,1),1);
+    assert_eq!(owner.release(1,0,7,0x1000,1),1);
+    assert_eq!(owner.rearm(1,0,7,0x1000),0);
+    assert_eq!(owner.transition(1,1,7,0x1000,2),1);
+    for (cpu, caller, token, group) in [(1,1,7,0x1000),(1,0,8,0x1000),(1,0,0,0x1000),(1,0,7,0x2000),(0,0,7,0x1000)] {
+        assert_eq!(owner.rearm(cpu,caller,token,group),0);
+    }
+    assert_eq!(owner.value(1,0x1000),(7 << 3) | QUIESCED);
+    assert_eq!(owner.rearm(1,0,7,0x1000),1);
+    assert_eq!(owner.value(1,0x1000),0);
+    assert_eq!(owner.rearm(1,0,7,0x1000),0);
+    for token in [1,6,7] { assert_eq!(owner.offer(1,0,token,0x1000),0); }
+    assert_eq!(owner.offer(1,0,8,0x1000),1);
+    assert_eq!(owner.claim(1,1,0x1000),8);
+    assert_eq!(owner.admit(1,1,8,0x1000),1);
+    assert_eq!(owner.transition(1,0,8,0x1000,0),1);
+    assert_eq!(owner.transition(1,1,8,0x1000,1),1);
+    assert_eq!(owner.release(1,1,8,0x1000,0),0);
+    assert_eq!(owner.release(1,0,8,0x1000,1),1);
+    assert_eq!(owner.release(1,1,8,0x1000,0),1);
+}
+
+// ====== failed_slot_never_rearms ======
+
+#[test]
+fn failed_slot_never_rearms() {
+    let owner = Admission::new();
+    assert_eq!(owner.configure(2,0x1000,0),1);
+    assert_eq!(owner.offer(1,0,3,0x1000),1);
+    assert_eq!(owner.fail(1,0,3,0x1000),1);
+    assert_eq!(owner.rearm(1,0,3,0x1000),0);
+    assert_eq!(owner.offer(1,0,4,0x1000),0);
+    assert_eq!(owner.value(1,0x1000),(3 << 3) | FAILED);
+}

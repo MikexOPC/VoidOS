@@ -21,6 +21,7 @@ uint64_t xad_value(uint32_t cpu, uint64_t group);
 uint32_t xad_transition(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group, uint32_t operation);
 uint32_t xad_release(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group, uint32_t write);
 uint32_t xad_collect_allowed(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group);
+uint32_t xad_rearm(uint32_t cpu, uint32_t caller, uint64_t token, uint64_t group);
 
 typedef __declspec(align(64)) struct {
     uint64_t  Self, Group, Token, Cpu, Rsp, Local, Root, Irq;
