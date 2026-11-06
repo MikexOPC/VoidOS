@@ -231,6 +231,82 @@ con rustc 1.98.1); [Linux v6.12 workqueue, Introduction e The Design](https://do
 come riferimento per separare accodamento e consumer. Non si copiano
 codice, worker pool o politica di scheduling Linux.
 
+### Risveglio AP -> BSP: proposta da scegliere
+
+Prerequisiti verificati nel codice: `xis_native_send` accetta solo mittente
+BSP e destinazione AP; `xis_mmio_write` autorizza l'ICR del servizio
+esistente con vettore 0xe1. Il registro IRQ BSP contiene tre subscription
+e la validazione Rust accetta solo 0x40..0x42. Il percorso di eventi della
+console usa contesto e stack del task chiamante: non e un accesso remoto
+al dispatcher BSP. Non basta chiamarlo da AP1.
+
+Alternative:
+
+- A, consigliata: notifica IPI dedicata AP1 -> BSP, vettore proposto 0x43,
+  con subscription BSP originale e quarto slot esplicito. Il worker viene
+  reso eseguibile attraverso il dispatcher; la coda rimane l'autorita sui
+  dati. Gli invii possono raggruppare le notifiche gia pendenti.
+- B: pending atomico consultato alla scadenza dell'attesa timer BSP.
+  Richiede meno adattatori hardware, ma aggiunge latenza e controlli
+  periodici. Il periodo va misurato nel profilo; non e un risveglio IPI.
+
+Contratto proposto per A, non ancora implementato:
+
+- Un solo canale AP1 -> BSP, token e descrittore stabili. WRITE viene
+  prima copiato nella coda; solo dopo il rilascio del lock si pubblica
+  la notifica. Rust valida token, stato, sequenze e pending; C possiede
+  il mapping LAPIC e la subscription. Nessun pointer alla griglia negli AP.
+- Pending raggruppato: solo la prima notifica non ancora presa richiede
+  un IPI. Il protocollo deve gestire pubblicazione concorrente alla presa
+  del pending. Le sequenze sono monotone, senza wrap o riuso live.
+- L'handler BSP verifica la subscription, pubblica soltanto una notifica
+  per il dispatcher e completa l'EOI. Non prende lock ordinari, non disegna
+  e non chiama il percorso di evento di un task. L'Owner scheduler viene
+  modificato dal dispatcher nel contesto verificato.
+- Il pending va preso con un'operazione atomica prima di acquisire lo
+  snapshot della sequenza pubblicata: un nuovo invio dopo la presa deve
+  poter richiedere un altro IPI. Nessuna cancellazione separata dopo il
+  rendering. Code non vuote vengono ricontrollate prima di ogni attesa.
+- L'APIC puo raggruppare richieste dello stesso vettore: un EOI non equivale
+  a un WRITE o a ciascuna scrittura ICR. L'ack software avanza alla sequenza
+  osservata; contatori ISR/EOI descrivono solo le consegne reali.
+- Stop: produttori quiescenti, invii terminati, sequenze osservate, pending
+  e coda drenati, IRR/ISR pertinenti vuoti; poi distacco e revoca del token.
+  Owner e callback restano vivi durante questa procedura. Timeout o errore
+  dopo pubblicazione sono terminali e trattengono le risorse.
+- Watchdog e istruzione HLT devono ammettere la nuova sorgente owned e
+  conservare il controllo indipendente dei blocchi. Il risveglio BSP e
+  la sospensione WAIT/HLT dei produttori AP sono contratti distinti: questa
+  prima notifica non prova automaticamente il secondo.
+
+Fonti hardware: [Intel SDM 253668-078US, Vol. 3A](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf),
+§11.6.1/Figura 11-12 e §11.6.2.1: ICR low +0x300, high +0x310,
+destinazione high[31:24], delivery low[10:8]=0, physical bit11=0,
+delivery-status bit12, assert bit14, edge bit15=0. Destinazione: APIC ID
+verificato del BSP, non indice CPU assunto uguale all'ID. §11.5.3:
+ESR +0x280 con sequenza gia implementata dal backend ICR. §11.8.5:
+EOI +0xb0, scrittura zero. Questi sono riferimenti per il progetto,
+non nuove scritture hardware eseguite o validate.
+
+Riferimento comparabile: [Linux v6.12, kernel/smp.c](https://raw.githubusercontent.com/torvalds/linux/v6.12/kernel/smp.c),
+accodamento del lavoro e invio IPI quando la lista cambia stato. Qui si
+conservano coda limitata, owner BSP e failure terminali; niente copia del
+codice Linux, callback arbitrarie o framework generico per tutti i driver.
+
+Perimetro richiesto: console/video, backend ICR/AP, registro e ritorno IRQ
+BSP, adattatori di dispatcher/idle/watchdog e soli binding, build e test
+necessari. L'unificazione dei binding BSP/AP resta un prerequisito per
+usare i produttori AP nella console ordinaria; non si abilita aggirando
+i controlli del mapper o condividendo dispatcher e stack tra CPU.
+
+Accettazione: test Rust di pubblicazione/presa concorrenti, notifiche
+raggruppate, token stantii, overflow e stop; test C di limiti e cleanup;
+poi dieci boot consecutivi con vero risveglio del BSP da HLT, dati ordinati,
+nessun evento perso e budget ripristinato. Negativi: invio/ack mancante e
+stop con notifica in volo devono negare il rilascio. Regressioni dei tre
+vettori esistenti e console. La forma del collegamento ordinario dipende
+anche dalla verifica dei binding; non e dichiarata completa dal solo IPI.
+
 ## Checkpoint storico: servizio BSP del 10 ottobre 2026
 
 Scelta utente: servizio unico, aggiornamenti RAM serializzati (alternativa A).
