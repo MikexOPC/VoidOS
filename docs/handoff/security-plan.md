@@ -1,6 +1,6 @@
 # Piano sicurezza dei sottosistemi
 
-Stato: avviato (bounds pronto). Questo file e il punto di partenza per chi lavora sulla
+Stato: avviato (bounds e health test entropia pronti). Questo file e il punto di partenza per chi lavora sulla
 sicurezza; va aggiornato a ogni passo.
 
 ## Ordine concordato — 6 novembre 2026
@@ -91,7 +91,7 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
 
 | # | Passo | Rischio | Motivo |
 |---|---|---|---|
-| 1 | `lib/security/entropy` + `arch/x86/security/entropy` | Alto | Base per canary e randomizzazione: RDRAND/RDSEED via CPUID, validazione e fallback in Rust |
+| 1 | `lib/security/entropy` + `arch/x86/security/entropy` | Alto | Base per canary e randomizzazione. **Parte comune fatta** (health test SP 800-90B); resta la sorgente RDRAND/RDSEED via CPUID |
 | 2 | Stack canary del kernel | Alto | Oggi nessuna protezione sull'overflow di stack in C; richiede supporto `/GS` freestanding o canary propri |
 | 3 | W^X dell'immagine kernel | Alto | Verificare e imporre `.text` RX, `.rdata` RO+NX, dati RW+NX; test negativo su scrittura in `.text` |
 | 4 | Primitive comuni `lib/security/bounds` | Medio-alto | **Fatto per primo** (2026-11-06): non tocca hardware ne kernel, utile a tutti i passi successivi |
@@ -108,3 +108,9 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   release), oracolo a 128 bit, input ostili, clippy, oggetto freestanding.
   Aperto: header C e collegamento ai moduli. Dettagli in
   [bounds.md](../../lib/security/bounds/documentation/bounds.md).
+- **2026-11-06 — `lib/security/entropy` (parte comune).** Health test NIST
+  SP 800-90B: Repetition Count e Adaptive Proportion, avvio a 1024 campioni,
+  guasto persistente fino a `restart()`. Rust `no_std`, API Rust. Suite host
+  `security-entropy`: 16 test, cutoff confrontati con la Table 2 dello
+  standard. Aperto: sorgente x86, condizionamento/DRBG. Dettagli in
+  [entropy.md](../../lib/security/entropy/documentation/entropy.md).
