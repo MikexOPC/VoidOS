@@ -43,6 +43,7 @@ try {
     Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024',
         '--crate-type=lib','--emit=metadata','-D','warnings',
         "$project/kernel/console/video/rust/requests/queue.rs",'-o',"$out/requests-clippy.rmeta")
+    & "$PSScriptRoot/requests/test.ps1" -OutputDirectory "$out/requests"
     foreach ($profile in @('debug','release')) {
         $optimization = if ($profile -eq 'release') { '2' } else { '0' }
         Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
