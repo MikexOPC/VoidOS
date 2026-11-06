@@ -2,6 +2,12 @@
 
 ## K4-C5: diagnostico AP1 -> coda -> BSP, 6 novembre 2026
 
+Prossimo contratto da scegliere: notifica IPI AP1 -> BSP oppure controllo
+tramite timer, in [shell-design.md](shell-design.md). Review del trasporto,
+del registro IRQ e delle fonti completata; nessuna nuova notifica hardware
+implementata. Questo aggiornamento e solo documentale: diff/fonti verificati,
+build e QEMU N/A. I conteggi sotto restano le prove del diagnostico a yield.
+
 Due task su AP1 inviano 1.000 WRITE ciascuno al consumer BSP in RAM.
 Il drain inizia solo dopo un FULL osservato da entrambi. Il consumer
 verifica identita e sequenza per produttore; solo dopo fine degli invii,
