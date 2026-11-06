@@ -11,7 +11,7 @@ struct Module {
     test   : &'static str,
 }
 
-const MODULES: [Module; 3] = [
+const MODULES: [Module; 4] = [
     Module {
         name   : "bounds",
         source : "lib/security/bounds/rust/bounds.rs",
@@ -21,6 +21,11 @@ const MODULES: [Module; 3] = [
         name   : "entropy",
         source : "lib/security/entropy/rust/health.rs",
         test   : "test/lib/security/entropy/rust/health_test.rs",
+    },
+    Module {
+        name   : "memory",
+        source : "lib/security/memory/rust/memory.rs",
+        test   : "test/lib/security/memory/rust/memory_test.rs",
     },
     Module {
         name   : "sha256",
@@ -88,6 +93,33 @@ fn static_checks(module: &Module, project: &Path, out: &Path) -> Result<(), Stri
     ])
 }
 
+// ====== azzeramento non eliminabile ======
+
+const PROBE: &str = "test/lib/security/memory/rust/probe.rs";
+
+fn zero_stores(assembly: &str, function: &str) -> Option<usize> {
+    let start = assembly.lines().position(|line| line == format!("{function}:"))?;
+    let body = assembly.lines().skip(start + 1).take_while(|line| !line.trim_start().starts_with("ret"));
+    Some(body.filter(|line| line.contains("$0,")).count())
+}
+
+fn wipe_probe(project: &Path, out: &Path) -> Result<(), String> {
+    let assembly = out.join("probe.s");
+    run("memory volatile probe", Path::new("rustc"), &[
+        "--edition=2024", "--crate-type=lib", "--emit=asm", "--target", "x86_64-pc-windows-msvc",
+        "-C", "panic=abort", "-C", "opt-level=2", "-D", "warnings", text(&project.join(PROBE)), "-o", text(&assembly),
+    ])?;
+    let listing = fs::read_to_string(&assembly).map_err(|error| format!("probe.s: {error}"))?;
+    let kept = zero_stores(&listing, "probe_volatile").ok_or("probe_volatile assente")?;
+    let removed = zero_stores(&listing, "probe_plain").ok_or("probe_plain assente")?;
+    println!("[ INFO ] store di zero: volatile {kept}, normale {removed}");
+    if kept >= 8 && removed == 0 {
+        Ok(())
+    } else {
+        Err(format!("azzeramento non dimostrato: volatile {kept}, normale {removed}"))
+    }
+}
+
 // ====== main ======
 
 fn suite(project: &Path, out: &Path, only: Option<&str>) -> Result<usize, String> {
@@ -99,6 +131,9 @@ fn suite(project: &Path, out: &Path, only: Option<&str>) -> Result<usize, String
     for module in &selected {
         host_tests(module, project, out)?;
         static_checks(module, project, out)?;
+        if module.name == "memory" {
+            wipe_probe(project, out)?;
+        }
     }
     Ok(selected.len())
 }

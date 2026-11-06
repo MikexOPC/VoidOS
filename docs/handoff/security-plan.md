@@ -1,6 +1,6 @@
 # Piano sicurezza dei sottosistemi
 
-Stato: avviato (bounds, health test entropia e SHA-256 pronti). Questo file e il punto di partenza per chi lavora sulla
+Stato: avviato (bounds, health test entropia, SHA-256 e memory pronti). Questo file e il punto di partenza per chi lavora sulla
 sicurezza; va aggiornato a ogni passo.
 
 ## Ordine concordato — 6 novembre 2026
@@ -118,7 +118,13 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   [entropy.md](../../lib/security/entropy/documentation/entropy.md).
 - **2026-11-07 — `lib/security/hash/sha256`.** SHA-256 FIPS 180-4, primo
   anello della catena SHA-256 → HMAC → HMAC_DRBG verso i canary. Rust
-  `no_std`, API Rust. Suite `security`: 8 test, costanti ricalcolate dai
-  primi, vettori NIST, confronto con Windows CNG. Aperto: azzeramento dello
-  stato con `lib/security/memory`. Dettagli in
+  `no_std`, API Rust. Suite `security`: 9 test, costanti ricalcolate dai
+  primi, vettori NIST, confronto con Windows CNG. Stato azzerato alla
+  distruzione con `lib/security/memory`. Dettagli in
   [sha256.md](../../lib/security/hash/sha256/documentation/sha256.md).
+- **2026-11-07 — `lib/security/memory`.** Azzeramento non eliminabile
+  (`wipe`, `Wiping`) e confronto senza uscita anticipata (`equal`). Rust
+  `no_std`, API Rust, gia usato da SHA-256. Suite `security`: 8 test piu una
+  sonda sull'assembly che dimostra che l'azzeramento resta in release.
+  Aperto: tempo costante solo "best effort". Dettagli in
+  [memory.md](../../lib/security/memory/documentation/memory.md).

@@ -188,6 +188,23 @@ fn clones_continue_independently() {
     assert_eq!(Sha256::default().finalize(), hash(b""));
 }
 
+// ====== azzeramento alla distruzione ======
+
+#[test]
+fn dropped_state_is_wiped() {
+    let mut storage = std::mem::MaybeUninit::<Sha256>::uninit();
+    let mut hasher = Sha256::new();
+    hasher.update(&[0xa5; 100]).unwrap();
+    storage.write(hasher);
+    let bytes = unsafe {
+        let pointer = storage.as_mut_ptr();
+        std::ptr::drop_in_place(pointer);
+        std::slice::from_raw_parts(pointer.cast::<u8>(), std::mem::size_of::<Sha256>())
+    };
+    assert_eq!(std::mem::size_of::<Sha256>(), 112);
+    assert!(bytes.iter().all(|byte| *byte == 0));
+}
+
 // ====== limite di 2^64 bit ======
 
 #[test]
