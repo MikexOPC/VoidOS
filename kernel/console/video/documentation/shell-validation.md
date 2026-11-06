@@ -1,5 +1,48 @@
 # Shell video operativa — verifica, 11 ottobre 2026
 
+## K4-C5: nucleo della coda, 6 novembre 2026
+
+Implementato `rust/requests/queue.rs`: otto richieste possedute, massimo
+256 byte ciascuna, UTF-8 verificato, FIFO, lavoro in corso separato e
+stati OPEN/DRAINING/CLOSED/FAILED. Il consumer host usa take/complete:
+nessuna seconda estrazione prima della conferma, nessun retry dopo errore
+terminale. Una richiesta in corso puo convivere con otto richieste accodate.
+
+Prove sulla versione finale:
+
+- Sei test Rust debug e sei release, warning come errori e overflow checks.
+  FIFO/wrap per 8.000 richieste; altre 100.000 operazioni confrontate con
+  una `VecDeque` di riferimento, in ciascuna configurazione.
+- Confini 0/256/257 byte, UTF-8 italiano, encoding invalidi, controlli,
+  copia del payload, piena/vuota, drain, chiusura prematura, errore terminale.
+- Clippy del nucleo e dei test senza warning; compilazione `no_std` in
+  oggetto con panic abort. Il nucleo vieta unsafe e non usa heap o FFI.
+- Suite console esistente arrivata a PASS: test C con MSVC W4/WX e ASan,
+  test Rust, harness host e quattro report cppcheck senza diagnostiche
+  error/warning/performance/portability. Hardware e IRQ dei test host
+  restano mock, non prove su dispositivi reali.
+- Layout centralizzato: include il nuovo test, nessun errore; nuovi file
+  Rust di 138 e 153 righe. Diff senza trailing whitespace.
+
+Evidenze: `kernel/build/c5-console-queue/debug.log`, `release.log`,
+`kernel/build/c5-console-host.log`, report cppcheck in
+`kernel/build/c5-console-host/` e `kernel/build/test-layout/layout.json`.
+La suite ampia ha eseguito la stessa logica della coda; dopo la review
+e stato distinto PENDING da FULL nella sola risposta di close, ripetendo
+entrambi i profili Rust, Clippy e compilazione sul sorgente finale.
+
+Limiti: nessun singleton condiviso, lock kernel, gateway C o collegamento
+al worker ancora implementato. `&mut Queue` richiede accesso esclusivo;
+questo codice da solo non e una coda MPSC sincronizzata. Il consumer host
+verifica il protocollo, non disegna tramite il servizio C.
+Nessuna immagine kernel include la coda: QEMU N/A per questo blocco host,
+non dichiarato PASS o eseguito. Prima di consentire chiamate AP servono
+binding/lock, wakeup e dieci boot SMP del profilo integrato.
+Nessun Valgrind eseguito; ASan C non misura perdite fisiche del kernel.
+Copertura linee/branch N/D. C5 nel suo insieme resta aperta.
+
+## Checkpoint storico della console BSP
+
 Modulo: `kernel/console/video/` e sole interfacce necessarie alla sessione
 input/shell, inventario stack e gateway framebuffer. Scelta approvata:
 [servizio unico con aggiornamenti RAM serializzati](shell-design.md).

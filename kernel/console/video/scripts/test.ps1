@@ -34,6 +34,17 @@ try {
     $rustc="$env:USERPROFILE/.cargo/bin/rustc.exe"
     foreach ($profile in @('debug','release')) {
         $optimization = if ($profile -eq 'release') { '2' } else { '0' }
+        Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings',
+            '-C',"opt-level=$optimization",'-C','overflow-checks=yes',
+            "$project/test/kernel/console/video/rust/requests/queue_test.rs",
+            '-o',"$out/requests-$profile.exe")
+        Invoke-Checked "$out/requests-$profile.exe" @()
+    }
+    Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024',
+        '--crate-type=lib','--emit=metadata','-D','warnings',
+        "$project/kernel/console/video/rust/requests/queue.rs",'-o',"$out/requests-clippy.rmeta")
+    foreach ($profile in @('debug','release')) {
+        $optimization = if ($profile -eq 'release') { '2' } else { '0' }
         Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
             '-C','overflow-checks=yes',"$project/test/kernel/console/video/rust/text/utf8_test.rs",
             '-o',"$out/text-$profile.exe")
