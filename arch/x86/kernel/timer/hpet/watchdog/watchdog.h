@@ -12,6 +12,7 @@
    Callers bound the returned value with these, never with a local copy. */
 #define X86_WATCHDOG_WAKE_BUDGET 256U
 #define X86_WATCHDOG_WAKE_LIMIT (X86_WATCHDOG_WAKE_BUDGET + 1U)
+#define X86_WATCHDOG_LOANS 8U
 _Static_assert(X86_WATCHDOG_WAKE_BUDGET >= 1 && X86_WATCHDOG_WAKE_BUDGET <= 1024,
     "Budget entro i limiti di x86_irq_sleep");
 /* Stable diagnostic phases, not a claim about the underlying hardware cause. */
@@ -115,6 +116,8 @@ int x86_watchdog_budget_begin_three(const KERNEL_PHYSICAL_LEASE *first, const KE
 int x86_watchdog_budget_begin_four(const KERNEL_PHYSICAL_LEASE *first, const KERNEL_PHYSICAL_LEASE *second,
     const KERNEL_PHYSICAL_LEASE *third, const KERNEL_PHYSICAL_LEASE *fourth);
 int x86_watchdog_budget_end(void);
+int x86_watchdog_budget_lend(const KERNEL_PHYSICAL_LEASE *lease);
+int x86_watchdog_budget_return(const KERNEL_PHYSICAL_LEASE *lease);
 int x86_watchdog_budget_valid(void);
 int x86_watchdog_budget_active(void);
 int x86_watchdog_device(BOOT_U32 operation);
