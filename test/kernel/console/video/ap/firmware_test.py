@@ -46,11 +46,28 @@ class ReaderTests(unittest.TestCase):
         for negative in (False, True):
             self.fixture(negative)
             self.assertEqual(self.verify(negative)['Writes'], 2000)
+            self.assertEqual(self.verify(negative)['MissingCompletion'], negative)
             for index in range(15):
                 self.fixture(negative)
                 self.record[index] += 1
                 with self.subTest(negative=negative, word=index), self.assertRaises(RuntimeError):
                     self.verify(negative)
+
+    # ====== notification_failure_is_not_missing_producer_completion ======
+
+    def test_notification_channel_metadata(self):
+        self.fixture(True)
+        self.record[9:11] = [3,1]
+        log = type('Log', (), {})()
+        log.number = lambda key: self.numbers[key]
+        log.before = lambda first, second: self.order
+        with patch.object(module.service.cpu, 'memory', side_effect=lambda vm, addr, count: self.tables[addr][:count]), \
+             patch.object(module.service.launch, 'registers', return_value=''), \
+             patch.object(module.service.launch, 'value', return_value=0x2000), \
+             patch.object(module.service.runtime, 'allocator', side_effect=lambda vm, log: (0x3000, self.live, self.pins, self.free)):
+            proof = module.verify_channel(None, log, True, True)
+        self.assertFalse(proof['MissingCompletion'])
+        self.assertTrue(proof['NotificationFailure'])
 
     # ====== retained_memory ======
 
@@ -66,6 +83,46 @@ class ReaderTests(unittest.TestCase):
             if mutation == 'order': self.order = False
             with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
                 self.verify(True)
+
+# ====== notification_reader ======
+
+class NotificationReaderTests(unittest.TestCase):
+    # ====== fixture ======
+
+    def fixture(self, case):
+        self.record = [0x1000,0x2000,19,int(case != 'positive'),4,3,3,7,
+                       int(case == 'positive'),int(case != 'positive'),
+                       10 if case == 'inflight' else 2,2000,0 if case == 'no-ack' else 2000,
+                       0,0,4000 if case == 'inflight' else 0]
+
+    # ====== verify ======
+
+    def verify(self, case):
+        log = type('Log', (), {})()
+        log.number = lambda key: 0x1000
+        with patch.object(module.service.cpu, 'memory', side_effect=lambda vm, addr, count: self.record[:count]), \
+             patch.object(module.service.launch, 'registers', return_value=''), \
+             patch.object(module.service.launch, 'value', return_value=0x2000):
+            return module.verify_notification(None, log, case)
+
+    # ====== notification_lifecycle ======
+
+    def test_notification_lifecycle(self):
+        for case in ('positive','no-ack','inflight'):
+            self.fixture(case)
+            self.assertFalse(self.verify(case)['HltProven'])
+            for index in (0,1,2,3,5,6,7,8,9,10,11,12,13,14,15):
+                self.fixture(case)
+                self.record[index] = 0 if index in (2,7,15) else self.record[index] + 1
+                # Several different inflight notices are valid; zero is not.
+                if index == 15 and case != 'inflight': self.record[index] = 1
+                with self.subTest(case=case, word=index), self.assertRaises(RuntimeError):
+                    self.verify(case)
+            for sends in (0,2001,2):
+                self.fixture(case)
+                self.record[4] = sends
+                with self.subTest(case=case, sends=sends), self.assertRaises(RuntimeError):
+                    self.verify(case)
 
 if __name__ == '__main__':
     unittest.main()

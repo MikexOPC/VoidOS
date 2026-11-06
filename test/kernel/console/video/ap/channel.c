@@ -2,6 +2,9 @@
 #include "arch/x86/kernel/scheduler/batch/batch.h"
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "kernel/diagnostics/log.h"
+#ifdef KERNEL_TEST_AP_NOTIFY
+#include "arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.h"
+#endif
 
 KCA_RECORD kca_record;
 static KERNEL_CONSOLE_REQUEST_QUEUE queue;
@@ -22,6 +25,9 @@ void kca_prepare(void) {
     kca_record.Budget = xat_record.Budget;
     kca_record.Held = xat_record.Held;
     if (!kernel_console_ap_channel(0,0,kca_record.Token,0)) xat_abort();
+#ifdef KERNEL_TEST_AP_NOTIFY
+    if (!xcn_prepare(kca_record.Token) || xcn_prepare(kca_record.Token) || xcn_send(0)) xat_abort();
+#endif
 }
 
 // ====== kca_produce ======
@@ -46,6 +52,9 @@ void kca_produce(uint32_t index) {
         }
         if (!accepted) xat_abort();
         ++kca_record.Sent[index];
+#ifdef KERNEL_TEST_AP_NOTIFY
+        if (!xcn_send(index)) xat_abort();
+#endif
         if (!(sequence % 16)) xat_io_yield();
     }
 #ifdef KERNEL_TEST_AP_CONSOLE_INCOMPLETE
@@ -59,6 +68,9 @@ void kca_produce(uint32_t index) {
 void kca_pump(void) {
     if (xis_native_index()) xat_abort();
     if (!kca_record.Self) return;
+#ifdef KERNEL_TEST_AP_NOTIFY
+    if (!xcn_poll()) xat_abort();
+#endif
     if (!ks_atomic_load_acquire(&kca_record.Full[0]) || !ks_atomic_load_acquire(&kca_record.Full[1])) return;
     for (uint32_t count = 0; count < 8; ++count) {
         KERNEL_CONSOLE_REQUEST packet;
@@ -83,6 +95,9 @@ void kca_pump(void) {
 
 int kca_release_allowed(void) {
     return !xis_native_index() && kca_record.Closed == 1 &&
+#ifdef KERNEL_TEST_AP_NOTIFY
+        xcn_release_allowed() &&
+#endif
         kernel_console_ap_channel(3,0,kca_record.Token,0) == 7;
 }
 
@@ -122,5 +137,23 @@ void kca_finish(void) {
         kernel_console_requests_drain(&queue) != KCR_OK || kernel_console_requests_close(&queue) != KCR_OK ||
         !kernel_console_service_close(&service)) xat_abort();
     kca_record.Closed = 1;
+#ifdef KERNEL_TEST_AP_NOTIFY
+    int closed = xcn_close(1);
+    if (!kernel_text("KERNEL_AP_NOTIFY_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&xcn_record) ||
+        !kernel_text("\n")) xat_abort();
+#if defined(KERNEL_TEST_AP_NOTIFY_NO_ACK) || defined(KERNEL_TEST_AP_NOTIFY_INFLIGHT)
+    if (closed || xcn_release_allowed() || !xcn_record.Denied ||
+        !kernel_physical_budget_matches(xat_pool,kca_record.Held)) xat_abort();
+    kca_record.Denied = 1;
+    kca_report();
+    if (!kernel_text("KERNEL_AP_BATCH_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&xat_record) ||
+        !kernel_text("\nKERNEL_AP_BATCH_PTE: ") || !kernel_number((uint64_t)(uintptr_t)&x86_stack_entries(3)[320]) ||
+        !kernel_text("\n") || !kernel_log(1,"KERNEL_AP_NOTIFY_INCOMPLETE")) xat_abort();
+    xat_cleanup();
+    xat_abort();
+#else
+    if (!closed) xat_abort();
+#endif
+#endif
 #endif
 }

@@ -10,13 +10,13 @@ spec.loader.exec_module(service)
 
 # ====== verify_channel ======
 
-def verify_channel(vm, log, negative):
+def verify_channel(vm, log, negative, notified=False):
     address = log.number('KERNEL_AP_CONSOLE_RECORD')
     record = service.cpu.memory(vm, address, 15)
     root = service.launch.value(service.launch.registers(vm, 0), 'CR3')
     pool, live, pins, free = service.runtime.allocator(vm, log)
     expected = [address, root, root, 1, 1, 1000, 1000, 1000, 1000,
-                1 if negative else 3, 0 if negative else 1, int(negative)]
+                1 if negative and not notified else 3, 0 if negative and not notified else 1, int(negative)]
     if record[:12] != expected or record[12] < 32 or record[13] != record[12] - 32:
         raise RuntimeError('Channel identity, FULL, FIFO counts or lifecycle differs: ' + str(record))
     batch = service.cpu.memory(vm, log.number('KERNEL_AP_BATCH_RECORD'), 32)
@@ -26,7 +26,7 @@ def verify_channel(vm, log, negative):
     else:
         if (record[14] or free != record[13] or batch[:3] != [log.number('KERNEL_AP_BATCH_RECORD'), root, pool] or
                 batch[3:6] != [record[12], record[13], 0] or batch[20] != 2 or batch[26:28] != [0, 0] or
-                not log.before('KERNEL_AP_CONSOLE_INCOMPLETE', 'KERNEL_SMP_PANIC')):
+                not log.before('KERNEL_AP_NOTIFY_INCOMPLETE' if notified else 'KERNEL_AP_CONSOLE_INCOMPLETE', 'KERNEL_SMP_PANIC')):
             raise RuntimeError('Missing completion did not deny cleanup')
         leaves = service.cpu.memory(vm, log.number('KERNEL_AP_BATCH_PTE'), 36)
         frames = []
@@ -44,7 +44,30 @@ def verify_channel(vm, log, negative):
         if abs(frames[0] - frames[1]) < 65536:
             raise RuntimeError('Retained stacks overlap')
     return dict(ProducerCpu=1, ConsumerCpu=0, Writes=2000, ForcedFull=True,
-                MissingCompletion=negative, BudgetBefore=record[12], BudgetHeld=record[13], BudgetFinal=record[14])
+                MissingCompletion=negative and not notified, NotificationFailure=negative and notified, BudgetBefore=record[12], BudgetHeld=record[13], BudgetFinal=record[14])
+
+# ====== verify_notification ======
+
+def verify_notification(vm, log, case):
+    address = log.number('KERNEL_AP_NOTIFY_RECORD')
+    record = service.cpu.memory(vm, address, 16)
+    root = service.launch.value(service.launch.registers(vm, 0), 'CR3')
+    negative = case != 'positive'
+    if (record[:2] != [address, root] or not record[2] or
+            record[3] != int(negative) or not 1 <= record[4] <= 2000 or
+            not 1 <= record[5] <= record[4] or record[6] != record[5] or not record[7] or
+            record[8:10] != [int(not negative), int(negative)]):
+        raise RuntimeError('IPI identity, send/delivery/EOI or close differs: ' + str(record))
+    state, published, observed, pending, slot0, slot1 = record[10:]
+    if (state != (10 if case == 'inflight' else 2) or published != 2000 or
+            observed != (0 if case == 'no-ack' else 2000) or pending or slot0 or
+            (case == 'inflight' and not 2 <= slot1 <= 4001) or
+            (case != 'inflight' and slot1)):
+        raise RuntimeError('Software notification sequence/reference accounting differs: ' + str(record))
+    return dict(Vector=0x43, Event=7, Published=published, Observed=observed,
+                IcrSends=record[4], Delivered=record[5], Eois=record[6],
+                Drains=record[7], Closed=bool(record[8]), Denied=bool(record[9]),
+                HltProven=False, WorkerProven=False)
 
 # ====== main ======
 
@@ -53,7 +76,10 @@ def main():
     parser.add_argument('--image', type=Path, required=True)
     parser.add_argument('--boots', type=int, choices=range(1, 11), default=10)
     parser.add_argument('--incomplete', action='store_true')
+    parser.add_argument('--ipi', choices=('positive','no-ack','inflight'))
     args = parser.parse_args()
+    if args.incomplete and args.ipi: parser.error("Choose one negative profile")
+    negative = args.incomplete or args.ipi in ("no-ack","inflight")
     out = ROOT / 'kernel/build' / ('ap-console-' + uuid.uuid4().hex)
     out.mkdir()
     results = []
@@ -62,9 +88,9 @@ def main():
         for iteration in range(1, args.boots + 1):
             with service.qemu.Vm(out / f'boot-{iteration}', args.image, 'std', smp=4) as vm:
                 try:
-                    log = service.await_terminal(vm, 'ap-console-incomplete' if args.incomplete else 'ap-batch')
+                    log = service.await_terminal(vm, 'ap-console-incomplete' if negative else 'ap-batch')
                     vm.command('stop')
-                    if args.incomplete:
+                    if negative:
                         group_spec = importlib.util.spec_from_file_location('group',
                             ROOT / 'test/arch/x86/kernel/cpu/percpu/panic/integration/group.py')
                         group = importlib.util.module_from_spec(group_spec)
@@ -74,17 +100,20 @@ def main():
                     else:
                         if not log.has('KERNEL_AP_CONSOLE_READY'):
                             raise RuntimeError('Missing AP console completion')
-                    proof = service.verify(vm, log, 'ap-console-incomplete' if args.incomplete else 'ap-batch',
+                    proof = service.verify(vm, log, 'ap-console-incomplete' if negative else 'ap-batch',
                                            4, batch_steps=65536)
                     counters = service.cpu.memory(vm, log.number('KERNEL_IPI_NATIVE') + 4160, 64 * 8)
                     base = log.number('KERNEL_IPI_BASE_GENERATION')
                     if any(counters[i * 8] != counters[i * 8 + 4] or
                            counters[i * 8] != counters[i * 8 + 5] or counters[i * 8] < base for i in range(1, 4)):
                         raise RuntimeError('IPI delivery/EOI accounting differs')
-                    proof.update(Case='ap-console-incomplete' if args.incomplete else 'ap-console',
+                    proof.update(Case=('ap-console-ipi-' + args.ipi) if args.ipi else ('ap-console-incomplete' if negative else 'ap-console'),
                                  TaskCpus=[1], AdmittedCpus=[1],
                                  Requests=sum(counters[i * 8] - base for i in range(1, 4)))
-                    results.append(dict(**proof, Channel=verify_channel(vm, log, args.incomplete)))
+                    result = dict(**proof, Channel=verify_channel(vm, log, negative, bool(args.ipi)))
+                    if args.ipi:
+                        result['Notification'] = verify_notification(vm, log, args.ipi)
+                    results.append(result)
                 except BaseException:
                     service.capture_failure(vm, 4)
                     raise

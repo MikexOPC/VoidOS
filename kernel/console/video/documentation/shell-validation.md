@@ -1,6 +1,62 @@
-# Console video: validazione
+# Console operativa della shell: validazione
 
-## K4-C5: base Rust e quarto slot IRQ, 6 novembre 2026
+## K4-C5: trasporto IPI reale AP1 -> BSP, 6 novembre 2026
+
+Trasporto, handler e consumo dell'evento nel dispatcher sono verificati nel
+diagnostico dedicato. Il BSP apre finestre IRQ bounded, senza HLT e senza
+una task worker in WAIT. C5 non e chiusa: restano il risveglio del worker,
+il binding comune BSP/AP e l'integrazione nella console ordinaria.
+
+| Gate | Risultato | Evidenza in `kernel/build/` |
+| --- | --- | --- |
+| Rust/FFI | Notify 7/7 debug e release; channel 2/2; Clippy no_std e FFI, warning come errori | `c5-ipi-host-reviewed.log` |
+| C/Rust ASan | sei esecuzioni FFI e quindici esecuzioni backend nativo: CPU/IF/task, destinazione BSP ID 37 nel modello, coalescing, ESR, clock, post/EOI falliti, quiescenza e close | `c5-ipi-host-reviewed/` |
+| Regressione gateway | produttori concorrenti, 8.000 richieste per profilo, ordine/FULL e adapter input | `c5-ipi-host-reviewed.log` |
+| Analisi statica | tre configurazioni, nessun error/warning/performance/portability bloccante | `c5-ipi-host-reviewed/notify-static-*/cppcheck.xml` |
+| IPI positivo | 10/10 consecutivi, quattro CPU reali, 2.000 WRITE per boot, FULL e FIFO, 32 pagine stack recuperate | `ap-console-e6518738fa954607b6739e7eb266bc22/results.json` |
+| Ack mancante | 10/10 arresti attesi; observed=0, close negata, due stack pinned e guardie conservati | `ap-console-cef4b9d9257842deba6e87f99a859db2/results.json` |
+| Invio in corso | 10/10 arresti attesi; un riferimento residuo, close negata, nessuno stack raccolto | `ap-console-7ce51e7713a64aaea602b3d6a8d8167f/results.json` |
+| Console ordinaria | 3/3 consecutivi, quattro CPU, pixel, tastiera/mouse, shell, Esc e cleanup | `pointer-interactive-check-b3d9d9448d6149b3b51d65e302136c4a/` |
+| Audit simboli | backend/notifier presenti nel diagnostico e assenti nell'immagine ordinaria | `c5-ipi-symbols.log` |
+| Reader/layout | quattro test reader; 508 sorgenti test centralizzati, massimo 490 righe, nessuna violazione | `c5-ipi-host-reviewed.log`, `test-layout/layout.json` |
+
+Livello adattivo complesso: dieci boot positivi consecutivi, due campagne
+negative distinte di dieci boot ciascuna e tre regressioni console.
+QEMU q35/TCG, OVMF ed ESP privata per VM. Ogni reader verifica marker,
+stato reale delle quattro CPU, ownership, lease/pin e budget. Il positivo
+restituisce il budget 16.208 pagine; i negativi conservano le 32 pagine
+dei due stack, con budget 16.176 e raccolta zero. Il panic SMP e atteso
+soltanto nei negativi, non viene contato come boot operativo riuscito.
+
+Nel positivo: 2.000 sequenze pubblicate e osservate; 653-689 scritture ICR
+e altrettante consegne/EOI per boot. Il protocollo permette anche ulteriori
+raggruppamenti APIC: il reader richiede consegne <= invii, non uguaglianza
+con il numero di WRITE. Questi numeri non sono benchmark di latenza.
+
+Immagini ELF SHA-256:
+
+- Positivo: `CE9EACF9D6E5AD5372C5CA3A3BF6E4DB79D04477AAE5FC003690EFCA0EB8B613`.
+- No ack: `83E7DB9FF8AAB571BAD218B486C506A8DFF7ED826E806865CA67B718A4564122`.
+- In flight: `82163158D05D745CE2926D6C4ED324AEE9E981A21E73690AC7294C44EC0F696B`.
+- Console: `2D74E9BAC129F9C4DC808F28FBD1D759793A87B203A0D999E38A06739E0F8B25`.
+- Loader: `37F4DE1FCDB792D2684D1F1C8B37F7EFD8DB75F0CA47AE3B7887088BAB119854`.
+
+ASan strumenta C host, ICR e gateway; registri, registry e dispatcher del
+nuovo test backend sono modelli. Il file MMIO privilegiato e verificato
+solo dal guest. Rust non e strumentato da ASan; non vi sono nuove
+allocazioni. Il ripristino della RAM fisica e verificato separatamente
+in QEMU. Valgrind non disponibile su Windows; coverage linee/branch N/D.
+Nessuna prova su hardware fisico, nessuna garanzia di latenza o WAIT/HLT.
+
+Review finale: nessun accesso alla griglia dagli AP/IRQ, lock della coda
+rilasciato prima dell'invio, callback senza borrow dell'Owner, rilascio
+solo dopo sigillo/quiescenza e revoca dei binding. I controlli di stile
+non rilevano trailing whitespace o tab; sorgenti modificati massimo
+393 righe, cartelle funzionali entro otto file. Il prossimo gate e una
+task BSP realmente sospesa e risvegliata, con attesa HLT protetta dal
+watchdog; non basta riutilizzare questo supervisore a polling.
+
+## Checkpoint: base Rust e quarto slot IRQ, 6 novembre 2026
 
 Scelta IPI AP1 -> BSP acquisita. Nucleo della notifica verificato host e
 registro BSP esteso a quattro slot. Trasporto ICR, handler e risveglio del
@@ -32,7 +88,7 @@ ASan strumenta il C host, non Rust o la RAM fisica guest. I test Rust usano
 thread host e ruoli CPU simulati, non l'IPI hardware. Notify non alloca;
 accounting guest e ripristino degli stack appartengono al diagnostico
 preesistente. Valgrind non disponibile su questo host; coverage N/D.
-Restano necessarie prove QEMU di WAIT/HLT, IRQ/EOI reali e rifiuto del
+A fine checkpoint restavano necessarie prove QEMU di WAIT/HLT, IRQ/EOI reali e rifiuto del
 cleanup con ack o invio mancanti prima di dichiarare completo il risveglio.
 
 ## K4-C5: diagnostico AP1 -> coda -> BSP, 6 novembre 2026

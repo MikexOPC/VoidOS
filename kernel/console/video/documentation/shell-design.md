@@ -235,8 +235,10 @@ codice, worker pool o politica di scheduling Linux.
 
 L'utente ha scelto l'IPI dedicato AP1 -> BSP. Il registro IRQ ora contiene
 quattro subscription, con validatori, EOI e watchdog estesi a 0x43.
-Il nucleo Rust della notifica e collaudato host, ma non e ancora collegato
-al kernel. Restano da implementare trasporto ICR, handler e worker.
+Il nucleo Rust e collegato al diagnostico `ap-console-ipi`: AP1 invia
+IPI reali al BSP, che pubblica eventi tramite un handler minimo. Il BSP
+li consuma in finestre IRQ bounded; restano il worker WAIT/HLT e il
+collegamento alla console ordinaria. Le prove sono nel report di validazione.
 
 `xis_native_send` continua ad accettare solo mittente BSP e destinazione AP;
 `xis_mmio_write` autorizza ancora soltanto il vettore 0xe1 del servizio.
@@ -253,7 +255,7 @@ Alternative:
   Richiede meno adattatori hardware, ma aggiunge latenza e controlli
   periodici. Il periodo va misurato nel profilo; non e un risveglio IPI.
 
-Contratto approvato per A, integrazione hardware ancora da completare:
+Contratto approvato per A, integrazione operativa ancora da completare:
 
 - Un solo canale AP1 -> BSP, token e descrittore stabili. WRITE viene
   prima copiato nella coda; solo dopo il rilascio del lock si pubblica
@@ -288,8 +290,9 @@ destinazione high[31:24], delivery low[10:8]=0, physical bit11=0,
 delivery-status bit12, assert bit14, edge bit15=0. Destinazione: APIC ID
 verificato del BSP, non indice CPU assunto uguale all'ID. §11.5.3:
 ESR +0x280 con sequenza gia implementata dal backend ICR. §11.8.5:
-EOI +0xb0, scrittura zero. Questi sono riferimenti per il progetto,
-non nuove scritture hardware eseguite o validate.
+EOI +0xb0, scrittura zero. Questi riferimenti
+sono applicati dal backend dedicato `console/wake/`. Le prove hardware
+sono riferite al diagnostico QEMU, non a un dispositivo fisico.
 
 Riferimento comparabile: [Linux v6.12, kernel/smp.c](https://raw.githubusercontent.com/torvalds/linux/v6.12/kernel/smp.c),
 accodamento del lavoro e invio IPI quando la lista cambia stato. Qui si
@@ -337,7 +340,38 @@ non posseduti. Il watchdog ammette il bit IRR del vettore 0x43 solo con
 subscription valida; continua a rifiutare sorgenti sconosciute. L'EOI
 richiede il solo ISR atteso e il readback vuoto. ISR120h/IRR220h bit3 e
 EOI b0h sono descritti nel SDM 078US, §11.8.4/Fig11-20 e §11.8.5/Fig11-21.
-Questo blocco non abilita una sorgente hardware o un nuovo produttore.
+Il primo blocco, riportato come checkpoint nella validazione, non
+abilitava una sorgente. Il successivo diagnostico IPI usa questo nucleo.
+
+### Trasporto e handler nel diagnostico IPI
+
+`console/wake/notify.c` verifica AP1, task corrente, IF=0 e nessun lock
+prima di prenotare la notifica. La coda ha gia copiato il testo e rilasciato
+il lock. Il trasporto ICR conserva il budget di un secondo PM e un milione
+di accessi; una failure lascia il record in volo e termina il diagnostico.
+Il basso livello e isolato in `hardware.c`; il percorso BSP -> AP 0xe1
+non riceve nuove autorizzazioni generiche.
+
+Il quarto slot consegna 0x43 soltanto al BSP. L'handler prende il pending
+Rust, conferma la sequenza, pubblica l'evento 7 con il binding originale
+e completa l'EOI verificato. Non accede alla coda o all'Owner scheduler.
+Il supervisore apre finestre bounded con `x86_irq_wait` e consuma l'evento
+fuori dall'handler. Nessuna task e in WAIT: `woken` deve essere zero.
+Questa prova non dimostra HLT, latenza operativa o risveglio del worker.
+
+Per chiudere servono AP quiescente, coda svuotata, sigillo Rust, nessun
+IRR/ISR o pending e ogni sequenza confermata. Una successiva finestra
+IRQ drena le consegne rimaste entro una deadline PM. Poi si revocano
+subscription e binding, prima di raccogliere gli stack. Ack mancante o
+record in volo negano la chiusura: callback, token e pagine restano vivi.
+I profili negativi arrestano tutte le CPU tramite il panic SMP esistente.
+
+Il record di validazione separa sequenze, scritture ICR, consegne, EOI
+e drain: il raggruppamento impedisce di imporre uguaglianza tra questi
+contatori. Tutti i dati hanno durata statica; nessuna nuova allocazione.
+Il modello di minaccia e ring 0 fidato con errori, race e notifiche perse;
+queste API non sono accessibili da userspace e non sono user copy.
+DMA non applicabile a questo trasporto IPI.
 
 ## Checkpoint storico: servizio BSP del 10 ottobre 2026
 
