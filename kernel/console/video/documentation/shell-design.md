@@ -67,6 +67,45 @@ nel solo nucleo della coda. Gate finale: dieci boot consecutivi del
 profilo SMP, ordine output, input attivo, cleanup e budget invariati.
 Finche questi gate non passano, console e driver restano vincolati al BSP.
 
+### Gateway della coda: contratto di implementazione
+
+`requests/queue.h` e l'interfaccia C; il nucleo e il gateway FFI sono in
+`rust/requests/` e `rust/ffi/requests.rs`. Ogni sessione possiede un oggetto
+C originale con lock e 2.560 byte di storage opaco, allineato a 8 byte.
+La dimensione del nucleo e verificata a compilazione Rust; il layout dei
+pacchetti e verificato su entrambi i lati. Nessuna allocazione o singleton.
+
+Init richiede un oggetto azzerato, privato e non ancora pubblicato.
+Vietati copia, spostamento o reinit di un oggetto vivo. Pubblicazione e
+distacco sono responsabilita del futuro binding della sessione: la memoria
+non si libera finche esistono produttori, consumer o chiamate in corso.
+CLOSED non autorizza da solo il rilascio mentre altri chiamanti lo usano.
+
+Il gateway salva/disabilita IF con il backend sync esistente prima di
+ottenere `kernel_lock_current_context()`: impedisce che una preemption renda
+stantio il contesto prima dell'acquisizione. Il rango e 1 e ogni chiamata
+richiede depth zero; non si ammette alcun lock esterno gia detenuto.
+Acquisizione, deadline e ticket usano le primitive K2 senza modifiche.
+L'accesso Rust finisce prima del release; un errore di release o un panic
+Rust chiama il terminale `kernel_console_requests_fail_stop`, senza cleanup
+o ripristino artificiale del lock. Il terminale nativo resta da collegare.
+
+I buffer di invio vengono copiati in un pacchetto locale prima del lock.
+L'output e copiato dopo il release, prima del ripristino di IF. Errori di
+take/query non modificano l'output. Si rifiutano dimensioni, allineamenti,
+overflow e sovrapposizioni con owner o contesto corrente. I buffer devono
+essere RAM kernel viva, privata del chiamante e di capacita dichiarata:
+questi controlli non validano pagine arbitrarie e non sono user copy.
+Solo il worker consumer chiama take/complete; nessuna API da IRQ/NMI.
+
+Il simbolo raw Rust e un dettaglio privato: richiede storage inizializzato,
+lock esclusivo e pacchetto distinto. I controlli numerici non provano
+queste proprieta. Riferimenti Rust ufficiali:
+[ptr::write, Safety](https://doc.rust-lang.org/core/ptr/fn.write.html#safety)
+e [raw pointers](https://doc.rust-lang.org/core/primitive.pointer.html).
+Il nucleo resta safe; l'unsafe e confinato a inizializzazione, prestito FFI
+e terminale panic. Non si scrive alcun nuovo registro hardware.
+
 ## Contratto BSP implementato
 
 Scelta utente: servizio unico, aggiornamenti RAM serializzati (alternativa A).

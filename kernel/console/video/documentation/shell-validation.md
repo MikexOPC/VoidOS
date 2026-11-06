@@ -1,6 +1,52 @@
 # Shell video operativa — verifica, 11 ottobre 2026
 
-## K4-C5: nucleo della coda, 6 novembre 2026
+## K4-C5: gateway C/Rust e lock, 6 novembre 2026
+
+Implementato il gateway per sessione in `requests/queue.c` e
+`rust/ffi/requests.rs`. Usa il vero ticket lock K2 con contesto distinto
+per thread host. La CPU nativa, gli IRQ e il clock hardware non sono
+esercitati: i relativi adattatori restano mock.
+
+Verifiche completate:
+
+- Suite console completa a PASS, incluso il gateway, in
+  `kernel/build/c5-console-gateway-final.log`.
+- Gateway Rust `no_std` debug/release, Clippy senza warning; C MSVC W4/WX
+  con ASan. In ciascuna configurazione quattro produttori consegnano
+  8.000 richieste al consumer: nessun duplicato, ordine per produttore,
+  applicazione al servizio C fuori dal lock, drain e close completati.
+- Negativi C: oggetto copiato, reinit, output invariato su errore,
+  sovrapposizioni con owner/contesto, puntatori disallineati e overflow
+  numerici respinti prima della dereferenziazione; capacita, UTF-8,
+  piena/vuota, conferma invalida, chiusura prematura e FAILED irreversibile.
+- Chiamate con altro lock detenuto o contesto assente rifiutate;
+  IF=0/1 conservato. Contesto ottenuto a IRQ disabilitati. Una richiesta
+  ancora accodata resta conteggiata dopo il fallimento del consumer.
+- Quattro report cppcheck della suite e quello specifico del gateway
+  senza error/warning/performance/portability. Dopo la suite sono stati
+  aggiunti i negativi overflow e retention, l'accounting degli handle e
+  reso esplicito lo storage opaco come byte allineati:
+  gateway debug/release e cppcheck ripetuti sul test finale.
+
+Prove specifiche finali in `kernel/build/c5-requests-gateway-final.log`
+e `kernel/build/c5-requests-gateway-final/`. La review iniziale ha corretto
+la finestra fra scelta del contesto e acquisizione e due incrementi di
+contatori dentro assert rilevati da cppcheck. Il requisito `no_std` ora
+appartiene alla crate FFI, mentre il nucleo e un modulo safe riutilizzato.
+
+Il modulo non alloca heap. I cinque handle del test concorrente sono
+chiusi e conteggiati esplicitamente; il totale handle del processo puo
+variare per il runtime host e non viene dichiarato prova di leak zero.
+ASan strumenta il C, non il codice Rust o la RAM fisica; Valgrind non
+eseguito e coverage linee/branch N/D.
+
+Non ancora collegato al worker nativo, ai produttori AP o al terminale
+panic del kernel. Nessuna modifica al boot e nessuna immagine kernel
+include il gateway: QEMU N/A per questo blocco host. Prima dell'uso SMP
+ordinario restano binding/lifetime della sessione, wakeup/backpressure,
+test integrati e dieci boot consecutivi. C5 resta aperta.
+
+## K4-C5: checkpoint precedente del nucleo della coda
 
 Implementato `rust/requests/queue.rs`: otto richieste possedute, massimo
 256 byte ciascuna, UTF-8 verificato, FIFO, lavoro in corso separato e
