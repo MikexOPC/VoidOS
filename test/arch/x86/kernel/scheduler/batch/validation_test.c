@@ -4,11 +4,11 @@
 #include <stdlib.h>
 
 XAT_RECORD xat_record;
-X86_TASK_STACK xat_stacks[8];
-X86_TASK_CONTEXT xat_contexts[8];
+X86_TASK_STACK x86_task_stacks[8];
+X86_TASK_CONTEXT x86_task_contexts[8];
 KERNEL_PHYSICAL_ALLOCATOR *xat_pool;
 X86_AP_SNAPSHOT xat_arena;
-uint32_t xat_mask;
+uint32_t x86_scheduler_machine_mask;
 XIS_NATIVE xis_native;
 XP_PANIC_NATIVE xp_panic_native;
 static KERNEL_PHYSICAL_ALLOCATOR pool;
@@ -21,7 +21,7 @@ XAT_RECORD *xat_cpu_record(void) { return owner.Index == 2 ? &second_record : &x
 #endif
 static X86_TASK_CPU cpu;
 static uint64_t entries[4][512], rsp;
-static uint32_t checks, reads, corrupt_gdt, corrupt_idt, pinned = 1;
+static uint32_t checks, reads, corrupt_gdt, corrupt_idt, pinned = 1, shared_valid = 1;
 
 // ====== check_private ======
 
@@ -58,6 +58,7 @@ int kernel_physical_is_pinned(const KERNEL_PHYSICAL_ALLOCATOR *allocator, const 
 int x86_task_stack_mapping_valid(const X86_TASK_STACK *stack, uint32_t mode)
 { (void)stack; return mode == 1; }
 int x86_scheduler_code_valid(uint64_t target) { (void)target; return 1; }
+int x86_scheduler_task_valid(void) { return (int)shared_valid; }
 uint64_t ks_atomic_load_relaxed(const uint64_t *value) { return *value; }
 void ks_atomic_store_release(uint64_t *value, uint64_t next) { *value = next; }
 
@@ -116,24 +117,25 @@ static void test_cpu_private(uint32_t actor_index)
     pinned = 0; check_private(!xat_stack_authority(&local->dispatcher,base,65536)); pinned = 1;
     local->phase = 2; local->current = task; local->generation = 7;
     xat_record.Generations[task] = 7;
-    xat_stacks[task].self = (uint64_t)(uintptr_t)&xat_stacks[task]; xat_stacks[task].pool = &pool;
-    xat_stacks[task].root = root; xat_stacks[task].generation = 7; xat_stacks[task].stage = X86_TASK_STACK_READY;
-    xat_stacks[task].lease.Id = 3; xat_stacks[task].lease.Owner = pool.Self; xat_stacks[task].lease.Pages = 16;
-    xat_stacks[task].index = task;
+    x86_task_stacks[task].self = (uint64_t)(uintptr_t)&x86_task_stacks[task]; x86_task_stacks[task].pool = &pool;
+    x86_task_stacks[task].root = root; x86_task_stacks[task].generation = 7; x86_task_stacks[task].stage = X86_TASK_STACK_READY;
+    x86_task_stacks[task].lease.Id = 3; x86_task_stacks[task].lease.Owner = pool.Self; x86_task_stacks[task].lease.Pages = 16;
+    x86_task_stacks[task].index = task;
     rsp = x86_task_stack_base(task) + 8192;
     check_private(xat_task_valid());
-    xat_stacks[task].lease.Pages = 32; check_private(!xat_task_valid()); xat_stacks[task].lease.Pages = 16;
+    shared_valid = 0; check_private(!xat_task_valid()); shared_valid = 1;
+    x86_task_stacks[task].lease.Pages = 32; check_private(!xat_task_valid()); x86_task_stacks[task].lease.Pages = 16;
     check_private(!xat_irq_frame(actor_index,(const X86_IRQ_FRAME *)(uintptr_t)(x86_task_stack_base(task) + 8)));
     check_private(!xat_irq_frame(0,NULL));
 #ifdef KERNEL_TEST_AP_CONCURRENT
     uint32_t foreign = task ^ 2;
-    xat_stacks[foreign] = xat_stacks[task];
-    xat_stacks[foreign].self = (uint64_t)(uintptr_t)&xat_stacks[foreign];
-    xat_stacks[foreign].index = foreign;
+    x86_task_stacks[foreign] = x86_task_stacks[task];
+    x86_task_stacks[foreign].self = (uint64_t)(uintptr_t)&x86_task_stacks[foreign];
+    x86_task_stacks[foreign].index = foreign;
     xat_record.Generations[foreign] = 7;
     local->current = foreign; rsp = x86_task_stack_base(foreign) + 8192;
     check_private(!xat_task_valid());
-    check_private(!xat_stack_authority(&xat_contexts[foreign],x86_task_stack_base(foreign),65536));
+    check_private(!xat_stack_authority(&x86_task_contexts[foreign],x86_task_stack_base(foreign),65536));
     local->current = task; rsp = x86_task_stack_base(task) + 8192;
     check_private(!xat_irq_frame(actor_index == 1 ? 2 : 1,NULL));
 #endif

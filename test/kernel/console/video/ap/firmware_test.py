@@ -110,7 +110,7 @@ class NotificationReaderTests(unittest.TestCase):
     def test_notification_lifecycle(self):
         for case in ('positive','no-ack','inflight'):
             self.fixture(case)
-            self.assertFalse(self.verify(case)['HltProven'])
+            self.assertEqual(self.verify(case)['Published'], 2000)
             for index in (0,1,2,3,5,6,7,8,9,10,11,12,13,14,15):
                 self.fixture(case)
                 self.record[index] = 0 if index in (2,7,15) else self.record[index] + 1
@@ -124,5 +124,41 @@ class NotificationReaderTests(unittest.TestCase):
                 with self.subTest(case=case, sends=sends), self.assertRaises(RuntimeError):
                     self.verify(case)
 
-if __name__ == '__main__':
+# ====== worker_reader ======
+
+class WorkerReaderTests(unittest.TestCase):
+    # ====== fixture ======
+
+    def fixture(self, case):
+        self.record = [0x1000, 7, 120, 120, 0, 120, 600, 120, 118, 120, 600, 1, 1, int(case == 'positive')]
+
+    # ====== verify ======
+
+    def verify(self, case):
+        log = type('Log', (), {})()
+        log.number = lambda key: 0x1000
+        with patch.object(module.service.cpu, 'memory', side_effect=lambda vm, addr, count: self.record[:count]):
+            return module.verify_worker(None, log, case)
+
+    # ====== worker_wake ======
+
+    def test_worker_wake(self):
+        for case in ('positive', 'no-ack', 'inflight'):
+            self.fixture(case)
+            result = self.verify(case)
+            self.assertEqual((result['Woken'], result['IpiHalts']), (120, 118))
+            broken = {0: 0x2000, 1: 0, 2: 121, 3: 0, 5: 0, 6: 100, 8: 0, 10: 1, 11: 0, 12: 0,
+                      13: int(case != 'positive')}
+            for index, value in broken.items():
+                self.fixture(case)
+                self.record[index] = value
+                with self.subTest(case=case, word=index), self.assertRaises(RuntimeError):
+                    self.verify(case)
+            self.fixture(case)
+            self.record[8] = 121
+            with self.subTest(case=case, halts='above-wakes'), self.assertRaises(RuntimeError):
+                self.verify(case)
+
+
+if __name__ == "__main__":
     unittest.main()

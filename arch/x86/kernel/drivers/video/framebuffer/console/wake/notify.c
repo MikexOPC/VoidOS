@@ -11,6 +11,7 @@ XCN_RECORD xcn_record;
 static X86_IRQ_TOKEN subscription;
 static X86_IRQ_REGISTRY *registry;
 static _Alignas(8) volatile uint32_t completion[2];
+_Alignas(8) volatile uint32_t xcn_wake[2];
 
 // ====== quiet_private ======
 
@@ -33,6 +34,7 @@ static int handle_private(void) {
 #endif
     if (!kernel_scheduler_irq_post_bound(XCN_EVENT,xcn_record.Self,xcn_record.Binding) ||
         !x86_lapic_eoi_vector(xp_panic_native.Lapic,XCN_VECTOR)) return 0;
+    xcn_wake[0] = 1;
     ++xcn_record.Delivered;
     ++xcn_record.Eois;
     ++completion[0];

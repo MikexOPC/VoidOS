@@ -55,7 +55,7 @@ def await_terminal(vm, case):
 
 # ====== verify ======
 
-def verify(vm, log, case, count, batch_steps=8192):
+def verify(vm, log, case, count, batch_steps=8192, extra_shootdowns=0):
     positive = case in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt", "ap-concurrent", "ap-concurrent-stress", "ap-four")
     texts = [launch.registers(vm, index) for index in range(count)]
     mask = (1 << count) - 1
@@ -117,7 +117,7 @@ def verify(vm, log, case, count, batch_steps=8192):
         if (low >> 16) & 0xffffffff != 0x8e000008 or high >> 32 or not 0xffffffff80000000 <= target < 0xffffffff80400000:
             raise RuntimeError("Invalid service gate or target")
     counters = cpu.memory(vm, address + 4160, 64 * 8)
-    generation_base = log.number("KERNEL_IPI_BASE_GENERATION")
+    generation_base = log.number("KERNEL_IPI_BASE_GENERATION") + extra_shootdowns
     if case in ("missing-ack", "stale-ack") and [counters[index] for index in (8, 12, 13)] != [generation_base + 99] * 3:
         raise RuntimeError("AP1 did not enter and finish EOI for the flush request")
     if case == "release-missing-ack":

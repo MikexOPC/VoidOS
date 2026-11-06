@@ -23,11 +23,12 @@ impl Owner {
         if self.cpus as usize >= CPUS { u64::MAX } else { (1u64 << self.cpus) - 1 }
     }
 
-    // ====== owner_busy ======
+    // ====== owner_busy_on ======
 
-    pub(super) fn busy(&self) -> bool {
-        self.waits.iter().any(Option::is_some) || self.ready.len() != 0 ||
-            self.current.iter().any(Option::is_some)
+    pub(super) fn busy_on(&self, cpu: u32) -> bool {
+        let bit = 1u64 << cpu;
+        self.slots.iter().any(|slot| slot.affinity & bit != 0 &&
+            matches!(slot.state, State::Ready | State::Running | State::Waiting))
     }
 
     // ====== owner_validate_cpus ======

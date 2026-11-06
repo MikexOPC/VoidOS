@@ -6,6 +6,9 @@
 #ifdef KERNEL_TEST_AP_SERVICE
 #include "test/arch/x86/kernel/cpu/percpu/service/integration/probe.h"
 #endif
+#ifdef KERNEL_TEST_AP_NOTIFY
+#include "test/kernel/console/video/ap/channel.h"
+#endif
 #ifdef KERNEL_TEST_AP_STRESS_LOCK
 #include "test/arch/x86/kernel/cpu/percpu/panic/integration/hold.h"
 #endif
@@ -102,6 +105,9 @@ int kernel_profile_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONT
             (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&memory->Arena,startup->Acpi)))
             kernel_panic("VGPU_INITIALIZATION_FAILED");
         return 1;
+    #elif defined(KERNEL_TEST_AP_NOTIFY)
+        kca_capture(startup, context, paging);
+        return 0;
     #else
         return 0;
     #endif

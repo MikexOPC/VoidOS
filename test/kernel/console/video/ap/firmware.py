@@ -66,8 +66,21 @@ def verify_notification(vm, log, case):
         raise RuntimeError('Software notification sequence/reference accounting differs: ' + str(record))
     return dict(Vector=0x43, Event=7, Published=published, Observed=observed,
                 IcrSends=record[4], Delivered=record[5], Eois=record[6],
-                Drains=record[7], Closed=bool(record[8]), Denied=bool(record[9]),
-                HltProven=False, WorkerProven=False)
+                Drains=record[7], Closed=bool(record[8]), Denied=bool(record[9]))
+
+# ====== verify_worker ======
+
+def verify_worker(vm, log, case):
+    address = log.number('KERNEL_AP_WORKER_RECORD')
+    record = service.cpu.memory(vm, address, 14)
+    (self, generation, waits, woken, changed, idles, slept,
+     ipi_wakes, ipi_halts, drained, steps, exited, released, closed) = record
+    if (self != address or not generation or not waits or waits != woken + changed or not woken or
+            not idles or slept < 2 * idles or not ipi_halts or ipi_halts > ipi_wakes or ipi_wakes > idles or
+            steps < 2 or [exited, released] != [1, 1] or closed != int(case == 'positive')):
+        raise RuntimeError('BSP worker WAIT/HLT wake or cleanup differs: ' + str(record))
+    return dict(Waits=waits, Woken=woken, Changed=changed, Idles=idles, HltWakes=slept - idles,
+                IpiWakes=ipi_wakes, IpiHalts=ipi_halts, Drained=drained, Steps=steps)
 
 # ====== main ======
 
@@ -101,7 +114,7 @@ def main():
                         if not log.has('KERNEL_AP_CONSOLE_READY'):
                             raise RuntimeError('Missing AP console completion')
                     proof = service.verify(vm, log, 'ap-console-incomplete' if negative else 'ap-batch',
-                                           4, batch_steps=65536)
+                                           4, batch_steps=65536, extra_shootdowns=1 if args.ipi else 0)
                     counters = service.cpu.memory(vm, log.number('KERNEL_IPI_NATIVE') + 4160, 64 * 8)
                     base = log.number('KERNEL_IPI_BASE_GENERATION')
                     if any(counters[i * 8] != counters[i * 8 + 4] or
@@ -112,7 +125,8 @@ def main():
                                  Requests=sum(counters[i * 8] - base for i in range(1, 4)))
                     result = dict(**proof, Channel=verify_channel(vm, log, negative, bool(args.ipi)))
                     if args.ipi:
-                        result['Notification'] = verify_notification(vm, log, args.ipi)
+                        result["Notification"] = verify_notification(vm, log, args.ipi)
+                        result["Worker"] = verify_worker(vm, log, args.ipi)
                     results.append(result)
                 except BaseException:
                     service.capture_failure(vm, 4)

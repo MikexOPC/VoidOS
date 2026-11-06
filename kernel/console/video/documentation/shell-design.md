@@ -9,6 +9,12 @@ L'utente ha scelto A. Coda e worker BSP sono collegati e verificati.
 Anche il diagnostico AP1 -> coda -> BSP e implementato; i produttori AP
 non sono ancora abilitati nella console ordinaria.
 
+Aggiornamento del 6 novembre 2026: nel diagnostico `ap-console-ipi` il
+consumo e ora un vero task worker sul BSP in WAIT sull'evento 7, risvegliato
+dopo un HLT interrotto dall'IPI 0x43. Binding comune BSP/AP e worker sono
+descritti in [K4-C5 nel design K4-C](../../../scheduler/documentation/k4c-design.md#k4-c5--binding-comune-bspap).
+Restano l'integrazione nella console ordinaria e l'audit dei driver.
+
 Riferimento: [Linux v6.12, Lock types, CPU local locks](https://www.kernel.org/doc/html/v6.12/locking/locktypes.html#cpu-local-locks).
 Disabilitare interrupt o preemption protegge soltanto la CPU locale.
 Il riferimento motiva la separazione; non si importano lock o codice Linux.

@@ -1,6 +1,7 @@
 #ifndef X86_SCHEDULER_BATCH_H
 #define X86_SCHEDULER_BATCH_H
 #include "../integration/local.h"
+#include "../integration/control.h"
 #include "../mapping/native.h"
 #include "../admission/admission.h"
 #include "arch/x86/kernel/cpu/percpu/resources/paging/authority.h"
@@ -46,11 +47,8 @@ XAT_RECORD *xat_cpu_record(void);
 XAT_RECORD *xat_record_at(uint32_t cpu);
 void xat_concurrent_barrier(uint32_t index);
 #endif
-extern X86_TASK_STACK xat_stacks[8];
-extern X86_TASK_CONTEXT xat_contexts[8];
 extern KERNEL_PHYSICAL_ALLOCATOR *xat_pool;
 extern X86_AP_SNAPSHOT xat_arena;
-extern uint32_t xat_mask;
 KERNEL_PHYSICAL_ALLOCATOR *x86_scheduler_batch_resources(uint64_t *root);
 int xat_ap_actor(void);
 int xat_ap_gate(const KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, const X86_TASK_CPU *cpu);
@@ -61,8 +59,7 @@ int xat_irq_frame(uint32_t cpu, const X86_IRQ_FRAME *frame);
 void xat_prepare(void);
 void xat_run(void);
 void xat_cleanup(void);
-void xat_yield(void);
-__declspec(noreturn) void xat_task_start(void);
+void xat_task_body(uint32_t index);
 __declspec(noreturn) void xat_abort(void);
 #ifdef KERNEL_TEST_AP_PREEMPTION
 typedef __declspec(align(64)) struct {

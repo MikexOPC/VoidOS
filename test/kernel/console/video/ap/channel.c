@@ -4,12 +4,23 @@
 #include "kernel/diagnostics/log.h"
 #ifdef KERNEL_TEST_AP_NOTIFY
 #include "arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.h"
+#include "arch/x86/kernel/timer/hpet/watchdog/watchdog.h"
+#include "arch/x86/kernel/serial/interrupts/route.h"
+#include "arch/x86/mm/arena/objects.h"
 #endif
 
+#ifdef KERNEL_TEST_AP_NOTIFY
+#define KCA_PRODUCE_LIMIT (4U * KERNEL_PM_TIMER_HZ)
+#else
+#define KCA_PRODUCE_LIMIT (2U * KERNEL_PM_TIMER_HZ)
+#endif
 KCA_RECORD kca_record;
 static KERNEL_CONSOLE_REQUEST_QUEUE queue;
 static KERNEL_CONSOLE_SERVICE service;
 static KERNEL_VIDEO_CONSOLE view;
+#ifdef KERNEL_TEST_AP_NOTIFY
+static X86_WATCHDOG_ENV watchdog_env;
+#endif
 
 // ====== kernel_console_requests_fail_stop ======
 
@@ -46,7 +57,7 @@ void kca_produce(uint32_t index) {
             uint32_t result = kernel_console_requests_push(&queue,KCR_WRITE,text,sizeof(text),sizeof(text));
             if (result == KCR_OK) { accepted = 1; break; }
             if (result != KCR_FULL || !xis_native_now(NULL,&now) ||
-                ((now - start) & xp_panic_native.Source.Mask) >= 2 * KERNEL_PM_TIMER_HZ) xat_abort();
+                ((now - start) & xp_panic_native.Source.Mask) >= KCA_PRODUCE_LIMIT) xat_abort();
             ks_atomic_store_release(&kca_record.Full[index],1);
             xat_io_yield();
         }
@@ -63,19 +74,14 @@ void kca_produce(uint32_t index) {
     if (!kernel_console_ap_channel(2,1,token,index)) xat_abort();
 }
 
-// ====== kca_pump ======
+// ====== consume_private ======
 
-void kca_pump(void) {
-    if (xis_native_index()) xat_abort();
-    if (!kca_record.Self) return;
-#ifdef KERNEL_TEST_AP_NOTIFY
-    if (!xcn_poll()) xat_abort();
-#endif
-    if (!ks_atomic_load_acquire(&kca_record.Full[0]) || !ks_atomic_load_acquire(&kca_record.Full[1])) return;
-    for (uint32_t count = 0; count < 8; ++count) {
+static uint32_t consume_private(uint32_t limit) {
+    uint32_t count = 0;
+    for (; count < limit; ++count) {
         KERNEL_CONSOLE_REQUEST packet;
         uint32_t result = kernel_console_requests_take(&queue,&packet), producer, sequence = 0;
-        if (result == KCR_EMPTY) return;
+        if (result == KCR_EMPTY) return count;
         if (result != KCR_OK || packet.Operation != KCR_WRITE || packet.Length != 8 ||
             packet.Text[0] != 'P' || packet.Text[1] < '0' || packet.Text[1] > '1' ||
             packet.Text[2] != ':' || packet.Text[7] != '\n') xat_abort();
@@ -89,7 +95,124 @@ void kca_pump(void) {
             kernel_console_requests_complete(&queue,1) != KCR_OK) xat_abort();
         ++kca_record.Consumed[producer];
     }
+    return count;
 }
+
+// ====== kca_pump ======
+
+void kca_pump(void) {
+    if (xis_native_index()) xat_abort();
+#ifndef KERNEL_TEST_AP_NOTIFY
+    if (!kca_record.Self || !ks_atomic_load_acquire(&kca_record.Full[0]) ||
+        !ks_atomic_load_acquire(&kca_record.Full[1])) return;
+    (void)consume_private(8);
+#endif
+}
+
+#ifdef KERNEL_TEST_AP_NOTIFY
+KCW_RECORD kcw_record;
+static X86_DISPATCH_STATS worker_stats;
+#define KCW_TASK XAT_TASKS
+
+// ====== kca_watchdog ======
+
+void kca_watchdog(int open) {
+    if (xis_native_index() || ks_irq_state()) xat_abort();
+    if (!open) {
+        if (!x86_watchdog_close()) xat_abort();
+        kcw_record.Closed = 1;
+        return;
+    }
+    if (!x86_watchdog_open(&watchdog_env)) xat_abort();
+}
+
+// ====== kca_capture ======
+
+void kca_capture(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *context, X86_PAGING_INVENTORY *paging) {
+    KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
+    watchdog_env.Context = context; watchdog_env.Window = &memory->Window; watchdog_env.Inventory = paging;
+    watchdog_env.Mapping = x86_uart_lapic_mapping(); watchdog_env.Profile = startup->ApicProfile;
+    watchdog_env.Capabilities = startup->ApicCapabilities; watchdog_env.Description = startup->Hpet;
+    watchdog_env.Topology = (const KERNEL_MADT_TOPOLOGY *)x86_object_arena_data(&memory->Arena,startup->Madt);
+}
+
+// ====== worker_private ======
+
+static void worker_private(uint32_t index) {
+    if (index != KCW_TASK || xis_native_index() || !x86_scheduler_task_valid()) xat_abort();
+    while (kca_record.Consumed[0] + kca_record.Consumed[1] < 2000) {
+        KERNEL_EVENT_REPLY observed = x86_scheduler_event_request(X86_TASK_OBSERVE,XCN_EVENT,0);
+        if (observed.outcome) xat_abort();
+        if (consume_private(2000)) continue;
+        KERNEL_EVENT_REPLY waited = x86_scheduler_event_request(X86_TASK_WAIT,XCN_EVENT,observed.epoch);
+        ++kcw_record.Waits;
+        if (waited.outcome == KERNEL_EVENT_WAITING) ++kcw_record.Woken;
+        else if (waited.outcome == KERNEL_EVENT_CHANGED) ++kcw_record.Changed;
+        else xat_abort();
+    }
+    kcw_record.Exited = 1;
+}
+
+// ====== idle_private ======
+
+static int idle_private(void) {
+    uint32_t slept, result;
+    xcn_wake[0] = 0;
+    ++kcw_record.Idles;
+    slept = x86_watchdog_idle(xcn_wake);
+    result = x86_watchdog_result();
+    if (!slept || slept > X86_WATCHDOG_WAKE_LIMIT ||
+        (result != X86_WATCHDOG_EVENT && result != X86_WATCHDOG_IDLE)) return 0;
+    if (result == X86_WATCHDOG_EVENT) {
+        ++kcw_record.IpiWakes;
+        if (slept >= 3) ++kcw_record.IpiHalts;
+    }
+    kcw_record.Slept += slept;
+    KERNEL_EVENT_REPLY drained = kernel_scheduler_irq_drain();
+    if (drained.reply.status != KERNEL_SCHEDULER_OK) return 0;
+    kcw_record.Drained += drained.woken;
+    return 1;
+}
+
+// ====== retain_private ======
+
+static int retain_private(const KERNEL_SCHEDULER_REPLY *task) {
+    return task->index == KCW_TASK && task->state == KERNEL_TASK_FINISHED &&
+        task->generation == kcw_record.Generation && kcw_record.Exited == 1;
+}
+
+// ====== kca_serve ======
+
+void kca_serve(void) {
+    uint32_t start, now;
+    if (xis_native_index() || ks_irq_state() || !kca_record.Self || kcw_record.Self) xat_abort();
+    kcw_record.Self = (uint64_t)(uintptr_t)&kcw_record;
+    KERNEL_SCHEDULER_REPLY reply = kernel_scheduler_apply_on(0,KERNEL_SCHEDULER_RESERVE,KERNEL_SCHEDULER_NONE,0);
+    if (reply.status || reply.index != KCW_TASK || reply.state != KERNEL_TASK_RESERVED || !reply.generation) xat_abort();
+    kcw_record.Generation = reply.generation;
+    if (!x86_scheduler_task_assign(KCW_TASK,0,worker_private) ||
+        kernel_scheduler_affinity_on(0,KCW_TASK,reply.generation,1) ||
+        !x86_task_stack_acquire(&x86_task_stacks[KCW_TASK],xat_pool,xat_record.Root,KCW_TASK,reply.generation) ||
+        !x86_scheduler_context_prepare(&x86_task_contexts[KCW_TASK],x86_task_stack_base(KCW_TASK),65536) ||
+        kernel_scheduler_apply_on(0,KERNEL_SCHEDULER_PUBLISH,KCW_TASK,reply.generation).state != KERNEL_TASK_READY ||
+        !x86_watchdog_budget_begin_four(&x86_task_stacks[0].lease,&x86_task_stacks[1].lease,
+            &x86_task_stacks[KCW_TASK].lease,NULL) ||
+        !xis_native_now(NULL,&start)) xat_abort();
+    while (!ks_atomic_load_acquire(&kca_record.Full[0]) || !ks_atomic_load_acquire(&kca_record.Full[1])) {
+        if (!xis_native_now(NULL,&now) || ((now - start) & xp_panic_native.Source.Mask) >= KERNEL_PM_TIMER_HZ)
+            xat_abort();
+        ks_pause();
+    }
+    X86_DISPATCH_CONFIG config = {1,65536,32768,1,x86_scheduler_dispatch_run,retain_private,
+        x86_scheduler_dispatch_reply,x86_scheduler_dispatch_release,idle_private};
+    if (!x86_scheduler_dispatch_retained_on(0,&config,&worker_stats) || worker_stats.completed != 1) xat_abort();
+    kcw_record.Steps = worker_stats.steps;
+    if (!x86_watchdog_budget_end()) xat_abort();
+    if (!x86_task_stack_release(&x86_task_stacks[KCW_TASK],KCW_TASK,kcw_record.Generation) ||
+        kernel_scheduler_apply_on(0,KERNEL_SCHEDULER_COLLECT,KCW_TASK,kcw_record.Generation).status) xat_abort();
+    kcw_record.Released = 1;
+}
+#endif
 
 // ====== kca_release_allowed ======
 
@@ -139,7 +262,9 @@ void kca_finish(void) {
     kca_record.Closed = 1;
 #ifdef KERNEL_TEST_AP_NOTIFY
     int closed = xcn_close(1);
+
     if (!kernel_text("KERNEL_AP_NOTIFY_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&xcn_record) ||
+        !kernel_text("\nKERNEL_AP_WORKER_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&kcw_record) ||
         !kernel_text("\n")) xat_abort();
 #if defined(KERNEL_TEST_AP_NOTIFY_NO_ACK) || defined(KERNEL_TEST_AP_NOTIFY_INFLIGHT)
     if (closed || xcn_release_allowed() || !xcn_record.Denied ||

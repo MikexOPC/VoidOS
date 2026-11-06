@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-X86_TASK_CONTEXT xat_contexts[8];
-uint32_t xat_mask;
+X86_TASK_CONTEXT x86_task_contexts[8];
+uint32_t x86_scheduler_machine_mask;
 XP_PANIC_NATIVE xp_panic_native;
 const unsigned char x86_scheduler_irq_compute_begin[64] = {0};
 const unsigned char x86_scheduler_irq_compute_end[1] = {0};
@@ -53,10 +53,12 @@ int x86_scheduler_context_resume_valid(const X86_TASK_CONTEXT *context, uint64_t
 { (void)context; (void)base; (void)bytes; (void)begin; (void)end; (void)mask; return (int)resume; }
 void x86_scheduler_context_switch(X86_TASK_CONTEXT *previous, const X86_TASK_CONTEXT *next)
 {
-    check_private(previous == &xat_contexts[local.current] && next == &local.dispatcher);
+    check_private(previous == &x86_task_contexts[local.current] && next == &local.dispatcher);
     check_private(local.event == X86_TASK_PREEMPT);
     ++switches; local.event = 0;
 }
+void x86_scheduler_irq_suspend(void)
+{ if (!resume) xat_abort(); check_private(local.event == 0); ++switches; }
 int x86_scheduler_irq_poll(const volatile uint32_t *source, uint32_t port, uint32_t mask, uint32_t ticks)
 { (void)source; (void)port; (void)mask; (void)ticks; return 0; }
 

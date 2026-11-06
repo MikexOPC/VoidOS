@@ -11,6 +11,7 @@ typedef struct {
 } XCN_RECORD;
 _Static_assert(sizeof(XCN_RECORD) == 128, "Console notification diagnostic ABI");
 extern XCN_RECORD xcn_record;
+extern volatile uint32_t xcn_wake[2];
 int xcn_icr_low(uint32_t command);
 int xcn_prepare(uint64_t token);
 int xcn_send(uint32_t producer);
