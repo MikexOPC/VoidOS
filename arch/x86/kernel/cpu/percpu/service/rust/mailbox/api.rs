@@ -69,6 +69,13 @@ pub extern "C" fn xad_collect_allowed(cpu: u32, caller: u32, token: u64, group: 
     ADMISSION.collect_allowed(cpu,caller,token,group)
 }
 
+// ====== xad_rearm ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn xad_rearm(cpu: u32, caller: u32, token: u64, group: u64) -> u32 {
+    ADMISSION.rearm(cpu,caller,token,group)
+}
+
 // ====== xis_idle_return_valid ======
 
 #[unsafe(no_mangle)]
