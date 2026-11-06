@@ -59,7 +59,9 @@ futuri syscall/user mode vengono prima di console o layout.
 
 - Le cartelle `<funzione>` si creano solo quando esiste il modulo, senza
   segnaposto. Massimo 6-8 file per cartella.
-- Test in `test/lib/security/...` e `test/arch/x86/security/...`.
+- Test in `test/lib/security/...` e `test/arch/x86/security/...`, guidati da
+  programmi C/C++/Rust (per `lib/security`: `test/lib/security/runner.rs`,
+  suite `security`); PowerShell solo come ingresso minimo per `run.ps1`.
 - `lib/security` non sostituisce i controlli dei moduli: fornisce gli
   strumenti, ogni modulo resta responsabile dei propri invarianti.
 
@@ -104,13 +106,13 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
 
 - **2026-11-06 — `lib/security/bounds`.** Aritmetica controllata, allineamento,
   range e indici dentro un contenitore, disgiunzione fail-closed. Rust `no_std`,
-  export C a soli scalari. Suite host `security-bounds`: 14 test (debug e
+  export C a soli scalari. Suite host `security`: 14 test (debug e
   release), oracolo a 128 bit, input ostili, clippy, oggetto freestanding.
   Aperto: header C e collegamento ai moduli. Dettagli in
   [bounds.md](../../lib/security/bounds/documentation/bounds.md).
 - **2026-11-06 — `lib/security/entropy` (parte comune).** Health test NIST
   SP 800-90B: Repetition Count e Adaptive Proportion, avvio a 1024 campioni,
   guasto persistente fino a `restart()`. Rust `no_std`, API Rust. Suite host
-  `security-entropy`: 16 test, cutoff confrontati con la Table 2 dello
+  `security`: 16 test, cutoff confrontati con la Table 2 dello
   standard. Aperto: sorgente x86, condizionamento/DRBG. Dettagli in
   [entropy.md](../../lib/security/entropy/documentation/entropy.md).

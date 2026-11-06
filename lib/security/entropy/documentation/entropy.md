@@ -46,9 +46,8 @@ Rust `no_std` in `rust/health.rs`, API Rust sicura, niente export C per ora.
 
 ## Test
 
-`scripts/test/run.ps1 -Suite security-entropy` (script
-`lib/security/entropy/scripts/test.ps1`, test in
-`test/lib/security/entropy/rust/`). Esegue 16 test in debug e release:
+`scripts/test/run.ps1 -Suite security` (driver Rust
+`test/lib/security/runner.rs`, test in `test/lib/security/entropy/rust/`). Esegue 16 test in debug e release:
 
 - formula RCT sugli esempi del testo e su tutti gli H;
 - calcolo CRITBINOM confrontato con i 10 valori della Table 2;
