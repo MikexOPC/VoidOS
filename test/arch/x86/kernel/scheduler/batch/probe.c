@@ -51,6 +51,9 @@ __declspec(noreturn) void xat_batch_probe(void)
         if (cpu >= xis_native.Count || !xad_offer(cpu,0,1,root)) xat_abort();
         request_private(cpu,1); wait_private(cpu,XAD_ADMITTED,0);
     }
+#ifdef KERNEL_TEST_AP_NOTIFY
+    kca_watchdog(1);
+#endif
     xat_prepare();
 #ifdef KERNEL_TEST_AP_CONSOLE
     kca_prepare();
@@ -74,6 +77,9 @@ __declspec(noreturn) void xat_batch_probe(void)
         if (!xad_transition(cpu,0,1,root,0)) xat_abort();
     for (uint32_t cpu = 1; cpu <= XAT_APS; ++cpu) request_private(cpu,0);
     for (uint32_t cpu = 1; cpu <= XAT_APS; ++cpu) wait_private(cpu,XAD_RUNNING,1);
+#ifdef KERNEL_TEST_AP_NOTIFY
+    kca_serve();
+#endif
     for (uint32_t round = 0; round < XAT_REQUEST_ROUNDS; ++round) {
         for (uint32_t cpu = 1; cpu <= XAT_APS; ++cpu) request_private(cpu,0);
         if (!xis_native_shootdown()) xat_abort();
@@ -103,7 +109,7 @@ __declspec(noreturn) void xat_batch_probe(void)
     if (kernel_scheduler_apply(KERNEL_SCHEDULER_COLLECT,0,xat_record.Generations[0]).status != KERNEL_SCHEDULER_BAD_STATE ||
         !kernel_physical_budget_matches(xat_pool,xat_record.Held)) xat_abort();
     for (uint32_t index = 0; index < XAT_TASKS; ++index)
-        if (!x86_task_stack_validate(&xat_stacks[index])) xat_abort();
+        if (!x86_task_stack_validate(&x86_task_stacks[index])) xat_abort();
     if (!kernel_text("KERNEL_AP_BATCH_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&xat_record) ||
         !kernel_text("\nKERNEL_AP_BATCH_PTE: ") || !kernel_number((uint64_t)(uintptr_t)&x86_stack_entries(3)[320]) ||
         !kernel_text("\nKERNEL_AP_LOT_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&lot_final) ||
@@ -113,6 +119,9 @@ __declspec(noreturn) void xat_batch_probe(void)
     kca_finish();
 #endif
     xat_cleanup();
+#ifdef KERNEL_TEST_AP_NOTIFY
+    kca_watchdog(0);
+#endif
     for (uint32_t index = 1; index < xis_native.Count; ++index) request_private(index,1);
 #ifdef KERNEL_TEST_AP_CONSOLE
     kca_record.Final = xat_record.Final;

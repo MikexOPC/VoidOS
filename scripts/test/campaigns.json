@@ -13,6 +13,24 @@
       "runner": ["python", "test/kernel/console/video/ap/firmware.py", "--image", "{image}", "--boots", "{boots}", "--incomplete"],
       "boots": 10, "smoke": 1, "heavy": true
     },
+    "ap-console-ipi": {
+      "summary": "AP1 producers notify the BSP by IPI 0x43; a BSP worker task waits, the BSP halts and the worker wakes",
+      "build": ["-TestApService", "ap-console-ipi"],
+      "runner": ["python", "test/kernel/console/video/ap/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ipi", "positive"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "ap-console-ipi-no-ack": {
+      "summary": "Expected panic: unacknowledged notifications deny close and retain the producer stacks",
+      "build": ["-TestApService", "ap-console-ipi-no-ack"],
+      "runner": ["python", "test/kernel/console/video/ap/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ipi", "no-ack"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "ap-console-ipi-inflight": {
+      "summary": "Expected panic: a send left in flight denies close and retains the producer stacks",
+      "build": ["-TestApService", "ap-console-ipi-inflight"],
+      "runner": ["python", "test/kernel/console/video/ap/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ipi", "inflight"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
     "ap-task-four": {
       "summary": "Eight tasks preempted on four APs, BSP supervisor, five real CPUs and joint cleanup",
       "build": ["-TestApService", "ap-four"],

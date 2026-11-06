@@ -224,7 +224,7 @@ impl Owner {
             }
             let slots = next.slots;
             let index = next.ready.take_first(|i| slots[i as usize].affinity & (1 << cpu) != 0)
-                .ok_or_else(|| if next.busy() { Error::Blocked } else { Error::Empty })?;
+                .ok_or_else(|| if next.busy_on(cpu) { Error::Blocked } else { Error::Empty })?;
             let slot = &mut next.slots[index as usize];
             slot.state = State::Running;
             let handle = Handle { index, generation: slot.generation };

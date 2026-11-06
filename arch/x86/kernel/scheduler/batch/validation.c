@@ -84,8 +84,8 @@ int xat_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base, uint64_t
     }
     for (uint32_t index = 0; index < XAT_TASKS; ++index) {
         if (XAT_CPU(index) != cpu_private()) continue;
-        X86_TASK_STACK *owner = &xat_stacks[index];
-        if (context == &xat_contexts[index] && base == x86_task_stack_base(index))
+        X86_TASK_STACK *owner = &x86_task_stacks[index];
+        if (context == &x86_task_contexts[index] && base == x86_task_stack_base(index))
             return owner->self == (uint64_t)(uintptr_t)owner && owner->pool == xat_pool &&
                 owner->root == xat_record.Root && owner->index == index &&
                 owner->generation == xat_record.Generations[index] && owner->stage == X86_TASK_STACK_READY &&
@@ -104,8 +104,8 @@ int xat_task_valid(void)
         XAT_CPU(local->current) != cpu_private() ||
         local->generation != xat_record.Generations[local->current]) return 0;
     uint64_t base = x86_task_stack_base(local->current), rsp = x86_kernel_stack_pointer();
-    return rsp >= base + 4096 && rsp < base + 65536 &&
-        xat_stack_authority(&xat_contexts[local->current],base,65536);
+    return rsp >= base + 4096 && rsp < base + 65536 && x86_scheduler_task_valid() &&
+        xat_stack_authority(&x86_task_contexts[local->current],base,65536);
 }
 
 // ====== xat_irq_frame ======

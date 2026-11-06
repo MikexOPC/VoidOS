@@ -160,7 +160,7 @@ int x86_watchdog_open(const X86_WATCHDOG_ENV *env)
 {
     BOOT_U32 index, phase;
     const X86_IO_APIC_CAPACITY *io;
-    if (watchdog.Self) { return 0; }
+    if (watchdog.Self && (!watchdog.Closed || first_failure || first_cleanup_failure)) { return 0; }
     first_failure = first_cleanup_failure = 0;
     recovery_attempts = 0;
 #ifdef KERNEL_TEST_WATCHDOG_CLEANUP_RECOVERY

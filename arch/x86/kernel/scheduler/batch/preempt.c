@@ -94,12 +94,9 @@ void xat_preempt_after(const X86_IRQ_FRAME *frame)
         ks_irq_state() || local->event || !(frame->Flags & 512)) xat_abort();
     if (xat_preempt.Ticks[index % 2] == xat_preempt.Resumed[index % 2]) return;
     if (xat_preempt.Ticks[index % 2] != xat_preempt.Resumed[index % 2] + 1 ||
-        xat_preempt.Frame[index % 2] != (uint64_t)(uintptr_t)frame ||
-        !x86_scheduler_context_resume_valid(&local->dispatcher,X86_AP_STACK_BASE(XAT_CPU(index)),65536,
-            X86_KERNEL_IMAGE_BASE,X86_KERNEL_IMAGE_LIMIT,xat_mask)) xat_abort();
+        xat_preempt.Frame[index % 2] != (uint64_t)(uintptr_t)frame) xat_abort();
     uint64_t generation = local->generation;
-    local->event = X86_TASK_PREEMPT;
-    x86_scheduler_context_switch(&xat_contexts[index],&local->dispatcher);
+    x86_scheduler_irq_suspend();
     local = x86_scheduler_local_current();
     if (!local || !xat_task_valid() || local->current != index || local->generation != generation ||
         local->event || xat_preempt.Resumed[index % 2] >= XAT_PREEMPT_TARGET) xat_abort();

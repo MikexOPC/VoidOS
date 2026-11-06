@@ -79,7 +79,10 @@ usa ancora solo la CPU 0 fino a C4.
    dispatcher, continuando a servire PING e flush. Prima solo task di
    lavoro senza driver. `kernel_scheduler_context_valid` oggi accetta solo
    il BSP sullo stack principale: va esteso per CPU.
-2. **C5, driver sicuri su più CPU.** Audit dei `ks_boot_cpu` raggiungibili
+2. **C5, driver sicuri su più CPU.** Stato al 6 novembre 2026: coda console,
+   produttori AP, IPI 0x43, binding comune BSP/AP e worker BSP in WAIT/HLT
+   fatti. Restano integrazione ordinaria e protezione dei driver.
+   Audit dei `ks_boot_cpu` raggiungibili
    dai task, poi lock per oggetto (o owner unico) per console, PS/2,
    VirtIO, shell e watchdog. Gli IRQ dei dispositivi restano al BSP.
 3. **C6, chiusura di K4.** Stress su 4 CPU, audit G5, accounting,

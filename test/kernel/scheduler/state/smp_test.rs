@@ -72,6 +72,36 @@ fn affinity_is_respected() {
     assert!(owner.validate());
 }
 
+// ====== foreign_affinity_is_empty ======
+
+#[test]
+fn foreign_affinity_is_empty() {
+    let mut owner = Owner::new();
+    owner.configure(2, 1).unwrap();
+    let ap = owner.reserve_on(0).unwrap();
+    owner.set_affinity_on(0, ap, 1 << 1).unwrap();
+    owner.publish_on(0, ap).unwrap();
+    assert_eq!(owner.select_on(0), Err(Error::Empty));
+    assert_eq!(owner.select_on(1), Ok(ap));
+    assert_eq!(owner.select_on(0), Err(Error::Empty));
+    let bsp = owner.reserve_on(0).unwrap();
+    owner.set_affinity_on(0, bsp, 1).unwrap();
+    owner.publish_on(0, bsp).unwrap();
+    assert_eq!(owner.select_on(0), Ok(bsp));
+    owner.yield_on(0, bsp).unwrap();
+    owner.yield_on(1, ap).unwrap();
+    assert_eq!(owner.select_on(0), Ok(bsp));
+    assert_eq!(owner.select_on(0), Err(Error::Running));
+    assert_eq!(owner.select_on(1), Ok(ap));
+    owner.exit_on(0, bsp).unwrap();
+    owner.collect_on(0, bsp).unwrap();
+    assert_eq!(owner.select_on(0), Err(Error::Empty));
+    owner.exit_on(1, ap).unwrap();
+    owner.collect_on(1, ap).unwrap();
+    assert_eq!(owner.select_on(1), Err(Error::Empty));
+    assert!(owner.validate());
+}
+
 // ====== tick_requests_preemption ======
 
 #[test]

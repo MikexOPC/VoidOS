@@ -788,6 +788,55 @@ Il rollback pre-avvio già collaudato resta un errore iniettato prima
 della seconda allocazione, non esaurimento reale della RAM.
 K5 userspace e K6 caricamento dei programmi sono milestone successive.
 
+## K4-C5 — Binding comune BSP/AP
+
+Scelta A dell'utente, 6 novembre 2026: un solo binding per tutti i task,
+non un ponte separato per il BSP.
+
+- **Storage unico:** `x86_task_stacks`, `x86_task_contexts`, risposte agli
+  eventi e maschera FPU stanno in `integration/kernel.c`. Il batch AP non
+  ha più copie proprie.
+- **CPU e ingresso per task:** `x86_scheduler_task_assign(index, cpu, entry)`
+  fissa la CPU e la funzione d'ingresso prima di acquisire lo stack.
+  `x86_scheduler_task_start` chiama l'ingresso del task, poi
+  `x86_scheduler_exit`.
+- **Controlli per CPU:** `x86_scheduler_task_valid` rifiuta un task fuori
+  dalla sua CPU. Il dispatcher del BSP usa lo stack principale, quello
+  dell'AP `X86_AP_STACK_BASE(cpu)`.
+- **Un solo percorso di switch:** yield, eventi, preemption ed exit passano
+  dalle stesse funzioni su ogni CPU. Il batch usa i callback comuni
+  `x86_scheduler_dispatch_run/reply/release`; resta suo solo il collect
+  trattenuto.
+- **SELECT per affinità (Rust):** `select_on(cpu)` risponde BLOCKED solo
+  se esiste un task vivo eseguibile su quella CPU, altrimenti EMPTY.
+  Prima bastava un task vivo su qualsiasi CPU: un dispatcher BSP non
+  poteva finire mentre i task di AP1 erano ancora vivi.
+
+Resta BSP-only la gestione delle mappature degli stack (acquire, release,
+shootdown): gli AP le leggono soltanto.
+
+## K4-C5 — Worker BSP risvegliato da WAIT/HLT
+
+Scelta A dell'utente: watchdog invariato. L'attesa resta HLT fino alla
+scadenza HPET di 5 ms; l'IPI 0x43 sveglia la CPU, il worker diventa
+eseguibile dopo la scadenza.
+
+- Nel diagnostico `ap-console-ipi` il consumo a polling è sostituito da un
+  task worker sul BSP (indice 2, affinità CPU 0). Il worker fa OBSERVE e
+  WAIT sull'evento 7 e svuota la coda.
+- L'idle del dispatcher BSP azzera `xcn_wake`, chiama
+  `x86_watchdog_idle(xcn_wake)` e poi il drain IRQ. L'handler 0x43 mette
+  `xcn_wake[0] = 1`: un'attesa chiusa con EVENT prova un HLT interrotto
+  dall'IPI.
+- Il watchdog si apre prima di mappare gli stack del batch e si chiude dopo
+  il loro rilascio. Gli stack dei task sono dichiarati come prestiti
+  (`x86_watchdog_budget_begin_four`) durante il servizio.
+- Il watchdog accetta ora una nuova apertura solo dopo una chiusura pulita,
+  senza errori di sessione o di cleanup. Prima era una sola sessione per
+  boot.
+- Il limite di blocco dei produttori sale da 2 a 4 s solo in questo profilo:
+  ogni attesa può durare 5 ms.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):

@@ -5,6 +5,17 @@
 #include "../dispatcher/engine.h"
 // ====== private_task_contract ======
 
+typedef void (*X86_TASK_ENTRY)(uint32_t index);
+extern X86_TASK_STACK x86_task_stacks[8];
+extern X86_TASK_CONTEXT x86_task_contexts[8];
+extern uint32_t x86_scheduler_machine_mask;
+int x86_scheduler_binding_open(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root);
+int x86_scheduler_task_assign(uint32_t index, uint32_t cpu, X86_TASK_ENTRY entry);
+int x86_scheduler_dispatch_run(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_COMMAND *command);
+int x86_scheduler_dispatch_reply(const KERNEL_SCHEDULER_REPLY *task, const KERNEL_EVENT_REPLY *reply);
+int x86_scheduler_dispatch_release(void);
+void x86_scheduler_irq_suspend(void);
+__declspec(noreturn) void x86_scheduler_exit(void);
 uint32_t x86_scheduler_index(void);
 uint64_t x86_scheduler_generation(void);
 int x86_scheduler_task_valid(void);

@@ -27,6 +27,7 @@ int run_watchdog_tests(void)
             test_env.Window->Active || test_env.Window->Pool->FreePages != 42) { return 3; }
     }
     if (!x86_watchdog_close() || !x86_watchdog_close() || !restored() || test_interrupts != 100) { return 4; }
+    if (!x86_watchdog_open(&test_env) || x86_watchdog_open(&test_env) || !x86_watchdog_close() || !restored()) { return 60; }
     for (mode = 2; mode <= 3; ++mode) {
         watchdog_test_reset(mode);
         if (!x86_watchdog_open(&test_env)) { return 5; }
@@ -46,6 +47,7 @@ int run_watchdog_tests(void)
     watchdog_test_reset(14);
     if (!x86_watchdog_open(&test_env) || x86_watchdog_wait(test_source,1,NULL) ||
         x86_watchdog_result() != X86_WATCHDOG_FAULT || !x86_watchdog_close() || !restored()) { return 8; }
+    if (x86_watchdog_open(&test_env)) { return 61; }
     watchdog_test_reset(15);
     if (!x86_watchdog_open(&test_env) || x86_watchdog_close() || !x86_watchdog_state()->Acquired ||
         x86_watchdog_state()->Closed) { return 9; }

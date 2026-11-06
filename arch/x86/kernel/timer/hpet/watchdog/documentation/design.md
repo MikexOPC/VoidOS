@@ -79,6 +79,11 @@ Al termine si ferma il counter, si ripristina la size originale del comparator,
 poi comparator e counter completo; ogni scrittura e confermata tramite readback.
 Il selettore IOAPIC viene ripristinato in ciascun prestito.
 
+Dal 6 novembre 2026 (K4-C5) una nuova `x86_watchdog_open` è ammessa dopo una
+chiusura pulita: stato CLOSED, nessuna failure di sessione e nessuna failure
+di cleanup. Dopo una failure o un recupero la riapertura resta rifiutata.
+L'apertura riparte dal controllo completo dell'ambiente e azzera lo stato.
+
 ## Failure e disponibilita
 
 IRQ LAPIC mancante con HPET, IOAPIC, LAPIC delivery, BSP e IF funzionanti:

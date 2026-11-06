@@ -7,6 +7,7 @@
 #include "kernel/scheduler/kernel.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/diagnostics/log.h"
+#include "arch/x86/kernel/cpu/percpu/resources/geometry.h"
 #if KERNEL_TEST_AP_SERVICE == 9
 #include "../batch/batch.h"
 #endif
@@ -14,12 +15,14 @@
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
 #endif
 
-static X86_TASK_STACK stacks[8];
-static X86_TASK_CONTEXT contexts[8];
+X86_TASK_STACK x86_task_stacks[8];
+X86_TASK_CONTEXT x86_task_contexts[8];
+uint32_t x86_scheduler_machine_mask;
 
 static uint64_t budget;
-static uint32_t x86_scheduler_machine_mask;
 static KERNEL_EVENT_REPLY event_replies[8];
+static uint32_t task_cpus[8];
+static X86_TASK_ENTRY task_entries[8];
 static uint32_t irq_profile;
 static const X86_SCHEDULER_PROFILE *active_profile;
 static KERNEL_PHYSICAL_ALLOCATOR *saved_pool;
@@ -33,6 +36,14 @@ static X86_SCHEDULER_LOCAL *local_private(void)
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     if (!local) kernel_scheduler_fail_stop();
     return local;
+}
+
+// ====== cpu_private ======
+
+static uint32_t cpu_private(void)
+{
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    return owner ? owner->Index : 0;
 }
 
 // ====== x86_scheduler_index ======
@@ -82,7 +93,9 @@ uint32_t kernel_scheduler_binding_context_valid(void)
 static int dispatcher_resume_private(void)
 {
     X86_SCHEDULER_LOCAL *local = local_private();
-    if (!x86_scheduler_context_resume_valid(&local->dispatcher, X86_KERNEL_MAIN_BASE, 65536,
+    uint32_t cpu = cpu_private();
+    uint64_t base = cpu ? X86_AP_STACK_BASE(cpu) : X86_KERNEL_MAIN_BASE;
+    if (cpu >= 64 || !x86_scheduler_context_resume_valid(&local->dispatcher, base, 65536,
         X86_KERNEL_IMAGE_BASE, X86_KERNEL_IMAGE_LIMIT, x86_scheduler_machine_mask)) return 0;
     return x86_scheduler_code_valid(*(const uint64_t *)(uintptr_t)local->dispatcher.rsp);
 }
@@ -119,8 +132,44 @@ static KERNEL_SCHEDULER_REPLY apply_private(uint32_t operation, uint32_t index, 
 
 // ====== resume_private ======
 
-static int resume_private(uint32_t index) { return x86_scheduler_resume_valid(&contexts[index],index,x86_scheduler_machine_mask); }
+static int resume_private(uint32_t index)
+{
+    return x86_scheduler_resume_valid(&x86_task_contexts[index],index,x86_scheduler_machine_mask);
+}
 
+// ====== live_private ======
+
+static int live_private(uint32_t index)
+{
+    X86_TASK_STACK *owner = &x86_task_stacks[index];
+    return owner->stage == X86_TASK_STACK_READY && x86_task_stack_mapping_valid(owner,1) &&
+        kernel_physical_is_pinned(owner->pool,&owner->lease) == 1;
+}
+
+// ====== x86_scheduler_binding_open ======
+
+int x86_scheduler_binding_open(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root)
+{
+    __declspec(align(16)) unsigned char fx[512] = {0};
+    if (!x86_scheduler_bind(x86_task_stacks,x86_task_contexts,pool,root)) return 0;
+    if (!x86_scheduler_fp_template(fx)) { x86_scheduler_unbind(); return 0; }
+    x86_scheduler_machine_mask = (uint32_t)fx[28] | ((uint32_t)fx[29] << 8) |
+        ((uint32_t)fx[30] << 16) | ((uint32_t)fx[31] << 24);
+    if (!x86_scheduler_machine_mask) x86_scheduler_machine_mask = 0xFFBF;
+    for (uint32_t index = 0; index < 8; ++index) { task_cpus[index] = 0; task_entries[index] = NULL; }
+    return 1;
+}
+
+// ====== x86_scheduler_task_assign ======
+
+int x86_scheduler_task_assign(uint32_t index, uint32_t cpu, X86_TASK_ENTRY entry)
+{
+    if (index >= 8 || cpu >= 64 || !entry || !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry) ||
+        x86_task_stacks[index].self || !x86_percpu_bsp()) return 0;
+    task_cpus[index] = cpu;
+    task_entries[index] = entry;
+    return 1;
+}
 
 // ====== prepare_private ======
 
@@ -128,12 +177,13 @@ static void prepare_private(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root)
 {
     KERNEL_SCHEDULER_REPLY reply = apply_private(KERNEL_SCHEDULER_RESERVE, KERNEL_SCHEDULER_NONE, 0);
     uint32_t index = reply.index;
-    if (index >= 8 || reply.state != KERNEL_TASK_RESERVED || !reply.generation)
+    if (index >= 8 || reply.state != KERNEL_TASK_RESERVED || !reply.generation ||
+        !x86_scheduler_task_assign(index,0,active_profile->entry))
         kernel_panic("SCHEDULER_RESERVE_INVALID");
-    if (!x86_task_stack_acquire(&stacks[index], pool, root, index, reply.generation) ||
-        !x86_scheduler_context_prepare(&contexts[index], x86_task_stack_base(index), 65536) ||
+    if (!x86_task_stack_acquire(&x86_task_stacks[index], pool, root, index, reply.generation) ||
+        !x86_scheduler_context_prepare(&x86_task_contexts[index], x86_task_stack_base(index), 65536) ||
         !resume_private(index)) {
-        if (stacks[index].self && !x86_task_stack_release(&stacks[index], index, reply.generation))
+        if (x86_task_stacks[index].self && !x86_task_stack_release(&x86_task_stacks[index], index, reply.generation))
             kernel_panic("SCHEDULER_ROLLBACK_FAILED");
         (void)apply_private(KERNEL_SCHEDULER_ABORT, index, reply.generation);
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT == 5
@@ -161,12 +211,11 @@ int x86_scheduler_task_valid(void)
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     if (!local) return 0;
     uint64_t rsp = x86_kernel_stack_pointer(), base;
-    if (local->phase != 2 || local->current >= 8 || stacks[local->current].generation != local->generation ||
-        stacks[local->current].stage != X86_TASK_STACK_READY || !x86_scheduler_native_gate()) return 0;
-    base = x86_task_stack_base(local->current);
-    return rsp >= base && rsp < base + 65536 &&
-        x86_task_stack_mapping_valid(&stacks[local->current], 1) &&
-        kernel_physical_is_pinned(stacks[local->current].pool, &stacks[local->current].lease) == 1;
+    uint32_t index = local->current;
+    if (local->phase != 2 || index >= 8 || task_cpus[index] != cpu_private() ||
+        x86_task_stacks[index].generation != local->generation || !x86_scheduler_native_gate()) return 0;
+    base = x86_task_stack_base(index);
+    return rsp >= base && rsp < base + 65536 && live_private(index);
 }
 
 // ====== x86_scheduler_yield ======
@@ -178,14 +227,13 @@ void x86_scheduler_yield(void)
     uint64_t gen = local->generation;
     if (!x86_scheduler_task_valid() || local->event || !dispatcher_resume_private()) kernel_scheduler_fail_stop();
     local->event = 1;
-    if (!switch_private(&contexts[index], &local->dispatcher, UINT64_C(0x1001) + index))
+    if (!switch_private(&x86_task_contexts[index], &local->dispatcher, UINT64_C(0x1001) + index))
         kernel_scheduler_fail_stop();
     local = local_private();
     if (!x86_scheduler_task_valid() || local->current != index || local->generation != gen || local->event)
         kernel_scheduler_fail_stop();
 }
 
-#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
 // ====== x86_scheduler_irq_suspend ======
 
 void x86_scheduler_irq_suspend(void)
@@ -195,12 +243,11 @@ void x86_scheduler_irq_suspend(void)
     uint64_t gen = local->generation;
     if (!x86_scheduler_task_valid() || local->event || !dispatcher_resume_private()) kernel_scheduler_fail_stop();
     local->event = X86_TASK_PREEMPT;
-    x86_scheduler_context_switch(&contexts[index], &local->dispatcher);
+    x86_scheduler_context_switch(&x86_task_contexts[index], &local->dispatcher);
     local = local_private();
     if (!x86_scheduler_task_valid() || local->current != index || local->generation != gen || local->event)
         kernel_scheduler_fail_stop();
 }
-#endif
 
 // ====== x86_scheduler_event_request ======
 
@@ -212,7 +259,7 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
     if (!x86_scheduler_task_valid() || local->event || reason < 3 || reason > 7 || id >= 8 ||
         !dispatcher_resume_private()) kernel_scheduler_fail_stop();
     local->requested_event = id; local->requested_epoch = token; local->event = reason;
-    if (!switch_private(&contexts[index], &local->dispatcher, UINT64_C(0x3001) + index))
+    if (!switch_private(&x86_task_contexts[index], &local->dispatcher, UINT64_C(0x3001) + index))
         kernel_scheduler_fail_stop();
     local = local_private();
     if (!x86_scheduler_task_valid() || local->current != index || local->generation != gen || local->event ||
@@ -226,35 +273,42 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
 
 void x86_scheduler_task_start(void)
 {
-#if KERNEL_TEST_AP_SERVICE == 9
-    if (xat_ap_actor()) xat_task_start();
-#endif
     X86_SCHEDULER_LOCAL *local = local_private();
-    uint64_t entry = active_profile ? (uint64_t)(uintptr_t)active_profile->entry : 0;
-    if (!x86_scheduler_task_valid() || local->event || !x86_scheduler_code_valid(entry))
+    X86_TASK_ENTRY entry = local->current < 8 ? task_entries[local->current] : NULL;
+    if (!x86_scheduler_task_valid() || local->event || !entry || !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry))
         kernel_scheduler_fail_stop();
-    active_profile->entry(local->current);
+    entry(local->current);
 #if !defined(KERNEL_TEST_SCHEDULER_FAULT) || KERNEL_TEST_SCHEDULER_FAULT != 6
-    local = local_private();
-    if (!x86_scheduler_task_valid() || local->event || !dispatcher_resume_private()) kernel_scheduler_fail_stop();
-    local->event = 2;
-    x86_scheduler_context_switch(&contexts[local->current], &local->dispatcher);
-    kernel_scheduler_fail_stop();
+    x86_scheduler_exit();
 #endif
 }
 
-// ====== native_dispatch_run_private ======
+// ====== x86_scheduler_exit ======
 
-static int native_dispatch_run_private(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_COMMAND *command)
+__declspec(noreturn) void x86_scheduler_exit(void)
 {
     X86_SCHEDULER_LOCAL *local = local_private();
+    if (!x86_scheduler_task_valid() || local->event || !dispatcher_resume_private()) kernel_scheduler_fail_stop();
+    local->event = X86_TASK_EXIT;
+    x86_scheduler_context_switch(&x86_task_contexts[local->current], &local->dispatcher);
+    kernel_scheduler_fail_stop();
+}
+
+// ====== x86_scheduler_dispatch_run ======
+
+int x86_scheduler_dispatch_run(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_COMMAND *command)
+{
+    X86_SCHEDULER_LOCAL *local = local_private();
+    uint32_t cpu = cpu_private();
     if (!task || !command || local->current != KERNEL_SCHEDULER_NONE || !kernel_scheduler_context_valid() || task->index >= 8 ||
-        stacks[task->index].generation != task->generation || !resume_private(task->index)) return 0;
+        task_cpus[task->index] != cpu || x86_task_stacks[task->index].generation != task->generation ||
+        !resume_private(task->index)) return 0;
     local->current = task->index; local->generation = task->generation; local->event = 0;
     local->phase = 2;
-    if (!switch_private(&local->dispatcher,&contexts[local->current],UINT64_C(0x2003))) kernel_scheduler_fail_stop();
+    if (!switch_private(&local->dispatcher,&x86_task_contexts[local->current],UINT64_C(0x2003))) kernel_scheduler_fail_stop();
     local->phase = 1;
-    if (!kernel_scheduler_context_valid() || !x86_task_stack_validate(&stacks[local->current])) return 0;
+    if (!kernel_scheduler_context_valid() ||
+        !(cpu ? live_private(local->current) : x86_task_stack_validate(&x86_task_stacks[local->current]))) return 0;
     command->reason = local->event;
     command->target = local->event >= X86_TASK_OBSERVE && local->event <= X86_TASK_STOP_QUERY ? local->requested_event : 0;
     command->token = local->event >= X86_TASK_OBSERVE && local->event <= X86_TASK_STOP_QUERY ? local->requested_epoch : 0;
@@ -271,12 +325,12 @@ static int native_dispatch_collect_private(const KERNEL_SCHEDULER_REPLY *task)
     if (irq_profile == 5 && !x86_ps2_before_collect()) return 0;
 #endif
     return task && local->current < 8 && task->index == local->current && task->generation == local->generation &&
-        kernel_scheduler_context_valid() && x86_task_stack_release(&stacks[local->current],local->current,local->generation);
+        kernel_scheduler_context_valid() && x86_task_stack_release(&x86_task_stacks[local->current],local->current,local->generation);
 }
 
-// ====== native_dispatch_reply_private ======
+// ====== x86_scheduler_dispatch_reply ======
 
-static int native_dispatch_reply_private(const KERNEL_SCHEDULER_REPLY *task, const KERNEL_EVENT_REPLY *reply)
+int x86_scheduler_dispatch_reply(const KERNEL_SCHEDULER_REPLY *task, const KERNEL_EVENT_REPLY *reply)
 {
     X86_SCHEDULER_LOCAL *local = local_private();
     if (!task || !reply || task->index != local->current || task->generation != local->generation ||
@@ -285,9 +339,9 @@ static int native_dispatch_reply_private(const KERNEL_SCHEDULER_REPLY *task, con
     return 1;
 }
 
-// ====== native_dispatch_release_private ======
+// ====== x86_scheduler_dispatch_release ======
 
-static int native_dispatch_release_private(void)
+int x86_scheduler_dispatch_release(void)
 {
     X86_SCHEDULER_LOCAL *local = local_private();
     if (!kernel_scheduler_context_valid()) return 0;
@@ -305,17 +359,12 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     if (!x86_percpu_bsp()) return 0;
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_prepare();
     if (!local) return 0;
-    __declspec(align(16)) unsigned char fx[512] = {0};
     KERNEL_SCHEDULER_REPLY reply;
     X86_DISPATCH_CONFIG config;
     active_profile = x86_scheduler_profile(irq_profile);
     if (local->phase || !pool || !active_profile || !kernel_section("scheduler cooperativo BSP") ||
-        !x86_scheduler_bind(stacks, contexts, pool, root)) return 0;
+        !x86_scheduler_binding_open(pool, root)) return 0;
     local->phase = 1; if (!kernel_physical_budget_read(pool, &budget)) return 0;
-    if (!x86_scheduler_fp_template(fx)) return 0;
-    x86_scheduler_machine_mask = (uint32_t)fx[28] | ((uint32_t)fx[29] << 8) |
-        ((uint32_t)fx[30] << 16) | ((uint32_t)fx[31] << 24);
-    if (!x86_scheduler_machine_mask) x86_scheduler_machine_mask = 0xFFBF;
     if (!irq_profile) {
         (void)apply_private(KERNEL_SCHEDULER_INIT, KERNEL_SCHEDULER_NONE, 0);
         saved_pool = pool; saved_root = root;
@@ -326,22 +375,22 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
         || irq_profile == 5
 #endif
         ) &&
-        !x86_watchdog_budget_begin_four(&stacks[0].lease,&stacks[1].lease,irq_profile == 5 ? &stacks[2].lease : NULL,
-            active_profile->task_count == 4 ? &stacks[3].lease : NULL))
+        !x86_watchdog_budget_begin_four(&x86_task_stacks[0].lease,&x86_task_stacks[1].lease,irq_profile == 5 ? &x86_task_stacks[2].lease : NULL,
+            active_profile->task_count == 4 ? &x86_task_stacks[3].lease : NULL))
         kernel_panic("SCHEDULER_IDLE_ACCOUNTING_FAILED");
 #ifdef KERNEL_PS2_INPUT
     if (irq_profile == 5 && !x86_ps2_activate()) return 0;
 #endif
     if (!kernel_log(0, "KERNEL_SCHEDULER_STACKS_OK") ||
-        !kernel_text("SCHEDULER_CONTEXTS: ") || !kernel_number((BOOT_U64)contexts) || !kernel_text("\n")) return 0;
+        !kernel_text("SCHEDULER_CONTEXTS: ") || !kernel_number((BOOT_U64)x86_task_contexts) || !kernel_text("\n")) return 0;
     if (!kernel_text("SCHEDULER_ROOT: ") || !kernel_number(root) ||
         !kernel_text("\nSCHEDULER_PTE: ") || !kernel_number((BOOT_U64)&x86_stack_entries(3)[320]) || !kernel_text("\n")) return 0;
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT < 5
     x86_scheduler_test_fault(1);
 #endif
     config = (X86_DISPATCH_CONFIG){active_profile->task_count,active_profile->step_limit,
-        active_profile->idle_limit,active_profile->drain_irq,native_dispatch_run_private,
-        native_dispatch_collect_private,native_dispatch_reply_private,native_dispatch_release_private,active_profile->idle};
+        active_profile->idle_limit,active_profile->drain_irq,x86_scheduler_dispatch_run,
+        native_dispatch_collect_private,x86_scheduler_dispatch_reply,x86_scheduler_dispatch_release,active_profile->idle};
     if (!x86_scheduler_dispatch(&config,&local->stats)) {
         kernel_text("SCHEDULER_DISPATCH_FAILURE: "); kernel_number(local->stats.failure); kernel_text("\n");
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT == 8
@@ -358,7 +407,7 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     reply = kernel_scheduler_apply(KERNEL_SCHEDULER_SELECT, KERNEL_SCHEDULER_NONE, 0);
     if (reply.status != KERNEL_SCHEDULER_EMPTY || !x86_scheduler_profile_complete(irq_profile,&local->stats) || !kernel_physical_validate(pool) ||
         !kernel_physical_budget_matches(pool, budget)) return 0;
-    for (uint32_t index = 0; index < 8; ++index) if (stacks[index].self) return 0;
+    for (uint32_t index = 0; index < 8; ++index) if (x86_task_stacks[index].self) return 0;
     for (uint32_t index = 320; index < 464; ++index) if (x86_stack_entries(3)[index]) return 0;
     if (!x86_scheduler_report(root,budget,pool,local->stats.steps,irq_profile)) return 0;
     if (!kernel_log(0, "KERNEL_SCHEDULER_WAIT_OK") || !kernel_log(0, "KERNEL_SCHEDULER_SWITCH_OK") ||
@@ -433,7 +482,7 @@ int x86_scheduler_retained_valid(void)
         active_profile->task_count < 2 || active_profile->task_count > 8 ||
         budget < 16 * active_profile->task_count || !kernel_physical_budget_matches(saved_pool, budget - 16 * active_profile->task_count)) return 0;
     for (uint32_t index = 0; index < active_profile->task_count; ++index)
-        if (!x86_task_stack_validate(&stacks[index])) return 0;
+        if (!x86_task_stack_validate(&x86_task_stacks[index])) return 0;
     return 1;
 }
 
@@ -463,11 +512,11 @@ int x86_scheduler_irq_timeout_valid(void)
         !kernel_physical_budget_matches(saved_pool, budget - 32)) return 0;
     // Validate retained leases from a task without invoking dispatcher-only APIs.
     for (uint32_t index = 0; index < 2; ++index) {
-        if (stacks[index].self != (uint64_t)(uintptr_t)&stacks[index] || stacks[index].index != index ||
-            stacks[index].pool != saved_pool || stacks[index].root != saved_root ||
-            !stacks[index].generation || stacks[index].stage != X86_TASK_STACK_READY ||
-            !x86_task_stack_mapping_valid(&stacks[index],1) ||
-            kernel_physical_is_pinned(saved_pool,&stacks[index].lease) != 1) return 0;
+        if (x86_task_stacks[index].self != (uint64_t)(uintptr_t)&x86_task_stacks[index] || x86_task_stacks[index].index != index ||
+            x86_task_stacks[index].pool != saved_pool || x86_task_stacks[index].root != saved_root ||
+            !x86_task_stacks[index].generation || x86_task_stacks[index].stage != X86_TASK_STACK_READY ||
+            !x86_task_stack_mapping_valid(&x86_task_stacks[index],1) ||
+            kernel_physical_is_pinned(saved_pool,&x86_task_stacks[index].lease) != 1) return 0;
     }
     return 1;
 }

@@ -849,3 +849,34 @@ Dopo la review, prima della chiusura di C4.
   modalità periodica, placeholder mascherato e vettore del timer BSP;
   `XIS_TIMER_VECTOR` è l'unica definizione del vettore del timer AP.
   Sostituiti i valori scritti a mano nei file di C2–C4.
+
+## K4-C5 — Binding comune e worker BSP in WAIT/HLT, 6 novembre 2026
+
+Risultato: binding comune BSP/AP attivo in tutti i profili; nel diagnostico
+`ap-console-ipi` un vero task worker sul BSP attende l'evento 7 e viene
+risvegliato dopo un HLT interrotto dall'IPI 0x43. C5 resta aperta per la
+protezione dei driver e l'integrazione nella console ordinaria.
+
+| Gate | Risultato | Evidenza in `kernel/build/` |
+| --- | --- | --- |
+| Core Rust | 47/47 debug e release, nuovo test `foreign_affinity_is_empty` | suite `scheduler` |
+| Suite host | scheduler, x86-scheduler, ipi-service, ap-admission, ap-runtime, console, console-requests, x86-framebuffer, ps2, watchdog, hpet, pointer, layout, apic-icr, percpu-panic: tutte PASS | `test-run-*` |
+| Worker positivo | 10/10 boot, 2.000 WRITE in ordine per boot | `ap-console-29ddc6cd24b54f6e9717006454748e61` |
+| Ack mancante | 10/10 arresti attesi, chiusura negata | `ap-console-27ebbb287c8140fd9e964184191e8581` |
+| Invio in corso | 10/10 arresti attesi, chiusura negata | `ap-console-59df01d77f3240af9f060edb5e7a598e` |
+| Regressioni a 10 boot | ap-runtime, shell-text, bsp-periodic, bsp-preemption, ap-task-preempt, ap-task-four, ap-console | `qemu-run-74324d7695064b16ad9aec9af892c9f7` |
+| Regressioni a 3 boot | ap-task-batch, -concurrent, -concurrent-stress, -batch-rollback, -four-incomplete, -concurrent-incomplete, ap-console-incomplete, console-active, v2c, ipi-service, ap-runtime-bsp, ap-timer | `qemu-run-bd6855c67f074aeea3c4ae336acad779` |
+
+Numeri del worker sui 10 boot positivi: 124-141 WAIT per boot, tutte
+risvegliate (`Woken` = `WAIT`), ogni idle chiuso con EVENT e con almeno un
+HLT interrotto dall'IPI; 610-640 passi del dispatcher BSP; 617-747 IPI
+inviati, consegnati e chiusi con EOI. Questi valori non sono una misura di
+latenza: ogni attesa dura fino alla scadenza HPET di 5 ms.
+
+ELF positivo SHA-256: `10EB0777ADCFB666BFB9513CED14A7176FCE60A506751C3DEF9A608AF1B4F77D`.
+QEMU q35/TCG/OVMF, quattro CPU. Nessuna prova su hardware fisico.
+
+Limiti noti: `kernel-boot` fallisce già sul commit di partenza (inventario
+paging diverso dalla fotografia), indipendente da questo lavoro. Il test
+`ps2/shell/bridge_test.c` è stato allineato all'ordine SUBMIT-prima-del-push
+introdotto in 177dcab.
