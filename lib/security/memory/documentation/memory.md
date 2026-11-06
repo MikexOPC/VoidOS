@@ -23,7 +23,9 @@ Rust `no_std`: radice `rust/memory.rs`, funzioni in `rust/wipe.rs` e
   dipende dalla lunghezza, che e considerata pubblica, non dal contenuto.
 
 Un altro modulo usa l'azzeramento includendo `wipe.rs` con `#[path]`, come
-fa SHA-256. `wipe.rs` non ha attributi di crate proprio per questo.
+fa SHA-256 (HMAC lo riusa da SHA-256, `compare.rs` lo include direttamente).
+`wipe.rs` e `compare.rs` non hanno attributi di crate proprio per questo.
+Un file va incluso una sola volta per crate (clippy `duplicate_mod`).
 
 ## Limiti noti
 
