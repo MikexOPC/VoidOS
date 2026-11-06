@@ -11,6 +11,9 @@
 #if KERNEL_TEST_AP_SERVICE == 9
 #include "../batch/batch.h"
 #endif
+#ifdef KERNEL_AP_RUNTIME
+#include "../remote/scope.h"
+#endif
 #ifdef KERNEL_PS2_INPUT
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
 #endif
@@ -104,8 +107,8 @@ static int dispatcher_resume_private(void)
 
 uint32_t kernel_scheduler_context_valid(void)
 {
-#if KERNEL_TEST_AP_SERVICE == 9
-    if (xat_ap_actor()) return xat_dispatcher_gate();
+#ifdef KERNEL_AP_RUNTIME
+    if (x86_ap_actor()) return x86_ap_dispatcher_gate();
 #endif
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     if (!local) return 0;

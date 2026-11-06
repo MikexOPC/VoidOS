@@ -62,6 +62,7 @@ void xat_prepare(void)
     if (!xat_pool || !local || xad_value(1,xat_record.Root) != (1ULL << 3 | XAD_ADMITTED) ||
         !kernel_physical_budget_read(xat_pool,&xat_record.Budget) ||
         !x86_ap_inputs(xat_pool,xat_record.Root,(uint64_t)(uintptr_t)&xat_arena,sizeof(xat_arena),&xat_arena) ||
+        !xat_scope_bind() ||
         !x86_scheduler_binding_open(xat_pool,xat_record.Root)) xat_abort();
     local->phase = 1;
     if (kernel_scheduler_configure(xis_native.Count,1)) xat_abort();
@@ -176,5 +177,6 @@ void xat_cleanup(void)
     if (!kernel_physical_budget_read(xat_pool,&xat_record.Final) || xat_record.Final != xat_record.Budget ||
         kernel_scheduler_apply(KERNEL_SCHEDULER_SELECT,KERNEL_SCHEDULER_NONE,0).status != KERNEL_SCHEDULER_EMPTY) xat_abort();
     x86_scheduler_unbind();
+    x86_ap_scope_unbind();
     x86_scheduler_local_current()->phase = 3;
 }
