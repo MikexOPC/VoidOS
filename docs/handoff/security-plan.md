@@ -1,6 +1,6 @@
 # Piano sicurezza dei sottosistemi
 
-Stato: da avviare. Questo file e il punto di partenza per chi lavora sulla
+Stato: avviato (bounds pronto). Questo file e il punto di partenza per chi lavora sulla
 sicurezza; va aggiornato a ogni passo.
 
 ## Ordine concordato — 6 novembre 2026
@@ -79,7 +79,8 @@ ogni passo.
 ## Classifica
 
 Prima stesura, 2026-11-06, da sola lettura del codice e di `docs/status.md`.
-Da confermare prima di aprire ciascun passo.
+Da confermare prima di aprire ciascun passo. Il passo 4 e stato anticipato: i passi 1-3
+toccano `arch/` e il kernel, in uso per K4-C5.
 
 **Gia presente:** paging NX/WP, guard page sugli stack e IST, heap con canary e
 rifiuto del double free, autorizzazione DMA e base VT-d, TLB shootdown prima
@@ -93,7 +94,7 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
 | 1 | `lib/security/entropy` + `arch/x86/security/entropy` | Alto | Base per canary e randomizzazione: RDRAND/RDSEED via CPUID, validazione e fallback in Rust |
 | 2 | Stack canary del kernel | Alto | Oggi nessuna protezione sull'overflow di stack in C; richiede supporto `/GS` freestanding o canary propri |
 | 3 | W^X dell'immagine kernel | Alto | Verificare e imporre `.text` RX, `.rdata` RO+NX, dati RW+NX; test negativo su scrittura in `.text` |
-| 4 | Primitive comuni `lib/security/bounds` | Medio-alto | Aritmetica controllata e validazione range/indici riusabili da mm, driver, ACPI |
+| 4 | Primitive comuni `lib/security/bounds` | Medio-alto | **Fatto per primo** (2026-11-06): non tocca hardware ne kernel, utile a tutti i passi successivi |
 | 5 | Input non fidati: ACPI, VirtIO, PS/2, shell | Medio | Tabelle firmware e device sono input esterni: limiti, lunghezze, checksum |
 | 6 | SMEP/SMAP/UMIP | Medio, ora | Utili davvero con lo user mode; abilitabili prima solo se CPUID li offre e il kernel non tocca pagine user |
 | 7 | DMA: VT-d attivo per i device | Medio | Il DMA bypassa il paging della CPU; da collegare a VirtIO |
@@ -101,4 +102,9 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
 
 ## Progressi
 
-Nessuno.
+- **2026-11-06 — `lib/security/bounds`.** Aritmetica controllata, allineamento,
+  range e indici dentro un contenitore, disgiunzione fail-closed. Rust `no_std`,
+  export C a soli scalari. Suite host `security-bounds`: 14 test (debug e
+  release), oracolo a 128 bit, input ostili, clippy, oggetto freestanding.
+  Aperto: header C e collegamento ai moduli. Dettagli in
+  [bounds.md](../../lib/security/bounds/documentation/bounds.md).
