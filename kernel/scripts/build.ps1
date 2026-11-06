@@ -196,7 +196,10 @@ if ($TestFramebufferMapping -or $TestConsoleDraw -or $ConsoleShell) {
     if ($TestConsoleDraw) { $consoleSources += @('kernel/console/video/measurement/budget.c','kernel/console/video/batch/render.c','test/kernel/console/video/active/worker.c','test/kernel/console/video/active/snapshot.c','test/kernel/console/video/profiling/profile.c') }
     if ($ConsoleShell) { $consoleSources += @('kernel/console/video/measurement/budget.c',
         'kernel/console/video/batch/render.c','arch/x86/kernel/drivers/video/framebuffer/live/group.c',
-        'arch/x86/kernel/drivers/video/framebuffer/console/runtime.c','kernel/console/video/pointer/state.c') }
+        'arch/x86/kernel/drivers/video/framebuffer/console/runtime.c',
+        'arch/x86/kernel/drivers/video/framebuffer/console/requests.c',
+        'kernel/console/video/requests/queue.c','kernel/console/video/requests/consumer.c',
+        'kernel/console/video/pointer/state.c') }
     if ($ProfileVgpuFlush) { $consoleSources += 'arch/x86/kernel/drivers/video/framebuffer/console/profile.c'; if (!$VgpuIommu) { $consoleSources += 'kernel/diagnostics/latency.c' } }
     foreach ($source in $consoleSources) {
         $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')

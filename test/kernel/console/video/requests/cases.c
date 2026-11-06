@@ -135,6 +135,32 @@ static void failures_and_lock_order(void) {
     assert(!kernel_console_requests_initialize(&queue));
 }
 
+// ====== service_consumer ======
+
+static void service_consumer(void) {
+    static KERNEL_CONSOLE_SERVICE service;
+    static KERNEL_VIDEO_CONSOLE view;
+    KERNEL_CONSOLE_REQUEST_QUEUE queue = {0};
+    KERNEL_CONSOLE_REQUEST_INFO info;
+    assert(kernel_console_requests_initialize(&queue));
+    assert(kernel_console_service_init(&service, &view, 40, 8));
+    assert(kernel_console_requests_consume(&queue, NULL) == KCR_INVALID);
+    assert(kernel_console_requests_consume(&queue, &service) == KCR_EMPTY);
+    assert(kernel_console_requests_push(&queue, KCR_EDIT, "ciao", 4, 4) == KCR_OK);
+    assert(service.Length == 0);
+    assert(kernel_console_requests_consume(&queue, &service) == KCR_OK);
+    assert(service.Length == 4 && !context.Depth && ks_irq_state() == 0x200);
+    assert(kernel_console_requests_push(&queue, KCR_WRITE, "risposta\n", 9, 9) == KCR_OK);
+    assert(kernel_console_requests_consume(&queue, &service) == KCR_OK && service.Length == 4);
+    assert(kernel_console_requests_push(&queue, KCR_SUBMIT, NULL, 0, 0) == KCR_OK);
+    assert(kernel_console_requests_consume(&queue, &service) == KCR_OK && service.Length == 0);
+    assert(kernel_console_requests_push(&queue, KCR_WRITE, "fail", 4, 4) == KCR_OK);
+    service.Failed = 1;
+    assert(kernel_console_requests_consume(&queue, &service) == KCR_STATE);
+    assert(kernel_console_requests_query(&queue, &info) == KCR_OK && info.State == KCR_FAILED);
+    assert(kernel_console_requests_consume(&queue, &service) == KCR_STATE);
+}
+
 // ====== main ======
 
 int main(void) {
@@ -142,6 +168,7 @@ int main(void) {
     requests_context_prepare();
     boundaries();
     failures_and_lock_order();
+    service_consumer();
     requests_threads();
     puts("PASS: console request C/Rust ABI, ownership, bounds, real locks, failure and IF restore; IRQ/context are MOCK");
     return 0;

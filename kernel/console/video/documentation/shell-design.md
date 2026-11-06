@@ -1,4 +1,4 @@
-# Console operativa della shell: design approvato, 10 ottobre 2026
+# Console operativa della shell: design
 
 ## K4-C5: coda con owner BSP, scelta approvata il 6 novembre 2026
 
@@ -106,7 +106,40 @@ e [raw pointers](https://doc.rust-lang.org/core/primitive.pointer.html).
 Il nucleo resta safe; l'unsafe e confinato a inizializzazione, prestito FFI
 e terminale panic. Non si scrive alcun nuovo registro hardware.
 
-## Contratto BSP implementato
+### Collegamento nativo BSP del worker
+
+Il backend `console/requests.c` collega la coda alla sessione video.
+Input (task 0) e shell (task 2) accodano EDIT/SUBMIT e WRITE; soltanto
+task 1 estrae e applica al servizio, prima del rendering. Mouse e chiamanti
+nativi restano sul BSP: questo passaggio non abilita task driver sugli AP.
+
+Si riusa l'evento worker esistente: 4 senza mouse, 6 con mouse. Il producer
+osserva la generazione prima del push; FULL conserva il buffer sullo stack
+e attende la generazione osservata, senza lock detenuti. Il consumer
+segnala dopo ogni richiesta completata. Anche gli altri segnali dello
+stesso evento richiedono di ricontrollare la coda. Massimo 1.024 tentativi
+per invio, non per sessione; esaurimento o errore sono espliciti, senza
+scartare silenziosamente il comando. Nessun polling attivo della coda.
+
+Ogni turno applica fino a otto richieste, poi disegna il gruppo previsto.
+Il SUBMIT viene accodato prima della pubblicazione nella FIFO comandi:
+un'attesa per spazio non deve permettere alla shell di rispondere prima
+della consegna della riga video. Sono preservati testo italiano e riga
+in modifica mentre arrivano risposte ai comandi.
+
+La chiusura richiede input hardware quieto, consumer input e shell conclusi,
+coda vuota e nessuna applicazione in corso. Solo allora drain/close vietano
+nuovi invii; il worker termina il disegno residuo e il teardown verifica
+`KERNEL_CONSOLE_REQUESTS_CLEAN`. I produttori sono gia fermi prima del
+distacco e della raccolta degli stack. Video assente conserva il percorso
+seriale senza inizializzare la coda video.
+
+Il collegamento Rust nativo usa una staticlib con LTO e panic abort per
+includere le funzioni core necessarie senza dipendenze dal runtime Windows.
+Il linker mantiene nodefaultlib: non si aggiungono stub di runtime per
+nascondere simboli mancanti. Il terminale panic usa il fail-stop esistente.
+
+## Checkpoint storico: servizio BSP del 10 ottobre 2026
 
 Scelta utente: servizio unico, aggiornamenti RAM serializzati (alternativa A).
 Implementazione nel profilo esplicito `-ConsoleShell`; risultati e limiti nel

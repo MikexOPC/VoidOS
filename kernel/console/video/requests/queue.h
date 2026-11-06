@@ -1,6 +1,7 @@
 #ifndef KERNEL_CONSOLE_REQUEST_QUEUE_H
 #define KERNEL_CONSOLE_REQUEST_QUEUE_H
 #include "kernel/sync/lock.h"
+#include "../service/console.h"
 
 #define KCR_STORAGE_BYTES 2560U
 #define KCR_TEXT_LIMIT 256U
@@ -47,5 +48,6 @@ uint32_t kernel_console_requests_complete(KERNEL_CONSOLE_REQUEST_QUEUE *queue, u
 uint32_t kernel_console_requests_drain(KERNEL_CONSOLE_REQUEST_QUEUE *queue);
 uint32_t kernel_console_requests_close(KERNEL_CONSOLE_REQUEST_QUEUE *queue);
 uint32_t kernel_console_requests_query(KERNEL_CONSOLE_REQUEST_QUEUE *queue, KERNEL_CONSOLE_REQUEST_INFO *output);
+uint32_t kernel_console_requests_consume(KERNEL_CONSOLE_REQUEST_QUEUE *queue, KERNEL_CONSOLE_SERVICE *service);
 __declspec(noreturn) void kernel_console_requests_fail_stop(void);
 #endif

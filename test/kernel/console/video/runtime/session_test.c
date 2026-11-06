@@ -110,6 +110,29 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
     return reply;
 }
 
+// ====== request_boundary_mocks ======
+
+int kernel_console_requests_initialize(KERNEL_CONSOLE_REQUEST_QUEUE *owner)
+{ (void)owner; CHECK(0); return 0; }
+int x86_console_requests_step(X86_CONSOLE *owner)
+{ (void)owner; CHECK(0); return 0; }
+int x86_console_requests_pending(X86_CONSOLE *owner)
+{ (void)owner; CHECK(0); return -1; }
+
+// ====== request_boundary_mock ======
+
+int x86_console_requests_send(X86_CONSOLE *owner, uint32_t operation,
+    const void *text, uint32_t length, uint32_t capacity)
+{
+    CHECK(owner == &console && operation == KCR_SUBMIT && !text && !length && !capacity);
+    ++submits;
+#ifdef KERNEL_PS2_MOUSE
+    return x86_scheduler_event_request(X86_TASK_SIGNAL,6,0).reply.status == KERNEL_SCHEDULER_OK;
+#else
+    return x86_scheduler_event_request(X86_TASK_SIGNAL,4,0).reply.status == KERNEL_SCHEDULER_OK;
+#endif
+}
+
 // ====== clean_session ======
 
 static void clean_session(void)

@@ -30,7 +30,8 @@ foreach ($source in @('kernel/sync/rust/atomics/operations.rs',
 
 $saved = Use-Msvc
 try {
-    $sources = @('kernel/console/video/requests/queue.c','kernel/sync/lock.c','kernel/sync/acquire.c',
+    $sources = @('kernel/console/video/requests/queue.c','kernel/console/video/requests/consumer.c',
+        'kernel/sync/lock.c','kernel/sync/acquire.c',
         'kernel/time/clock.c','test/kernel/sync/backend.c',
         'test/kernel/console/video/requests/cases.c','test/kernel/console/video/requests/threads.c',
         'kernel/console/video/service/console.c','kernel/console/video/console.c')
@@ -45,6 +46,24 @@ try {
         Invoke-Checked "$($saved.Bin)/cl.exe" (@('/nologo','/fsanitize=address','/MD',"/Fe$out/host-$profile.exe") +
             $objects + @("$out/requests-$profile.lib",'/link','/incremental:no','/DEBUG','/WX'))
         Invoke-Checked "$out/host-$profile.exe" @()
+    }
+    foreach ($profile in @('keyboard','mouse')) {
+        $profileFlags = if ($profile -eq 'mouse') { @('/DKERNEL_PS2_MOUSE=1') } else { @() }
+        Invoke-Checked "$($saved.Bin)/cl.exe" (@('/nologo','/TC','/std:c11','/W4','/WX','/Zi',
+            '/fsanitize=address','/MD','/O2',"/I$project", "/Fo$out/", "/Fd$out/native.pdb",
+            "$project/arch/x86/kernel/drivers/video/framebuffer/console/requests.c",
+            "$project/test/kernel/console/video/runtime/requests_test.c", "/Fe$out/native-$profile.exe") +
+            $profileFlags + @('/link','/incremental:no','/DEBUG','/WX'))
+        Invoke-Checked "$out/native-$profile.exe" @()
+    }
+    Invoke-CppcheckRaw "$out/native-cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" `
+        --quiet --platform=win64 --std=c11 --xml --xml-version=2 "-I$project" `
+        "$project/arch/x86/kernel/drivers/video/framebuffer/console/requests.c" `
+        "$project/test/kernel/console/video/runtime/requests_test.c"
+    if ($LASTEXITCODE) { throw 'Native adapter cppcheck failed' }
+    [xml]$nativeReport = Get-Content "$out/native-cppcheck.xml"
+    if (@($nativeReport.results.errors.error | Where-Object { $_.severity -in 'error','warning','performance','portability' }).Count) {
+        throw 'Blocking native adapter diagnostics'
     }
     Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" `
         --quiet --platform=win64 --std=c11 --xml --xml-version=2 "-I$project" `
