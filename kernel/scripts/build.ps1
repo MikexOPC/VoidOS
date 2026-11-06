@@ -1,4 +1,4 @@
-param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-handler','release-missing-ack','ap-timer','admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete')][string]$TestApService = 'none', [ValidateSet('none','withhold-ack','lock-held','contended')][string]$TestApStress = 'none', [ValidateSet('none','bsp','ap')][string]$TestApGroupPanic = 'none', [switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic, [switch]$TestApSequence, [switch]$TestApSequenceFault,
+param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-handler','release-missing-ack','ap-timer','admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete','ap-console','ap-console-incomplete')][string]$TestApService = 'none', [ValidateSet('none','withhold-ack','lock-held','contended')][string]$TestApStress = 'none', [ValidateSet('none','bsp','ap')][string]$TestApGroupPanic = 'none', [switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic, [switch]$TestApSequence, [switch]$TestApSequenceFault,
     [switch]$TestSchedulerPeriodic, [switch]$TestSchedulerPreemption, [ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [ValidateSet('none','guard','nx')][string]$TestApResourceFault = 'none',
     [ValidateSet('none','prepare','voluntary','opcode','page','nmi','double','no-simd','recursive','lock-held','prepare-rollback','no-simd-call')][string]$TestSmpPanic = 'none',
@@ -189,7 +189,7 @@ foreach ($source in $schedulerAssembly) {
     $objects += $object
 }
 $rustc = Join-Path $env:USERPROFILE '.cargo/bin/rustc.exe'
-if ($TestFramebufferMapping -or $TestConsoleDraw -or $ConsoleShell) {
+if ($TestFramebufferMapping -or $TestConsoleDraw -or $ConsoleShell -or $TestApService -like 'ap-console*') {
     $consoleSources = @('kernel/console/video/console.c','kernel/console/video/render.c',
         'kernel/console/video/service/console.c')
     if ($TestFramebufferMapping) { $consoleSources += @('test/kernel/console/video/kernel/probe.c','test/kernel/console/video/kernel/render_probe.c','test/kernel/console/video/kernel/service_probe.c') }

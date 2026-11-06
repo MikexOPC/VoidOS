@@ -6,16 +6,28 @@ $out = if ($OutputDirectory) { $OutputDirectory } else {
     "$project/kernel/build/console-requests-" + [guid]::NewGuid().ToString('N')
 }
 New-Item -ItemType Directory -Force $out | Out-Null
+Invoke-Checked "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe" @(
+    '-B',"$project/test/kernel/console/video/ap/firmware_test.py")
+Invoke-Checked "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe" @(
+    '-B',"$project/test/kernel/scripts/audit_symbols_test.py")
 
 # ============ Rust FFI and fixed ABI ============
 
 $rustc = "$env:USERPROFILE/.cargo/bin/rustc.exe"
 $gateway = "$project/kernel/console/video/rust/ffi/requests.rs"
+Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024','--test',
+    '-D','warnings','--emit=metadata',"$project/test/kernel/console/video/rust/requests/channel_test.rs",
+    '-o',"$out/channel-tests.rmeta")
 Invoke-Checked "$env:USERPROFILE/.cargo/bin/clippy-driver.exe" @('--edition=2024',
-    '--crate-type=lib','--emit=metadata','-D','warnings',$gateway,'-o',"$out/ffi.rmeta")
+    '--crate-type=lib','--emit=metadata','--cfg','console_ap_diagnostic','-D','warnings',$gateway,'-o',"$out/ffi.rmeta")
 foreach ($profile in @('debug','release')) {
     $optimization = if ($profile -eq 'release') { 2 } else { 0 }
+    Invoke-Checked $rustc @('--edition=2024','--test','-D','warnings','-C',"opt-level=$optimization",
+        '-C','overflow-checks=yes',"$project/test/kernel/console/video/rust/requests/channel_test.rs",
+        '-o',"$out/channel-$profile.exe")
+    Invoke-Checked "$out/channel-$profile.exe" @()
     Invoke-Checked $rustc @('--edition=2024','--crate-type=staticlib','-D','warnings',
+        '--cfg','console_ap_diagnostic',
         '-C','panic=abort','-C',"opt-level=$optimization",'-C','overflow-checks=yes',
         $gateway,'-o',"$out/requests-$profile.lib")
 }
@@ -74,6 +86,16 @@ try {
     [xml]$report = Get-Content "$out/cppcheck.xml"
     if (@($report.results.errors.error | Where-Object { $_.severity -in 'error','warning','performance','portability' }).Count) {
         throw 'Blocking requests static diagnostics'
+    }
+    Invoke-CppcheckRaw "$out/ap-cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" `
+        --quiet --platform=win64 --std=c11 --xml --xml-version=2 "-I$project" `
+        -DKERNEL_TEST_AP_SERVICE=9 -DKERNEL_TEST_AP_CONSOLE=1 `
+        "$project/test/kernel/console/video/ap/channel.c" "$project/test/arch/x86/kernel/scheduler/batch/probe.c" `
+        "$project/arch/x86/kernel/scheduler/batch/work.c" "$project/arch/x86/kernel/scheduler/batch/runtime.c"
+    if ($LASTEXITCODE) { throw 'AP diagnostic cppcheck failed' }
+    [xml]$apReport = Get-Content "$out/ap-cppcheck.xml"
+    if (@($apReport.results.errors.error | Where-Object { $_.severity -in 'error','warning','performance','portability' }).Count) {
+        throw 'Blocking AP diagnostic diagnostics'
     }
 } finally { Restore-Msvc $saved }
 "PASS: console request gateway evidence $out"

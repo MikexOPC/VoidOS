@@ -9,7 +9,7 @@ if ($TestApService -ne 'none') {
     $serviceDefines += '-DKERNEL_TEST_AP_SERVICE=1'
 }
 if ($TestApService -eq 'ping') { $serviceSources += 'arch/x86/mm/dma/arena.c' }
-if ($TestApService -in @('admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete')) {
+if ($TestApService -in @('admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete','ap-console','ap-console-incomplete')) {
     $serviceDefines += '-DKERNEL_TEST_AP_ADMISSION=1'
     $serviceSources += 'arch/x86/kernel/scheduler/admission/native.c'
     if ($TestApService -eq 'admission') { $serviceSources += 'test/arch/x86/kernel/scheduler/admission/probe.c' }
@@ -24,6 +24,14 @@ if ($TestApService -in @('ap-preempt','ap-concurrent','ap-concurrent-stress','ap
 if ($TestApService -in @('ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete')) {
     $serviceSources += 'arch/x86/kernel/scheduler/batch/concurrent.c'
     $serviceDefines += '-DKERNEL_TEST_AP_CONCURRENT=1'
+}
+if ($TestApService -like 'ap-console*') {
+    $serviceSources += @('kernel/console/video/requests/queue.c','test/kernel/console/video/ap/channel.c')
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=staticlib','--cfg','console_ap_diagnostic',
+        '--target','x86_64-pc-windows-msvc','-C','panic=abort','-C','opt-level=2',
+        '-C','lto=fat','-C','codegen-units=1','-C','overflow-checks=yes','-D','warnings',
+        "$project/kernel/console/video/rust/ffi/requests.rs",'-o',"$output/ap-console.lib")
+    $objects += "$output/ap-console.lib"
 }
 foreach ($source in $serviceSources) {
     $object = Join-Path $output (($source -replace '/', '-') -replace '\.c$', '.obj')

@@ -3,6 +3,8 @@
 
 #[path = "../requests/queue.rs"]
 mod queue;
+#[cfg(console_ap_diagnostic)]
+mod channel;
 use queue::{Error, Operation, Queue, State, TEXT_LIMIT};
 use core::mem::{align_of, size_of};
 

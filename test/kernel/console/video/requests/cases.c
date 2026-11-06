@@ -5,6 +5,7 @@
 static __declspec(thread) KERNEL_LOCK_CONTEXT context;
 static __declspec(thread) uint32_t prepared;
 static KERNEL_LOCK_WAIT wait;
+uint64_t kernel_console_ap_channel(uint32_t operation, uint32_t cpu, uint64_t token, uint32_t producer);
 
 // ====== kernel_lock_current_context ======
 
@@ -161,11 +162,33 @@ static void service_consumer(void) {
     assert(kernel_console_requests_consume(&queue, &service) == KCR_STATE);
 }
 
+// ====== channel_boundary ======
+
+static void channel_boundary(void) {
+    assert(!kernel_console_ap_channel(0,1,17,0));
+    assert(!kernel_console_ap_channel(0,0,0,0));
+    assert(kernel_console_ap_channel(0,0,17,0) == 1);
+    assert(!kernel_console_ap_channel(0,0,18,0));
+    assert(!kernel_console_ap_channel(1,1,18,0));
+    assert(!kernel_console_ap_channel(1,1,17,2));
+    assert(kernel_console_ap_channel(1,1,17,0) == 1);
+    assert(kernel_console_ap_channel(2,1,17,0) == 1);
+    assert(!kernel_console_ap_channel(2,1,17,0));
+    assert(!kernel_console_ap_channel(4,0,17,0));
+    assert(kernel_console_ap_channel(2,1,17,1) == 1);
+    assert(kernel_console_ap_channel(3,0,17,0) == 3);
+    assert(kernel_console_ap_channel(4,0,17,0) == 1);
+    assert(kernel_console_ap_channel(3,0,17,0) == 7);
+    assert(!kernel_console_ap_channel(1,1,17,0));
+    assert(!kernel_console_ap_channel(99,0,17,0));
+}
+
 // ====== main ======
 
 int main(void) {
     wait = (KERNEL_LOCK_WAIT){{test_clock, NULL, UINT32_MAX, 1000}, 10000, 100000000};
     requests_context_prepare();
+    channel_boundary();
     boundaries();
     failures_and_lock_order();
     service_consumer();

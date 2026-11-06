@@ -96,7 +96,7 @@ $ApRuntime = $TestApTransition -eq 'none' -and $TestSmpPanic -eq 'none' -and !$T
 if ($ApRuntime) { $flags += '/DKERNEL_AP_RUNTIME=1' }
 if ($TestApService -ne 'none') {
     if (!$ApRuntime) { throw 'AP service requires ordinary AP admission.' }
-    $serviceMode = switch ($TestApService) { 'ping' {1} 'missing-ack' {2} 'stale-ack' {3} 'panic-idle' {4} 'panic-handler' {5} 'release-missing-ack' {6} 'ap-timer' {7} 'admission' {8} 'ap-batch' {9} 'ap-batch-rollback' {9} 'ap-preempt' {9} 'ap-concurrent' {9} 'ap-concurrent-stress' {9} 'ap-concurrent-incomplete' {9} 'ap-four' {9} 'ap-four-incomplete' {9} }
+    $serviceMode = switch ($TestApService) { 'ping' {1} 'missing-ack' {2} 'stale-ack' {3} 'panic-idle' {4} 'panic-handler' {5} 'release-missing-ack' {6} 'ap-timer' {7} 'admission' {8} 'ap-batch' {9} 'ap-batch-rollback' {9} 'ap-preempt' {9} 'ap-concurrent' {9} 'ap-concurrent-stress' {9} 'ap-concurrent-incomplete' {9} 'ap-four' {9} 'ap-four-incomplete' {9} 'ap-console' {9} 'ap-console-incomplete' {9} }
     $flags += "/DKERNEL_TEST_AP_SERVICE=$serviceMode"
     if ($TestApService -in @('ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete')) { $flags += '/DKERNEL_TEST_AP_PREEMPTION=1' }
     if ($TestApService -in @('ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete')) { $flags += '/DKERNEL_TEST_AP_CONCURRENT=1' }
@@ -113,3 +113,6 @@ if ($TestApStress -ne 'none') {
         'contended' { '/DKERNEL_TEST_AP_STRESS_BARRIER=1' }
     })
 }
+
+if ($TestApService -like 'ap-console*') { $flags += '/DKERNEL_TEST_AP_CONSOLE=1' }
+if ($TestApService -eq 'ap-console-incomplete') { $flags += '/DKERNEL_TEST_AP_CONSOLE_INCOMPLETE=1' }

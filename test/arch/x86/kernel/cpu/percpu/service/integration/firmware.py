@@ -55,7 +55,7 @@ def await_terminal(vm, case):
 
 # ====== verify ======
 
-def verify(vm, log, case, count):
+def verify(vm, log, case, count, batch_steps=8192):
     positive = case in ("ping", "ap-timer", "admission", "ap-batch", "ap-preempt", "ap-concurrent", "ap-concurrent-stress", "ap-four")
     texts = [launch.registers(vm, index) for index in range(count)]
     mask = (1 << count) - 1
@@ -155,7 +155,7 @@ def verify(vm, log, case, count):
                 record[6:12] != [16,16,136,272,17,34] or record[12] < 2 or
                 not record[13] or record[13] & ~3 or record[15] >= 2 or
                 not record[17] or not record[18] or record[16] != record[17 + record[15]] or
-                not (8 if case == "ap-preempt" else 34) <= record[19] <= 8192 or record[20] != 2 or record[26:28] != [2,2] or
+                not (8 if case == "ap-preempt" else 34) <= record[19] <= batch_steps or record[20] != 2 or record[26:28] != [2,2] or
                 record[28] & 0x7602 != 0x202 or record[29:] != [0xe1,1,0]):
             raise RuntimeError("AP task progress, context, IRQ or cleanup evidence differs: " + str(record))
         base = record[21 + record[15]]
@@ -241,7 +241,7 @@ def verify(vm, log, case, count):
             raise RuntimeError("SMP panic coordinator did not collect all CPUs")
         reason = {"missing-ack": 0x4b34495049544d4f, "stale-ack": 0x4b34495049424144,
                   "panic-idle": 0x4b344950494e4d34, "panic-handler": 0x4b344950494e4d35,
-                  "release-missing-ack": 0x4b34544c4241434b, "ap-batch-rollback": 0x4b34415042415443, "ap-concurrent-incomplete": 0x4b34415042415443, "ap-four-incomplete": 0x4b34415042415443}[case]
+                  "release-missing-ack": 0x4b34544c4241434b, "ap-batch-rollback": 0x4b34415042415443, "ap-concurrent-incomplete": 0x4b34415042415443, "ap-four-incomplete": 0x4b34415042415443, "ap-console-incomplete": 0x4b34415042415443}[case]
         if log.number("PANIC_REASON_ADDRESS") != reason or log.number("PANIC_MISSING") != 0:
             raise RuntimeError("Different failure reason or missing panic ACK")
         for index in range(count):
