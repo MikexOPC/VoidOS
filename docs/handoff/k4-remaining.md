@@ -4,6 +4,13 @@
 raccolto durante le review e lo sviluppo di K4. Lo stato verificato resta
 in [status.md](../status.md); qui c'è cosa manca e perché.
 
+Aggiornamento del 6 novembre 2026: C4 è chiusa per il backend diagnostico
+con quattro AP di calcolo e BSP supervisore; le voci precedenti su C4
+qui sotto sono storiche. Il prossimo lavoro è C5, poi C6, K5 e K6.
+L'utente ha scelto di svolgere il consolidamento iniziale della sicurezza
+dopo i punti K e prima della GUI: vedere
+[ordine concordato](security-plan.md#ordine-concordato--6-novembre-2026).
+
 ## Regole cambiate in questa fase
 
 In direttive-locali e direttive-locali (file locali, esclusi da git), allineate in
