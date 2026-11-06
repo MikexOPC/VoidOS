@@ -1,11 +1,12 @@
 # Console operativa della shell: design approvato, 10 ottobre 2026
 
-## K4-C5: proposta SMP, in attesa della scelta
+## K4-C5: coda con owner BSP, scelta approvata il 6 novembre 2026
 
 Il servizio attuale non e sicuro per chiamate concorrenti: `Busy` in
 `service/console.c` rileva il rientro, ma non e atomico e non sostituisce
 un lock. Le garanzie BSP descritte sotto restano il contratto implementato.
-Questa sezione e un progetto, non una prova di supporto SMP.
+L'utente ha scelto A. Il nucleo Rust e separato dal binding SMP:
+non prova ancora chiamate concorrenti dal kernel o integrazione del worker.
 
 Riferimento: [Linux v6.12, Lock types, CPU local locks](https://www.kernel.org/doc/html/v6.12/locking/locktypes.html#cpu-local-locks).
 Disabilitare interrupt o preemption protegge soltanto la CPU locale.
