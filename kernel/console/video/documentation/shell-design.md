@@ -1,5 +1,73 @@
 # Console operativa della shell: design approvato, 10 ottobre 2026
 
+## K4-C5: proposta SMP, in attesa della scelta
+
+Il servizio attuale non e sicuro per chiamate concorrenti: `Busy` in
+`service/console.c` rileva il rientro, ma non e atomico e non sostituisce
+un lock. Le garanzie BSP descritte sotto restano il contratto implementato.
+Questa sezione e un progetto, non una prova di supporto SMP.
+
+Riferimento: [Linux v6.12, Lock types, CPU local locks](https://www.kernel.org/doc/html/v6.12/locking/locktypes.html#cpu-local-locks).
+Disabilitare interrupt o preemption protegge soltanto la CPU locale.
+Il riferimento motiva la separazione; non si importano lock o codice Linux.
+
+### Alternative e raccomandazione
+
+A, consigliata: il worker BSP resta unico proprietario della griglia e
+del renderer. I produttori inviano richieste copiate in una FIFO limitata.
+Il lock protegge soltanto la coda; nessun disegno, callback, wait o yield
+avviene sotto quel lock. Mantiene sul BSP i vincoli hardware esistenti.
+
+B: un lock per servizio permette mutazioni sincrone da qualsiasi CPU.
+Richiede anche separare il prestito al renderer dalle mutazioni e definire
+snapshot/ack delle celle cambiate mentre il renderer lavora. Tenere il
+lock durante il disegno farebbe attendere gli AP per tutta la verifica
+paging e la copia video. Non basta rendere atomico `Busy`.
+
+### Contratto proposto per A
+
+- Prima parte: sola coda e consumer controllato in host, senza collegare
+  ancora i task AP alla console ordinaria. Modulo `kernel/console/video/`,
+  relativi test centralizzati e script; nessun nuovo accesso hardware.
+- Otto richieste, ciascuna con massimo 256 byte UTF-8 posseduti dalla coda;
+  nessun puntatore del produttore viene conservato. Operazioni WRITE, EDIT
+  e SUBMIT, con validazione completa prima della pubblicazione.
+- Rust gestisce contenuto, indici, stati e validazione. Il gateway usera
+  il lock kernel gia esistente, con ordine da verificare prima del binding.
+  Nessuna assunzione che `&mut` o un booleano rendano sicuro il gateway FFI.
+- Una richiesta entra interamente oppure viene rifiutata. Coda piena:
+  FULL, nessuno scarto silenzioso e nessuna attesa attiva illimitata;
+  il chiamante conserva il lavoro e riprova fuori dai lock.
+- Ordine globale uguale all'ordine di pubblicazione sotto lock. WRITE
+  e EDIT validano UTF-8; EDIT non accetta controlli. SUBMIT non ha payload.
+  La coda non sostituisce la FIFO dei comandi della shell.
+- Il consumer copia una richiesta in memoria privata, rilascia il lock,
+  poi applica l'operazione. Accettata significa accodata, non disegnata.
+  Una sola richiesta estratta puo essere in lavorazione; non viene ritentata
+  dopo un errore parziale di applicazione.
+- Stati OPEN -> DRAINING -> CLOSED oppure FAILED terminale. DRAINING
+  rifiuta nuovi invii; CLOSED richiede coda vuota e nessun lavoro in corso.
+  FAILED conserva la diagnosi e non consente riuso della sessione live.
+- La RAM della sessione resta viva fino al distacco di tutti i produttori
+  e del consumer. IRQ/NMI non chiamano la coda; i task non accedono
+  direttamente alla griglia. La seriale di emergenza resta un percorso separato.
+
+### Accettazione e integrazione successiva
+
+Test host: FIFO, wrap degli indici, piena/vuota, UTF-8 italiano e invalido,
+dimensioni 0/256/257, copia indipendente dal produttore, drain, errore
+terminale e nessuna mutazione dopo rifiuto. Prima del collegamento SMP:
+binding FFI sotto lock verificato, produttori concorrenti, preemption,
+assenza di risvegli persi e gestione FULL senza bloccare il consumer.
+
+L'integrazione richiedera un perimetro concordato per worker, chiamanti
+input/shell, wakeup scheduler e build/test. Non e inclusa implicitamente
+nel solo nucleo della coda. Gate finale: dieci boot consecutivi del
+profilo SMP, ordine output, input attivo, cleanup e budget invariati.
+Finche questi gate non passano, console e driver restano vincolati al BSP.
+
+## Contratto BSP implementato
+
 Scelta utente: servizio unico, aggiornamenti RAM serializzati (alternativa A).
 Implementazione nel profilo esplicito `-ConsoleShell`; risultati e limiti nel
 [report di verifica](shell-validation.md). Questo file conserva il design;
