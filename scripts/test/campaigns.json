@@ -1,6 +1,18 @@
 {
   "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
+    "ap-console": {
+      "summary": "AP1 producers, BSP RAM consumer, 2000 FIFO requests, forced full queue and cleanup",
+      "build": ["-TestApService", "ap-console"],
+      "runner": ["python", "test/kernel/console/video/ap/firmware.py", "--image", "{image}", "--boots", "{boots}"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "ap-console-incomplete": {
+      "summary": "Expected panic: missing producer completion denies collection and retains 32 pinned stack pages",
+      "build": ["-TestApService", "ap-console-incomplete"],
+      "runner": ["python", "test/kernel/console/video/ap/firmware.py", "--image", "{image}", "--boots", "{boots}", "--incomplete"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
     "ap-task-four": {
       "summary": "Eight tasks preempted on four APs, BSP supervisor, five real CPUs and joint cleanup",
       "build": ["-TestApService", "ap-four"],

@@ -2,6 +2,9 @@
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "kernel/diagnostics/log.h"
 #include "kernel/scheduler/lot.h"
+#ifdef KERNEL_TEST_AP_CONSOLE
+#include "test/kernel/console/video/ap/channel.h"
+#endif
 
 XAT_RECORD xat_record;
 X86_TASK_STACK xat_stacks[8];
@@ -157,6 +160,9 @@ void xat_run(void)
 #endif
     record->DeniedForeignCpu = 1;
     X86_DISPATCH_CONFIG config = {2,8192,0,0,run_private,retain_private,reply_private,release_private,NULL};
+#ifdef KERNEL_TEST_AP_CONSOLE
+    config.step_limit = 65536;
+#endif
     if (
 #ifdef KERNEL_TEST_AP_CONCURRENT
         !x86_scheduler_dispatch_lot_on(cpu,xat_record.Root,1,&config,&local->stats) ||
@@ -184,6 +190,9 @@ void xat_run(void)
 
 void xat_cleanup(void)
 {
+#ifdef KERNEL_TEST_AP_CONSOLE
+    if (!kca_release_allowed()) xat_abort();
+#endif
     if (!x86_percpu_bsp() || xad_collect_allowed(1,0,1,xat_record.Root) != 1 ||
         !kernel_physical_budget_matches(xat_pool,xat_record.Held)) xat_abort();
     for (uint32_t index = 0; index < XAT_TASKS; ++index) {

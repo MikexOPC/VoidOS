@@ -1,6 +1,9 @@
 #include "batch.h"
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 int _fltused;
+#ifdef KERNEL_TEST_AP_CONSOLE
+#include "test/kernel/console/video/ap/channel.h"
+#endif
 
 // ====== xat_yield ======
 
@@ -28,6 +31,12 @@ static void interrupt_window_private(void)
     if (!(ks_irq_save() & 512)) xat_abort();
 }
 
+// ====== xat_io_yield ======
+
+#ifdef KERNEL_TEST_AP_CONSOLE
+void xat_io_yield(void) { interrupt_window_private(); xat_yield(); }
+#endif
+
 // ====== xat_task_start ======
 
 __declspec(noreturn) void xat_task_start(void)
@@ -47,6 +56,10 @@ __declspec(noreturn) void xat_task_start(void)
         xat_yield();
 #endif
     }
+#ifdef KERNEL_TEST_AP_CONSOLE
+    kca_produce(index);
+    if (!xis_native_now(NULL,&start)) xat_abort();
+#endif
 #ifdef KERNEL_TEST_AP_PREEMPTION
 #ifdef KERNEL_TEST_AP_CONCURRENT
     xat_concurrent_barrier(index);

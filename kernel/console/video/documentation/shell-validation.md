@@ -1,14 +1,61 @@
 # Console video: validazione
 
-## K4-C5: worker BSP collegato, 6 novembre 2026
+## K4-C5: diagnostico AP1 -> coda -> BSP, 6 novembre 2026
 
-Prossimo blocco: proposta AP1 -> coda -> consumer BSP in
-[shell-design.md](shell-design.md), ancora in attesa della scelta.
-La review conferma che batch AP e console ordinaria usano binding di
-stack distinti sullo stesso mapper: non e stato abilitato alcun invio AP.
-Per questo aggiornamento solo documentale: fonti, riferimenti e diff
-verificati; build, sanitizer e QEMU N/A. Le prove sotto restano quelle
-del blocco BSP gia completato, non del nuovo diagnostico proposto.
+Due task su AP1 inviano 1.000 WRITE ciascuno al consumer BSP in RAM.
+Il drain inizia solo dopo un FULL osservato da entrambi. Il consumer
+verifica identita e sequenza per produttore; solo dopo fine degli invii,
+quiescenza AP, drain e chiusura vengono raccolti gli stack.
+Nessun disegno o risveglio della console ordinaria viene effettuato dagli AP.
+
+Evidenze finali, q35/TCG/OVMF con quattro CPU reali inizializzate:
+
+| Profilo | Esito | Evidenza in `kernel/build/` |
+| --- | --- | --- |
+| AP console positivo | 10/10 consecutivi, 20.000 WRITE, 32 pagine stack recuperate per boot | `ap-console-43f9710ec3ea4fbfa4c75108103a6142/` |
+| Conferma mancante | 10/10 arresti attesi, 32 pagine ancora mappate e pinned per boot | `ap-console-13c1d6a5124f47089e6812c1082fa330/` |
+| Console ordinaria | 3/3 consecutivi, input, pixel, shell, Esc e cleanup | `pointer-interactive-check-8a7375bd47b24018aeec27bc2c770025/` |
+
+SHA-256 ELF positivo:
+`3139622ADA0C189F67A73B525ADD8105BAC5F8A196D3B7875E8B006C4CAE8D7A`;
+negativo `621756DD75D5E209693973775554DD4C305FC34BBF935161451EFB76C9D854B2`;
+regressione `54B2DDAADC6231D0E790BCC24082C1AEEA36A5F417A1EDBBDACD6C4C4E82DBBD`.
+Loader invariato: `37F4DE1FCDB792D2684D1F1C8B37F7EFD8DB75F0CA47AE3B7887088BAB119854`.
+I due smoke 1/1 precedono le campagne e non entrano nel conteggio finale.
+
+Il lettore QEMU riusa verifiche CPU/GDT/GS/root/IRQ del batch, controlla
+record, FIFO per produttore, FULL, budget fisico e PTE delle guardie.
+Nel negativo entrambi i task sono FINISHED e AP1 e quiescente: manca
+solo una conferma logica. La chiamata a cleanup viene negata prima di
+COLLECT. Il lettore controlla tutte le 32 PTE dati, le quattro guardie,
+le due lease da 16 pagine e i pin; i panic sono attesi e coordinati.
+Non e una prova di AP bloccato o recovery. Gli IPI vengono conteggiati
+dai contatori guest, non da una costante attribuita al nuovo caso.
+
+Suite host console completa: `kernel/build/c5-ap-console-host-final.log`.
+Verifica finale mirata: `kernel/build/c5-ap-console-proof-final.log` e
+relativa cartella, con Rust debug/release e Clippy, ABI C/Rust, ASan C,
+quattro produttori host e controlli cppcheck del diagnostico.
+La macchina a stati safe Rust verifica identita, token stantii, duplicati,
+chiusura incompleta, riuso negato e completamenti concorrenti in 200 round
+per configurazione. Il test C esercita anche il vero export FFI del canale.
+Il lettore delle prove rifiuta record alterati e retention incoerente.
+
+L'audit iniziale non vedeva i membri Rust `archivio:*.rcgu.o`. Il parser
+corretto passa i test positivi/negativi, inclusi simboli Rust vietati,
+simboli richiesti assenti e oggetti test. Audit reale: 3.657 simboli del
+profilo ordinario, sette simboli vietati assenti e due richiesti presenti;
+3.221 del diagnostico, quattro entry AP richieste presenti. Nessun oggetto
+test nel primo; oggetti diagnostici esplicitamente ammessi nel secondo.
+
+Limiti: C/ASM riusano il backend verificato, senza nuovi accessi hardware.
+Rustc locale 1.98.1. ASan copre il C host, non il guest o Rust; Valgrind
+non eseguito, coverage linee/branch N/D. Accounting fisico guest distinto.
+Le attese del diagnostico sono bounded e usano yield, non WAIT/HLT SMP.
+La console ordinaria resta BSP; restano risvegli cross-CPU, binding comune
+dei task, driver PS/2 e ulteriori moduli C5. Nessuna prova su hardware reale.
+
+## Checkpoint precedente: worker BSP collegato
 
 Input e shell accodano le operazioni; solo il worker applica testo e riga
 al servizio C. Implementati attesa per spazio con generazioni, invii copiati,

@@ -10,7 +10,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if (!(Test-Path -LiteralPath $Map)) { throw "Map not found: $Map" }
-$rows = Get-Content -LiteralPath $Map | Where-Object { $_ -match '^\s*[0-9a-f]{4}:[0-9a-f]{8}\s+(\S+)\s+[0-9a-f]{16}\s+(?:f\s+)?(?:i\s+)?(\S+\.obj|\S+\.lib:\S+)\s*$' } |
+$rows = Get-Content -LiteralPath $Map | Where-Object { $_ -match '^\s*[0-9a-f]{4}:[0-9a-f]{8}\s+(\S+)\s+[0-9a-f]{16}\s+(?:f\s+)?(?:i\s+)?(\S+\.obj|\S+\.lib:\S+|\S+:\S+\.rcgu\.o)\s*$' } |
     ForEach-Object { [pscustomobject]@{ Symbol = $Matches[1]; Object = $Matches[2] } }
 if ($rows.Count -lt 100) { throw "Map has only $($rows.Count) symbol rows; format not recognized" }
 $names = @{}; foreach ($row in $rows) { $names[$row.Symbol] = $row.Object }

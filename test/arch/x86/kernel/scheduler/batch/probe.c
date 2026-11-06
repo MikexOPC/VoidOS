@@ -2,6 +2,9 @@
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "kernel/diagnostics/log.h"
 #include "kernel/scheduler/lot.h"
+#ifdef KERNEL_TEST_AP_CONSOLE
+#include "test/kernel/console/video/ap/channel.h"
+#endif
 #ifdef KERNEL_TEST_AP_CONCURRENT
 extern uint64_t xat_arrived[XAT_APS];
 static KERNEL_LOT_REPLY lot_final;
@@ -24,6 +27,9 @@ static void wait_private(uint32_t cpu, uint64_t phase, uint32_t progress)
     uint32_t start, now;
     if (!xis_native_now(NULL,&start)) xat_abort();
     for (uint32_t poll = 0; poll < 1000000; ++poll) {
+#ifdef KERNEL_TEST_AP_CONSOLE
+        kca_pump();
+#endif
         uint64_t value = xad_value(cpu,x86_kernel_root());
         if (value == (1ULL << 3 | phase) && (!progress ||
             (ks_atomic_load_acquire(&xat_record.Progress[(cpu - 1) * 2]) && ks_atomic_load_acquire(&xat_record.Progress[(cpu - 1) * 2 + 1])))) return;
@@ -46,6 +52,9 @@ __declspec(noreturn) void xat_batch_probe(void)
         request_private(cpu,1); wait_private(cpu,XAD_ADMITTED,0);
     }
     xat_prepare();
+#ifdef KERNEL_TEST_AP_CONSOLE
+    kca_prepare();
+#endif
 #ifdef KERNEL_TEST_AP_PREEMPTION
     xat_preempt.Self = (uint64_t)(uintptr_t)&xat_preempt;
     xat_preempt.Reload = x86_timer_diagnostic_reload();
@@ -100,8 +109,16 @@ __declspec(noreturn) void xat_batch_probe(void)
         !kernel_text("\nKERNEL_AP_LOT_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&lot_final) ||
         !kernel_text("\n") || !kernel_log(1,"KERNEL_AP_LOT_INCOMPLETE")) xat_abort();
 #endif
+#ifdef KERNEL_TEST_AP_CONSOLE
+    kca_finish();
+#endif
     xat_cleanup();
     for (uint32_t index = 1; index < xis_native.Count; ++index) request_private(index,1);
+#ifdef KERNEL_TEST_AP_CONSOLE
+    kca_record.Final = xat_record.Final;
+    kca_report();
+    if (!kernel_log(0,"KERNEL_AP_CONSOLE_READY")) xat_abort();
+#endif
     if (xat_record.Completed != 2 || xat_record.Steps <
 #ifdef KERNEL_TEST_AP_PREEMPTION
         8

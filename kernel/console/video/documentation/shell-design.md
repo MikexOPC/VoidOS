@@ -5,8 +5,9 @@
 Il servizio attuale non e sicuro per chiamate concorrenti: `Busy` in
 `service/console.c` rileva il rientro, ma non e atomico e non sostituisce
 un lock. Le garanzie BSP descritte sotto restano il contratto implementato.
-L'utente ha scelto A. Coda e worker BSP sono collegati e verificati;
-le chiamate concorrenti dai task AP non sono ancora collegate al kernel.
+L'utente ha scelto A. Coda e worker BSP sono collegati e verificati.
+Anche il diagnostico AP1 -> coda -> BSP e implementato; i produttori AP
+non sono ancora abilitati nella console ordinaria.
 
 Riferimento: [Linux v6.12, Lock types, CPU local locks](https://www.kernel.org/doc/html/v6.12/locking/locktypes.html#cpu-local-locks).
 Disabilitare interrupt o preemption protegge soltanto la CPU locale.
@@ -25,16 +26,16 @@ snapshot/ack delle celle cambiate mentre il renderer lavora. Tenere il
 lock durante il disegno farebbe attendere gli AP per tutta la verifica
 paging e la copia video. Non basta rendere atomico `Busy`.
 
-### Contratto proposto per A
+### Contratto della coda
 
-- Prima parte: sola coda e consumer controllato in host, senza collegare
-  ancora i task AP alla console ordinaria. Modulo `kernel/console/video/`,
+- Sequenza: nucleo host, worker BSP, poi diagnostico AP dedicato, senza
+  abilitare ancora i task AP nella console ordinaria. Modulo `kernel/console/video/`,
   relativi test centralizzati e script; nessun nuovo accesso hardware.
 - Otto richieste, ciascuna con massimo 256 byte UTF-8 posseduti dalla coda;
   nessun puntatore del produttore viene conservato. Operazioni WRITE, EDIT
   e SUBMIT, con validazione completa prima della pubblicazione.
-- Rust gestisce contenuto, indici, stati e validazione. Il gateway usera
-  il lock kernel gia esistente, con ordine da verificare prima del binding.
+- Rust gestisce contenuto, indici, stati e validazione. Il gateway usa
+  il lock kernel esistente e rifiuta chiamanti con altri lock detenuti.
   Nessuna assunzione che `&mut` o un booleano rendano sicuro il gateway FFI.
 - Una richiesta entra interamente oppure viene rifiutata. Coda piena:
   FULL, nessuno scarto silenzioso e nessuna attesa attiva illimitata;
@@ -77,7 +78,7 @@ pacchetti e verificato su entrambi i lati. Nessuna allocazione o singleton.
 
 Init richiede un oggetto azzerato, privato e non ancora pubblicato.
 Vietati copia, spostamento o reinit di un oggetto vivo. Pubblicazione e
-distacco sono responsabilita del futuro binding della sessione: la memoria
+distacco sono responsabilita del binding della sessione: la memoria
 non si libera finche esistono produttori, consumer o chiamate in corso.
 CLOSED non autorizza da solo il rilascio mentre altri chiamanti lo usano.
 
@@ -140,7 +141,7 @@ includere le funzioni core necessarie senza dipendenze dal runtime Windows.
 Il linker mantiene nodefaultlib: non si aggiungono stub di runtime per
 nascondere simboli mancanti. Il terminale panic usa il fail-stop esistente.
 
-### Proposta successiva: primo produttore AP, scelta ancora richiesta
+### Primo produttore AP: diagnostico A approvato il 6 novembre 2026
 
 L'ostacolo attuale e il binding dello scheduler, non il lock della coda.
 `scheduler/mapping/native.c` mantiene un solo insieme collegato di stack
@@ -151,7 +152,7 @@ CPU: uno potrebbe sovrascrivere le autorita di stack dell'altro.
 
 Alternative:
 
-- A, consigliata: diagnostico dedicato AP1 -> coda -> BSP. Riusa il lotto
+- A, adottata: diagnostico dedicato AP1 -> coda -> BSP. Riusa il lotto
   di due task AP gia verificato, con BSP supervisore e consumer della sola
   griglia RAM. La console ordinaria e il rendering restano nel profilo
   attuale. Dimostra prima il passaggio reale fra CPU e il lifetime.
@@ -160,7 +161,7 @@ Alternative:
   risvegli tra CPU, e revisione del teardown input/video. Il perimetro e
   piu ampio; non e una semplice sostituzione del mittente.
 
-Contratto proposto per A, non ancora implementato:
+Contratto implementato per A:
 
 - Un descrittore del canale, inizializzato dal BSP prima dell'ammissione,
   pubblicato con release e acquisito dagli AP con acquire. Identita e
@@ -183,7 +184,7 @@ Contratto proposto per A, non ancora implementato:
   collega risorse e contesti esistenti. L'Assembly di switch si riusa.
   Il primo blocco non estende automaticamente i permessi degli altri driver.
 
-Perimetro richiesto: console/video e soli adattatori del lotto/ammissione
+Perimetro approvato: console/video e soli adattatori del lotto/ammissione
 AP, supervisione BSP, build e test. Nessun refactor generale dello
 scheduler, del mapper o dei driver PS/2/VirtIO.
 
@@ -196,9 +197,37 @@ Un negativo omette una conferma e deve negare la raccolta. Regressione
 console BSP separata. L'integrazione ordinaria con wakeup SMP resta il
 blocco successivo e richiede il proprio contratto.
 
+Implementazione: `rust/requests/channel.rs` contiene lo stato atomico safe;
+`rust/ffi/channel.rs` espone il confine numerico solo con cfg
+`console_ap_diagnostic`. Token immutabile non nullo, conferme nei bit 0/1,
+chiusura nel bit 2: stati ammessi 0, 1, 2, 3, poi 7. Identita dichiarate
+verificate in Rust; il backend C verifica CPU e task reali prima dell'invio.
+I bit sono metadati software, non registri hardware. Pubblicazione e
+completamento usano release/acquire; token errati, duplicati e reinit
+sono rifiutati. Nessun prestito alla griglia passa agli AP.
+
+I profili `-TestApService ap-console` e `ap-console-incomplete` riusano
+il lotto AP con due task. Il BSP applica le richieste in una griglia 40x8
+senza disegno. Solo dopo due FULL osservati inizia il drain. Restano i
+limiti del supervisore (1 secondo e 1.000.000 controlli per fase). Nei
+retry FULL il produttore controlla un budget di 2 secondi dal proprio avvio
+e ammette 65.536 tentativi per WRITE; il dispatcher ammette 65.536 passi.
+Non sono garanzie temporali per hardware generico.
+
+Nel negativo entrambi i task terminano e AP1 e fisicamente quiescente;
+manca soltanto la conferma Rust del produttore 1. La chiusura e il guard
+iniziale di `xat_cleanup` negano il rilascio, prima di qualsiasi COLLECT.
+Le pagine restano pinned fino al panic SMP coordinato. Non e una prova
+di recupero da AP bloccato. Non si aggiungono IPI, timer o Assembly.
+
+L'audit dei simboli riconosce anche i membri Rust `archivio:*.rcgu.o`:
+il diagnostico richiede i propri simboli, il profilo ordinario li vieta.
+Il percorso C di produzione e i binding dei task ordinari non vengono
+abilitati implicitamente dalla presenza del canale diagnostico.
+
 Fonti: [Rust Ordering, Acquire e Release](https://doc.rust-lang.org/core/sync/atomic/enum.Ordering.html)
-(documentazione consultata 1.99.1; verificare sul compilatore locale prima
-del codice); [Linux v6.12 workqueue, Introduction e The Design](https://docs.kernel.org/6.12/core-api/workqueue.html)
+(documentazione consultata 1.99.1, implementazione compilata e verificata
+con rustc 1.98.1); [Linux v6.12 workqueue, Introduction e The Design](https://docs.kernel.org/6.12/core-api/workqueue.html)
 come riferimento per separare accodamento e consumer. Non si copiano
 codice, worker pool o politica di scheduling Linux.
 
