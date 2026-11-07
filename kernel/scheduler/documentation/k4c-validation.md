@@ -932,3 +932,32 @@ SHA-256 loader `37F4DE1FCDB792D2684D1F1C8B37F7EFD8DB75F0CA47AE3B7887088BAB119854
 C5 chiusa per il profilo ordinario con un job fidato alla volta su AP1.
 Lo stress e l'audit di chiusura G5 restano in C6. Hardware fisico e
 leak detector nativo non verificati.
+
+## K4-C6 — Stress SMP e audit G5, 7 novembre 2026
+
+| Gate | Risultato | Evidenza in `kernel/build/` |
+| --- | --- | --- |
+| `ap-task-four` | 10/10. Otto task su quattro AP e BSP supervisore, 64 preemption per boot, cleanup degli stack | `ipi-service-11bcfb42c84d4d368914df564c58d61b/results.json` |
+| `ap-task-concurrent-stress` | 10/10. Quattro CPU avviate, task su AP1 e AP2, otto round PING e shootdown | `ipi-service-2ed1d70dd4f4443488b416ef92b18741/results.json` |
+| Quiescenza incompleta | 20/20 arresti attesi. I due profili negano la raccolta con gli stack ancora pinnati | `qemu-run-da63bbddb1f944a09921eeb61d9c0e2e/results.json` |
+| `paging-tamper` con fix G5 | 10/10 arresti attesi. L'audit rileva la PTE manomessa e ferma il worker | `paging-tamper-ca0360d8c0e6486ba294623fd19ac8ac/results.json` |
+| `v2c` con fix G5 | 10/10 consecutivi. `ap 1000` risponde da AP1, budget 14.093 pagine prima e dopo, tre shootdown nel rilascio VirtIO per boot | `pointer-interactive-check-c1784e0240b54d74853c43d1bca9a47f/results.json` |
+| Soak `v2c` sulla stessa immagine | 1/1. 301,45 s, 682 pacchetti mouse, spostamento netto zero, job AP1 e cleanup verificati | `pointer-interactive-check-5f525616539142caadb9615c23ef1dcf/results.json` |
+| Regressioni | 9/9. Preemption BSP e arresti attesi per ACK mancante e per ritiro incompleto | `qemu-run-80cc41c6fa8a44b3b4ff5c402da4faea/results.json` |
+| Scheduler host | PASS. 20.000 task per run su quattro thread host, esclusività e preemption verificate | `scheduler-host-d689ab3f014a47f5ba9a12fcea241376` |
+| Paging, allocatore e watchdog host | PASS. Verifiche con ASan, CPU e hardware modellati | `paging-owned-0713728fe2f648d9873b8a63eaff7a29`, `physical-host-75e6a7102c5a4d52a6e6d1ca11698f61`, `watchdog-host-df46dddeb6ee4528989aecc7de79ad9c` |
+| Console host | PASS. 591 controlli del gruppo video, fault dei detentori e ripristino dell'inventario | `console-grid-host` |
+
+L'[audit G5](../../../docs/mm/paging/verification-policy.md#audit-k4-c6)
+ha trovato un overflow nel conto delle pagine dei detentori. Una voce
+invalida produceva `UINT64_MAX`. Sommandola alle tabelle GPU il conteggio
+poteva rientrare nel budget. Il test riproduce l'accettazione sul codice
+precedente. Il fix verifica il valore d'errore e la disponibilità prima
+di ogni sottrazione. Il test mirato passa 591 controlli con ASan.
+
+SHA-256 ELF `4FE37293FA781C35ED65382B90FAF911350AD852D837550C80934FC5DC9B08E7`.
+SHA-256 loader `37F4DE1FCDB792D2684D1F1C8B37F7EFD8DB75F0CA47AE3B7887088BAB119854`.
+
+C6 chiusa per i profili K4 in QEMU/OVMF. Nel profilo ordinario il job AP1
+usa uno stack gestito dal BSP. Le prove di preemption su più AP sono
+diagnostiche. Hardware fisico e leak detector nativo restano fuori dalle prove.
