@@ -15,6 +15,7 @@ sottocartella `scripts/`, per esempio `kernel/scripts/` per il kernel.
 | `lib/` | Helper condivisi per toolchain, layout, log seriali e controllo delle VM QEMU. |
 | `test/` | Runner delle suite host, campagne QEMU e registro `campaigns.json`. |
 | `format/` | Strumenti di formattazione dei sorgenti. |
+| `tooling/build-plan/` | Planner Rust per confrontare tre profili di build del kernel. |
 | [clean.ps1](clean.ps1) | Pulizia controllata delle directory di esecuzione in `kernel/build/`. |
 
 `lib/common.ps1` raccoglie helper MSVC e analisi statica.
@@ -30,6 +31,7 @@ Eseguire dalla radice del repository, in PowerShell:
 ```powershell
 ./scripts/test/run.ps1 -List
 ./scripts/test/run.ps1 -Suite all
+./scripts/test/run.ps1 -Suite build-plan
 ./scripts/test/qemu.ps1 -List
 ./scripts/test/qemu.ps1 -Campaign v2c,fallback
 ./scripts/test/qemu.ps1 -Smoke
@@ -41,6 +43,12 @@ produce un riepilogo finale. Le campagne QEMU sono separate: `qemu.ps1`
 compila le immagini e lancia i runner indicati nel registro. `-Smoke`
 esegue un boot per campagna; è il controllo previsto prima dei commit
 che toccano il kernel, non una campagna completa di affidabilità.
+
+La suite `build-plan` compila lo strumento host Rust e confronta argomenti
+e ordine dei comandi con `kernel/scripts/build.ps1 -PlanOnly`. Copre il
+boot ordinario, il timer periodico BSP e il timer AP. Il confronto salva
+i due piani in `kernel/build/` senza compilare o installare il kernel.
+La build del kernel continua a usare PowerShell.
 
 `qemu.ps1` richiede PowerShell 7; il runner host lo cerca per le suite.
 Gli script di build dipendono dalla toolchain prevista dal componente.

@@ -1,9 +1,11 @@
 # ============ installation and admission for diagnostics or ordinary boot ============
 
-$tool = & (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/scripts/assembler.ps1')
+$tool = if ($PlanOnly) { @{Nasm = 'nasm.exe'} } else {
+    & (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/scripts/assembler.ps1')
+}
 Invoke-Compiler $tool.Nasm @('-f','bin','-Wall','-Werror','-o',"$output/ap-template.bin",
     "$project/arch/x86/kernel/cpu/percpu/startup/assembly/trampoline/entry.asm")
-if ((Get-Item "$output/ap-template.bin").Length -ne 4096) { throw 'Invalid AP template size' }
+if (!$PlanOnly -and (Get-Item "$output/ap-template.bin").Length -ne 4096) { throw 'Invalid AP template size' }
 
 $templateSources = @('arch/x86/kernel/cpu/percpu/startup/assembly/template/image.asm')
 if (!$ApRuntime) { $templateSources += 'test/arch/x86/kernel/cpu/percpu/startup/installation/probe/assembly/terminal/entry.asm' }

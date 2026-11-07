@@ -2,13 +2,13 @@
 
 if ($TestSchedulerPreemption -or $TestSchedulerPeriodic) {
     if ($TestSchedulerPreemption -and $TestSchedulerPeriodic) { throw 'Choose one preemption diagnostic.' }
-    foreach ($key in $PSBoundParameters.Keys) {
+    foreach ($key in $boundBuildOptions) {
         if ($key -notin @('TestSchedulerPreemption','TestSchedulerPeriodic','OutputDirectory','ToolchainBin')) { throw 'Preemption requires an isolated diagnostic profile.' }
     }
 }
 
 if ($TestApService -ne 'none') {
-    foreach ($key in $PSBoundParameters.Keys) {
+    foreach ($key in $boundBuildOptions) {
         if ($key -notin @('TestApService','OutputDirectory','ToolchainBin')) { throw 'AP service requires an isolated diagnostic profile.' }
     }
 }
