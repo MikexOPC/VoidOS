@@ -154,3 +154,7 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   coincide con il riferimento NIST (`ea_non_iid`) su 105 valori di 7 dataset;
   z al quantile esatto come NIST. Test differenziale permanente con i valori
   NIST salvati. Restano aperti test IID e test di riavvio.
+- **2026-11-07 — test di riavvio SP 800-90B §3.1.4.** Comando
+  `assessment.exe restart`: controllo di sanita binomiale, H_r e H_c su righe
+  e colonne, regola H_I/2. H_r e H_c coincidono con NIST (28 su 28). Resta
+  aperto il test IID (§5).
