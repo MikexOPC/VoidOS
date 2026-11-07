@@ -2,6 +2,8 @@
 mod binary;
 #[path = "../counting.rs"]
 mod counting;
+#[path = "datasets.rs"]
+mod datasets;
 #[path = "../predictors.rs"]
 mod predictors;
 #[path = "../statistics.rs"]
@@ -24,16 +26,7 @@ const BITS_40: [u8; 40] = [
 
 const TUPLES: [u8; 21] = [2, 2, 0, 1, 0, 2, 0, 1, 2, 1, 2, 0, 1, 2, 1, 0, 0, 1, 0, 0, 0];
 
-struct Generator(u64);
-
-impl Generator {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-}
+use datasets::Generator;
 
 // ====== esempi ufficiali 6.3.1 - 6.3.4 ======
 
@@ -68,12 +61,12 @@ fn compression_example() {
 
 #[test]
 fn t_tuple_example() {
-    close(counting::t_tuple_with(&TUPLES, 3).unwrap(), 0.273, 1e-3);
+    close(counting::t_tuple_from(&suffix::tuple_profile(&TUPLES), TUPLES.len(), 3).unwrap(), 0.273, 1e-3);
 }
 
 #[test]
 fn lrs_example() {
-    close(counting::lrs_with(&TUPLES, 3).unwrap(), 0.6146, 1e-3);
+    close(counting::lrs_from(&suffix::tuple_profile(&TUPLES), TUPLES.len(), 3).unwrap(), 0.6146, 1e-3);
 }
 
 // ====== esempi ufficiali 6.3.7 - 6.3.10 ======
@@ -134,7 +127,7 @@ fn constant_data_has_almost_no_entropy() {
 
 #[test]
 fn uniform_bytes_score_high_and_bounded() {
-    let mut generator = Generator(0x5eed_90b0_2026_1107);
+    let mut generator = Generator::new(0x5eed_90b0_2026_1107);
     let symbols: Vec<u8> = (0..20_000).map(|_| (generator.next() >> 24) as u8).collect();
     let original = track::non_iid(&symbols, false);
     for estimate in &original {
@@ -169,7 +162,7 @@ fn naive_counts(symbols: &[u8], width: usize) -> Vec<usize> {
 
 #[test]
 fn tuple_profile_matches_direct_counting() {
-    let mut generator = Generator(0x7091_e5f1_2026_0001);
+    let mut generator = Generator::new(0x7091_e5f1_2026_0001);
     for round in 0..300 {
         let length = 2 + (generator.next() % 120) as usize;
         let alphabet = 1 + (round % 4) as u64;
@@ -204,4 +197,33 @@ fn markov_all_zero_chain_can_be_the_most_likely() {
 fn multi_mcw_ties_pick_the_most_recent_value() {
     let symbols: Vec<u8> = (0..60).map(|index| (index % 3) as u8).collect();
     close(predictors::multi_mcw_with(&symbols, [3, 5, 7, 9]), 3f64.log2(), 1e-9);
+}
+
+// ====== confronto con lo strumento di riferimento NIST ======
+
+const NIST: &str = include_str!("../../vectors/nist_non_iid.tsv");
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "dataset grandi: eseguito nella build release")]
+fn every_estimate_matches_the_nist_reference_tool() {
+    let mut checked = 0;
+    for set in datasets::all() {
+        let assessment = track::assess(&set.symbols, set.bits);
+        let expected: Vec<(&str, &str, f64)> = NIST
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .filter(|fields| fields[0] == set.name)
+            .map(|fields| (fields[1], fields[2], fields[3].parse().unwrap()))
+            .collect();
+        assert!(!expected.is_empty(), "{} senza valori NIST", set.name);
+        for (track_name, estimator, value) in expected {
+            let estimates = if track_name == "O" { &assessment.original } else { &assessment.bits };
+            let ours = estimates.iter().find(|estimate| estimate.name == estimator).and_then(|estimate| estimate.value);
+            let ours = ours.unwrap_or_else(|| panic!("{} {track_name} {estimator} mancante", set.name));
+            assert!((ours - value).abs() <= 1.5e-6, "{} {track_name} {estimator}: NIST {value}, nostro {ours}", set.name);
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 105);
 }

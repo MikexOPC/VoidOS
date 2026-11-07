@@ -1,0 +1,107 @@
+# NIST SP800-90B_EntropyAssessment (github.com/usnistgov), commit 87c104d0ed4cbc96103e7b8b38d6f2c7e0a6b289
+# ea_non_iid -i -t -v <dataset>.bin <bit>, dataset da tests/datasets.rs; colonne: dataset, O=originale B=bitstring, estimatore, valore
+biased4	B	collision	0.307452
+biased4	B	compression	0.184951
+biased4	B	lag	0.360448
+biased4	B	lrs	0.467633
+biased4	B	lz78y	0.354581
+biased4	B	markov	0.314107
+biased4	B	most common value	0.364815
+biased4	B	multi mcw	0.354578
+biased4	B	multi mmc	0.354581
+biased4	B	t-tuple	0.278116
+biased4	O	lag	1.804499
+biased4	O	lrs	1.745602
+biased4	O	lz78y	1.243764
+biased4	O	most common value	1.240421
+biased4	O	multi mcw	1.252991
+biased4	O	multi mmc	1.243912
+biased4	O	t-tuple	1.232655
+drift3	B	collision	1.000000
+drift3	B	compression	0.138051
+drift3	B	lag	0.378596
+drift3	B	lrs	0.410047
+drift3	B	lz78y	0.347816
+drift3	B	markov	0.923681
+drift3	B	most common value	0.991079
+drift3	B	multi mcw	0.342230
+drift3	B	multi mmc	0.320378
+drift3	B	t-tuple	0.238018
+drift3	O	lag	1.062170
+drift3	O	lrs	1.159034
+drift3	O	lz78y	1.062158
+drift3	O	most common value	2.926330
+drift3	O	multi mcw	1.179182
+drift3	O	multi mmc	1.062169
+drift3	O	t-tuple	0.725418
+period8	B	collision	1.000000
+period8	B	compression	1.000000
+period8	B	lag	0.864415
+period8	B	lrs	0.112661
+period8	B	lz78y	0.863907
+period8	B	markov	0.838870
+period8	B	most common value	0.863879
+period8	B	multi mcw	0.865594
+period8	B	multi mmc	0.118209
+period8	B	t-tuple	0.080805
+period8	O	lag	0.633268
+period8	O	lrs	0.795163
+period8	O	lz78y	0.434754
+period8	O	most common value	4.729250
+period8	O	multi mcw	4.998315
+period8	O	multi mmc	0.434759
+period8	O	t-tuple	0.510472
+sticky1	O	collision	0.289169
+sticky1	O	compression	0.348869
+sticky1	O	lag	0.510322
+sticky1	O	lrs	0.785969
+sticky1	O	lz78y	0.510441
+sticky1	O	markov	0.521232
+sticky1	O	most common value	0.987152
+sticky1	O	multi mcw	0.602628
+sticky1	O	multi mmc	0.510390
+sticky1	O	t-tuple	0.529622
+uniform1	O	collision	0.828173
+uniform1	O	compression	0.812657
+uniform1	O	lag	0.987023
+uniform1	O	lrs	0.963287
+uniform1	O	lz78y	0.983252
+uniform1	O	markov	0.991858
+uniform1	O	most common value	0.985637
+uniform1	O	multi mcw	0.986732
+uniform1	O	multi mmc	0.990330
+uniform1	O	t-tuple	0.915360
+uniform2	B	collision	0.846872
+uniform2	B	compression	0.781917
+uniform2	B	lag	0.992439
+uniform2	B	lrs	0.914901
+uniform2	B	lz78y	0.994421
+uniform2	B	markov	0.998747
+uniform2	B	most common value	0.990510
+uniform2	B	multi mcw	0.992538
+uniform2	B	multi mmc	0.990969
+uniform2	B	t-tuple	0.929250
+uniform2	O	lag	1.974637
+uniform2	O	lrs	1.771625
+uniform2	O	lz78y	1.998941
+uniform2	O	most common value	1.975222
+uniform2	O	multi mcw	1.973745
+uniform2	O	multi mmc	1.991240
+uniform2	O	t-tuple	1.844916
+uniform8	B	collision	0.904396
+uniform8	B	compression	0.875985
+uniform8	B	lag	0.994397
+uniform8	B	lrs	0.995563
+uniform8	B	lz78y	0.995824
+uniform8	B	markov	0.998923
+uniform8	B	most common value	0.994751
+uniform8	B	multi mcw	0.993704
+uniform8	B	multi mmc	0.995146
+uniform8	B	t-tuple	0.931015
+uniform8	O	lag	7.746492
+uniform8	O	lrs	7.826347
+uniform8	O	lz78y	7.746415
+uniform8	O	most common value	7.673981
+uniform8	O	multi mcw	7.746193
+uniform8	O	multi mmc	7.746487
+uniform8	O	t-tuple	7.673981
