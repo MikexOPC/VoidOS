@@ -16,6 +16,9 @@
 #ifdef KERNEL_TEST_SYNC
 #include "test/kernel/sync/integration/probe.h"
 #endif
+#ifdef KERNEL_TEST_K5_PRIVILEGE
+#include "test/arch/x86/kernel/interrupts/privilege/probe.h"
+#endif
 
 // ====== acpi_root_private ======
 
@@ -86,6 +89,9 @@ void kernel_startup_platform(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CO
 {
     KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
     if (!x86_paging_retire_loader(&memory->Context, &memory->Physical)) kernel_panic("LOADER_RETIRE_FAILED");
+#ifdef KERNEL_TEST_K5_PRIVILEGE
+    if (!x86_k5_privilege_probe(&memory->Window)) kernel_panic("K5_PRIVILEGE_DIAGNOSTIC_FAILED");
+#endif
     acpi_root_private(memory);
     const KERNEL_BOOT_CONTEXT *context = (const KERNEL_BOOT_CONTEXT *)x86_object_arena_data(&memory->Arena, &memory->ContextObject);
     X86_PAGING_INVENTORY *paging = paging_private(startup, context);

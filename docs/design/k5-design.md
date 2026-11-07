@@ -1,8 +1,8 @@
 # K5 — Confine tra kernel e userspace
 
-Proposta per VoidOS x86-64. Il primo blocco prepara e prova l'ingresso nel
-kernel durante uno scambio di GS. Il codice utente e le syscall arrivano
-in blocchi separati. Il profilo iniziale è un diagnostico QEMU sul BSP.
+VoidOS x86-64. Per K5-A è stata scelta l'opzione B. Il diagnostico QEMU
+sul BSP include il primo payload ring 3 e la prova NMI durante lo
+scambio di GS. Le syscall arrivano in un blocco separato.
 
 ## Da dove partiamo
 
@@ -80,6 +80,22 @@ ma lega l'esito alla GDT, al paging utente e alla gestione dei fault.
 L'opzione A rende quei guasti distinguibili e lascia uno scenario di
 regressione riutilizzabile per le fasi successive.
 
+Nel diagnostico B la prova parte dopo il ritiro della mappatura bassa del
+loader. Una root privata usa quattro pagine di tabelle, una pagina utente
+RX e una pagina di stack utente RW/NX con guardia. La metà alta resta
+supervisor. La finestra usata per preparare le pagine viene chiusa prima
+di attivare la root. Il payload usa IF=0 e IOPL=0. I fault entrano su
+IST1, gli NMI su IST2. Gli ingressi inattesi arrestano la prova senza
+accedere al contesto per CPU.
+
+Il diagnostico accerta quattro fault da CPL3. `CLI` genera #GP, una
+lettura di una pagina supervisor genera #PF, l'esecuzione sullo stack
+NX genera #PF e `UD2` attesta il ritorno al payload dopo l'NMI. I fault
+riportano al chiamante diagnostico. Al termine vengono ripristinati
+root, IDT, GDT e GS, quindi le sei pagine vengono azzerate e restituite.
+Questa variante non prova ancora la consegna degli IRQ ordinari da
+CPL3 su uno stack scelto tramite RSP0.
+
 ### Gate prima del blocco seguente
 
 - Host: coppie valide, basi inattese, frame non attestato, doppia
@@ -93,11 +109,10 @@ regressione riutilizzabile per le fasi successive.
 
 ## Blocchi successivi
 
-1. **K5-B, ingresso ring 3.** Un payload diagnostico incorporato, con
-   codice utente RX, stack utente RW/NX con guardia e mappature kernel
-   supervisor. Verificare CPL, RSP0, selettori DPL3, frame `IRETQ`,
-   inizializzazione dei registri e dei dati SIMD, eccezioni e isolamento.
-   Ogni fault diagnostico previsto ha un esito esplicito.
+1. **K5-B, IRQ da ring 3.** Estendere il payload per ricevere un IRQ
+   mascherabile sullo stack kernel attestato da RSP0. Verificare il
+   riconoscimento di CPL, GS per CPU, frame `IRETQ`, contesto SIMD,
+   acknowledgement e ripresa, con NMI in entrambe le finestre.
 2. **K5-C, prima syscall.** Una chiamata senza puntatori. Definire ABI,
    selettori e stack prima di abilitare `IA32_EFER.SCE`. Proposta di
    rollout per D5: ingresso `SYSCALL`, ritorno iniziale via `IRETQ`
