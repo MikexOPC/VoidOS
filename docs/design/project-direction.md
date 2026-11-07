@@ -138,6 +138,15 @@ configurazione ha una mediana separata di 7,82 s. Verificato il rebuild
 selettivo per header C, modulo Rust di test e modulo Rust di produzione.
 Le misure riguardano solo questa suite. [Comandi del pilota](../../scripts/README.md#pilota-mesonninja-per-i-test-delleditor-di-riga).
 
+Sul kernel ordinario, tre coppie alternate con output vuoti e la stessa
+toolchain hanno dato una mediana di 27,50 s per la build standard e
+34,48 s con `-UseRustPlan`. Le immagini coincidono salvo il timestamp di
+debug del linker. Su nove prove separate, produrre il piano ha richiesto
+315 ms in PowerShell e 23 ms con il planner Rust già compilato. Il
+percorso sperimentale ricompila comunque il planner e tutti gli oggetti.
+I tempi riguardano l'host Windows x64 a otto CPU logiche, PowerShell 7.6.9,
+MSVC 14.44.35207, SDK 10.0.26100.0 e rustc 1.98.1.
+
 ## Test rapidi con evidenze affidabili
 
 - Usare test host nel linguaggio del modulo per logica pura e casi limite.
