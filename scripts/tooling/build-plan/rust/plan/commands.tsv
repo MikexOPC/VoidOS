@@ -1,0 +1,254 @@
+# Common ordered compiler steps. Fields are separated by tabs.
+# c = source and optional object override. c-od = unoptimized C source.
+# Profile switches and link ordering are resolved by the Rust planner.
+c	arch/x86/kernel/scheduler/context.c
+c	arch/x86/kernel/scheduler/capabilities.c
+c	arch/x86/kernel/scheduler/stacks.c
+c	arch/x86/kernel/scheduler/mapping/native.c
+c	arch/x86/kernel/scheduler/mapping/access.c
+c	arch/x86/kernel/scheduler/integration/kernel.c
+c	arch/x86/kernel/scheduler/integration/local.c
+c	arch/x86/kernel/scheduler/integration/lock.c
+c	arch/x86/kernel/scheduler/integration/workload.c
+c	arch/x86/kernel/scheduler/integration/report.c
+c	arch/x86/kernel/scheduler/integration/validation.c
+c	arch/x86/kernel/scheduler/idle/idle.c
+c	arch/x86/kernel/scheduler/persistent/workload.c
+c	arch/x86/kernel/scheduler/dispatcher/engine.c
+c	arch/x86/kernel/scheduler/diagnostic/profiles.c
+c	arch/x86/kernel/scheduler/irq/bridge.c
+c	arch/x86/kernel/scheduler/runtime/memory.c
+c	arch/x86/kernel/scheduler/runtime/payload.c
+c	arch/x86/kernel/entry.c
+c	arch/x86/kernel/serial.c
+c	arch/x86/mm/window/page.c
+c	arch/x86/mm/window/access.c
+c	kernel/main.c
+c	kernel/startup/early.c
+c	kernel/startup/platform.c
+c	kernel/startup/devices.c
+c	kernel/startup/profile.c
+c	kernel/bootstrap/memory.c
+c	kernel/boot/contract.c
+c	kernel/drivers/video/framebuffer/handoff.c
+c	kernel/drivers/video/framebuffer/mapping.c
+c	kernel/drivers/video/virtio/discovery/pci.c
+c	kernel/drivers/video/virtio/discovery/handoff.c
+c	kernel/drivers/video/virtio/mapping/plan.c
+c	arch/x86/mm/paging/iommu/iommu_registry.c
+c	arch/x86/mm/paging/surface/registry.c
+c	arch/x86/mm/paging/dma/dma_registry.c
+c	arch/x86/mm/paging/heap/heap_registry.c
+c	arch/x86/kernel/cpu/percpu/resources/paging/registry.c
+c	arch/x86/mm/heap/binding.c
+c	kernel/mm/heap/heap.c
+c	kernel/mm/heap/core/state.c
+c	kernel/mm/heap/core/reserve.c
+c	kernel/mm/heap/core/release.c
+c	kernel/mm/heap/core/guard.c
+c	kernel/mm/heap/core/fill.c
+c	lib/containers/bitmap.c
+c	kernel/time/clock.c
+c	kernel/mm/physical/holdings.c
+c	arch/x86/mm/paging/gpu/authority.c
+c	arch/x86/mm/paging/gpu/validation.c
+c	kernel/drivers/video/virtio/discovery/configuration/read.c
+c	arch/x86/kernel/drivers/video/virtio/preflight.c
+c	arch/x86/kernel/drivers/video/virtio/construction.c
+c	arch/x86/kernel/drivers/video/virtio/lifecycle.c
+c	arch/x86/kernel/drivers/video/virtio/pci/access.c
+c	arch/x86/kernel/drivers/video/virtio/integration/kernel.c
+c	kernel/mm/inventory.c
+c	kernel/mm/physical/allocator.c
+c	kernel/mm/physical/allocation/state.c
+c	kernel/mm/physical/allocation/guard.c
+c	kernel/mm/physical/allocation/queries.c
+c	kernel/mm/objects/pool.c
+c	kernel/diagnostics/log.c
+c	arch/x86/mm/regions/mapping.c
+c	arch/x86/mm/regions/access.c
+c	arch/x86/mm/arena/objects.c
+c	arch/x86/lib/processor/processor_access.c
+c	arch/x86/mm/paging/retirement/retire.c
+c	arch/x86/mm/paging/retirement/policy.c
+c	arch/x86/mm/paging/retirement/native.c
+c	arch/x86/mm/paging/inventory.c
+c	arch/x86/mm/paging/access.c
+c	arch/x86/mm/paging/authorization/validation.c
+c	arch/x86/kernel/drivers/video/framebuffer/authority.c
+c	arch/x86/kernel/drivers/video/framebuffer/preflight.c
+c	arch/x86/kernel/drivers/video/framebuffer/construction.c
+c	arch/x86/kernel/drivers/video/framebuffer/lifecycle.c
+c	arch/x86/kernel/drivers/video/framebuffer/native/access.c
+c	arch/x86/kernel/drivers/video/framebuffer/pixels/write.c
+c	arch/x86/kernel/drivers/video/framebuffer/pixels/transaction.c
+c	arch/x86/kernel/drivers/video/framebuffer/pixels/native.c
+c	arch/x86/kernel/drivers/video/framebuffer/drawing/draw.c
+c	arch/x86/kernel/drivers/video/framebuffer/drawing/cursor.c
+c	kernel/console/video/pointer/shape.c
+c	arch/x86/kernel/drivers/video/framebuffer/gateway/cell.c
+c	arch/x86/kernel/drivers/video/framebuffer/gateway/inventory.c
+c	arch/x86/kernel/drivers/video/framebuffer/gateway/native.c
+c	arch/x86/kernel/drivers/video/framebuffer/font/font.c
+c	arch/x86/kernel/drivers/video/framebuffer/integration/kernel.c
+c	lib/firmware/acpi/rsdp.c
+c	kernel/firmware/acpi/root.c
+c	kernel/firmware/acpi/madt/parser.c
+c	kernel/firmware/acpi/madt/records.c
+c	arch/x86/kernel/interrupts/apic/profile.c
+c	arch/x86/kernel/interrupts/apic/probe.c
+c	arch/x86/kernel/interrupts/apic/access.c
+c	arch/x86/kernel/interrupts/apic/icr/icr.c
+c	arch/x86/kernel/interrupts/apic/control/masked.c
+c	arch/x86/kernel/interrupts/apic/control/access.c
+c	arch/x86/kernel/interrupts/return/table.c
+c	arch/x86/kernel/interrupts/registry/registry.c
+c	arch/x86/kernel/serial/interrupts/driver.c
+c	arch/x86/kernel/serial/transmit/buffer.c
+c	arch/x86/kernel/serial/queue/queue.c
+c	arch/x86/kernel/timer/lapic/calibration.c
+c	arch/x86/kernel/timer/lapic/driver.c
+c	arch/x86/kernel/timer/lapic/access.c
+c	arch/x86/kernel/timer/lapic/runtime/runtime.c
+c	arch/x86/kernel/timer/hpet/description/table.c
+c	arch/x86/kernel/timer/hpet/description/scan.c
+c	arch/x86/kernel/timer/hpet/description/integration/kernel.c
+c	arch/x86/kernel/timer/hpet/description/probe/policy.c
+c	arch/x86/kernel/timer/hpet/description/probe/hardware.c
+c	arch/x86/kernel/timer/hpet/watchdog/core.c
+c	arch/x86/kernel/timer/hpet/watchdog/device.c
+c	arch/x86/kernel/timer/hpet/watchdog/route.c
+c	arch/x86/kernel/timer/hpet/watchdog/wait.c
+c	arch/x86/kernel/timer/hpet/watchdog/accounting/budget.c
+c	arch/x86/kernel/timer/hpet/watchdog/hardware/access.c
+c	arch/x86/kernel/timer/hpet/watchdog/compatibility/select.c
+c	arch/x86/kernel/timer/hpet/watchdog/recovery/control.c
+c	arch/x86/kernel/timer/hpet/watchdog/integration/kernel.c
+c	arch/x86/mm/devices/access.c
+c	arch/x86/mm/devices/lapic.c
+c	arch/x86/kernel/exceptions/terminal.c
+c	arch/x86/kernel/descriptors/stacks.c
+c	arch/x86/kernel/descriptors/segments.c
+c	arch/x86/kernel/descriptors/stack_access.c
+c	arch/x86/kernel/stack/main.c
+c	arch/x86/lib/descriptors/gdt.c
+c	arch/x86/lib/descriptors/tss.c
+c	lib/memory/address_ranges.c
+c	lib/geometry/rect.c
+c	lib/geometry/damage.c
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/io.obj	{repo}/arch/x86/kernel/assembly/platform/io.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/exception-entry.obj	{repo}/arch/x86/kernel/exceptions/assembly/entry/terminal.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/segment-entry.obj	{repo}/arch/x86/kernel/descriptors/assembly/activation/segments.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/stack-switch.obj	{repo}/arch/x86/kernel/stack/assembly/switch/main.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/apic-capture.obj	{repo}/arch/x86/kernel/interrupts/apic/assembly/profile/capture.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/uart-wait.obj	{repo}/arch/x86/kernel/interrupts/registry/assembly/wait/bounded.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/pm-read.obj	{repo}/arch/x86/kernel/timer/lapic/assembly/reference/port.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/irq-entry-return.obj	{repo}/arch/x86/kernel/interrupts/return/assembly/entry/return.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/irq-verification-registers.obj	{repo}/arch/x86/kernel/interrupts/return/assembly/verification/registers.asm
+ml64.exe	/nologo	/c	/Fo{out}/retirement.obj	{repo}/arch/x86/mm/paging/retirement/assembly/retire/state.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-irq-compute.obj	{repo}/arch/x86/kernel/scheduler/assembly/irq/compute.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-switch-context.obj	{repo}/arch/x86/kernel/scheduler/assembly/switch/context.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-profile-capture.obj	{repo}/arch/x86/kernel/scheduler/assembly/profile/capture.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-profile-permissions.obj	{repo}/arch/x86/kernel/scheduler/assembly/profile/permissions.asm
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/drivers/video/framebuffer/rust/ffi/mode.rs	-o	{out}/framebuffer-fields.obj
+rustc.exe	--edition=2024	--crate-type=staticlib	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	lto=fat	-C	codegen-units=1	-C	overflow-checks=yes	-D	warnings	--cfg	scheduler_core_lock	{repo}/kernel/scheduler/rust/ffi/gateway.rs	-o	{out}/scheduler.lib
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/devices/rust/encoding/validation.rs	-o	{out}/lapic-encoding.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/lib/firmware/acpi/rust/rsdp/validation.rs	-o	{out}/acpi-rsdp-fields.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/firmware/acpi/rust/root/layout.rs	-o	{out}/acpi-root-layout.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/firmware/acpi/madt/rust/records/validation.rs	-o	{out}/madt-records.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/interrupts/apic/rust/profile/validation.rs	-o	{out}/apic-profile.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/interrupts/apic/rust/registers/validation.rs	-o	{out}/apic-registers.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/interrupts/return/rust/frame/validation.rs	-o	{out}/irq-frame.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/interrupts/registry/rust/subscription/validation.rs	-o	{out}/irq-subscription.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/timer/lapic/rust/calibration/validation.rs	-o	{out}/timer-calibration.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/timer/hpet/description/rust/validation/fields.rs	-o	{out}/hpet-description.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/timer/hpet/watchdog/rust/deadline/policy.rs	-o	{out}/hpet-watchdog.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/timer/hpet/watchdog/rust/selection/routes.rs	-o	{out}/hpet-watchdog-routes.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/timer/hpet/watchdog/rust/recovery/policy.rs	-o	{out}/hpet-watchdog-recovery.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/interrupts/apic/control/rust/encoding/validation.rs	-o	{out}/irq-control.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/serial/interrupts/rust/routing/validation.rs	-o	{out}/uart-routing.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/serial/transmit/rust/bounds/validation.rs	-o	{out}/uart-tx-bounds.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/serial/queue/rust/state/validation.rs	-o	{out}/uart-queue-state.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/paging/rust/validation/entries.rs	-o	{out}/paging-entries.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs	-o	{out}/framebuffer-tables.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	{repo}/kernel/drivers/video/virtio/discovery/rust/ffi/gateway.rs	-o	{out}/vgpu-fields.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	{repo}/kernel/drivers/video/virtio/mapping/rust/ffi/pages.rs	-o	{out}/vgpu-pages.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs	-o	{out}/framebuffer-drawing.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/regions/rust/layout/validation.rs	-o	{out}/region-layout.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/mm/physical/rust/alignment/placement.rs	-o	{out}/physical-alignment.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/descriptors/rust/layout/validation.rs	-o	{out}/ist-layout.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/exceptions/rust/frame/validation.rs	-o	{out}/exception-frame.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/mm/rust/regions/validation.rs	-o	{out}/validation.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/window/rust/layout/validation.rs	-o	{out}/window-layout.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/mm/objects/rust/validation/bounds.rs	-o	{out}/object-bounds.obj
+c	kernel/sync/lock.c
+c	kernel/sync/acquire.c
+c	arch/x86/kernel/cpu/percpu/startup/commit/retention.c
+c	arch/x86/kernel/cpu/percpu/transition/lifecycle.c
+c	arch/x86/kernel/cpu/percpu/transition/tables.c
+c	arch/x86/kernel/cpu/percpu/transition/native.c
+c	arch/x86/kernel/cpu/percpu/lowmemory/reservation.c
+c	arch/x86/kernel/cpu/percpu/lowmemory/native.c
+c	arch/x86/lib/synchronization/native.c
+c	arch/x86/lib/synchronization/context.c
+c	arch/x86/kernel/cpu/percpu/percpu.c
+c	arch/x86/kernel/cpu/percpu/native.c
+c	arch/x86/kernel/cpu/percpu/report.c
+c	arch/x86/kernel/cpu/percpu/clock/binding.c
+c	arch/x86/kernel/cpu/percpu/clock/native.c
+c	arch/x86/kernel/cpu/percpu/clock/report.c
+c	arch/x86/kernel/cpu/percpu/identity/plan.c
+c	arch/x86/kernel/cpu/percpu/identity/registry.c
+c	arch/x86/kernel/cpu/percpu/identity/native.c
+c	arch/x86/kernel/cpu/percpu/identity/report.c
+c	arch/x86/kernel/cpu/percpu/transition/content/ownership.c
+c	arch/x86/kernel/cpu/percpu/resources/lifecycle.c
+c	arch/x86/kernel/cpu/percpu/resources/construct.c
+c	arch/x86/kernel/cpu/percpu/resources/descriptors.c
+c	arch/x86/kernel/cpu/percpu/resources/native/startup.c
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/sync/rust/atomics/operations.rs	-o	{out}/sync-atomics.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/cpu/percpu/transition/rust/geometry/entries.rs	-o	{out}/percpu-transition-geometry.obj
+ml64.exe	/nologo	/c	/Fo{out}/sync-irq.obj	{repo}/arch/x86/lib/synchronization/assembly/irq/state.asm
+ml64.exe	/nologo	/c	/Fo{out}/sync-current.obj	{repo}/arch/x86/lib/synchronization/assembly/context/current.asm
+ml64.exe	/nologo	/c	/Fo{out}/percpu-gs.obj	{repo}/arch/x86/kernel/cpu/percpu/assembly/gs/access.asm
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/cpu/percpu/identity/rust/validation/records.rs	-o	{out}/percpu-identity.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/cpu/percpu/resources/rust/geometry/pages.rs	-o	{out}/percpu-ap-geometry.obj
+c-od	arch/x86/kernel/cpu/percpu/panic/records.c
+c-od	arch/x86/kernel/cpu/percpu/panic/transport/wait.c
+c-od	arch/x86/kernel/cpu/percpu/panic/output/write.c
+c-od	arch/x86/kernel/cpu/percpu/panic/native/access.c
+c-od	arch/x86/kernel/cpu/percpu/panic/native/initialize.c
+c-od	arch/x86/kernel/cpu/percpu/panic/native/dispatch.c
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	no-vectorize-loops	-C	no-vectorize-slp	-D	warnings	{repo}/arch/x86/kernel/cpu/percpu/panic/rust/coordinator/api.rs	-o	{out}/panic-coordinator.obj
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/panic-capture.obj	{repo}/arch/x86/kernel/cpu/percpu/panic/assembly/entry/capture.asm
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/cpu/percpu/lowmemory/rust/geometry/pages.rs	-o	{out}/percpu-low-geometry.obj
+nasm.exe	-f	bin	-Wall	-Werror	-o	{out}/ap-template.bin	{repo}/arch/x86/kernel/cpu/percpu/startup/assembly/trampoline/entry.asm
+nasm.exe	-f	win64	-Wall	-Werror	-I{out}/	-o	{out}/arch-x86-kernel-cpu-percpu-startup-assembly-template-image.obj	{repo}/arch/x86/kernel/cpu/percpu/startup/assembly/template/image.asm
+c	arch/x86/kernel/cpu/percpu/startup/transport/wake.c
+c	arch/x86/kernel/cpu/percpu/startup/transport/native/prepare.c
+c	arch/x86/kernel/cpu/percpu/startup/transport/native/io.c
+c	arch/x86/kernel/cpu/percpu/startup/transport/native/run.c
+c	arch/x86/kernel/cpu/percpu/startup/transport/native/rearm.c
+c	arch/x86/kernel/cpu/percpu/startup/runtime/runtime.c
+nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/ap-gate-load.obj	{repo}/arch/x86/kernel/cpu/percpu/startup/transport/assembly/gate/load.asm
+c	arch/x86/kernel/cpu/percpu/admission/group.c
+c	arch/x86/kernel/cpu/percpu/admission/native.c
+c	arch/x86/kernel/cpu/percpu/admission/entry/entry.c
+c	arch/x86/kernel/cpu/percpu/startup/private/return.c
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	no-vectorize-loops	-C	no-vectorize-slp	{repo}/arch/x86/kernel/cpu/percpu/admission/rust/snapshot/policy.rs	-o	{out}/ap-admission-policy.obj
+nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/arch-x86-kernel-cpu-percpu-startup-assembly-private-entry.obj	{repo}/arch/x86/kernel/cpu/percpu/startup/assembly/private/entry.asm	-DKERNEL_AP_SERVICE=1
+nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/arch-x86-kernel-cpu-percpu-startup-assembly-private-resume.obj	{repo}/arch/x86/kernel/cpu/percpu/startup/assembly/private/resume.asm	-DKERNEL_AP_SERVICE=1
+nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/arch-x86-kernel-cpu-percpu-admission-assembly-entry-bridge.obj	{repo}/arch/x86/kernel/cpu/percpu/admission/assembly/entry/bridge.asm	-DKERNEL_AP_SERVICE=1
+c	arch/x86/kernel/cpu/percpu/service/wait.c
+c	arch/x86/kernel/cpu/percpu/service/native/runtime.c
+c	arch/x86/kernel/cpu/percpu/service/native/transport.c
+c	arch/x86/kernel/scheduler/remote/scope.c
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	no-vectorize-loops	-C	no-vectorize-slp	{repo}/arch/x86/kernel/cpu/percpu/service/rust/mailbox/api.rs	-o	{out}/ipi-mailbox.obj
+nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/ipi-entry-interrupt.obj	{repo}/arch/x86/kernel/cpu/percpu/service/assembly/entry/interrupt.asm
+nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/ipi-runtime-idle.obj	{repo}/arch/x86/kernel/cpu/percpu/service/assembly/runtime/idle.asm
+c	arch/x86/kernel/cpu/percpu/startup/entry.c
+c	arch/x86/kernel/cpu/percpu/startup/blob/package.c
+c	arch/x86/kernel/cpu/percpu/startup/installation/install.c
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	no-vectorize-loops	-C	no-vectorize-slp	-D	warnings	{repo}/arch/x86/kernel/cpu/percpu/startup/rust/protocol/api.rs	-o	{out}/ap-startup-protocol.obj
+c	arch/x86/kernel/cpu/percpu/startup/commit/commit.c
+c	arch/x86/kernel/cpu/percpu/startup/commit/native.c

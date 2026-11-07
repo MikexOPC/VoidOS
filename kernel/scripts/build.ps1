@@ -11,32 +11,47 @@ param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-h
     [ValidateSet('none','execute','unmapped','guard-low','guard-high')][string]$TestWindowFault = 'none',
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
-    [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none')
+    [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none',
+    [switch]$PlanOnly)
 . (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
-Assert-LayoutCopies
+if (!$PlanOnly) { Assert-LayoutCopies }
 $ErrorActionPreference = 'Stop'
+$boundBuildOptions = @($PSBoundParameters.Keys | Where-Object { $_ -ne 'PlanOnly' })
 . (Join-Path $PSScriptRoot 'build/profiles.ps1')
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-. (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
-if (!$ToolchainBin) {
+if ($PlanOnly) {
+    foreach ($key in $boundBuildOptions) {
+        if ($key -notin @('TestSchedulerPeriodic','TestApService')) { throw 'Unsupported plan-only options.' }
+    }
+    if ($TestApService -notin @('none','ap-timer')) { throw 'Unsupported plan-only options.' }
+    . (Join-Path $PSScriptRoot 'build/plan-only.ps1')
+} else {
+    . (Join-Path $project 'arch/x86/boot/uefi/scripts/status.ps1')
+}
+if (!$PlanOnly -and !$ToolchainBin) {
     $version = Get-ChildItem 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC' -Directory |
         Sort-Object Name -Descending | Select-Object -First 1
     $ToolchainBin = Join-Path $version.FullName 'bin/Hostx64/x64'
 }
-$output = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $project 'kernel/build' }
-New-Item -ItemType Directory -Force -Path $output | Out-Null
+if (!$PlanOnly) {
+    $output = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $project 'kernel/build' }
+    New-Item -ItemType Directory -Force -Path $output | Out-Null
+}
 
 # ====== ogni compilazione deve terminare senza errori ===== #
 
 function Invoke-Compiler([string]$program, [string[]]$arguments) {
+    if ($PlanOnly) { Write-PlanCommand $program $arguments; return }
     & $program @arguments
     if ($LASTEXITCODE -ne 0) { throw "Compilazione fallita: $program" }
 }
-Write-BootSection 'kernel autonomo C e Rust'
-$sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory |
-    Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt/stddef.h') } |
-    Sort-Object Name -Descending | Select-Object -First 1
-if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
+if (!$PlanOnly) {
+    Write-BootSection 'kernel autonomo C e Rust'
+    $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt/stddef.h') } |
+        Sort-Object Name -Descending | Select-Object -First 1
+    if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
+}
 . (Join-Path $PSScriptRoot 'build/profiles/flags.ps1')
 $flags += '/DKERNEL_PANIC_RUNTIME=1'
 if ($TestApTransition -ne 'none') {
@@ -381,6 +396,11 @@ $linkArguments = @('/nologo','/machine:x64','/subsystem:native',
     ('/out:' + $output + '/kernel.exe'),('/map:' + $output + '/kernel.map'),($output + '/io.obj'),($output + '/validation.obj'),($output + '/window-layout.obj'),
     ($output + '/object-bounds.obj')) + $objects
 $linkResponse = Join-Path $output 'kernel.link.rsp'
+if ($PlanOnly) {
+    Write-PlanCommand 'link.exe' $linkArguments
+    Write-PlanCommand 'convert-image.ps1' @('-Image', ($output + '/kernel.exe'), '-Output', ($output + '/kernel.elf'))
+    return
+}
 Set-Content -LiteralPath $linkResponse -Encoding ascii -Value ($linkArguments | ForEach-Object { '"' + $_ + '"' })
 Invoke-Compiler (Join-Path $ToolchainBin 'link.exe') @('@' + $linkResponse)
 & (Join-Path $PSScriptRoot 'convert-image.ps1') -Image ($output + '/kernel.exe') -Output ($output + '/kernel.elf')
