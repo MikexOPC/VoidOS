@@ -139,3 +139,9 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   Rust, limiti della Table 2, Key/V azzerati. Suite `security`: 9 test con
   480 vettori ufficiali NIST CAVP. Aperto: sorgente x86 e canary, dopo K4-C5.
   Dettagli in [drbg.md](../../lib/security/random/drbg/documentation/drbg.md).
+- **2026-11-07 — progetto della sorgente x86.** Fonti verificate (guida
+  Intel DRNG, CPUID, QEMU TCG `-cpu max` con RDRAND/RDSEED). Decisioni:
+  CPU accreditata (RDSEED, RDRAND di riserva) piu jitter RDTSC e interrupt
+  non accreditati, Rust con intrinsic, arresto con diagnostica se manca
+  entropia valida. Codice dopo K4-C5. Dettagli in
+  [security-entropy.md](../design/security-entropy.md).
