@@ -3,8 +3,15 @@
 #include "../console/profile.h"
 #include "../pixels/session.h"
 #include "kernel/mm/physical/holdings.h"
-// G5 V3: pages held for the session by registered owners (kernel/mm/physical/holdings).
-#define HELD_PAGES kernel_holdings_total()
+// ====== budget_matches ======
+
+static int budget_matches(const X86_FB_MAPPING *owner, const X86_PAGING_INVENTORY *inventory, BOOT_U64 pages)
+{
+    BOOT_U64 mapped = (BOOT_U64)owner->Allocated + pages + (inventory->Gpu.Ready == 1 ? X86_GPU_TABLES : 0);
+    BOOT_U64 held = kernel_holdings_total();
+    return held != UINT64_MAX && mapped <= owner->Budget && held <= owner->Budget - mapped &&
+        kernel_physical_budget_matches(owner->Window->Pool, owner->Budget - mapped - held);
+}
 
 // ====== prepare ======
 
@@ -14,12 +21,9 @@ static int prepare(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected, BOOT_U
     if (!owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 || owner->Published != 1 ||
         !owner->Context || !owner->Window || !owner->Window->Pool || !(original = owner->Inventory) ||
         owner->Allocated < 3 || owner->Allocated > X86_PAGING_VIDEO_TABLES) return 0;
-    // GPU register tables and, with V2b, the pages of the persistent translated GPU session.
-    BOOT_U64 device = (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0) + HELD_PAGES;
     *pages = x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root);
     if (original->Gpu.Ready > 1 || !*pages || *pages > 128 || *pages % 16 ||
-        owner->Budget < owner->Allocated + *pages + device ||
-        !kernel_physical_budget_matches(owner->Window->Pool, owner->Budget - owner->Allocated - *pages - device) ||
+        !budget_matches(owner, original, *pages) ||
         original->LeafPages > UINT64_MAX - *pages || original->RamPages > UINT64_MAX - *pages) return 0;
     *expected = *original;
     expected->LeafPages += *pages;
@@ -49,8 +53,7 @@ int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 r
         x86_fb_group_caret(owner, column, row, scalars, count, foreground, background, ticks, caret);
     owner->Inventory = original;
     return result && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
-        kernel_physical_budget_matches(owner->Window->Pool, owner->Budget - owner->Allocated - pages -
-            (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0) - HELD_PAGES);
+        budget_matches(owner, original, pages);
 }
 
 // ====== x86_fb_live_audit ======
@@ -69,8 +72,7 @@ int x86_fb_live_audit(X86_FB_MAPPING *owner)
     int audited = x86_fb_audit(owner);
     owner->Inventory = original;
     return audited && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
-        kernel_physical_budget_matches(owner->Window->Pool, owner->Budget - owner->Allocated - pages -
-            (original->Gpu.Ready == 1 ? X86_GPU_TABLES : 0) - HELD_PAGES);
+        budget_matches(owner, original, pages);
 }
 
 // ====== x86_fb_live_group_caret ======

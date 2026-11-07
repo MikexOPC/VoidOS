@@ -4,9 +4,9 @@
 raccolto durante le review e lo sviluppo di K4. Lo stato verificato resta
 in [status.md](../status.md); qui c'è cosa manca e perché.
 
-Aggiornamento del 7 novembre 2026. C5 è chiusa con `ap 1000` su AP1
-nella shell ordinaria e `v2c` passato 10/10. Il prossimo lavoro è C6,
-poi K5 e K6. Le voci su C4 descrivono il checkpoint diagnostico.
+Aggiornamento del 7 novembre 2026. C6 ha chiuso la validazione di K4
+in QEMU, con stress SMP, audit G5 e soak VirtIO/VT-d. Il prossimo
+blocco tecnico è K5. Le voci su C4 descrivono il checkpoint diagnostico.
 L'utente ha scelto di svolgere il consolidamento iniziale della sicurezza
 dopo i punti K e prima della GUI: vedere
 [ordine concordato](security-plan.md#ordine-concordato--6-novembre-2026).
@@ -42,9 +42,9 @@ SKILL.md e REVIEW_INSTRUCTION.md:
 | K4-C3, preemption periodica BSP | Verificata nel diagnostico | vedi validazione K4-C |
 | K4-C4, dispatcher AP | Chiusa per il backend diagnostico | vedi validazione K4-C |
 | K4-C5, driver sul BSP e comando `ap` | Chiusa, `v2c` 10/10 | vedi validazione K4-C |
-| K4-C6, chiusura finale | Da fare | — |
+| K4-C6, chiusura finale | Validata in QEMU, `v2c` 10/10 più soak | vedi validazione K4-C |
 
-Nessun push: la regola git lo prevede alla chiusura di tutta K4.
+La pubblicazione di K4 segue la validazione finale.
 Il primo commit di K4-B (fa35474) contiene per errore anche l'aggiunta di
 `release-missing-ack` ai profili di `build.ps1`; si può spostare con un
 rebase prima del push.
@@ -86,8 +86,10 @@ usa ancora solo la CPU 0 fino a C4.
    risultato e chiude il canale prima di lasciare il dispatcher.
    La [validazione K4-C](../../kernel/scheduler/documentation/k4c-validation.md)
    registra `v2c` 10/10, le regressioni e la prova con una sola CPU.
-3. **C6, chiusura di K4.** Stress su 4 CPU, audit G5, accounting,
-   regressioni, console VirtIO/VT-d. Poi aggiornamento di status.md e push.
+3. **C6, chiusura di K4.** Stress su quattro AP e BSP supervisore, prova
+   concorrente a quattro CPU, audit G5, regressioni e console VirtIO/VT-d
+   completati. La [validazione K4-C](../../kernel/scheduler/documentation/k4c-validation.md#k4-c6--stress-smp-e-audit-g5-7-novembre-2026)
+   contiene i risultati e gli hash delle immagini.
 
 ## Punti aperti dalle review
 

@@ -55,6 +55,21 @@ Flush medio V2c, 10 boot per misura:
   worker resta bloccato per quella durata quando è inattivo; nelle prove non c'è stata nessuna
   perdita PS/2. Ridurre questo blocco è il compito dell'audit incrementale (V1-C).
 
+## Audit K4-C6
+
+Nel profilo attuale il BSP possiede le modifiche alle mappature e la
+contabilità della console. Il dispatcher BSP mappa e revoca gli stack.
+Gli AP eseguono task fidati e servono le richieste di flush del loro CR3.
+Il riuso dei frame condivisi attende gli ACK di tutti gli AP. Il contatore
+del paging usato dalla console resta sotto l'ownership del BSP. Le letture
+di generazione e budget dell'allocatore passano dal suo lock.
+
+Il gruppo video controlla separatamente pagine mappate e pagine dei
+detentori, prima e dopo l'operazione. Un registro dei detentori invalido
+restituisce `UINT64_MAX` e fa fallire il controllo prima della sottrazione.
+Il test host riproduce un budget che il vecchio overflow faceva apparire
+corretto con il mapping GPU attivo.
+
 ## Limiti dichiarati
 
 - L'audit gira solo quando il worker della console si sveglia, cioè con input o disegno in corso.

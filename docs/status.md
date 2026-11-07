@@ -23,8 +23,16 @@ La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 raccoglie lo stack dopo la quiescenza e chiude il canale durante `exit`.
 `v2c` ha superato 10 boot consecutivi con quattro CPU, VirtIO e VT-d.
 Con una sola CPU la shell resta operativa e il comando AP viene respinto.
-La chiusura di K4 passa a C6 per stress, audit G5 e regressioni finali.
 Prove in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
+
+## K4-C6 completata — stress e audit G5
+
+Lo stress SMP e i casi di quiescenza incompleta hanno superato 40 prove
+QEMU, inclusi 20 arresti attesi con gli stack ancora pinnati. L'audit G5
+rifiuta un registro dei detentori invalido prima di calcolare il budget.
+La build finale ha passato `v2c` 10/10 e un soak VirtIO/VT-d da 301 s.
+Il prossimo blocco tecnico è K5.
+Prove in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md#k4-c6--stress-smp-e-audit-g5-7-novembre-2026).
 
 ## K4-C4 completata: dispatcher AP per task fidati
 

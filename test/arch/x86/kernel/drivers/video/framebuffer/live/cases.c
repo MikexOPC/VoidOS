@@ -127,6 +127,11 @@ int main(void)
     CHECK(kernel_holdings_update(&session, 7) && x86_fb_live_audit(&owner));
     CHECK(!kernel_holdings_register(&session, 1) && kernel_holdings_unregister(&session) && !kernel_holdings_unregister(&session));
     CHECK(kernel_holdings_total() == 0 && !x86_fb_live_audit(&owner));
+    setup(48); inventory.Gpu.Ready = 1; pool.FreePages -= X86_GPU_TABLES - 1;
+    CHECK(kernel_holdings_register(&session, 7));
+    session.Self = 0;
+    CHECK(kernel_holdings_total() == UINT64_MAX && !x86_fb_live_audit(&owner) && !run() && !calls);
+    CHECK(kernel_holdings_unregister(&session));
     printf("PASS live group: %u checks; authority/CPU/paging MOCK; scoped snapshot restored\n", checks);
     return 0;
 }
