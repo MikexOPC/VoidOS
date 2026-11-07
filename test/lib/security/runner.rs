@@ -11,7 +11,7 @@ struct Module {
     test   : &'static str,
 }
 
-const MODULES: [Module; 5] = [
+const MODULES: [Module; 6] = [
     Module {
         name   : "bounds",
         source : "lib/security/bounds/rust/bounds.rs",
@@ -36,6 +36,11 @@ const MODULES: [Module; 5] = [
         name   : "hmac",
         source : "lib/security/mac/hmac/rust/hmac.rs",
         test   : "test/lib/security/mac/hmac/rust/hmac_test.rs",
+    },
+    Module {
+        name   : "drbg",
+        source : "lib/security/random/drbg/rust/drbg.rs",
+        test   : "test/lib/security/random/drbg/rust/drbg_test.rs",
     },
 ];
 

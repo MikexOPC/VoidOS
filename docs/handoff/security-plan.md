@@ -1,6 +1,6 @@
 # Piano sicurezza dei sottosistemi
 
-Stato: avviato (bounds, health test entropia, SHA-256, memory e HMAC pronti). Questo file e il punto di partenza per chi lavora sulla
+Stato: avviato (bounds, entropia, SHA-256, memory, HMAC e DRBG pronti). Questo file e il punto di partenza per chi lavora sulla
 sicurezza; va aggiornato a ogni passo.
 
 ## Ordine concordato — 6 novembre 2026
@@ -93,7 +93,7 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
 
 | # | Passo | Rischio | Motivo |
 |---|---|---|---|
-| 1 | `lib/security/entropy` + `arch/x86/security/entropy` | Alto | Base per canary e randomizzazione. **Parte comune fatta** (health test SP 800-90B); resta la sorgente RDRAND/RDSEED via CPUID |
+| 1 | `lib/security/entropy` + `arch/x86/security/entropy` | Alto | Base per canary e randomizzazione. **Parte comune fatta**: health test SP 800-90B, SHA-256, HMAC, HMAC_DRBG; resta la sorgente RDRAND/RDSEED via CPUID |
 | 2 | Stack canary del kernel | Alto | Oggi nessuna protezione sull'overflow di stack in C; richiede supporto `/GS` freestanding o canary propri |
 | 3 | W^X dell'immagine kernel | Alto | Verificare e imporre `.text` RX, `.rdata` RO+NX, dati RW+NX; test negativo su scrittura in `.text` |
 | 4 | Primitive comuni `lib/security/bounds` | Medio-alto | **Fatto per primo** (2026-11-06): non tocca hardware ne kernel, utile a tutti i passi successivi |
@@ -134,3 +134,8 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   includere. Suite `security`: 8 test, vettori RFC 4231 e confronto con
   Windows CNG. Dettagli in
   [hmac.md](../../lib/security/mac/hmac/documentation/hmac.md).
+- **2026-11-07 — `lib/security/random/drbg`.** HMAC_DRBG SHA-256 SP 800-90A
+  Rev. 1: chiude la catena software dei numeri casuali. Rust `no_std`, API
+  Rust, limiti della Table 2, Key/V azzerati. Suite `security`: 9 test con
+  480 vettori ufficiali NIST CAVP. Aperto: sorgente x86 e canary, dopo K4-C5.
+  Dettagli in [drbg.md](../../lib/security/random/drbg/documentation/drbg.md).
