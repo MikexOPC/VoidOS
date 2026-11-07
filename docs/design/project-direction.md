@@ -130,6 +130,14 @@ così ogni profilo ha una sola definizione autorevole.
 6. Eseguire i gate del profilo, poi sostituire il percorso corrispondente
    e rimuovere la logica duplicata. Ogni blocco validato riceve un commit.
 
+Pilota host sull'editor di riga, Windows x64, MSVC 19.44.35229, rustc
+1.98.1, Meson 1.12.1 e Ninja 1.13.2. Su tre esecuzioni, le mediane
+di compilazione e test sono 3,33 s con PowerShell, 3,24 s con Meson a
+freddo dopo la configurazione e 2,17 s senza modifiche. La prima
+configurazione ha una mediana separata di 7,82 s. Verificato il rebuild
+selettivo per header C, modulo Rust di test e modulo Rust di produzione.
+Le misure riguardano solo questa suite. [Comandi del pilota](../../scripts/README.md#pilota-mesonninja-per-i-test-delleditor-di-riga).
+
 ## Test rapidi con evidenze affidabili
 
 - Usare test host nel linguaggio del modulo per logica pura e casi limite.

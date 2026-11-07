@@ -64,6 +64,21 @@ Il linker riceve un file di risposta UTF-8 con BOM per conservare
 l'ordine degli oggetti e i caratteri nei percorsi.
 [Riferimento MSVC](https://learn.microsoft.com/en-us/cpp/build/reference/unicode-support-in-the-compiler-and-linker?view=msvc-170)
 
+### Pilota Meson/Ninja per i test dell'editor di riga
+
+Da una Developer PowerShell x64 per Visual Studio, con Meson 1.12.1 o
+successivo, Ninja e rustc nel PATH:
+
+```powershell
+meson setup ./kernel/build/meson-line ./test/kernel/console/line/editor
+meson test -C ./kernel/build/meson-line --print-errorlogs
+```
+
+Il pilota riusa i test Rust con ottimizzazione 0 e 2 e il test ABI C/Rust
+con AddressSanitizer. Ninja rilegge le dipendenze C e Rust prodotte dai
+compilatori e riusa gli eseguibili quando gli input non cambiano. Il
+runner PowerShell resta il percorso standard per la suite PS/2 completa.
+
 `qemu.ps1` richiede PowerShell 7; il runner host lo cerca per le suite.
 Gli script di build dipendono dalla toolchain prevista dal componente.
 Per dettagli sui test vedere [test/README.md](../test/README.md).
