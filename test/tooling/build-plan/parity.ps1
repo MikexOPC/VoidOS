@@ -71,12 +71,16 @@ function Assert-RustBuildRejected([hashtable]$Options, [string]$Expected) {
 }
 
 $unusedOutput = Join-Path $output 'must-not-be-created'
-$scopeError = 'Rust build plan requires the ordinary profile and a new OutputDirectory.'
+$scopeError = 'Rust build plan requires a supported profile and a new OutputDirectory.'
 Assert-RustBuildRejected @{} $scopeError
-Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; TestSchedulerPeriodic = $true} $scopeError
+Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; TestApService = 'ping'} $scopeError
 Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; Install = $true} $scopeError
 Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; PlanOnly = $true} $scopeError
+Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; TestSchedulerPeriodic = $true; TestApService = 'ap-timer'} `
+    'Preemption requires an isolated diagnostic profile.'
+Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; TestApService = 'ap-timer'; Ps2Input = $true} `
+    'AP service requires an isolated diagnostic profile.'
 Assert-RustBuildRejected @{OutputDirectory = $output} 'Rust build plan output already exists.'
 if (Test-Path -LiteralPath $unusedOutput) { throw 'Rejected build created an output directory.' }
-Write-Host '[ Pass ] Five opt-in build rejection cases'
+Write-Host '[ Pass ] Seven opt-in build rejection cases'
 Write-Host "[ Pass ] Plan evidence: $output"

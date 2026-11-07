@@ -16,16 +16,16 @@ param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-h
 . (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
 if (!$PlanOnly) { Assert-LayoutCopies }
 $ErrorActionPreference = 'Stop'
-$boundBuildOptions = @($PSBoundParameters.Keys | Where-Object { $_ -ne 'PlanOnly' })
+$boundBuildOptions = @($PSBoundParameters.Keys | Where-Object { $_ -notin @('PlanOnly','UseRustPlan') })
+. (Join-Path $PSScriptRoot 'build/profiles.ps1')
 if ($UseRustPlan) {
-    if ($PlanOnly -or !$OutputDirectory -or
-        @($boundBuildOptions | Where-Object { $_ -notin @('UseRustPlan','OutputDirectory','ToolchainBin') }).Count) {
-        throw 'Rust build plan requires the ordinary profile and a new OutputDirectory.'
+    if ($PlanOnly -or !$OutputDirectory -or $TestApService -notin @('none','ap-timer') -or
+        @($boundBuildOptions | Where-Object { $_ -notin @('TestSchedulerPeriodic','TestApService','OutputDirectory','ToolchainBin') }).Count) {
+        throw 'Rust build plan requires a supported profile and a new OutputDirectory.'
     }
     $OutputDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
     if (Test-Path -LiteralPath $OutputDirectory) { throw 'Rust build plan output already exists.' }
 }
-. (Join-Path $PSScriptRoot 'build/profiles.ps1')
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if ($PlanOnly) {
     foreach ($key in $boundBuildOptions) {
