@@ -1,4 +1,4 @@
-#                                   VoidOS
+# VoidOS
 
 ## Cos'è?
 
@@ -16,12 +16,16 @@ degli stati e Assembly per le operazioni a basso livello.
 
 La piattaforma attuale è x86-64, sviluppata su Windows e verificata con
 QEMU/OVMF. Sono presenti boot UEFI, paging, gestione della memoria,
-scheduler cooperativo sul BSP, input PS/2, shell e console grafica.
-L'avvio degli altri core è in fase di collaudo: non è ancora disponibile
-uno scheduler SMP operativo. Userspace, syscall e filesystem del kernel
-restano obiettivi futuri.
+scheduler cooperativo sul core di avvio (BSP), input PS/2, shell e console
+grafica.
 
-Per i risultati verificati e i limiti attuali consultare [docs/status.md](docs/status.md).
+La shell ordinaria può eseguire un task del kernel alla volta sul primo
+core secondario (AP1) con `ap <n>`. I driver restano sul BSP. I profili
+diagnostici verificano anche la preemption su più core. Userspace, syscall
+e filesystem del kernel restano obiettivi futuri.
+
+Per le prove e i limiti attuali, consulta lo [stato del progetto](docs/status.md).
+Le istruzioni per compilare ed eseguire i test sono nella [guida agli script](scripts/README.md).
 
 ---
 
@@ -29,16 +33,26 @@ Per i risultati verificati e i limiti attuali consultare [docs/status.md](docs/s
 
 | Cartella | Contenuto |
 |---|---|
-| `arch/` | Codice specifico della piattaforma; in `arch/x86/` si trovano bootloader UEFI, backend del kernel, paging e driver x86. |
-| `kernel/` | Servizi del kernel, memoria, scheduler, console, shell e driver comuni. |
-| `lib/` | Librerie e funzioni riutilizzabili. |
-| `test/` | Test C, Rust e di integrazione, organizzati secondo i moduli sorgenti. |
-| `scripts/` | Strumenti comuni di compilazione, test e gestione delle campagne QEMU. |
-| `docs/` | Stato del progetto, architettura, istruzioni e risultati di validazione. |
+| [`arch/`](arch/) | Codice specifico della piattaforma. `arch/x86/` contiene bootloader UEFI, backend del kernel, paging e driver x86. |
+| [`kernel/`](kernel/) | Servizi del kernel, memoria, scheduler, console, shell e driver comuni. |
+| [`lib/`](lib/) | Librerie e funzioni riutilizzabili. |
+| [`test/`](test/) | Test C, Rust e di integrazione, organizzati secondo i moduli sorgenti. |
+| [`scripts/`](scripts/) | Strumenti comuni di compilazione, test e gestione delle campagne QEMU. |
+| [`docs/`](docs/) | Stato del progetto, architettura, istruzioni e risultati di validazione. |
 
 Gli script specifici dei moduli si trovano nelle rispettive sottocartelle
 `scripts/`. Gli artefatti generati nelle directory `build/` sono esclusi
 dal versionamento.
+
+---
+
+## Librerie comuni e codice di piattaforma
+
+Le funzioni riutilizzate da più moduli vivono in [`lib/`](lib/).
+Per esempio, [`lib/security/`](lib/security/) raccoglie primitive comuni
+come SHA-256 e HMAC. Il codice che dipende dalla piattaforma vive in
+[`arch/x86/`](arch/x86/), dove [`arch/x86/mm/`](arch/x86/mm/) gestisce le
+tabelle di paging e le mappature x86.
 
 ---
 
