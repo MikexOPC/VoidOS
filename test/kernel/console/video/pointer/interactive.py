@@ -297,7 +297,24 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
             vm.command('sendkey '+key+' 20')
             vm.wait_text('PS2_KEY: ',5,count)
         vm.wait_text('SHELL_HELP:')
+        remote = None
+        if smp > 1:
+            if not vm.log().has('KERNEL_AP_TASKS_READY'): raise RuntimeError('AP task service missing with several CPUs')
+            for count,key in enumerate(['a','p','spc','1','0','0','0','ret'],11):
+                vm.command('sendkey '+key+' 20')
+                vm.wait_text('PS2_KEY: ',5,count)
+            vm.wait_text('SHELL_AP_WAITS:',30)
+            answer = vm.log()
+            remote = dict(Cpu=answer.number('SHELL_AP_CPU'),Count=answer.number('SHELL_AP_COUNT'),
+                Sum=answer.number('SHELL_AP_SUM'),Checksum=answer.number('SHELL_AP_CHECKSUM'),
+                Waits=answer.number('SHELL_AP_WAITS'))
+            check = 0xcbf29ce484222325
+            for value in range(1,1001): check = ((check ^ value) * 0x100000001b3) & (2**64 - 1)
+            if remote != dict(remote,Cpu=1,Count=1000,Sum=500500,Checksum=check) or remote['Waits'] < 1:
+                raise RuntimeError('AP task result differs: '+str(remote))
         log = exit_input(vm)
+        if remote is not None and (not log.has('KERNEL_AP_TASKS_CLEAN') or log.number('KERNEL_AP_TASK_JOBS') != 1):
+            raise RuntimeError('AP task session cleanup missing')
         for marker in ['KERNEL_POINTER_CLEAN','KERNEL_CONSOLE_SHELL_CLEAN','KERNEL_CONSOLE_REQUESTS_CLEAN',
             'KERNEL_PS2_MOUSE_CLEANUP_OK','KERNEL_PS2_INPUT_CLEANUP_OK','KERNEL_INPUT_TASKS_COLLECTED']:
             if not log.has(marker): raise RuntimeError('Missing '+marker)
@@ -320,7 +337,8 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
             raise RuntimeError('Physical allocation budget not restored')
         if 'Servicing hardware INT=0x42' not in mouse_trace.read_text(errors='replace'):
             raise RuntimeError('Missing hardware mouse IRQ evidence')
-        ap_state = (load('console_ap_runtime','test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py').attest_console(vm,log,smp)
+        ap_state = (load('console_ap_runtime','test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py').attest_console(
+            vm,log,smp,worker_cpu=remote['Cpu'] if remote is not None else None)
             if log.has('KERNEL_AP_RUNTIME_READY') or log.has('KERNEL_AP_RUNTIME_BSP_ONLY') else None)
         vm.command('quit')
         vm.process.wait(timeout=5)
@@ -334,7 +352,7 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
             if after_flush <= before_flush:
                 raise RuntimeError('VirtIO teardown released CPU mappings without AP shootdown')
             translation = dict(translation or {}, Shootdowns=after_flush - before_flush)
-        return dict(ConfiguredVcpus=smp,OsCpusReady=ap_state['OsCpusInitialized'] if ap_state else 1,ApRuntime=ap_state,Soak=soak,Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
+        return dict(ConfiguredVcpus=smp,OsCpusReady=ap_state['OsCpusInitialized'] if ap_state else 1,ApRuntime=ap_state,ApTask=remote,Soak=soak,Profile=profile_check(log),Translation=translation,Commands=600,Syncs=syncs,Scenes=12,Captures=captures,PhysicalPixels=324,
             EscCancelled=True,EscMouseProgress=True,CancelScenes=1,
             DrainSeconds=latencies,BudgetBefore=before,BudgetAfter=before,
             Flushes=log.number('KERNEL_CONSOLE_FLUSHES'),

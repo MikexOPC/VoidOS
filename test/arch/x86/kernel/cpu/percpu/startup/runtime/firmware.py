@@ -72,7 +72,9 @@ def transition_memory(vm, log, root, pool, live, pins):
 
 # ====== verify ======
 
-def verify(vm, log, count, panic=False, reason=None):
+def verify(vm, log, count, panic=False, reason=None, worker_cpu=None):
+    if worker_cpu is not None and (panic or not 0 < worker_cpu < count):
+        raise RuntimeError("Invalid AP task CPU for ordinary runtime attestation")
     failures = ["KERNEL_SMP_PANIC"] if panic else []
     if log.failures() != failures or log.count("KERNEL_READY", "OK") != int(not panic):
         raise RuntimeError("Ordinary boot did not complete cleanly")
@@ -112,13 +114,17 @@ def verify(vm, log, count, panic=False, reason=None):
         for index in range(1, count):
             address = first + (index - 1) * 448
             local = cpu.memory(vm, address, 56)
-            if local[0] != address or local[2] != index | (2 << 32) or local[4] != 1 or local[6] or any(local[7:]):
+            used = index == worker_cpu
+            token_valid = local[4] > 1 if used else local[4] == 1
+            if (local[0] != address or local[2] != index | (2 << 32) or
+                local[3] != address + 24 or not token_valid or local[6] or any(local[7:])):
                 raise RuntimeError("Private parked AP context changed")
     if panic:
         verify_panic(vm, log, count, root, texts, reason)
     for index, text in enumerate(texts):
         (vm.directory / f"runtime-cpu-{index}.txt").write_text(text, encoding="utf-8")
-    return dict(ConfiguredVcpus=count, OsCpusInitialized=count, ParkedAps=count - 1, SchedulerCpus=1, Panic=panic,
+    return dict(ConfiguredVcpus=count, OsCpusInitialized=count, ParkedAps=count - 1,
+                SchedulerCpus=1 + int(worker_cpu is not None), Panic=panic,
                 Root=hex(root), FreePages=free, Arena=arena)
 
 
@@ -166,13 +172,13 @@ def verify_panic(vm, log, count, root, texts, expected_reason=None):
 
 # ====== attest_console ======
 
-def attest_console(vm, log, count):
+def attest_console(vm, log, count, worker_cpu=None):
     deadline = time.monotonic() + 2
     while "HLT=1" not in launch.registers(vm, 0):
         if time.monotonic() >= deadline:
             raise TimeoutError("Console cleanup did not reach BSP terminal")
     vm.command("stop")
-    return verify(vm, log, count)
+    return verify(vm, log, count, worker_cpu=worker_cpu)
 
 
 # ====== main ======

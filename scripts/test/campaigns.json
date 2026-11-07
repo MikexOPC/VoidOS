@@ -354,7 +354,7 @@
       ],
       "boots": 10,
       "smoke": 1,
-      "summary": "console through translated VirtIO GPU, four configured CPUs with AP resources inactive"
+      "summary": "console through translated VirtIO GPU, AP1 shell job and four-CPU cleanup"
     },
     "fallback": {
       "heavy": true,

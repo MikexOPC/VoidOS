@@ -16,7 +16,7 @@ int xcn_icr_low(uint32_t command);
 int xcn_prepare(uint64_t token);
 int xcn_send(uint32_t producer);
 int xcn_poll(void);
-int xcn_close(int queue_empty);
+int xcn_close(int queue_empty, int producers_quiet);
 int xcn_release_allowed(void);
 uint64_t kernel_console_ap_notify(uint32_t operation, uint32_t cpu, uint64_t token,
     uint32_t producer, uint64_t value);

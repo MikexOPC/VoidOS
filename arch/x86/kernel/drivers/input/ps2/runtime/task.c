@@ -3,6 +3,9 @@
 #include "kernel/input/keyboard/text.h"
 #include "kernel/scheduler/payload.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
+#ifdef KERNEL_AP_TASKS
+#include "arch/x86/kernel/scheduler/remote/remote.h"
+#endif
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
 #include "kernel/diagnostics/log.h"
 #include "../shell/task.h"
@@ -135,5 +138,8 @@ int x86_ps2_idle(void)
     if (!owner->Active || owner->Quiet || owner->Idle == ~0U || !x86_scheduler_retained_valid()) return idle_failure(1);
     if (!x86_watchdog_idle(&owner->Ready)) return idle_failure(2);
     ++owner->Idle;
+#ifdef KERNEL_AP_TASKS
+    x86_remote_service();
+#endif
     return kernel_scheduler_irq_drain().reply.status == KERNEL_SCHEDULER_OK ? 1 : idle_failure(3);
 }

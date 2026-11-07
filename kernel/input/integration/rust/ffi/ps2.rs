@@ -49,6 +49,13 @@ pub extern "C" fn kernel_ps2_shell_classify(word: u64, length: u32, arguments: u
     command::classify(word, length, arguments)
 }
 
+// ====== kernel_ps2_shell_count ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_ps2_shell_count(word: u64, length: u32) -> u64 {
+    command::count(word, length)
+}
+
 // ====== kernel_ps2_queue_plan ======
 
 #[unsafe(no_mangle)]

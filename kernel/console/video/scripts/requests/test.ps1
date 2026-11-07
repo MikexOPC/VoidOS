@@ -81,7 +81,7 @@ try {
             "$project/arch/x86/kernel/interrupts/apic/icr/icr.c",
             "$project/test/kernel/console/video/requests/notify_native.c", "/Fe$out/notify-native-$case.exe") +
             $defines + @('/link',"$out/requests-release.lib",'/incremental:no','/DEBUG','/WX'))
-        foreach ($mode in @('0','1','2','3','4')) { Invoke-Checked "$out/notify-native-$case.exe" @($mode) }
+        foreach ($mode in @('0','1','2','3','4','5')) { Invoke-Checked "$out/notify-native-$case.exe" @($mode) }
     }
     foreach ($profile in @('keyboard','mouse')) {
         $profileFlags = if ($profile -eq 'mouse') { @('/DKERNEL_PS2_MOUSE=1') } else { @() }

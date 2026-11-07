@@ -1,4 +1,4 @@
-# Stato corrente — 5 novembre 2026
+# Stato corrente — 7 novembre 2026
 
 Questo è il riferimento breve. I checkpoint storici conservano le prove
 relative alle proprie immagini; non certificano automaticamente la working tree.
@@ -12,9 +12,19 @@ Scheduler cooperativo BSP con stack reali; tastiera e mouse PS/2, shell,
 console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
 Un diagnostico esegue otto task su AP1/AP2/AP3/AP4, sospesi dal timer senza yield
 durante la fase misurata, con IRQ PING/flush attivi;
-nel boot ordinario lo scheduler resta sul BSP. Mancano processi utente,
+la shell ordinaria può inviare un job fidato alla volta ad AP1 con `ap <n>`.
+I driver restano sul BSP. Mancano processi utente,
 syscall, VFS e driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
+
+## K4-C5 completata — job AP1 dalla shell
+
+`ap 1000` esegue il calcolo su AP1 e risveglia la shell sul BSP. Il BSP
+raccoglie lo stack dopo la quiescenza e chiude il canale durante `exit`.
+`v2c` ha superato 10 boot consecutivi con quattro CPU, VirtIO e VT-d.
+Con una sola CPU la shell resta operativa e il comando AP viene respinto.
+La chiusura di K4 passa a C6 per stress, audit G5 e regressioni finali.
+Prove in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
 
 ## K4-C4 completata: dispatcher AP per task fidati
 
@@ -31,9 +41,8 @@ con tutte le 128 pagine ancora vive e pinned. Non simula un AP bloccato.
 Core Rust verificato con 46 test debug/release, host C/ASan e stress.
 Campagna definitiva: 50 boot positivi e 20 negativi previsti, separati.
 
-C4 è chiusa per il backend diagnostico con task kernel fidati; il boot
-ordinario resta sul BSP e non c'è migrazione. K4 resta aperta per C5
-(driver sicuri su più CPU) e C6 (audit G5, integrazione e chiusura finale).
+C4 è chiusa per il backend diagnostico con task kernel fidati e
+affinità fissa. Il profilo ordinario ha il percorso AP1 descritto in C5.
 Prove e limiti in [validazione K4-C](../kernel/scheduler/documentation/k4c-validation.md).
 
 ## K4-B: shootdown TLB prima di ogni riuso

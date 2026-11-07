@@ -94,6 +94,8 @@ if ($TestApResourceFault -ne 'none') {
 
 $ApRuntime = $TestApTransition -eq 'none' -and $TestSmpPanic -eq 'none' -and !$TestApCommit -and !$TestBootstrapMemory
 if ($ApRuntime) { $flags += '/DKERNEL_AP_RUNTIME=1' }
+$ApTasks = $ApRuntime -and $ConsoleShell -and $Ps2Input -and $TestApService -eq 'none'
+if ($ApTasks) { $flags += '/DKERNEL_AP_TASKS=1' }
 if ($TestApService -ne 'none') {
     if (!$ApRuntime) { throw 'AP service requires ordinary AP admission.' }
     $serviceMode = switch ($TestApService) { 'ping' {1} 'missing-ack' {2} 'stale-ack' {3} 'panic-idle' {4} 'panic-handler' {5} 'release-missing-ack' {6} 'ap-timer' {7} 'admission' {8} 'ap-batch' {9} 'ap-batch-rollback' {9} 'ap-preempt' {9} 'ap-concurrent' {9} 'ap-concurrent-stress' {9} 'ap-concurrent-incomplete' {9} 'ap-four' {9} 'ap-four-incomplete' {9} 'ap-console' {9} 'ap-console-incomplete' {9} 'ap-console-ipi' {9} 'ap-console-ipi-no-ack' {9} 'ap-console-ipi-inflight' {9} }
