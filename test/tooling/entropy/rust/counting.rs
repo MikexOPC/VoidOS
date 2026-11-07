@@ -1,5 +1,5 @@
 use crate::statistics::upper_bound;
-use crate::suffix::tuple_profile;
+use crate::suffix::{TupleProfile, tuple_profile};
 
 // ====== most common value (6.3.1) ======
 
@@ -16,9 +16,7 @@ pub fn most_common_value(symbols: &[u8]) -> f64 {
 
 pub const TUPLE_CUTOFF: usize = 35;
 
-pub fn t_tuple_with(symbols: &[u8], cutoff: usize) -> Option<f64> {
-    let length = symbols.len();
-    let profile = tuple_profile(symbols);
+pub fn t_tuple_from(profile: &TupleProfile, length: usize, cutoff: usize) -> Option<f64> {
     let mut best = None::<f64>;
     for (size, most) in profile.most.iter().enumerate().skip(1) {
         if *most < cutoff {
@@ -31,19 +29,13 @@ pub fn t_tuple_with(symbols: &[u8], cutoff: usize) -> Option<f64> {
     best.map(|proportion| -upper_bound(proportion, length).log2())
 }
 
-pub fn t_tuple(symbols: &[u8]) -> Option<f64> {
-    t_tuple_with(symbols, TUPLE_CUTOFF)
-}
-
 // ====== longest repeated substring (6.3.6) ======
 
 fn pairs(count: f64) -> f64 {
     count * (count - 1.0) / 2.0
 }
 
-pub fn lrs_with(symbols: &[u8], cutoff: usize) -> Option<f64> {
-    let length = symbols.len();
-    let profile = tuple_profile(symbols);
+pub fn lrs_from(profile: &TupleProfile, length: usize, cutoff: usize) -> Option<f64> {
     let start = profile.most.iter().enumerate().skip(1).find(|(_, most)| **most < cutoff).map(|(size, _)| size)?;
     let longest = profile.most.iter().rposition(|most| *most >= 2)?;
     let mut best = None::<f64>;
@@ -55,6 +47,9 @@ pub fn lrs_with(symbols: &[u8], cutoff: usize) -> Option<f64> {
     best.map(|proportion| -upper_bound(proportion, length).log2())
 }
 
-pub fn lrs(symbols: &[u8]) -> Option<f64> {
-    lrs_with(symbols, TUPLE_CUTOFF)
+// ====== tuples ======
+
+pub fn tuples(symbols: &[u8]) -> (Option<f64>, Option<f64>) {
+    let profile = tuple_profile(symbols);
+    (t_tuple_from(&profile, symbols.len(), TUPLE_CUTOFF), lrs_from(&profile, symbols.len(), TUPLE_CUTOFF))
 }

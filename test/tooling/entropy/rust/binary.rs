@@ -86,16 +86,16 @@ pub fn markov(bits: &[u8]) -> f64 {
 pub const COMPRESSION_BLOCK      : usize = 6;
 pub const COMPRESSION_DICTIONARY : usize = 1000;
 
-fn compression_expectation(z: f64, dictionary: usize, blocks: usize, tests: usize) -> f64 {
+fn compression_expectation(z: f64, dictionary: usize, logarithms: &[f64], tests: usize) -> f64 {
     let miss = 1.0 - z;
     let mut prefix = 0.0;
     let mut power = 1.0;
     let mut total = 0.0;
-    for t in 1..=blocks {
-        if t > dictionary {
-            total += z * z * prefix + z * power * (t as f64).log2();
+    for (index, logarithm) in logarithms.iter().enumerate() {
+        if index >= dictionary {
+            total += z * z * prefix + z * power * logarithm;
         }
-        prefix += (t as f64).log2() * power;
+        prefix += logarithm * power;
         power *= miss;
     }
     total / tests as f64
@@ -132,9 +132,10 @@ pub fn compression_with(bits: &[u8], dictionary: usize) -> f64 {
     let deviation = 0.5907 * (squares / (count - 1.0) - mean * mean).sqrt();
     let lower = mean - Z_99 * deviation / count.sqrt();
     let others = ((1 << COMPRESSION_BLOCK) - 1) as f64;
+    let table: Vec<f64> = (1..=blocks).map(|t| (t as f64).log2()).collect();
     let expectation = |p: f64| {
         let q = (1.0 - p) / others;
-        compression_expectation(p, dictionary, blocks, tests) + others * compression_expectation(q, dictionary, blocks, tests)
+        compression_expectation(p, dictionary, &table, tests) + others * compression_expectation(q, dictionary, &table, tests)
     };
     let floor = 2f64.powi(-(COMPRESSION_BLOCK as i32));
     match bisect_decreasing(expectation, lower, floor, 1.0) {

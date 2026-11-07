@@ -150,3 +150,7 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   §3.1.3. Suite `security` (modulo `assessment`): 19 test con tutti gli
   esempi ufficiali e la Table 3. Servira ad accreditare jitter e interrupt.
   Dettagli in [entropy.md](../../test/tooling/entropy/documentation/entropy.md).
+- **2026-11-07 — confronto con lo strumento NIST.** Lo strumento di stima
+  coincide con il riferimento NIST (`ea_non_iid`) su 105 valori di 7 dataset;
+  z al quantile esatto come NIST. Test differenziale permanente con i valori
+  NIST salvati. Restano aperti test IID e test di riavvio.

@@ -1,5 +1,5 @@
 use crate::binary::{collision, compression, markov};
-use crate::counting::{lrs, most_common_value, t_tuple};
+use crate::counting::{most_common_value, tuples};
 use crate::predictors::{lag, lz78y, multi_mcw, multi_mmc};
 
 // ====== stime per un insieme di dati ======
@@ -19,8 +19,9 @@ pub fn non_iid(symbols: &[u8], binary: bool) -> Vec<Estimate> {
         estimates.push(Estimate { name: "markov", value: Some(markov(symbols)) });
         estimates.push(Estimate { name: "compression", value: Some(compression(symbols)) });
     }
-    estimates.push(Estimate { name: "t-tuple", value: t_tuple(symbols) });
-    estimates.push(Estimate { name: "lrs", value: lrs(symbols) });
+    let (t_tuple, lrs) = tuples(symbols);
+    estimates.push(Estimate { name: "t-tuple", value: t_tuple });
+    estimates.push(Estimate { name: "lrs", value: lrs });
     estimates.push(Estimate { name: "multi mcw", value: Some(multi_mcw(symbols)) });
     estimates.push(Estimate { name: "lag", value: Some(lag(symbols)) });
     estimates.push(Estimate { name: "multi mmc", value: Some(multi_mmc(symbols)) });

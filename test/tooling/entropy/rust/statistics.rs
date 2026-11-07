@@ -1,7 +1,7 @@
 // ====== costanti SP 800-90B ======
 
-pub const Z_99         : f64 = 2.576;
-pub const SEARCH_STEPS : u32 = 200;
+pub const Z_99         : f64 = 2.575_829_303_548_901;
+pub const SEARCH_STEPS : u32 = 100;
 
 // ====== upper_bound ======
 

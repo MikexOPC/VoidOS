@@ -43,19 +43,28 @@ Scelte di implementazione:
   lunghezze in O(L log L); il conteggio diretto con tabelle hash diventa
   O(L³) su dati ripetitivi.
 - Predittori: l'alfabeto k e il numero di simboli diversi osservati.
+- z del 99 % = 2,5758293035489 (quantile esatto, come lo strumento NIST);
+  lo standard lo scrive arrotondato a 2,576.
 
 ## Test
 
 `scripts/test/run.ps1 -Suite security` (modulo `assessment` del driver
-`test/lib/security/runner.rs`, test in `rust/tests/`). 19 test in debug e
-release:
+`test/lib/security/runner.rs`, test in `rust/tests/`). 20 test in release, 19 in debug:
 
 - gli **esempi numerici ufficiali** di tutti e 10 gli estimatori (§6.3.1 -
   §6.3.10) e i valori intermedi dei predittori;
 - 7 valori della **Table 3** (Appendice G.2) per la prestazione locale;
 - profilo delle tuple confrontato con il conteggio diretto su 300 sequenze;
 - dati costanti (circa 0 bit), periodici (meno di 0,1), uniformi (oltre 5
-  bit su 8), catena 00…0 di Markov, pareggi di MultiMCW, bit MSB-first.
+  bit su 8), catena 00…0 di Markov, pareggi di MultiMCW, bit MSB-first;
+- **confronto con lo strumento di riferimento NIST** (solo release, circa
+  45 s): 7 dataset deterministici da 100 000 campioni (`rust/tests/datasets.rs`:
+  uniformi a 1, 2 e 8 bit, sbilanciato, correlato, periodico con rumore, a
+  deriva), 105 valori, tutti uguali entro 1,5e-6. I valori NIST sono in
+  `vectors/nist_non_iid.tsv`, con commit e opzioni usati (`-i -t`: bitstring
+  limitato a 1 000 000 di bit come qui). Lo strumento NIST e stato compilato
+  una volta con MSYS2 fuori dal repo; libdivsufsort, non disponibile, e stata
+  sostituita da un suffix array semplice che da lo stesso ordinamento.
 
 Poi clippy `-D warnings` e build del binario.
 
@@ -63,16 +72,14 @@ Prova su 1 000 000 di byte casuali (generatore di sistema): `H_original`
 fra 7,35 e 7,95 bit, risultato 6,53 bit su 8 per via di `8 × H_bitstring`
 (Compression 0,82); 28 s. Su 1 000 000 di bit casuali: 0,85 bit; 15 s.
 
-Mutazioni manuali: 13 su 17 fanno fallire la suite. Tre sono equivalenti
-(iterazioni della ricorrenza entro 1e-4, una condizione ridondante in Lag,
-Kasai senza riuso del prefisso). Resta scoperto il pareggio fra contesti di
-LZ78Y.
+Mutazioni manuali: 14 su 17 fanno fallire la suite, compreso il pareggio
+fra contesti di LZ78Y (scoperto dal confronto NIST). Le altre tre sono
+equivalenti (iterazioni della ricorrenza entro 1e-4, una condizione ridondante
+in Lag, Kasai senza riuso del prefisso).
 
 ## Limiti noti
 
 - Nell'esempio di §6.3.1 lo standard scrive −log2(0,6822): il valore
   corretto, coerente con il risultato 0,5363, e 0,6895.
-- Non c'e confronto con lo strumento di riferimento NIST (C++): gli esempi
-  ufficiali sono l'unica verifica esterna.
 - Mancano i test IID (§5) e i test di riavvio (§3.1.4): la valutazione usa
   sempre la traccia non-IID, che e la piu prudente.

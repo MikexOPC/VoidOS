@@ -14,12 +14,16 @@ fn update_scoreboard(guesses: &[Option<u8>], actual: u8, scoreboard: &mut [usize
     }
 }
 
-fn alphabet(symbols: &[u8]) -> usize {
+fn present_symbols(symbols: &[u8]) -> Vec<usize> {
     let mut present = [false; 256];
     for symbol in symbols {
         present[usize::from(*symbol)] = true;
     }
-    present.iter().filter(|seen| **seen).count()
+    (0..256).filter(|symbol| present[*symbol]).collect()
+}
+
+fn alphabet(symbols: &[u8]) -> usize {
+    present_symbols(symbols).len()
 }
 
 // ====== multi most common in window (6.3.7) ======
@@ -28,6 +32,7 @@ pub const MCW_WINDOWS: [usize; 4] = [63, 255, 1023, 4095];
 
 pub fn multi_mcw_with(symbols: &[u8], windows: [usize; 4]) -> f64 {
     let length = symbols.len();
+    let present = present_symbols(symbols);
     let mut counts = [[0usize; 256]; 4];
     let mut last_seen = [0usize; 256];
     let mut scoreboard = [0usize; 4];
@@ -50,8 +55,8 @@ pub fn multi_mcw_with(symbols: &[u8], windows: [usize; 4]) -> f64 {
         let mut frequent = [None; 4];
         for (slot, (window, count)) in frequent.iter_mut().zip(windows.iter().zip(counts.iter())) {
             if i > *window {
-                let best = (0..256usize).filter(|symbol| count[*symbol] > 0).max_by_key(|symbol| (count[*symbol], last_seen[*symbol]));
-                *slot = best.map(|symbol| symbol as u8);
+                let best = present.iter().filter(|symbol| count[**symbol] > 0).max_by_key(|symbol| (count[**symbol], last_seen[**symbol]));
+                *slot = best.map(|symbol| *symbol as u8);
             }
         }
         let actual = symbols[i - 1];
