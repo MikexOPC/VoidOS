@@ -1,6 +1,12 @@
 {
   "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
+    "k5-privilege": {
+      "summary": "BSP ring 3, expected faults and real NMI entry during GS transitions",
+      "build": ["-TestK5Privilege"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
     "ap-console": {
       "summary": "AP1 producers, BSP RAM consumer, 2000 FIFO requests, forced full queue and cleanup",
       "build": ["-TestApService", "ap-console"],
