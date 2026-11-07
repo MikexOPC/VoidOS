@@ -60,4 +60,23 @@ Assert-PlanRejected 'ap-timer-with-ps2' @{TestApService = 'ap-timer'; Ps2Input =
 Assert-PlanRejected 'unsupported-ap-ping' @{TestApService = 'ping'} `
     @('-TestApService', 'ping') 'Unsupported plan-only options.'
 Assert-PlanRejected 'unsupported-install' @{Install = $true} @('-Install') 'Unsupported plan-only options.'
+
+# ====== Assert-RustBuildRejected ======
+
+function Assert-RustBuildRejected([hashtable]$Options, [string]$Expected) {
+    $message = $null
+    try { & $build -UseRustPlan @Options | Out-Null }
+    catch { $message = $_.Exception.Message }
+    if ($message -cne $Expected) { throw "Unexpected Rust build rejection: '$message'." }
+}
+
+$unusedOutput = Join-Path $output 'must-not-be-created'
+$scopeError = 'Rust build plan requires the ordinary profile and a new OutputDirectory.'
+Assert-RustBuildRejected @{} $scopeError
+Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; TestSchedulerPeriodic = $true} $scopeError
+Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; Install = $true} $scopeError
+Assert-RustBuildRejected @{OutputDirectory = $unusedOutput; PlanOnly = $true} $scopeError
+Assert-RustBuildRejected @{OutputDirectory = $output} 'Rust build plan output already exists.'
+if (Test-Path -LiteralPath $unusedOutput) { throw 'Rejected build created an output directory.' }
+Write-Host '[ Pass ] Five opt-in build rejection cases'
 Write-Host "[ Pass ] Plan evidence: $output"

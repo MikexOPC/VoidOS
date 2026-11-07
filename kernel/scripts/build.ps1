@@ -12,11 +12,19 @@ param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-h
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none',
-    [switch]$PlanOnly)
+    [switch]$PlanOnly, [switch]$UseRustPlan)
 . (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
 if (!$PlanOnly) { Assert-LayoutCopies }
 $ErrorActionPreference = 'Stop'
 $boundBuildOptions = @($PSBoundParameters.Keys | Where-Object { $_ -ne 'PlanOnly' })
+if ($UseRustPlan) {
+    if ($PlanOnly -or !$OutputDirectory -or
+        @($boundBuildOptions | Where-Object { $_ -notin @('UseRustPlan','OutputDirectory','ToolchainBin') }).Count) {
+        throw 'Rust build plan requires the ordinary profile and a new OutputDirectory.'
+    }
+    $OutputDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
+    if (Test-Path -LiteralPath $OutputDirectory) { throw 'Rust build plan output already exists.' }
+}
 . (Join-Path $PSScriptRoot 'build/profiles.ps1')
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if ($PlanOnly) {
@@ -33,7 +41,7 @@ if (!$PlanOnly -and !$ToolchainBin) {
         Sort-Object Name -Descending | Select-Object -First 1
     $ToolchainBin = Join-Path $version.FullName 'bin/Hostx64/x64'
 }
-if (!$PlanOnly) {
+if (!$PlanOnly -and !$UseRustPlan) {
     $output = if ($OutputDirectory) { $OutputDirectory } else { Join-Path $project 'kernel/build' }
     New-Item -ItemType Directory -Force -Path $output | Out-Null
 }
@@ -45,12 +53,23 @@ function Invoke-Compiler([string]$program, [string[]]$arguments) {
     & $program @arguments
     if ($LASTEXITCODE -ne 0) { throw "Compilazione fallita: $program" }
 }
+
+# ====== Assert-ApTemplateSize ======
+
+function Assert-ApTemplateSize([string]$Path) {
+    if ((Get-Item -LiteralPath $Path).Length -ne 4096) { throw 'Invalid AP template size' }
+}
+
 if (!$PlanOnly) {
     Write-BootSection 'kernel autonomo C e Rust'
     $sdk = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/Include' -Directory |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'ucrt/stddef.h') } |
         Sort-Object Name -Descending | Select-Object -First 1
     if (!$sdk) { throw 'Header UCRT del Windows SDK assenti.' }
+}
+if ($UseRustPlan) {
+    . (Join-Path $PSScriptRoot 'build/rust-plan.ps1')
+    return
 }
 . (Join-Path $PSScriptRoot 'build/profiles/flags.ps1')
 $flags += '/DKERNEL_PANIC_RUNTIME=1'
