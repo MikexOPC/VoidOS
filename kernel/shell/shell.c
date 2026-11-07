@@ -72,6 +72,28 @@ int kernel_ps2_shell_write(const char *data, uint32_t length)
     return video_private(data, length);
 }
 
+// ====== remote_private ======
+
+static int remote_private(const char *text, uint32_t length)
+{
+    uint64_t word = 0, value, result[4] = {0};
+    for (uint32_t index = 0; index < length && index < 8; ++index)
+        word |= (uint64_t)(uint8_t)text[index] << (index * 8);
+    value = length <= 8 ? kernel_ps2_shell_count(word,length) : UINT64_MAX;
+    if (value == UINT64_MAX) return LOG(2,"SHELL_BAD_ARGUMENTS");
+#ifdef KERNEL_AP_TASKS
+    if (!kernel_shell_remote(value,result)) return LOG(2,"SHELL_AP_FAILED");
+    return TEXT("SHELL_AP_CPU: ") && number_private(result[0]) &&
+        TEXT("\nSHELL_AP_COUNT: ") && number_private(value) &&
+        TEXT("\nSHELL_AP_SUM: ") && number_private(result[1]) &&
+        TEXT("\nSHELL_AP_CHECKSUM: ") && number_private(result[2]) &&
+        TEXT("\nSHELL_AP_WAITS: ") && number_private(result[3]) && TEXT("\n");
+#else
+    (void)result;
+    return LOG(2,"SHELL_AP_UNAVAILABLE");
+#endif
+}
+
 // ====== kernel_ps2_shell_execute ======
 
 int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2_SHELL_STATUS *status)
@@ -95,7 +117,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     kind = kernel_ps2_shell_classify(word,end - start,argument != line->Length);
     if (kind == UINT32_MAX) return 0;
     if (!kind) return LOG(1,"SHELL_EMPTY");
-    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | exit");
+    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | ap <n> | exit");
     if (kind == 2) return TEXT("SHELL_ECHO: ") &&
         kernel_ps2_shell_write(line->Data + argument,line->Length - argument) && TEXT("\n");
     if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, cooperative, kernel tasks") &&
@@ -103,5 +125,6 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
         TEXT("\nSHELL_INPUT_KEYS: ") && number_private(status->Keys) &&
         TEXT("\nSHELL_INPUT_LINES: ") && number_private(status->Lines) && TEXT("\n");
     if (kind == 4) return LOG(1,"SHELL_EXIT_REQUEST") ? 2 : 0;
+    if (kind == 7) return remote_private(line->Data + argument,line->Length - argument);
     return kind == 6 ? LOG(2,"SHELL_BAD_ARGUMENTS") : LOG(2,"SHELL_UNKNOWN_COMMAND");
 }

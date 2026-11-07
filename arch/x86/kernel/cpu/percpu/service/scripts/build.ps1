@@ -11,12 +11,19 @@ if ($TestApService -ne 'none') {
 }
 if ($TestApService -eq 'ping') { $serviceSources += 'arch/x86/mm/dma/arena.c' }
 if ($TestApService -in @('admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete','ap-console','ap-console-incomplete','ap-console-ipi','ap-console-ipi-no-ack','ap-console-ipi-inflight')) {
-    $serviceDefines += '-DKERNEL_TEST_AP_ADMISSION=1'
+    $serviceDefines += '-DKERNEL_AP_ADMISSION=1'
     $serviceSources += 'arch/x86/kernel/scheduler/admission/native.c'
     if ($TestApService -eq 'admission') { $serviceSources += 'test/arch/x86/kernel/scheduler/admission/probe.c' }
     else { $serviceSources += @('arch/x86/kernel/scheduler/batch/validation.c',
         'arch/x86/kernel/scheduler/batch/runtime.c','arch/x86/kernel/scheduler/batch/work.c',
         'test/arch/x86/kernel/scheduler/batch/probe.c') }
+}
+if ($ApTasks) {
+    $serviceDefines += '-DKERNEL_AP_ADMISSION=1'
+    $serviceSources += @('arch/x86/kernel/scheduler/admission/native.c','arch/x86/kernel/scheduler/remote/remote.c',
+        'arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.c',
+        'arch/x86/kernel/drivers/video/framebuffer/console/wake/hardware.c',
+        'arch/x86/kernel/drivers/input/ps2/shell/remote.c')
 }
 if ($TestApService -in @('ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete')) {
     $serviceSources += 'arch/x86/kernel/scheduler/batch/preempt.c'

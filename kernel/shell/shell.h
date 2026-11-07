@@ -31,6 +31,8 @@ int kernel_ps2_command_closed_empty(const KERNEL_PS2_COMMAND_QUEUE *queue);
 void kernel_ps2_command_clear(KERNEL_PS2_COMMAND *command);
 uint64_t kernel_ps2_queue_plan(uint32_t state, uint32_t operation);
 uint32_t kernel_ps2_shell_classify(uint64_t word, uint32_t length, uint32_t arguments);
+uint64_t kernel_ps2_shell_count(uint64_t word, uint32_t length);
+int kernel_shell_remote(uint64_t argument, uint64_t result[4]);
 int kernel_ps2_shell_write(const char *data, uint32_t length);
 typedef int (*KERNEL_SHELL_OUTPUT)(void *context, const char *data, uint32_t length);
 int kernel_ps2_shell_output_bind(KERNEL_SHELL_OUTPUT output, void *context);

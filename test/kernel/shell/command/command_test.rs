@@ -23,10 +23,30 @@ fn bounds_and_mutated_tokens() {
         for arguments in 0..=2 {
             for word in [0,u64::MAX,0x706c6568,0x737574617473] {
                 let result = classify(word,length,arguments);
-                assert!(result <= 6 || result == u32::MAX);
+                assert!(result <= 7 || result == u32::MAX);
                 if length > 256 || arguments > 1 { assert_eq!(result,u32::MAX); }
             }
         }
     }
     for bit in 0..64 { assert_ne!(classify(0x74697865 ^ (1 << bit),4,0),4); }
+}
+
+// ====== ap_command_and_count ======
+
+#[test]
+fn ap_command_and_count() {
+    assert_eq!(classify(0x7061,2,1),7);
+    assert_eq!(classify(0x7061,2,0),6);
+    assert_eq!(classify(0x7041,2,1),5);
+    for (text, value) in [("1",1),("1000",1000),("1000000",1_000_000),("0042",42)] {
+        let word = text.bytes().enumerate().fold(0u64,|acc,(i,b)| acc | (u64::from(b) << (8 * i)));
+        assert_eq!(count(word,text.len() as u32),value);
+    }
+    for text in ["0","1000001","9999999","12a","-1"," 1"] {
+        let word = text.bytes().enumerate().fold(0u64,|acc,(i,b)| acc | (u64::from(b) << (8 * i)));
+        assert_eq!(count(word,text.len() as u32),u64::MAX);
+    }
+    assert_eq!(count(0,0),u64::MAX);
+    assert_eq!(count(0x3131,1),u64::MAX);
+    assert_eq!(count(0x3131313131313131,8),u64::MAX);
 }

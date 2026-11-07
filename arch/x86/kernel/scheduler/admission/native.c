@@ -5,6 +5,8 @@
 #include "arch/x86/kernel/stack/main.h"
 #if KERNEL_TEST_AP_SERVICE == 9
 #include "../batch/batch.h"
+#elif defined(KERNEL_AP_TASKS)
+#include "../remote/remote.h"
 #endif
 
 volatile XAD_NATIVE_RECORD xad_native_record;
@@ -32,6 +34,13 @@ void xad_native_poll(void)
         if (index >= 1 && index <= XAT_APS && xad_transition(index,index,1,root,1)) {
             xat_run();
             if (!xad_transition(index,index,1,root,2)) fail_private(index,1,root);
+        }
+#elif defined(KERNEL_AP_TASKS)
+        uint64_t value = xad_value(index,root);
+        if (value != XAD_INVALID && (value & 7) == XAD_START &&
+            xad_transition(index,index,value >> 3,root,1)) {
+            x86_remote_ap_run();
+            if (!xad_transition(index,index,value >> 3,root,2)) fail_private(index,value >> 3,root);
         }
 #endif
         return;

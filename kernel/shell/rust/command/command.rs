@@ -11,9 +11,23 @@ pub fn classify(word: u64, length: u32, arguments: u32) -> u32 {
         (4, 0x6f686365) => 2, // echo
         (6, 0x737574617473) => 3, // status
         (4, 0x74697865) => 4, // exit
+        (2, 0x7061) => 7,
         _ => 5,
     };
-    if arguments != 0 && matches!(command, 1 | 3 | 4) { 6 } else { command }
+    if (arguments != 0 && matches!(command, 1 | 3 | 4)) || (arguments == 0 && command == 7) { 6 } else { command }
+}
+
+// ====== count ======
+
+pub fn count(word: u64, length: u32) -> u64 {
+    if length == 0 || length > 7 || word >> (length * 8) != 0 { return u64::MAX; }
+    let mut value = 0u64;
+    for index in 0..length {
+        let digit = (word >> (index * 8)) & 0xff;
+        if !(0x30..=0x39).contains(&digit) { return u64::MAX; }
+        value = value * 10 + digit - 0x30;
+    }
+    if value == 0 || value > 1_000_000 { u64::MAX } else { value }
 }
 
 #[cfg(test)]

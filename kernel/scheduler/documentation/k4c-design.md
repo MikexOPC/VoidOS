@@ -837,6 +837,21 @@ eseguibile dopo la scadenza.
 - Il limite di blocco dei produttori sale da 2 a 4 s solo in questo profilo:
   ogni attesa può durare 5 ms.
 
+## K4-C5 — Comando AP nella sessione ordinaria
+
+`ap <n>` invia un solo job alla volta ad AP1. La shell resta sul BSP e
+attende l'evento 7. AP1 restituisce CPU, somma e checksum. Il dispatcher
+BSP aspetta la quiescenza, raccoglie lo stack e pubblica il risultato o
+l'errore. Su una sola CPU la sessione resta operativa senza servizio AP.
+
+Il vettore 0x43 può arrivare anche durante la finestra IRQ del worker PS/2.
+Il profilo AP lo ammette dopo la verifica dello stack, del task e del RIP.
+Il registro IRQ verifica il binding e l'handler conferma la consegna.
+
+Su `exit` il BSP chiude il canale dopo la quiescenza dei produttori e
+prima di lasciare il dispatcher. In questa fase può ancora consumare gli
+eventi pendenti. Un canale mai usato può chiudersi con zero consegne.
+
 ## Fonti
 
 - [Intel SDM Vol. 3A, rev. 078US](https://cdrdv2-public.intel.com/671190/253668-sdm-vol-3a.pdf):

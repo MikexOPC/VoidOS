@@ -14,6 +14,9 @@
 #ifdef KERNEL_AP_RUNTIME
 #include "../remote/scope.h"
 #endif
+#ifdef KERNEL_AP_TASKS
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#endif
 #ifdef KERNEL_PS2_INPUT
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
 #endif
@@ -181,7 +184,8 @@ static void prepare_private(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root)
     KERNEL_SCHEDULER_REPLY reply = apply_private(KERNEL_SCHEDULER_RESERVE, KERNEL_SCHEDULER_NONE, 0);
     uint32_t index = reply.index;
     if (index >= 8 || reply.state != KERNEL_TASK_RESERVED || !reply.generation ||
-        !x86_scheduler_task_assign(index,0,active_profile->entry))
+        !x86_scheduler_task_assign(index,0,active_profile->entry) ||
+        kernel_scheduler_affinity_on(0,index,reply.generation,1))
         kernel_panic("SCHEDULER_RESERVE_INVALID");
     if (!x86_task_stack_acquire(&x86_task_stacks[index], pool, root, index, reply.generation) ||
         !x86_scheduler_context_prepare(&x86_task_contexts[index], x86_task_stack_base(index), 65536) ||
@@ -359,7 +363,7 @@ int x86_scheduler_dispatch_release(void)
     if (!kernel_scheduler_context_valid()) return 0;
     local->current = KERNEL_SCHEDULER_NONE; local->generation = 0;
 #ifdef KERNEL_PS2_INPUT
-    if (irq_profile == 5 && !x86_ps2_after_dispatch()) return 0;
+    if (x86_percpu_bsp() && irq_profile == 5 && !x86_ps2_after_dispatch()) return 0;
 #endif
     return 1;
 }
@@ -381,6 +385,9 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
         (void)apply_private(KERNEL_SCHEDULER_INIT, KERNEL_SCHEDULER_NONE, 0);
         saved_pool = pool; saved_root = root;
     }
+#ifdef KERNEL_AP_TASKS
+    if (irq_profile == 5 && xis_native.Count >= 2 && kernel_scheduler_configure(xis_native.Count,1)) return 0;
+#endif
     for (uint32_t index = 0; index < active_profile->task_count; ++index) prepare_private(pool,root);
     if ((irq_profile == 2 || irq_profile == 4
 #ifdef KERNEL_PS2_INPUT
@@ -492,10 +499,14 @@ int x86_scheduler_retained_valid(void)
     if (local->phase != 1 || local->current != KERNEL_SCHEDULER_NONE || local->stats.completed || !active_profile ||
         !kernel_scheduler_context_valid() || !kernel_physical_validate(saved_pool) ||
         active_profile->task_count < 2 || active_profile->task_count > 8 ||
-        budget < 16 * active_profile->task_count || !kernel_physical_budget_matches(saved_pool, budget - 16 * active_profile->task_count)) return 0;
-    for (uint32_t index = 0; index < active_profile->task_count; ++index)
+        budget < 16 * active_profile->task_count) return 0;
+    uint32_t live = active_profile->task_count;
+    for (uint32_t index = 0; index < 8; ++index) {
+        if (index >= active_profile->task_count && !x86_task_stacks[index].self) continue;
         if (!x86_task_stack_validate(&x86_task_stacks[index])) return 0;
-    return 1;
+        if (index >= active_profile->task_count) ++live;
+    }
+    return budget >= 16 * live && kernel_physical_budget_matches(saved_pool, budget - 16 * live);
 }
 
 // ====== x86_scheduler_session_stats ======
@@ -545,7 +556,7 @@ uint64_t x86_scheduler_irq_stack_top(uint64_t frame)
     return frame >= base && frame <= base + 65536 - 48 ? base + 65536 : 0;
 }
 
-#if KERNEL_TEST_AP_SERVICE == 9
+#if KERNEL_TEST_AP_SERVICE == 9 || defined(KERNEL_AP_TASKS)
 // ====== x86_scheduler_batch_resources ======
 
 KERNEL_PHYSICAL_ALLOCATOR *x86_scheduler_batch_resources(uint64_t *root)

@@ -4,9 +4,9 @@
 raccolto durante le review e lo sviluppo di K4. Lo stato verificato resta
 in [status.md](../status.md); qui c'è cosa manca e perché.
 
-Aggiornamento del 6 novembre 2026: C4 è chiusa per il backend diagnostico
-con quattro AP di calcolo e BSP supervisore; le voci precedenti su C4
-qui sotto sono storiche. Il prossimo lavoro è C5, poi C6, K5 e K6.
+Aggiornamento del 7 novembre 2026. C5 è chiusa con `ap 1000` su AP1
+nella shell ordinaria e `v2c` passato 10/10. Il prossimo lavoro è C6,
+poi K5 e K6. Le voci su C4 descrivono il checkpoint diagnostico.
 L'utente ha scelto di svolgere il consolidamento iniziale della sicurezza
 dopo i punti K e prima della GUI: vedere
 [ordine concordato](security-plan.md#ordine-concordato--6-novembre-2026).
@@ -40,7 +40,9 @@ SKILL.md e REVIEW_INSTRUCTION.md:
 | K4-C2, timer AP | Verificato nel diagnostico periodico | 4160fe1 |
 | K4-C3, preemption BSP | Verificato uno switch one-shot | 4224ce6, 8e818b1 |
 | K4-C3, preemption periodica BSP | Verificata nel diagnostico | vedi validazione K4-C |
-| K4-C4…C6 | Da fare | — |
+| K4-C4, dispatcher AP | Chiusa per il backend diagnostico | vedi validazione K4-C |
+| K4-C5, driver sul BSP e comando `ap` | Chiusa, `v2c` 10/10 | vedi validazione K4-C |
+| K4-C6, chiusura finale | Da fare | — |
 
 Nessun push: la regola git lo prevede alla chiusura di tutta K4.
 Il primo commit di K4-B (fa35474) contiene per errore anche l'aggiunta di
@@ -79,12 +81,11 @@ usa ancora solo la CPU 0 fino a C4.
    dispatcher, continuando a servire PING e flush. Prima solo task di
    lavoro senza driver. `kernel_scheduler_context_valid` oggi accetta solo
    il BSP sullo stack principale: va esteso per CPU.
-2. **C5, driver sicuri su più CPU.** Stato al 6 novembre 2026: coda console,
-   produttori AP, IPI 0x43, binding comune BSP/AP e worker BSP in WAIT/HLT
-   fatti. Restano integrazione ordinaria e protezione dei driver.
-   Audit dei `ks_boot_cpu` raggiungibili
-   dai task, poi lock per oggetto (o owner unico) per console, PS/2,
-   VirtIO, shell e watchdog. Gli IRQ dei dispositivi restano al BSP.
+2. **C5, driver sicuri su più CPU.** Driver e IRQ dei dispositivi sul BSP.
+   La shell ordinaria invia un job alla volta ad AP1, si risveglia sul
+   risultato e chiude il canale prima di lasciare il dispatcher.
+   La [validazione K4-C](../../kernel/scheduler/documentation/k4c-validation.md)
+   registra `v2c` 10/10, le regressioni e la prova con una sola CPU.
 3. **C6, chiusura di K4.** Stress su 4 CPU, audit G5, accounting,
    regressioni, console VirtIO/VT-d. Poi aggiornamento di status.md e push.
 

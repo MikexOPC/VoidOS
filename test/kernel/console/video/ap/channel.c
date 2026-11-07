@@ -262,7 +262,7 @@ void kca_finish(void) {
         !kernel_console_service_close(&service)) xat_abort();
     kca_record.Closed = 1;
 #ifdef KERNEL_TEST_AP_NOTIFY
-    int closed = xcn_close(1);
+    int closed = xcn_close(1,(int)xad_collect_allowed(1,0,1,xcn_record.Token));
 
     if (!kernel_text("KERNEL_AP_NOTIFY_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&xcn_record) ||
         !kernel_text("\nKERNEL_AP_WORKER_RECORD: ") || !kernel_number((uint64_t)(uintptr_t)&kcw_record) ||

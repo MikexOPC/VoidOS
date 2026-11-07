@@ -897,3 +897,38 @@ pointer e layout PASS. QEMU: v2c, shell-text e ap-console-ipi 10/10 boot
 ap-runtime, ap-console-ipi-no-ack e fallback 3/3
 (`qemu-run-953fb45aba6e4adaa57d1de48a257abd`). `kernel.c` non ha un harness
 host eseguibile: la regola è provata solo in guest.
+
+## K4-C5 — `ap` nella shell ordinaria, 7 novembre 2026
+
+Il riproduttore GOP ha catturato il BSP fermo con `RAX=0x4b495251554e0005`
+e vettore `0x43` in servizio. Il RIP interrotto era dentro la finestra IRQ
+del worker PS/2. Il filtro del frame respingeva il vettore prima che
+l'handler potesse consegnare la notifica. Evidenza in
+`kernel/build/c5-debug-gop-f80da89dbdd74306989d54fec4a2a7fd/monitor.log`.
+
+Il cleanup del canale ora avviene prima che il dispatcher lasci lo
+scheduler. Il test host copre anche la chiusura con zero consegne.
+Il percorso a una CPU conserva la configurazione BSP e arriva a
+`KERNEL_READY` dopo `ap 1000` respinto, `help` e `exit`.
+Evidenza in `kernel/build/c5-bsp-final-4c19bd9a538e4f868e8de5291fe40027`.
+
+Nel primo `v2c` la shell ha riportato CPU 1, somma 500500, checksum
+`12bac6d7386781cd` e cleanup riuscito. Il runner ha respinto il contatore
+dei lock di AP1 avanzato da 1 a 12, sebbene profondità e frame fossero a
+zero. L'attestazione verifica ora il contatore avanzato per la sola CPU
+che ha eseguito il job e conserva il valore 1 per gli altri AP.
+
+| Gate | Risultato | Evidenza in `kernel/build/` |
+| --- | --- | --- |
+| `v2c` finale, QEMU q35/TCG/OVMF, 4 CPU | 10/10 consecutivi. CPU 1, somma 500500, checksum esatto, una WAIT della shell e ritorno di AP1 in HLT in ogni boot | `pointer-interactive-check-88f33e0a3e36418aa8fe0a46e7ddd0a1/results.json` |
+| Cleanup `v2c` | 10/10, budget 14.093 pagine prima e dopo, 3 shootdown nel teardown VirtIO per boot | stesso report |
+| `shell-text`, `ipi-service`, `ap-runtime` | 3/3 per profilo | `qemu-run-be491cb6ce704db49ba387426cad6fe5/results.json` |
+| `ap-console-ipi` | 3/3 | `qemu-run-5f22cc06837a470a99cd7eb2847b5278/results.json` |
+| Host | PS/2 e shell C/Rust, console, console-requests e IPI-service PASS. ASan nei test host C, hardware e parti dello scheduler modellati | `ps2-decoder-4b34b7b6ca16426c9a96e539baf493d6`, `console-grid-host`, `console-requests-362e603cd7254baeae912258e60c15ab`, `ipi-service-host-acf65b5a0f93431b8cdd794f99973cb8` |
+| Statico | Cppcheck sul profilo AP senza diagnostiche bloccanti e layout PASS | `c5-static-39821c74c84f43fc80918a895e9812c1` |
+
+SHA-256 ELF `82DF3336B09F855ABA3E4397E91BA70B135F2BA72D90E4BEC55314EF77344AC0`.
+SHA-256 loader `37F4DE1FCDB792D2684D1F1C8B37F7EFD8DB75F0CA47AE3B7887088BAB119854`.
+C5 chiusa per il profilo ordinario con un job fidato alla volta su AP1.
+Lo stress e l'audit di chiusura G5 restano in C6. Hardware fisico e
+leak detector nativo non verificati.

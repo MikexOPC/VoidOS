@@ -2,7 +2,6 @@
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "arch/x86/kernel/interrupts/apic/icr/icr.h"
-#include "arch/x86/kernel/scheduler/batch/batch.h"
 #ifdef KERNEL_TEST_AP_NOTIFY_INFLIGHT
 #include "test/kernel/console/video/ap/channel.h"
 #endif
@@ -103,8 +102,8 @@ static void pause_private(void *context) { (void)context; ks_pause(); }
 // ====== xcn_send ======
 
 int xcn_send(uint32_t producer) {
-    if (ks_irq_state() || xis_native_index() != 1 || producer >= 2 || !xat_task_valid() ||
-        x86_scheduler_index() != producer || !ks_atomic_load_acquire(&xcn_record.Active)) return 0;
+    if (ks_irq_state() || xis_native_index() != 1 || producer >= 2 || !x86_scheduler_task_valid() ||
+        x86_scheduler_driver_task_valid() || !ks_atomic_load_acquire(&xcn_record.Active)) return 0;
     uint64_t notice = kernel_console_ap_notify(1,1,xcn_record.Token,producer,0);
     if (!notice) return 0;
     if (notice & 1) {
@@ -136,9 +135,9 @@ int xcn_poll(void) {
 
 // ====== xcn_close ======
 
-int xcn_close(int queue_empty) {
+int xcn_close(int queue_empty, int producers_quiet) {
     if (ks_irq_state() || xis_native_index() || !ks_atomic_load_acquire(&xcn_record.Active) ||
-        xad_collect_allowed(1,0,1,xcn_record.Token) != 1 ||
+        producers_quiet != 1 ||
         !kernel_console_ap_notify(5,0,xcn_record.Token,0,0)) return 0;
     uint32_t start, now;
     if (!xis_native_now(NULL,&start)) return 0;
@@ -158,7 +157,7 @@ int xcn_close(int queue_empty) {
         return 0;
     }
     if (x86_irq_registry_deliveries(registry,&subscription) != xcn_record.Delivered ||
-        !xcn_record.Delivered || xcn_record.Delivered != xcn_record.Eois ||
+        xcn_record.Delivered != xcn_record.Eois ||
         !x86_irq_registry_unbind(registry,&subscription) ||
         !kernel_scheduler_irq_unbind(XCN_EVENT,xcn_record.Self,xcn_record.Binding)) return 0;
     ks_atomic_store_release(&xcn_record.Active,0);

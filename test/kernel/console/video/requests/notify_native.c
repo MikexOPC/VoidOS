@@ -25,7 +25,8 @@ uint64_t ks_atomic_load_acquire(const uint64_t *value) { return *value; }
 void ks_atomic_store_release(uint64_t *value, uint64_t next) { *value = next; }
 void ks_pause(void) {}
 uint32_t x86_scheduler_index(void) { return task; }
-int xat_task_valid(void) { return actor == 1; }
+int x86_scheduler_task_valid(void) { return actor == 1; }
+int x86_scheduler_driver_task_valid(void) { return actor == 0; }
 int xis_native_now(void *context, uint32_t *value) {
     (void)context;
     if (stop_clock) return 0;
@@ -114,8 +115,14 @@ int main(int argc, char **argv) {
     xp_panic_native.Source.Mask = 0xffffff;
     CHECK(xcn_prepare(123));
     CHECK(!xcn_prepare(123) && !xcn_send(0) && !xcn_release_allowed());
+    if (mode == 5) {
+        CHECK(xcn_close(1,1) && xcn_release_allowed() && !bound && !event_bound);
+        CHECK(!xcn_record.Delivered && !xcn_record.Eois && !error);
+        puts("PASS: unused native transport closes without a synthetic IPI");
+        return 0;
+    }
     actor = 1;
-    CHECK(!xcn_prepare(123) && !xcn_send(2) && !xcn_poll() && !xcn_close(1));
+    CHECK(!xcn_prepare(123) && !xcn_send(2) && !xcn_poll() && !xcn_close(1,(int)xad_collect_allowed(1,0,1,123)));
     irq = 512;
     CHECK(!xcn_send(0));
     irq = 0;
@@ -142,13 +149,13 @@ int main(int argc, char **argv) {
     }
     CHECK(xcn_poll() && xcn_record.Delivered == 1 && xcn_record.Eois == 1);
     quiesced = 0;
-    CHECK(!xcn_close(1) && bound && event_bound);
+    CHECK(!xcn_close(1,(int)xad_collect_allowed(1,0,1,123)) && bound && event_bound);
     quiesced = 1;
 #if defined(KERNEL_TEST_AP_NOTIFY_NO_ACK) || defined(KERNEL_TEST_AP_NOTIFY_INFLIGHT)
-    CHECK(!xcn_close(1) && xcn_record.Denied && !xcn_release_allowed() && bound && event_bound);
+    CHECK(!xcn_close(1,(int)xad_collect_allowed(1,0,1,123)) && xcn_record.Denied && !xcn_release_allowed() && bound && event_bound);
 #else
-    CHECK(xcn_close(1) && xcn_release_allowed() && !bound && !event_bound && !error);
-    CHECK(!xcn_close(1) && !xcn_send(0) && !xcn_poll());
+    CHECK(xcn_close(1,(int)xad_collect_allowed(1,0,1,123)) && xcn_release_allowed() && !bound && !event_bound && !error);
+    CHECK(!xcn_close(1,(int)xad_collect_allowed(1,0,1,123)) && !xcn_send(0) && !xcn_poll());
 #endif
     puts("PASS: actual native transport and Rust FFI; hardware/registry/dispatcher are MODELS");
     return error ? 1 : 0;

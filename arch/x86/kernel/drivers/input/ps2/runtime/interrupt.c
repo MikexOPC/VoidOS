@@ -2,6 +2,9 @@
 #include "kernel/scheduler/payload.h"
 #include "kernel/console/line/line.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
+#ifdef KERNEL_AP_TASKS
+#include "arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.h"
+#endif
 extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_compute_end[];
 
 // ====== drain_private ======
@@ -99,7 +102,11 @@ int x86_ps2_quiet(void)
 int x86_ps2_irq_record(BOOT_U64 vector, BOOT_U64 rip, BOOT_U64 rsp, BOOT_U64 flags)
 {
     X86_PS2_SESSION *owner = x86_ps2_session();
-    if ((vector != 0x40 && vector != 0x41 && vector != 0x42) || x86_scheduler_index() != 1 ||
+    int accepted = vector == 0x40 || vector == 0x41 || vector == 0x42;
+#ifdef KERNEL_AP_TASKS
+    accepted |= vector == XCN_VECTOR;
+#endif
+    if (!accepted || x86_scheduler_index() != 1 ||
         !x86_scheduler_driver_task_valid() || !(flags & 512) || (flags & 1024) ||
         rip < (BOOT_U64)x86_scheduler_irq_compute_begin || rip >= (BOOT_U64)x86_scheduler_irq_compute_end ||
         rsp < x86_task_stack_base(1) + 4096 || rsp >= x86_task_stack_base(1) + 65536 ||

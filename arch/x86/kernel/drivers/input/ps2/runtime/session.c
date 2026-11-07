@@ -12,6 +12,11 @@
 #include "kernel/scheduler/payload.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
+#ifdef KERNEL_AP_TASKS
+#include "arch/x86/kernel/scheduler/remote/remote.h"
+#include "arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.h"
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#endif
 static X86_PS2_SESSION session;
 #ifdef KERNEL_CONSOLE_SHELL
 // G6: the console object of this input session (composition root of the interactive session).
@@ -77,6 +82,9 @@ int x86_ps2_activate(void)
 int x86_ps2_after_dispatch(void)
 {
     KERNEL_EVENT_REPLY reply;
+#ifdef KERNEL_AP_TASKS
+    x86_remote_service();
+#endif
     if (!session.Stop || session.Quiet) return 1;
     if (!session.WorkerGeneration || !x86_ps2_route_apply(&session,1)) return 0;
 #ifdef KERNEL_PS2_MOUSE
@@ -93,6 +101,14 @@ int x86_ps2_after_dispatch(void)
 #ifdef KERNEL_PS2_MOUSE
     if (x86_irq_registry_deliveries(x86_irq_registry(),&session.Mouse.Token) != session.Mouse.Irqs ||
         !x86_irq_registry_unbind(x86_irq_registry(),&session.Mouse.Token) || !x86_ps2_mouse_route_apply(&session,2)) return 0;
+#endif
+#ifdef KERNEL_AP_TASKS
+    // The dispatcher must still own the scheduler while xcn_close drains event 7.
+    if (xis_native.Count >= 2 && (!kernel_text("KERNEL_AP_TASK_JOBS: ") ||
+        !kernel_number(x86_remote_jobs()) || !kernel_text("\n") || !x86_remote_close() ||
+        !xcn_close(1,1) || !xcn_release_allowed() || !kernel_log(0,"KERNEL_AP_TASKS_CLEAN"))) return 0;
+#endif
+#ifdef KERNEL_PS2_MOUSE
     reply = kernel_scheduler_stop_apply(0,3,session.Mouse.Generation);
     if (reply.reply.status != KERNEL_SCHEDULER_OK) return 0;
 #endif
@@ -165,6 +181,18 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
 #ifdef KERNEL_CONSOLE_SHELL
     session.Console = &console;
     if (!x86_console_open(&session, x86_vgpu_kernel_display())) return 0;
+#endif
+#ifdef KERNEL_AP_TASKS
+    if (xis_native.Count < 2) kernel_log(1,"KERNEL_AP_TASKS_ABSENT");
+    else {
+        uint64_t root = 0;
+        KERNEL_PHYSICAL_ALLOCATOR *pool = x86_scheduler_batch_resources(&root);
+        if (!pool || !xcn_prepare(root) ||
+            !x86_remote_open(pool,root,XCN_EVENT,xcn_record.Self,xcn_record.Binding)) {
+            kernel_log(3,"KERNEL_AP_TASKS_OPEN_FAILED"); return 0;
+        }
+        kernel_log(0,"KERNEL_AP_TASKS_READY");
+    }
 #endif
     session.Active = 1;
     if (!x86_scheduler_run_input() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
