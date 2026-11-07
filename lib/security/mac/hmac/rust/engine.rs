@@ -1,6 +1,6 @@
 #[allow(dead_code)]
 #[path = "../../../hash/sha256/rust/engine.rs"]
-mod sha256;
+pub(crate) mod sha256;
 
 #[allow(dead_code)]
 #[path = "../../../memory/rust/compare.rs"]
