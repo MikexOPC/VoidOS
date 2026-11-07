@@ -5,7 +5,7 @@ $tool = if ($PlanOnly) { @{Nasm = 'nasm.exe'} } else {
 }
 Invoke-Compiler $tool.Nasm @('-f','bin','-Wall','-Werror','-o',"$output/ap-template.bin",
     "$project/arch/x86/kernel/cpu/percpu/startup/assembly/trampoline/entry.asm")
-if (!$PlanOnly -and (Get-Item "$output/ap-template.bin").Length -ne 4096) { throw 'Invalid AP template size' }
+if (!$PlanOnly) { Assert-ApTemplateSize "$output/ap-template.bin" }
 
 $templateSources = @('arch/x86/kernel/cpu/percpu/startup/assembly/template/image.asm')
 if (!$ApRuntime) { $templateSources += 'test/arch/x86/kernel/cpu/percpu/startup/installation/probe/assembly/terminal/entry.asm' }

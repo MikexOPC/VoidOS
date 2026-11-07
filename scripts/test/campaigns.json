@@ -201,6 +201,13 @@
       "smoke": 1,
       "summary": "same ordinary image, one CPU and prepared BSP panic backend"
     },
+    "rust-plan-ordinary": {
+      "build": ["-UseRustPlan"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4"],
+      "boots": 5,
+      "smoke": 1,
+      "summary": "ordinary image compiled from the Rust plan, BSP continuation and three parked APs"
+    },
     "ap-runtime-panic": {
       "build": ["-TestPanic"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4", "--panic"],
