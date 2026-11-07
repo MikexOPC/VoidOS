@@ -5,42 +5,61 @@ use std::process::{Command, ExitCode};
 
 // ====== moduli ======
 
+#[derive(PartialEq)]
+enum Kind {
+    Library,
+    Tool,
+}
+
 struct Module {
     name   : &'static str,
+    kind   : Kind,
     source : &'static str,
     test   : &'static str,
 }
 
-const MODULES: [Module; 6] = [
+const MODULES: [Module; 7] = [
     Module {
         name   : "bounds",
+        kind   : Kind::Library,
         source : "lib/security/bounds/rust/bounds.rs",
         test   : "test/lib/security/bounds/rust/bounds_test.rs",
     },
     Module {
         name   : "entropy",
+        kind   : Kind::Library,
         source : "lib/security/entropy/rust/health.rs",
         test   : "test/lib/security/entropy/rust/health_test.rs",
     },
     Module {
         name   : "memory",
+        kind   : Kind::Library,
         source : "lib/security/memory/rust/memory.rs",
         test   : "test/lib/security/memory/rust/memory_test.rs",
     },
     Module {
         name   : "sha256",
+        kind   : Kind::Library,
         source : "lib/security/hash/sha256/rust/sha256.rs",
         test   : "test/lib/security/hash/sha256/rust/sha256_test.rs",
     },
     Module {
         name   : "hmac",
+        kind   : Kind::Library,
         source : "lib/security/mac/hmac/rust/hmac.rs",
         test   : "test/lib/security/mac/hmac/rust/hmac_test.rs",
     },
     Module {
         name   : "drbg",
+        kind   : Kind::Library,
         source : "lib/security/random/drbg/rust/drbg.rs",
         test   : "test/lib/security/random/drbg/rust/drbg_test.rs",
+    },
+    Module {
+        name   : "assessment",
+        kind   : Kind::Tool,
+        source : "test/tooling/entropy/rust/entropy.rs",
+        test   : "test/tooling/entropy/rust/tests/estimators_test.rs",
     },
 ];
 
@@ -95,6 +114,13 @@ fn static_checks(module: &Module, project: &Path, out: &Path) -> Result<(), Stri
     let source = project.join(module.source);
     let test = project.join(module.test);
     clippy(&format!("{} clippy test", module.name), &test, "--test", &out.join(format!("{}-test.rmeta", module.name)))?;
+    if module.kind == Kind::Tool {
+        clippy(&format!("{} clippy bin", module.name), &source, "--crate-type=bin", &out.join(format!("{}.rmeta", module.name)))?;
+        let binary = out.join(format!("{}.exe", module.name));
+        return run(&format!("{} host binary", module.name), Path::new("rustc"), &[
+            "--edition=2024", "-C", "opt-level=2", "-D", "warnings", text(&source), "-o", text(&binary),
+        ]);
+    }
     clippy(&format!("{} clippy lib", module.name), &source, "--crate-type=lib", &out.join(format!("{}.rmeta", module.name)))?;
     let object = out.join(format!("{}.obj", module.name));
     run(&format!("{} no_std object", module.name), Path::new("rustc"), &[

@@ -90,7 +90,7 @@ dell'Intel SDM Vol. 2 (riferimento R-003), come chiede il Constraint 4.
 
 1. `arch/x86/security/entropy`: sorgente CPU, health test, seed del DRBG,
    arresto con diagnostica, jitter RDTSC non accreditato (dopo K4-C5).
-2. Strumento host di stima SP 800-90B per i campioni di jitter.
+2. Strumento host di stima SP 800-90B per i campioni di jitter (fatto: `test/tooling/entropy`).
 3. Tempi degli interrupt come input non accreditato (dopo i moduli K4).
 4. Canary del kernel (passo 2 del piano) sul DRBG.
 

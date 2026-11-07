@@ -145,3 +145,8 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   non accreditati, Rust con intrinsic, arresto con diagnostica se manca
   entropia valida. Codice dopo K4-C5. Dettagli in
   [security-entropy.md](../design/security-entropy.md).
+- **2026-11-07 — `test/tooling/entropy`.** Strumento host Rust di stima
+  della min-entropia SP 800-90B: 10 estimatori non-IID e combinazione
+  §3.1.3. Suite `security` (modulo `assessment`): 19 test con tutti gli
+  esempi ufficiali e la Table 3. Servira ad accreditare jitter e interrupt.
+  Dettagli in [entropy.md](../../test/tooling/entropy/documentation/entropy.md).
