@@ -16,24 +16,39 @@ non-IID di [NIST SP 800-90B](https://doi.org/10.6028/NIST.SP.800-90B)
   significativo, primi 1 000 000 bit;
 - risultato: `min(H_original, n × H_bitstring)` per campioni da n bit.
 
+Esegue anche i **test di riavvio** di §3.1.4 su una matrice di 1000
+riavvii × 1000 campioni:
+
+- controllo di sanita (§3.1.4.3): il valore piu frequente in una riga o in
+  una colonna, `X_max`, non deve essere improbabile dato `H_I`: test
+  binomiale `P(X ≥ X_max) ≥ 0,000005` con `p = 2^-H_I`;
+- `H_r`, `H_c`: estimatori di §6.2 sul dataset per righe e per colonne;
+- esito (§3.1.4.2): nessuna stima se il controllo fallisce o se
+  `min(H_r, H_c) < H_I / 2`; altrimenti `min(H_r, H_c, H_I)`.
+
 ## Uso
 
 ```
 assessment.exe <file> <bit per campione 1..8>
+assessment.exe restart <file 1000x1000> <bit per campione 1..8> <H_I>
 ```
 
 Il file contiene un byte per campione; i valori devono stare negli n bit
 dichiarati. Campioni piu larghi vanno ridotti prima (§6.4). Con meno di
-1 000 000 di campioni (§3.1.1) il programma avvisa. Il binario viene
-costruito dalla suite in `kernel/build/security-host/assessment.exe`.
+1 000 000 di campioni (§3.1.1) il programma avvisa. Per i riavvii il file
+contiene la matrice per righe (riavvio 1, poi riavvio 2, ...) e `H_I` e la
+stima iniziale; il programma esce con errore se la validazione fallisce. Il
+binario viene costruito dalla suite in
+`kernel/build/security-host/assessment.exe`.
 
 ## Struttura
 
-Rust std, in `rust/`: `statistics.rs` (limiti di confidenza, prestazioni
-globali e locali dei predittori, bisezione), `counting.rs` (MCV, t-Tuple,
-LRS), `suffix.rs` (suffix array e LCP per contare le tuple), `binary.rs`
-(Collision, Markov, Compression), `predictors.rs` (MultiMCW, Lag, MultiMMC,
-LZ78Y), `track.rs` (combinazione), `entropy.rs` (programma).
+Rust std, in `rust/`: `entropy.rs` (programma), `track.rs` (combinazione
+§3.1.3), `restart.rs` (riavvii §3.1.4). In `rust/estimators/`:
+`statistics.rs` (limiti di confidenza, prestazioni dei predittori,
+bisezione), `counting.rs` (MCV, t-Tuple, LRS), `suffix.rs` (suffix array e
+LCP), `binary.rs` (Collision, Markov, Compression), `predictors.rs`
+(MultiMCW, Lag, MultiMMC, LZ78Y).
 
 Scelte di implementazione:
 
@@ -49,7 +64,7 @@ Scelte di implementazione:
 ## Test
 
 `scripts/test/run.ps1 -Suite security` (modulo `assessment` del driver
-`test/lib/security/runner.rs`, test in `rust/tests/`). 20 test in release, 19 in debug:
+`test/lib/security/runner.rs`, test in `rust/tests/`). 28 test in release, 27 in debug:
 
 - gli **esempi numerici ufficiali** di tutti e 10 gli estimatori (§6.3.1 -
   §6.3.10) e i valori intermedi dei predittori;
@@ -65,8 +80,19 @@ Scelte di implementazione:
   limitato a 1 000 000 di bit come qui). Lo strumento NIST e stato compilato
   una volta con MSYS2 fuori dal repo; libdivsufsort, non disponibile, e stata
   sostituita da un suffix array semplice che da lo stesso ordinamento.
+- **riavvii**: trasposizione, coda binomiale contro somme esatte, conteggi
+  di righe e colonne; esiti valido, sanita fallita (riavvii identici,
+  entropia dichiarata troppo alta), regola H_I/2 con un caso fra H_I/4 e
+  H_I/2.
 
 Poi clippy `-D warnings` e build del binario.
+
+Riavvii su matrici 1000 × 1000: dati uniformi validati (6,64 bit), riavvii
+identici e entropia dichiarata troppo alta respinti dal controllo di sanita,
+dati prevedibili respinti dalla regola H_I/2. `H_r` e `H_c` coincidono con
+`ea_non_iid` di NIST su righe e colonne di due matrici (28 valori su 28).
+`ea_restart` di NIST, compilato su Windows, si interrompe nella sua
+simulazione e non e stato confrontato.
 
 Prova su 1 000 000 di byte casuali (generatore di sistema): `H_original`
 fra 7,35 e 7,95 bit, risultato 6,53 bit su 8 per via di `8 × H_bitstring`
@@ -81,5 +107,12 @@ in Lag, Kasai senza riuso del prefisso).
 
 - Nell'esempio di §6.3.1 lo standard scrive −log2(0,6822): il valore
   corretto, coerente con il risultato 0,5363, e 0,6895.
-- Mancano i test IID (§5) e i test di riavvio (§3.1.4): la valutazione usa
-  sempre la traccia non-IID, che e la piu prudente.
+- Mancano i test IID (§5): la valutazione usa sempre la traccia non-IID, che
+  e la piu prudente.
+- Controllo di sanita dei riavvii: si segue lo standard (test binomiale
+  sul simbolo piu probabile, α = 0,000005). Lo strumento NIST usa invece una
+  soglia simulata sul massimo fra tutti i simboli, un po' piu permissiva:
+  questo strumento puo quindi respingere qualche caso al limite che NIST
+  accetta, mai il contrario.
+- I dati dei riavvii veri arriveranno con la sorgente nel kernel; per ora i
+  test usano matrici sintetiche.

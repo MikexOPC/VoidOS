@@ -1,15 +1,17 @@
-#[path = "../binary.rs"]
+#[path = "../estimators/binary.rs"]
 mod binary;
-#[path = "../counting.rs"]
+#[path = "../estimators/counting.rs"]
 mod counting;
 #[path = "datasets.rs"]
 mod datasets;
-#[path = "../predictors.rs"]
+#[path = "../estimators/predictors.rs"]
 mod predictors;
-#[path = "../statistics.rs"]
+#[path = "../estimators/statistics.rs"]
 mod statistics;
-#[path = "../suffix.rs"]
+#[path = "../estimators/suffix.rs"]
 mod suffix;
+#[path = "../restart.rs"]
+mod restart;
 #[path = "../track.rs"]
 mod track;
 
@@ -226,4 +228,108 @@ fn every_estimate_matches_the_nist_reference_tool() {
         }
     }
     assert_eq!(checked, 105);
+}
+
+// ====== test di riavvio (3.1.4) ======
+
+fn matrix_of(data: &[u8], restarts: usize, samples: usize) -> restart::Matrix<'_> {
+    restart::Matrix { data, restarts, samples }
+}
+
+#[test]
+fn column_dataset_concatenates_columns() {
+    let data = [1, 2, 3, 4, 5, 6];
+    assert_eq!(restart::column_dataset(&matrix_of(&data, 2, 3)), [1, 4, 2, 5, 3, 6]);
+}
+
+#[test]
+fn binomial_tail_matches_exact_sums() {
+    let choose = |n: u128, k: u128| (1..=k).fold(1u128, |value, i| value * (n - k + i) / i);
+    for (trials, p) in [(20usize, 0.5f64), (30, 0.1), (25, 0.9)] {
+        for at_least in 0..=trials + 1 {
+            let exact: f64 = (at_least..=trials)
+                .map(|j| choose(trials as u128, j as u128) as f64 * p.powi(j as i32) * (1.0 - p).powi((trials - j) as i32))
+                .sum();
+            close(restart::binomial_tail(trials, at_least, p), exact, 1e-12);
+        }
+    }
+    assert_eq!(restart::binomial_tail(1000, 1000, 1.0), 1.0);
+    assert_eq!(restart::binomial_tail(1000, 1001, 1.0), 0.0);
+}
+
+#[test]
+fn sanity_check_counts_rows_and_columns() {
+    let data = [
+        7, 7, 7, 1, 2,
+        3, 7, 4, 5, 6,
+        8, 7, 9, 0, 1,
+        2, 7, 3, 4, 5,
+    ];
+    let (rows, columns, _) = restart::sanity_check(&matrix_of(&data, 4, 5), 1.0);
+    assert_eq!((rows, columns), (3, 4));
+}
+
+#[test]
+fn healthy_restarts_are_validated() {
+    let mut generator = Generator::new(0x0e57_a127_2026_1107);
+    let data: Vec<u8> = (0..200 * 200).map(|_| (generator.next() >> 40) as u8).collect();
+    let report = restart::restart_test(&matrix_of(&data, 200, 200), 8, 7.0);
+    assert!(report.sanity, "{}", report.probability);
+    let value = report.assessment.expect("validato");
+    assert!((3.5..=7.0).contains(&value), "{value}");
+    assert_eq!((report.rows.len(), report.columns.len()), (7, 7));
+}
+
+#[test]
+fn repeated_restarts_fail_the_sanity_check() {
+    let mut generator = Generator::new(0x5a9e_0001_2026_1107);
+    let row: Vec<u8> = (0..200).map(|_| (generator.next() >> 40) as u8).collect();
+    let data = row.repeat(200);
+    let report = restart::restart_test(&matrix_of(&data, 200, 200), 8, 7.0);
+    assert!(!report.sanity);
+    assert_eq!(report.most_in_columns, 200);
+    assert!(report.most_in_rows < 10);
+    assert_eq!(restart::RESTARTS * restart::RESTART_SAMPLES, 1_000_000);
+    assert!(report.rows.is_empty() && report.assessment.is_none());
+}
+
+#[test]
+fn overclaimed_entropy_fails_the_sanity_check() {
+    let mut generator = Generator::new(0x0c1a_1111_2026_1107);
+    let data: Vec<u8> = (0..200 * 200).map(|_| (generator.next() >> 60) as u8).collect();
+    assert!(!restart::restart_test(&matrix_of(&data, 200, 200), 8, 8.0).sanity);
+    assert!(restart::restart_test(&matrix_of(&data, 200, 200), 8, 3.5).sanity);
+}
+
+#[test]
+fn predictable_restarts_fail_the_half_entropy_rule() {
+    let data: Vec<u8> = (0..200 * 200).map(|index| ((index / 200 + index % 200) % 256) as u8).collect();
+    let report = restart::restart_test(&matrix_of(&data, 200, 200), 8, 7.0);
+    assert!(report.sanity, "{}", report.probability);
+    assert!(report.assessment.is_none());
+    assert!(track::minimum(&report.columns) < 3.5);
+}
+
+#[test]
+fn half_entropy_rule_uses_exactly_half_of_the_initial_estimate() {
+    let noisy_diagonal = |spread: u64| {
+        let mut generator = Generator::new(0x3a1c_2026);
+        let mut data = Vec::with_capacity(200 * 200);
+        for row in 0..200u64 {
+            for column in 0..200u64 {
+                data.push(((row + column + generator.next() % spread) % 256) as u8);
+            }
+        }
+        data
+    };
+    let narrow = noisy_diagonal(4);
+    let report = restart::restart_test(&matrix_of(&narrow, 200, 200), 8, 6.0);
+    let worst = track::minimum(&report.rows).min(track::minimum(&report.columns));
+    assert!(report.sanity && (1.5..3.0).contains(&worst), "{worst}");
+    assert!(report.assessment.is_none());
+    let wide = noisy_diagonal(8);
+    let report = restart::restart_test(&matrix_of(&wide, 200, 200), 8, 6.0);
+    let worst = track::minimum(&report.rows).min(track::minimum(&report.columns));
+    assert!(worst >= 3.0, "{worst}");
+    assert_eq!(report.assessment, Some(worst));
 }
