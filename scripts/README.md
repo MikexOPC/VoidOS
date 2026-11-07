@@ -48,14 +48,16 @@ La suite `build-plan` compila lo strumento host Rust e confronta argomenti
 e ordine dei comandi con `kernel/scripts/build.ps1 -PlanOnly`. Copre il
 boot ordinario, il timer periodico BSP e il timer AP. Il confronto salva
 i due piani in `kernel/build/` senza compilare o installare il kernel.
-La build standard continua a usare PowerShell. Per compilare il profilo
-ordinario con il piano Rust, indicare una nuova directory di output.
+La build standard continua a usare PowerShell. Per compilare con il piano
+Rust uno dei tre profili verificati, indicare una nuova directory di output.
 La modalità sperimentale usa la stessa toolchain e lo stesso convertitore
 PE/ELF della build standard. Pubblica `kernel.elf` dopo la conversione.
 
 ```powershell
 ./kernel/scripts/build.ps1 -UseRustPlan -OutputDirectory ./kernel/build/rust-pilot
-./scripts/test/qemu.ps1 -Campaign rust-plan-ordinary
+./kernel/scripts/build.ps1 -UseRustPlan -TestSchedulerPeriodic -OutputDirectory ./kernel/build/rust-bsp
+./kernel/scripts/build.ps1 -UseRustPlan -TestApService ap-timer -OutputDirectory ./kernel/build/rust-ap
+./scripts/test/qemu.ps1 -Campaign rust-plan-ordinary,rust-plan-bsp-periodic,rust-plan-ap-timer
 ```
 
 Il linker riceve un file di risposta UTF-8 con BOM per conservare

@@ -27,7 +27,10 @@ New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $planner = Join-Path $OutputDirectory 'build-plan.exe'
 $source = Join-Path $project 'scripts/tooling/build-plan/rust/plan/main.rs'
 Invoke-Compiler $rustc @('--edition=2024','-D','warnings',$source,'-o',$planner)
-$plan = @(& $planner)
+$profileArguments = @()
+if ($TestSchedulerPeriodic) { $profileArguments += '-TestSchedulerPeriodic' }
+if ($TestApService -eq 'ap-timer') { $profileArguments += @('-TestApService','ap-timer') }
+$plan = @(& $planner @profileArguments)
 if ($LASTEXITCODE -ne 0) { throw 'Rust build planning failed.' }
 
 # ====== validate and execute plan ======

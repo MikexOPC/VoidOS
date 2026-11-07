@@ -208,6 +208,22 @@
       "smoke": 1,
       "summary": "ordinary image compiled from the Rust plan, BSP continuation and three parked APs"
     },
+    "rust-plan-bsp-periodic": {
+      "build": ["-UseRustPlan", "-TestSchedulerPeriodic"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4", "--periodic"],
+      "boots": 5,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Rust plan, six BSP timer preemptions, IRQ return and verified timer stop"
+    },
+    "rust-plan-ap-timer": {
+      "build": ["-UseRustPlan", "-TestApService", "ap-timer"],
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-timer", "--smp", "4"],
+      "boots": 5,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Rust plan, AP timer interrupts, PING, shootdown and verified timer stop"
+    },
     "ap-runtime-panic": {
       "build": ["-TestPanic"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4", "--panic"],
