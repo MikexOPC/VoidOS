@@ -123,11 +123,11 @@ il payload con GPR e stato SIMD intatti.
   `TSS.RSP0` quando l'IST del gate è zero, imposta SS a NULL e spinge
   SS, RSP, RFLAGS, CS, RIP. Il gate azzera IF. Intel SDM 3A §7.14.4
   (stack switching in IA-32e) e §7.14.2 (frame a 64 bit).
-- RSP0 sta all'offset 4 della TSS a 64 bit. SDM 3A §8.7 (TSS a 64 bit).
+- RSP0 sta all'offset 4 della TSS a 64 bit. SDM 3A §10.7, figura 10-11.
 - `SWAPGS` scambia `IA32_GS_BASE` (C0000101h) e `IA32_KERNEL_GS_BASE`
   (C0000102h); è lecito solo a CPL0. SDM 2B, voce SWAPGS.
 - Timer LAPIC: LVT Timer a 320h, Initial Count 380h, Divide 3E0h; EOI
-  scrivendo zero a B0h. SDM 3A §12.5.4 e §12.8.5. Il driver
+  scrivendo zero a B0h. SDM 3A §13.5.4 e §13.8.5. Il driver
   [timer LAPIC](../../arch/x86/kernel/timer/lapic/timer.h) possiede già
   questi accessi: K5-B li usa tramite la sua interfaccia, senza
   duplicarli.
@@ -187,6 +187,9 @@ Sequenza di progetto, non eseguibile:
   accettata va dall'inizio del payload alla fine del ciclo.
 - **RF.** L'immagine salvata di RFLAGS può avere RF=1. QEMU lo riporta
   sull'IRQ e il validatore lo ammette, come per i fault.
+- **Consegne.** Il primo ingresso riceve tre IRQ, riarmati dall'handler; il
+  secondo uno, perché un NMI iniettato nella finestra CPL3 non cada nell'handler.
+  Ogni frame è validato prima dell'EOI.
 - **Stack.** La pagina RSP0 è la settima pagina, a 0x404000, nella metà bassa
   della root privata e senza bit utente. La guardia è a 0x403000.
 

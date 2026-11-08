@@ -46,33 +46,41 @@ Il payload K5-A usa IF=0. Gli IRQ da CPL3 sono provati da K5-B qui sotto.
 
 Risultato: superato sul profilo `k5-privilege`, QEMU TCG, q35, OVMF, una
 vCPU. Dieci boot consecutivi. Evidenze in
-`kernel/build/qemu-run-e5574bb60f2348fa8999ee7fa570f2ee`.
+`kernel/build/k5-privilege-ee20f1ac41a24e2a80394368ea26fc13`.
 
-In ogni boot due IRQ del timer LAPIC (vettore 41h) interrompono il payload.
+In ogni boot quattro IRQ del timer LAPIC (vettore 41h) interrompono il payload:
+tre riarmati sul primo ingresso, uno sul secondo.
 La traccia QEMU li vede a `cpl=3`, il kernel a RIP utente con ingresso a
 0x404fd8, cioè RSP0 meno il frame. Il primo riceve un NMI dentro l'handler,
 con GS kernel. Il secondo convive con un NMI nel payload a IF=1. L'handler
-azzera XMM0-1 e il payload ritrova GPR e XMM con i valori noti. Dopo il
+carica uno stato FPU/SIMD pulito e il payload ritrova GPR, 128 bit di XMM0 e
+XMM15, MXCSR e FCW. Dopo il
 ripristino il boot arriva a `KERNEL_READY`.
 
 | Negativo, 3 boot ciascuno | Esito atteso | Stato |
 | --- | --- | --- |
 | `k5-irq-simd`, SIMD non ripristinato | panic | 3/3 |
 | `k5-irq-gpr`, GPR alterato | panic | 3/3 |
-| `k5-irq-rsp0`, RSP0 errato | panic | 3/3 |
+| `k5-irq-rsp0`, RSP0 errato | arresto `4b354641` al primo IRQ | 3/3 |
 | `k5-irq-timeout`, nessun timer | panic, nessun IRQ da CPL3 | 3/3 |
 | `k5-irq-cpl0`, IRQ a CPL0 | arresto `4b354641` | 3/3 |
 
-Evidenze in `kernel/build/qemu-run-63078009502b4928ab565aaa06637ca0`.
-Il caso senza NMI passa 1/1. Regressioni: `ap-runtime` 3/3,
-`ap-runtime-panic` 10/10 dopo la correzione del runner, suite host `layout`
-e `build-plan`, 2 test Rust del validatore.
+Evidenze in `kernel/build/qemu-run-f56bebe180be4e5a81119e6a47691fbf`.
+Il caso senza NMI passa 1/1. Regressioni sulla modifica finale: `ap-runtime`
+e `ap-runtime-panic` 3/3 (`kernel/build/qemu-run-299a55cf479a4de599833fc568f5f8c6`).
+`ap-runtime-panic` aveva già passato 10/10 dopo la correzione del runner.
+Suite host `layout` e `build-plan` eseguite prima dei punti SIMD e riarmo,
+che non toccano build né layout. Passati 2 test Rust, clippy con warning come
+errori e cppcheck 2.22 su `probe.c` (warning, performance, portability).
 
 `ap-runtime-panic` era fallita in un boot su 3 per una lettura del log
 durante la scrittura di una riga, attribuita al marker troncato. La VM era
 sana. Il runner ora ammette i prefissi di `KERNEL_SMP_PANIC`.
 
-Limiti. Una vCPU, TCG, nessun hardware reale, nessuna preemption. Non provati:
-clippy e cppcheck su K5-B, IRQ su AP. Il confronto SIMD legge i 64 bit bassi
-di XMM0 e XMM1. I numeri di sezione dell'SDM rev. 090 derivano dallo
-scostamento di un capitolo rispetto alla rev. 078, non da una lettura del PDF.
+Fonti verificate sul PDF 253668-090 di Vol. 3A: §§7.14.2, 7.14.4, 10.2.3, 10.7,
+13.5.4, 13.8.4, 13.8.5. RF=1 nel frame IRQ è un comportamento osservato su QEMU
+e ammesso dal validatore, non un requisito tratto dall'SDM. Le citazioni di
+Vol. 1 e Vol. 2 (MXCSR, FCW, FXSAVE, SWAPGS) non sono state ricontrollate.
+
+Limiti. Una vCPU, TCG, nessun hardware reale, nessuna preemption, nessun IRQ su
+AP. XMM controllati: XMM0 e XMM15, non tutti i sedici.

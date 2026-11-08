@@ -47,7 +47,8 @@ volatile BOOT_U64 k5_owner, k5_phase, k5_first, k5_last;
 volatile BOOT_U64 k5_nmi_count, k5_nmi_rip, k5_nmi_gs, k5_cr2, k5_live_root;
 volatile BOOT_U64 k5_nmi_stack, k5_fault_stack;
 volatile X86_EXCEPTION_FRAME k5_fault;
-volatile BOOT_U64 k5_irq_count, k5_irq_stack, k5_irq_frame[5];
+volatile BOOT_U64 k5_irq_count, k5_irq_goal, k5_irq_stack, k5_irq_frame[5];
+static BOOT_U64 k5_irq_last;
 #ifndef KERNEL_K5_IRQ_NEGATIVE
 #define KERNEL_K5_IRQ_NEGATIVE 0
 #endif
@@ -308,17 +309,21 @@ int x86_k5_privilege_probe(X86_PAGE_WINDOW *window)
 int x86_k5_irq_service(void)
 {
     BOOT_U32 value, index;
-    // Intel SDM 3A §12.5.4: the one-shot current count (390h) reads zero after expiry.
+    // Intel SDM 3A §13.5.4: the one-shot current count (390h) reads zero after expiry.
     if (!x86_lapic_native_read(0x390, &value) || value) return 0;
-    // Intel SDM 3A §12.8.4: ISR 100h-170h; vector 41h is bank 2 (120h), bit 1.
+    // Intel SDM 3A §13.8.4: ISR 100h-170h; vector 41h is bank 2 (120h), bit 1.
     for (index = 0; index < 8; ++index) {
         if (!x86_lapic_native_read(0x100 + index * 16, &value) || value != (index == 2 ? 2U : 0U)) return 0;
     }
-    // Intel SDM 3A §12.8.5: writing zero to EOI (B0h) retires the highest ISR bit.
+    // Intel SDM 3A §13.8.5: writing zero to EOI (B0h) retires the highest ISR bit.
+    if (!x86_k5_irq_frame_valid(k5_irq_frame[0], k5_irq_frame[1], k5_irq_frame[2], k5_irq_frame[3],
+        k5_irq_frame[4], k5_irq_stack, K5_USER_CODE, k5_irq_last)) return 0;
     if (!x86_lapic_native_eoi()) return 0;
     for (index = 0; index < 8; ++index) {
         if (!x86_lapic_native_read(0x100 + index * 16, &value) || value) return 0;
     }
+    // Intel SDM 3A §13.5.4: writing the initial count (380h) restarts the one-shot timer.
+    if (k5_irq_count + 1 < k5_irq_goal) *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x380) = k5_timer->Reload;
     return 1;
 }
 
@@ -326,8 +331,8 @@ int x86_k5_irq_service(void)
 
 static volatile unsigned char *tss_rsp0(void)
 {
-    // Intel SDM 3A §8.2.3: 64-bit busy TSS descriptor (type 1011b, P=1), base 15:0, 23:16, 31:24, 63:32.
-    // Intel SDM 3A §8.7: RSP0 at TSS offset 4.
+    // Intel SDM 3A §10.2.3: 64-bit busy TSS descriptor (type 1011b, P=1), base 15:0, 23:16, 31:24, 63:32.
+    // Intel SDM 3A §10.7, figure 10-11: RSP0 at TSS offset 4.
     BOOT_U64 low = gdt[3], high = gdt[4];
     BOOT_U64 base = ((low >> 16) & 0xffffffULL) | (((low >> 56) & 0xffULL) << 24) |
         ((high & 0xffffffffULL) << 32);
@@ -350,7 +355,7 @@ static BOOT_U64 rsp0_swap(volatile unsigned char *field, BOOT_U64 value)
 static int timer_arm(void)
 {
     const X86_LAPIC_MAPPING *mapping = k5_timer->Mapping;
-    // Intel SDM 3A §12.5.4: divide 3E0h = 3 (by 16), LVT 320h one-shot unmasked, initial count 380h.
+    // Intel SDM 3A §13.5.4: divide 3E0h = 3 (by 16), LVT 320h one-shot unmasked, initial count 380h.
     return x86_timer_confirm_write(mapping, 0x3e0, 3) &&
         x86_timer_confirm_write(mapping, 0x320, K5_TIMER_VECTOR) &&
         x86_timer_write(mapping, 0x380, k5_timer->Reload);
@@ -366,6 +371,8 @@ static int irq_case(BOOT_U64 phase, BOOT_U64 root)
         nmi_arm(5, first, last);
     if (!armed) return 0;
     k5_irq_count = 0;
+    k5_irq_goal = phase == 4 ? 3 : 1;
+    k5_irq_last = last;
     k5_irq_stack = 0;
     if (k5_negative != 4 && !timer_arm()) return 0;
     if (k5_negative == 5) {
@@ -375,7 +382,7 @@ static int irq_case(BOOT_U64 phase, BOOT_U64 root)
     }
     x86_k5_enter(K5_USER_CODE, 5, phase == 5);
     int stopped = x86_timer_stop(k5_timer->Mapping);
-    return stopped && k5_irq_count == 1 && x86_kernel_root() == root &&
+    return stopped && k5_irq_count == k5_irq_goal && x86_kernel_root() == root &&
         __readmsr(K5_GS_BASE) == k5_owner && __readmsr(K5_KERNEL_GS_BASE) == 0 &&
         k5_live_root == k5_root &&
         x86_k5_irq_frame_valid(k5_irq_frame[0], k5_irq_frame[1], k5_irq_frame[2], k5_irq_frame[3],
