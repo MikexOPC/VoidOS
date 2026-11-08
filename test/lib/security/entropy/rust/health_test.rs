@@ -241,6 +241,17 @@ fn binary_sources_reject_non_binary_samples() {
     assert_eq!(health.feed(0), HealthStatus::InvalidSample);
 }
 
+// ====== predictable_binary_samples_can_pass_health_tests ======
+
+#[test]
+fn predictable_binary_samples_can_pass_health_tests() {
+    let mut health = monitor(BINARY);
+    assert_eq!(
+        feed_all(&mut health, (0..2 * BINARY_WINDOW as u64).map(|index| index % 2)),
+        HealthStatus::Healthy,
+    );
+}
+
 // ====== guasto persistente e riavvio ======
 
 #[test]

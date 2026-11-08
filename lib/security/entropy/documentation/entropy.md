@@ -34,7 +34,11 @@ Rust `no_std` in `rust/health.rs`, API Rust sicura, niente export C per ora.
 
 - Avvio: servono 1024 campioni consecutivi senza guasti (§4.3, punto 4).
   I campioni dell'avvio vanno scartati dal chiamante.
-- Usare un campione solo se `feed` ha restituito `Healthy`.
+- Un campione è utilizzabile solo se lo stato prima di `feed` e quello
+  restituito sono entrambi `Healthy`. Anche il 1024º campione va scartato.
+- `Healthy` indica che i controlli non hanno rilevato un guasto. La
+  min-entropia va stimata separatamente sulla sorgente: anche una sequenza
+  binaria alternata e prevedibile può superare entrambi i controlli.
 - Un guasto e persistente: lo stato non cambia finche non si chiama
   `restart()`, e resta il primo tipo di guasto rilevato.
 - I test lavorano sui campioni grezzi, prima di ogni condizionamento (§4.3,
@@ -47,12 +51,14 @@ Rust `no_std` in `rust/health.rs`, API Rust sicura, niente export C per ora.
 ## Test
 
 `scripts/test/run.ps1 -Suite security` (driver Rust
-`test/lib/security/runner.rs`, test in `test/lib/security/entropy/rust/`). Esegue 16 test in debug e release:
+`test/lib/security/runner.rs`, test in `test/lib/security/entropy/rust/`).
+Esegue 17 test in debug e release:
 
 - formula RCT sugli esempi del testo e su tutti gli H;
 - calcolo CRITBINOM confrontato con i 10 valori della Table 2;
 - avvio a 1024 campioni esatti;
 - sorgenti casuali sane, sorgenti bloccate, periodiche e sbilanciate;
+- sequenza binaria prevedibile che supera entrambi i controlli;
 - confini della finestra APT;
 - guasto persistente, riavvio e configurazioni invalide.
 

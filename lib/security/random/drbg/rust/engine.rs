@@ -75,6 +75,8 @@ impl HmacDrbg {
 
 // ====== HmacDrbg::instantiate (10.1.2.3) ======
 
+    /// Checks lengths. For 256-bit strength the caller must supply at least
+    /// 256 bits of assessed min-entropy and a separate compliant nonce.
     pub fn instantiate(entropy: &[u8], nonce: &[u8], personalization: &[u8]) -> Result<Self, DrbgError> {
         if entropy.len() < MINIMUM_ENTROPY_BYTES {
             return Err(DrbgError::EntropyTooShort);
@@ -105,6 +107,8 @@ impl HmacDrbg {
 
 // ====== HmacDrbg::reseed (10.1.2.4) ======
 
+    /// Checks lengths. For 256-bit strength the caller must supply at least
+    /// 256 bits of fresh, assessed min-entropy.
     pub fn reseed(&mut self, entropy: &[u8], additional: &[u8]) -> Result<(), DrbgError> {
         if entropy.len() < MINIMUM_ENTROPY_BYTES {
             return Err(DrbgError::EntropyTooShort);

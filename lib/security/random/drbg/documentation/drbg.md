@@ -26,9 +26,9 @@ con `#[path]`). API Rust, niente export C per ora.
 
 | Limite | Valore | Fonte |
 |---|---|---|
-| Forza di sicurezza | 256 bit | Table 2 (SHA-256) |
-| Entropia minima | 32 byte | Table 2, = forza |
-| Nonce minimo | 16 byte | §8.6.7, forza/2 |
+| Forza di sicurezza massima | 256 bit | Table 2 (SHA-256) |
+| Lunghezza minima dell'input di entropia | 32 byte | Table 2 |
+| Lunghezza minima del nonce | 16 byte | §8.6.7, forza/2 |
 | Ogni input | al massimo 2^32 byte (2^35 bit) | Table 2 |
 | Una richiesta | al massimo 65 536 byte (2^19 bit) | Table 2 |
 | Richieste tra due reseed | al massimo 2^48 | Table 2 |
@@ -39,9 +39,15 @@ rifiutata non tocca ne l'output ne lo stato.
 
 ## Regole
 
-- L'entropia deve venire da una sorgente che ha superato gli health test di
-  `lib/security/entropy`: il DRBG non la valuta.
-- Il nonce deve essere unico (§8.6.7), per esempio altra entropia.
+- Per ottenere una forza di 256 bit, il chiamante deve fornire almeno
+  256 bit di min-entropia sia a `instantiate` sia a `reseed` (§8.6.3).
+  Il DRBG controlla le lunghezze in byte. Lo stato `Healthy` dei test
+  sulla sorgente segnala l'assenza di guasti rilevati.
+- Il nonce deve rispettare §8.6.7. Se si usa un nonce casuale, il chiamante
+  deve fornire almeno 128 bit di entropia aggiuntivi, conteggiati a parte.
+  `personalization` e `additional` non coprono il requisito di entropia.
+- Se manca l'entropia richiesta all'avvio o per un reseed obbligatorio,
+  il chiamante deve lasciare il generatore indisponibile.
 - Nessuna prediction resistance: chi la vuole fa `reseed` prima di
   `generate`.
 - Key e V (i valori segreti, §10.1.2.1) si azzerano alla distruzione; vale

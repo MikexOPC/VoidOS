@@ -55,9 +55,14 @@ dell'Intel SDM Vol. 2 (riferimento R-003), come chiede il Constraint 4.
   ai 64 bit) e α = 2^-40, quindi RCT C = 6 e APT C = 19 su W = 512. Questi
   cutoff vengono dal calcolo gia verificato sulla Table 2. Un guasto e
   persistente.
-- **Seed del DRBG:** 1024 campioni di avvio (scartati), poi entropia di
-  64 byte (il doppio del minimo, margine contro una stima ottimistica) e
-  nonce di 16 byte, sempre dalla sorgente validata.
+- **Seed del DRBG:** scartare i 1024 campioni di avvio. Prima di istanziare
+  o riseminare il DRBG, raccogliere un blocco con almeno 256 bit di
+  min-entropia accreditata. Il parametro H dei controlli non accredita
+  entropia: serve una stima che tenga conto delle dipendenze tra campioni.
+  Se la stima consente di sommare 8 bit per ogni campione da 64 bit,
+  servono almeno 32 campioni (256 byte grezzi). Per il nonce casuale
+  accreditare separatamente almeno 128 bit. Vale lo stesso requisito di
+  credito se si usa RDRAND come riserva.
 - **Reseed:** ogni 2^16 richieste (politica piu severa del limite standard)
   e su richiesta.
 - **SMP:** un solo DRBG globale con lock in v0. Per-CPU in seguito, se le
@@ -99,6 +104,9 @@ dell'Intel SDM Vol. 2 (riferimento R-003), come chiede il Constraint 4.
 - Test host: CPUID assente o con bit spenti, CF = 0 continuo, valore
   bloccato e sorgente intermittente portano al comportamento deciso; i
   dati validi producono le stesse uscite del DRBG di riferimento.
+- Test host: un blocco con credito insufficiente viene rifiutato anche
+  se supera gli health test. Nonce, jitter e tempi IRQ non coprono
+  il credito mancante per il seed.
 - QEMU, 10 boot consecutivi (nuovo accesso CPU nel percorso di avvio):
   marker di entropia pronta, nessun fault inatteso.
 - Test negativi QEMU: `-cpu max,-rdseed` usa RDRAND;
