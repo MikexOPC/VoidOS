@@ -17,7 +17,10 @@ USER_FAULT = re.compile(rb"\bv=(06|0d|0e) e=([0-9a-f]+) i=0 cpl=3\b", re.I)
 AP_IRQ = re.compile(rb"\bv=d1 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 USER_IRQ = re.compile(rb"\bv=41 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 RSP0_FRAME = 0x409000 - 40
-KERNEL_PF = re.compile(rb"\bv=0e e=([0-9a-f]+) i=0 cpl=0\b", re.I)
+KERNEL_PF = re.compile(
+    rb"\bv=0e e=([0-9a-f]+) i=0 cpl=0 IP=[0-9a-f]+:([0-9a-f]+)[^\r\n]*\bCR2=([0-9a-f]+)",
+    re.I,
+)
 SYS_TF = re.compile(rb"\bv=01 e=[0-9a-f]+ i=0 cpl=0\b", re.I)
 USER_TF = re.compile(rb"\bv=01 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 AP_REASON = {6: 0x4b35415046414900, 7: 0x4b35415046414900, 8: 0x4b354150544d4f00, 9: 0x4b34544c4241434b}
@@ -144,8 +147,12 @@ def copy_boot(directory, image):
         if not log.has("KERNEL_K5_SMEP_SMAP_SUPPORTED") or log.numbers("K5_COPY_FAULTS") != [4]:
             raise RuntimeError("Missing SMAP or fault evidence")
         trace = vm.trace.read_bytes()
-        faults = [int(item, 16) for item in KERNEL_PF.findall(trace)][-4:]
-        if faults != [0, 3, 0, 3] or USER_FAULT.findall(trace) != [(b"06", b"0000")]:
+        instruction = log.number("K5_COPY_INSTRUCTION")
+        faults = [(int(error, 16), int(cr2, 16)) for error, rip, cr2 in KERNEL_PF.findall(trace)
+                  if int(rip, 16) == instruction]
+        if faults != [(0, 0x401000), (3, 0x406000), (0, 0x401000), (3, 0x406000)] or (
+            USER_FAULT.findall(trace) != [(b"06", b"0000")]
+        ):
             raise RuntimeError(f"Unexpected fault sequence {faults}")
         if b"triple fault" in trace.lower():
             raise RuntimeError("Unexpected triple fault")
@@ -166,11 +173,14 @@ def copy_negative(directory, image, case):
             time.sleep(0.1)
             if HALT.search(vm.monitor.read_bytes()):
                 trace = vm.trace.read_bytes()
-                faults = [int(item, 16) for item in KERNEL_PF.findall(trace)]
+                events = [tuple(int(item, 16) for item in event) for event in KERNEL_PF.findall(trace)]
+                faults = [error for error, _, _ in events]
                 if b"triple fault" in trace.lower():
                     raise RuntimeError("Negative copy case caused a triple fault")
                 if expected is None and faults or expected is not None and (not faults or faults[-1] != expected):
                     raise RuntimeError(f"Unexpected kernel faults {faults}")
+                if case == 23 and events[-1] != (0, log.number("K5_COPY_OUTSIDE"), 0x401000):
+                    raise RuntimeError(f"RIP negative did not fault at its isolated copy instruction: {events[-1]}")
                 return dict(ExpectedRejection=case, Faults=faults[-1:])
     raise RuntimeError("Negative copy case was not rejected")
 
