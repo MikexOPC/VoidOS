@@ -527,11 +527,13 @@ static void supervise(uint32_t index, uint64_t generation)
 {
     const uint32_t mask = xp_panic_native.Source.Mask;
     uint64_t elapsed = 0, settled = 0;
-    uint32_t last, now, sent = 0;
+    uint32_t last, now, sent = 0, stalled = 0;
     if (!xis_native_now(NULL, &last)) xis_native_abort(0x4b354150434c4b00ULL);
     while (xis_value(index, XIS_ACK) != generation) {
         if (!xis_native_now(NULL, &now)) xis_native_abort(0x4b354150434c4b01ULL);
         uint32_t delta = (now - last) & mask;
+        stalled = delta ? 0 : stalled + 1;
+        if (stalled == 1000000) xis_native_abort(0x4b354150434c4b02ULL);
         last = now;
         elapsed += delta;
         if (elapsed > 30ULL * KERNEL_PM_TIMER_HZ) xis_native_abort(0x4b354150544d4f00ULL);
@@ -586,7 +588,7 @@ void x86_k5_ap_probe(X86_PAGE_WINDOW *window)
         k5_cpu = 0;
         if (k5_ap_passed != 1 || xis_native_shootdowns() != shootdowns ||
             k5_ap_gs != (BOOT_U64)xp_panic_native.Contexts[index]) xis_native_abort(0x4b35415046414900ULL);
-        pages_release(window, budget);
+        if (!pages_release(window, budget)) xis_native_abort(0x4b35415050414701ULL);
         k5_owner = 0;
         if (!trace_field("K5_AP_CPU: ", index) || !trace_field("K5_AP_GS: ", k5_ap_gs) ||
             !trace_field("K5_AP_TSS: ", k5_ap_tss) || !trace_field("K5_IRQ_CS: ", k5_irq_frame[1]) ||

@@ -161,12 +161,16 @@ e un NMI con AC=1. Il boot prosegue fino a `KERNEL_READY`.
 | `k5-copy-no-stac`, SMAP senza `STAC` | 3 | arresto |
 | `k5-copy-smep`, kernel esegue da pagina utente | 11h | arresto |
 | `k5-copy-cr2`, CR2 fuori dall'intervallo | 0 | arresto |
-| `k5-copy-rip`, RIP fuori dalla finestra | 0 | arresto |
+| `k5-copy-rip`, copia fuori dalla finestra con AC attivo e CR2 valido | 0 | arresto |
 | `k5-copy-kernel-buffer`, fault sul buffer kernel | 2 | arresto |
 | `k5-copy-ac-open`, AC attivo al rientro in C | nessuno | arresto |
 
 Evidenze in `kernel/build/qemu-run-73f4dadd7197486f9eb6b73c2afbc7a2`, e
 `kernel/build/qemu-run-085da30597624a7e9cb9930b6319ca08` per `k5-copy-no-stac`.
+
+Il runner verifica il RIP e il CR2 dei fault di copia. Nel negativo RIP
+controlla che il fault arrivi dall'istruzione esterna alla finestra e
+che CR2 sia l'indirizzo utente assente richiesto dalla copia.
 
 ## Chiusura di K5
 
@@ -186,3 +190,14 @@ non provata. RSP utente e buffer sono variabili del probe. Nessun demand paging 
 concorrente. KPTI e mitigazioni non decisi: nessun codice non fidato prima di quella
 scelta. Tutto su QEMU TCG. Gli indirizzi di STAR, LSTAR e CSTAR non sono ricontrollati
 su Vol. 4.
+
+### Verifica delle correzioni di review
+
+Il BSP controlla il rilascio delle pagine AP e arresta il diagnostico
+anche se il timer resta fermo per un milione di letture consecutive.
+Questi due errori non sono stati iniettati.
+
+`k5-copy`, `k5-ap`, `k5-privilege` e `k5-syscall` 10/10 ciascuno,
+`k5-copy-rip` 3/3 e 7 test Rust per ciascun livello di ottimizzazione
+(0 e 2). Log in `kernel/build/qemu-run-d262834e23094509a8a67d1077e54fd6`
+e `kernel/build/qemu-run-53d6c6b9ec6644788086f40c29fa302d`.

@@ -16,6 +16,7 @@ EXTERN x86_k5_copy_recover:PROC
 ; pagina utente da supervisor richiede EFLAGS.AC=1. LFENCE chiude la speculazione sul range.
 PUBLIC x86_k5_copy_raw, x86_k5_copy_wait_first, x86_k5_copy_wait_last
 PUBLIC x86_k5_copy_first, x86_k5_copy_last, x86_k5_copy_fixup
+PUBLIC x86_k5_copy_outside
 x86_k5_copy_raw PROC
     push rdi
     push rsi
@@ -24,6 +25,15 @@ x86_k5_copy_raw PROC
     mov rcx, r8
     cld
     lfence
+    cmp QWORD PTR [k5_negative], 23
+    jne copy_normal
+    cmp rsi, 401000h
+    jne copy_normal
+    stac
+x86_k5_copy_outside LABEL BYTE
+    rep movsb
+    jmp NEAR PTR x86_k5_copy_last
+copy_normal:
     cmp QWORD PTR [k5_negative], 20
     je copy_open
     stac

@@ -16,6 +16,7 @@ extern const unsigned char x86_k5_copy_user[], x86_k5_copy_user_end[];
 extern const unsigned char x86_k5_copy_ok[];
 extern const unsigned char x86_k5_copy_wait_first[], x86_k5_copy_wait_last[];
 extern const unsigned char x86_k5_copy_first[], x86_k5_copy_last[], x86_k5_copy_fixup[];
+extern const unsigned char x86_k5_copy_outside[];
 void x86_k5_copy_nmi(void);
 void x86_k5_copy_pf(void);
 void x86_k5_enter(BOOT_U64 entry, BOOT_U32 mode, BOOT_U64 argument);
@@ -64,7 +65,6 @@ static int copy_call(BOOT_U64 *frame)
 {
     BOOT_U64 number = K5_GPR(frame, 14), pointer = K5_GPR(frame, 8), length = K5_GPR(frame, 9);
     if (k5_negative == 21) ((void (*)(void))K5_USER_CODE)();
-    if (k5_negative == 23) (void)*(const volatile unsigned char *)0x401000ULL;
     BOOT_U32 range = x86_k5_copy_range(pointer, length);
     if (range == 3) { K5_GPR(frame, 14) = K5_RESULT_LENGTH; return 1; }
     if (range != 1) { K5_GPR(frame, 14) = K5_RESULT_RANGE; return 1; }
@@ -115,7 +115,9 @@ int x86_k5_copy_probe(X86_PAGE_WINDOW *window)
     __writecr4(cr4 | K5_CR4_SMEP | K5_CR4_SMAP);
     k5_copy_budget = 0x4000000ULL;
     k5_copy_wait = !k5_negative;
-    int passed = nmi_arm(1, (BOOT_U64)x86_k5_copy_wait_first, (BOOT_U64)x86_k5_copy_wait_last);
+    int passed = trace_field("K5_COPY_INSTRUCTION: ", (BOOT_U64)x86_k5_copy_first) &&
+        trace_field("K5_COPY_OUTSIDE: ", (BOOT_U64)x86_k5_copy_outside) &&
+        nmi_arm(1, (BOOT_U64)x86_k5_copy_wait_first, (BOOT_U64)x86_k5_copy_wait_last);
     if (passed) x86_k5_enter(K5_USER_CODE, 5, 0);
     ok = K5_USER_CODE + ((BOOT_U64)x86_k5_copy_ok - (BOOT_U64)x86_k5_copy_user);
     __writecr4(cr4);
