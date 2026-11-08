@@ -19,8 +19,9 @@ Rust `no_std`: radice `rust/memory.rs`, funzioni in `rust/wipe.rs` e
   con scritture `volatile`, seguite da una `compiler_fence`.
 - `Wiping::new(valore)`: contenitore che da accesso al valore e lo azzera
   quando viene distrutto.
-- `equal(a, b)`: `true` solo con lunghezze e contenuti uguali. Il tempo
-  dipende dalla lunghezza, che e considerata pubblica, non dal contenuto.
+- `equal(a, b)`: `true` solo con lunghezze e contenuti uguali. Le lunghezze
+  sono pubbliche. A parità di lunghezza, il sorgente accumula le
+  differenze di tutti i byte prima del confronto finale.
 
 Un altro modulo usa l'azzeramento includendo `wipe.rs` con `#[path]`, come
 fa SHA-256 (HMAC lo riusa da SHA-256, `compare.rs` lo include direttamente).
@@ -32,9 +33,12 @@ Un file va incluso una sola volta per crate (clippy `duplicate_mod`).
 - L'azzeramento copre solo la memoria del valore. Copie fatte prima, registri
   e stack di funzioni gia terminate non sono coperti: chi gestisce segreti
   deve evitare copie (SHA-256 ora lavora sul buffer senza copiarlo).
-- Rust e LLVM non garantiscono formalmente il tempo costante. `equal` non ha
-  uscite anticipate e usa `black_box` per scoraggiare ottimizzazioni con
-  rami; e un "best effort", senza misure di tempo.
+- [`black_box`](https://doc.rust-lang.org/core/hint/fn.black_box.html) è un
+  suggerimento al compilatore privo di garanzie crittografiche. Prima di
+  usare `equal` per verificare tag di autenticazione, esaminare il codice
+  macchina finale con il target, la toolchain e le opzioni del kernel.
+  Controllare che rami e indirizzi di memoria non dipendano dai byte
+  confrontati.
 
 ## Test
 

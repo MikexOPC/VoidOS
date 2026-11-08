@@ -37,9 +37,10 @@ Il file contiene un byte per campione; i valori devono stare negli n bit
 dichiarati. Campioni piu larghi vanno ridotti prima (§6.4). Con meno di
 1 000 000 di campioni (§3.1.1) il programma avvisa. Per i riavvii il file
 contiene la matrice per righe (riavvio 1, poi riavvio 2, ...) e `H_I` e la
-stima iniziale; il programma esce con errore se la validazione fallisce. Il
-binario viene costruito dalla suite in
-`kernel/build/security-host/assessment.exe`.
+stima iniziale. Il programma esce con errore se la validazione fallisce.
+Da root, eseguire `./lib/security/scripts/test.ps1 -Module assessment` e
+cercare `assessment.exe` nella cartella `kernel/build/security-host-*/`
+indicata all'avvio della suite.
 
 ## Struttura
 
