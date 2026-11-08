@@ -19,7 +19,7 @@ def wait(vm, origin):
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         log = vm.log()
-        if not vm.alive() or any(x != "KERNEL_SMP_PANIC" for x in log.failures()):
+        if not vm.alive() or any(not "KERNEL_SMP_PANIC".startswith(x) for x in log.failures()):
             raise RuntimeError("Unexpected failure before group panic")
         if "KERNEL_SMP_PANIC_HALTED" in log.text:
             if log.number("PANIC_OWNER") != origin:

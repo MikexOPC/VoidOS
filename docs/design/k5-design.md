@@ -107,12 +107,117 @@ CPL3 su uno stack scelto tramite RSP0.
   da base incerta, nessun ritorno con stack o GS incoerente. Gate
   ordinario e regressione panic SMP sul profilo esistente.
 
+## K5-B — IRQ ordinario mentre gira ring 3
+
+Stato: implementato nel profilo diagnostico QEMU/OVMF con una vCPU.
+[Validazione](k5-validation.md).
+
+Obiettivo: provare che un IRQ del timer LAPIC interrompe davvero il
+payload a CPL3, entra sullo stack indicato da `TSS.RSP0`, salva il
+contesto in Assembly, ripristina il GS kernel, riceve l'EOI e riprende
+il payload con GPR e stato SIMD intatti.
+
+### Cosa dice l'hardware
+
+- Un interrupt gate con cambio di privilegio in IA-32e carica RSP da
+  `TSS.RSP0` quando l'IST del gate è zero, imposta SS a NULL e spinge
+  SS, RSP, RFLAGS, CS, RIP. Il gate azzera IF. Intel SDM 3A §7.14.4
+  (stack switching in IA-32e) e §7.14.2 (frame a 64 bit).
+- RSP0 sta all'offset 4 della TSS a 64 bit. SDM 3A §8.7 (TSS a 64 bit).
+- `SWAPGS` scambia `IA32_GS_BASE` (C0000101h) e `IA32_KERNEL_GS_BASE`
+  (C0000102h); è lecito solo a CPL0. SDM 2B, voce SWAPGS.
+- Timer LAPIC: LVT Timer a 320h, Initial Count 380h, Divide 3E0h; EOI
+  scrivendo zero a B0h. SDM 3A §12.5.4 e §12.8.5. Il driver
+  [timer LAPIC](../../arch/x86/kernel/timer/lapic/timer.h) possiede già
+  questi accessi: K5-B li usa tramite la sua interfaccia, senza
+  duplicarli.
+
+### Decisioni proposte
+
+1. **Sorgente IRQ: timer LAPIC del BSP in modalità one-shot**, vettore
+   del registro IRQ esistente. Il PIT è escluso: richiede l'I/O APIC e
+   non aggiunge copertura al percorso CPL3. Alternativa scartata per v0:
+   periodico, perché più consegne rendono ambiguo il conteggio.
+2. **Gate IRQ del diagnostico con IST zero e DPL0.** Solo così la CPU usa
+   RSP0; con IST diverso da zero la prova non distinguerebbe nulla. Fault
+   e NMI restano su IST1/IST2 come in K5-A.
+3. **Stack RSP0 dedicato al probe**: una pagina supervisor RW/NX con
+   guardia, posseduta dal probe per la durata della prova. Il probe salva
+   il valore RSP0 precedente e lo ripristina prima di restituire le pagine.
+   Lo stack RSP0 per CPU permanente arriva con K6, quando esistono i
+   processi.
+4. **Ordine in ingresso (Assembly)**: leggere CS dal frame; se RPL è 3,
+   `SWAPGS`; salvare GPR e `FXSAVE64` sullo stack RSP0 come nel
+   [percorso IRQ esistente](../../arch/x86/kernel/interrupts/return/assembly/entry/return.asm);
+   poi chiamare C. In uscita, ordine inverso: `FXRSTOR64`, GPR, `SWAPGS`
+   solo se il frame torna a RPL 3, `IRETQ`. L'EOI lo scrive il driver del
+   timer prima del ritorno, non l'Assembly.
+5. **Finestra del payload**: il payload esegue `IF=1` solo in un tratto
+   delimitato da etichette, con un ciclo che modifica GPR e XMM con
+   valori noti. Fuori da quel tratto resta `IF=0`. IOPL resta 0.
+6. **Rust** valida il frame osservato: CS = selettore codice utente con
+   RPL 3, SS utente, RIP dentro il tratto IF=1, RSP dentro lo stack
+   utente, RFLAGS.IF = 1, RSP di ingresso uguale a RSP0 meno il frame.
+   C possiede lo stato della prova, Assembly i registri.
+
+Sequenza di progetto, non eseguibile:
+
+1. Preflight: salva RSP0, IDT, GS e LVT timer; verifica che il timer sia
+   libero e mascherato; prepara la pagina RSP0.
+2. Installa la IDT diagnostica, scrive RSP0, arma il timer one-shot.
+3. `IRETQ` a CPL3; il payload apre il tratto IF=1 e gira finché un
+   contatore kernel vede la consegna, con deadline dal clock calibrato.
+4. Nel handler: valida frame e GS, registra la consegna, EOI, ritorno.
+5. Il payload verifica i propri GPR e XMM, poi esegue `UD2` per tornare
+   al kernel come in K5-A.
+6. Ripristino: timer mascherato, LVT, RSP0, IDT, CR3, GS; azzera e
+   restituisce le pagine. Ripristino incerto → arresto senza GS.
+
+### Differenze emerse nell'implementazione
+
+- **EOI.** I validatori del driver richiedono la mappatura ricorsiva, assente
+  nella root privata. Il timer e il controllo della mappatura LAPIC restano
+  al driver fuori dalla root privata. Durante l'IRQ il probe usa le primitive
+  native `x86_lapic_native_read` e `x86_lapic_native_eoi` e verifica l'ISR.
+- **Avvio.** K5-B richiede LAPIC e timer calibrato: parte con un hook di test
+  in `x86_timer_run`, dopo il cleanup, solo nel profilo K5. Non è più vero
+  che il driver resti intatto: cambiano sei righe sotto `#ifdef`.
+- **IF.** Con IOPL=0 il payload non può usare `STI`. IF=1 viene dal frame
+  `IRETQ` per tutto il modo 5. L'IRQ può quindi arrivare da subito: la finestra
+  accettata va dall'inizio del payload alla fine del ciclo.
+- **RF.** L'immagine salvata di RFLAGS può avere RF=1. QEMU lo riporta
+  sull'IRQ e il validatore lo ammette, come per i fault.
+- **Stack.** La pagina RSP0 è la settima pagina, a 0x404000, nella metà bassa
+  della root privata e senza bit utente. La guardia è a 0x403000.
+
+### Casi da provare
+
+- Positivo: almeno una consegna con RIP utente nel tratto IF=1,
+  ingresso su RSP0, GS kernel nel handler, registri intatti dopo il
+  ritorno, una sola consegna per arm.
+- NMI durante il handler IRQ entrato da CPL3 (GS già kernel) e NMI nel
+  payload con IF=1: entrambi devono riprendere.
+- Negativi separati: IRQ consegnato a CPL0 durante il probe (frame RPL 0)
+  respinto come prova; RSP di ingresso diverso da RSP0 → fallimento;
+  timeout senza consegna → arresto diagnostico, non PASS; registro
+  alterato nel payload → fallimento rilevato.
+- Host: validazione Rust del frame con casi validi, CS RPL 0, RIP fuori
+  tratto, IF=0, RSP fuori stack, overflow di indirizzi.
+- QEMU/OVMF: dieci boot consecutivi del positivo (interrupt e
+  transizioni di privilegio), più regressioni ordinaria e panic SMP 3/3.
+  Una vCPU, come K5-A.
+
+### Perimetro
+
+Probe in `test/arch/x86/kernel/interrupts/privilege/`, ingresso IRQ del
+diagnostico nell'Assembly del probe, uso del driver timer tramite la sua
+interfaccia. Nessuna modifica al percorso IRQ ordinario del kernel.
+Limite dichiarato: un solo IRQ, una sola CPU, nessuna preemption o
+cambio di task; la consegna da CPL3 su AP resta per K6.
+
 ## Blocchi successivi
 
-1. **K5-B, IRQ da ring 3.** Estendere il payload per ricevere un IRQ
-   mascherabile sullo stack kernel attestato da RSP0. Verificare il
-   riconoscimento di CPL, GS per CPU, frame `IRETQ`, contesto SIMD,
-   acknowledgement e ripresa, con NMI in entrambe le finestre.
+1. **K5-B**: vedi sezione sopra.
 2. **K5-C, prima syscall.** Una chiamata senza puntatori. Definire ABI,
    selettori e stack prima di abilitare `IA32_EFER.SCE`. Proposta di
    rollout per D5: ingresso `SYSCALL`, ritorno iniziale via `IRETQ`

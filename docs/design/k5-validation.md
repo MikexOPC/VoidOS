@@ -39,6 +39,40 @@ quattro vCPU. Evidenze in
 `kernel/build/qemu-run-91541bc1453c4af7b8e4a86eadd01e6e`. Le suite host
 `layout` e `build-plan` sono passate.
 
-Il profilo prova un payload incorporato con IF=0. Il percorso ordinario
-degli IRQ da CPL3 su RSP0, le syscall e il caricamento ELF restano
-blocchi distinti. [Design K5](k5-design.md).
+Il payload K5-A usa IF=0. Gli IRQ da CPL3 sono provati da K5-B qui sotto.
+[Design K5](k5-design.md).
+
+## K5-B, IRQ del timer da ring 3
+
+Risultato: superato sul profilo `k5-privilege`, QEMU TCG, q35, OVMF, una
+vCPU. Dieci boot consecutivi. Evidenze in
+`kernel/build/qemu-run-e5574bb60f2348fa8999ee7fa570f2ee`.
+
+In ogni boot due IRQ del timer LAPIC (vettore 41h) interrompono il payload.
+La traccia QEMU li vede a `cpl=3`, il kernel a RIP utente con ingresso a
+0x404fd8, cioè RSP0 meno il frame. Il primo riceve un NMI dentro l'handler,
+con GS kernel. Il secondo convive con un NMI nel payload a IF=1. L'handler
+azzera XMM0-1 e il payload ritrova GPR e XMM con i valori noti. Dopo il
+ripristino il boot arriva a `KERNEL_READY`.
+
+| Negativo, 3 boot ciascuno | Esito atteso | Stato |
+| --- | --- | --- |
+| `k5-irq-simd`, SIMD non ripristinato | panic | 3/3 |
+| `k5-irq-gpr`, GPR alterato | panic | 3/3 |
+| `k5-irq-rsp0`, RSP0 errato | panic | 3/3 |
+| `k5-irq-timeout`, nessun timer | panic, nessun IRQ da CPL3 | 3/3 |
+| `k5-irq-cpl0`, IRQ a CPL0 | arresto `4b354641` | 3/3 |
+
+Evidenze in `kernel/build/qemu-run-63078009502b4928ab565aaa06637ca0`.
+Il caso senza NMI passa 1/1. Regressioni: `ap-runtime` 3/3,
+`ap-runtime-panic` 10/10 dopo la correzione del runner, suite host `layout`
+e `build-plan`, 2 test Rust del validatore.
+
+`ap-runtime-panic` era fallita in un boot su 3 per una lettura del log
+durante la scrittura di una riga, attribuita al marker troncato. La VM era
+sana. Il runner ora ammette i prefissi di `KERNEL_SMP_PANIC`.
+
+Limiti. Una vCPU, TCG, nessun hardware reale, nessuna preemption. Non provati:
+clippy e cppcheck su K5-B, IRQ su AP. Il confronto SIMD legge i 64 bit bassi
+di XMM0 e XMM1. I numeri di sezione dell'SDM rev. 090 derivano dallo
+scostamento di un capitolo rispetto alla rev. 078, non da una lettura del PDF.

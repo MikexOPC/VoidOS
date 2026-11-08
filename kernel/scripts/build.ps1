@@ -12,13 +12,13 @@ param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-h
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none',
-    [switch]$PlanOnly, [switch]$UseRustPlan, [switch]$TestK5Privilege)
+    [switch]$PlanOnly, [switch]$UseRustPlan, [switch]$TestK5Privilege, [int]$TestK5IrqNegative = 0)
 . (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
 if (!$PlanOnly) { Assert-LayoutCopies }
 $ErrorActionPreference = 'Stop'
 $boundBuildOptions = @($PSBoundParameters.Keys | Where-Object { $_ -notin @('PlanOnly','UseRustPlan') })
 if ($TestK5Privilege -and ($PlanOnly -or $UseRustPlan -or
-    @($boundBuildOptions | Where-Object { $_ -notin @('TestK5Privilege','OutputDirectory','ToolchainBin') }).Count)) {
+    @($boundBuildOptions | Where-Object { $_ -notin @('TestK5Privilege','TestK5IrqNegative','OutputDirectory','ToolchainBin') }).Count)) {
     throw 'K5 privilege requires an isolated diagnostic profile.'
 }
 . (Join-Path $PSScriptRoot 'build/profiles.ps1')
@@ -78,6 +78,10 @@ if ($UseRustPlan) {
 . (Join-Path $PSScriptRoot 'build/profiles/flags.ps1')
 $flags += '/DKERNEL_PANIC_RUNTIME=1'
 if ($TestK5Privilege) { $flags += '/DKERNEL_TEST_K5_PRIVILEGE=1' }
+if ($TestK5IrqNegative) {
+    if (!$TestK5Privilege -or $TestK5IrqNegative -notin 1..5) { throw 'Invalid K5 IRQ negative case.' }
+    $flags += "/DKERNEL_K5_IRQ_NEGATIVE=$TestK5IrqNegative"
+}
 if ($TestApTransition -ne 'none') {
     if ($TestBootstrapMemory -or $TestApLowAbsent -or $TestSmpPanic -ne 'none') { throw 'Transition diagnostic requires ordinary early reservation and owns the terminal checkpoint.' }
     if ($TestApTransition -like 'joint*' -and $TestApCommit) { throw 'Joint diagnostic owns all resource commits.' }

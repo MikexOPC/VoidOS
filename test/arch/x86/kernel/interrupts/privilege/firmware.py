@@ -1,4 +1,4 @@
-"""Verify real CPL3, expected faults, and three controlled NMI entries."""
+"""Verify real CPL3, expected faults, five controlled NMI entries and timer IRQs from CPL3."""
 import argparse
 import importlib.util
 import re
@@ -14,6 +14,8 @@ spec.loader.exec_module(qemu)
 REGISTERS = re.compile(rb"RIP=([0-9a-fA-F]+)[^\r\n]*\bCPL=([0-3])\b")
 HALT = re.compile(rb"RAX=000000004b354641[^\r\n]*\r?\n(?:[^\r\n]*\r?\n){0,4}RIP=[^\r\n]*\bHLT=1\b", re.I)
 USER_FAULT = re.compile(rb"\bv=(06|0d|0e) e=([0-9a-f]+) i=0 cpl=3\b", re.I)
+USER_IRQ = re.compile(rb"\bv=41 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
+RSP0_FRAME = 0x405000 - 40
 
 
 # ====== wait_window ======
@@ -41,7 +43,7 @@ def wait_window(vm, start, end, cpl):
 
 def boot(directory, image):
     with qemu.Vm(directory, image, smp=1) as vm:
-        for index, cpl in enumerate((0, 0, 3), 1):
+        for index, cpl in enumerate((0, 0, 3, 0, 3), 1):
             log = vm.wait("KERNEL_K5_NMI_ARMED", occurrences=index, level="OK")
             first, last = (log.number(name, index - 1) for name in ("K5_NMI_FIRST", "K5_NMI_LAST"))
             wait_window(vm, first, last, cpl)
@@ -52,21 +54,59 @@ def boot(directory, image):
         log = vm.wait("KERNEL_READY", level="OK")
         if log.failures() or log.terminal() or not log.before("KERNEL_K5_RING3_OK", "KERNEL_READY"):
             raise RuntimeError("Missing clean kernel continuation")
+        if not log.before("KERNEL_K5_IRQ_OK", "KERNEL_READY") or not log.has("KERNEL_K5_IRQ_RESUMED"):
+            raise RuntimeError("Missing CPL3 IRQ continuation")
         if log.numbers("K5_FAULT_VECTOR") != [13, 14, 14, 6] or log.numbers("K5_FAULT_ERROR") != [0, 5, 21, 0]:
             raise RuntimeError("Unexpected fault sequence")
         if log.numbers("K5_USER_CS") != [0x33] * 4:
             raise RuntimeError("Faults did not come from ring 3")
+        if log.numbers("K5_IRQ_CS") != [0x33] * 2 or log.numbers("K5_IRQ_STACK") != [RSP0_FRAME] * 2:
+            raise RuntimeError("IRQ did not enter from ring 3 on the RSP0 stack")
         gs = log.numbers("K5_NMI_GS")
-        if len(gs) != 3 or gs[0] < 0xffff800000000000 or gs[1:] != [0, 0]:
+        if len(gs) != 5 or gs[0] < 0xffff800000000000 or gs[1:3] != [0, 0] or gs[3] != gs[0] or gs[4] != 0:
             raise RuntimeError("Unexpected GS phases")
         trace = vm.trace.read_bytes()
         if [(int(vector, 16), int(error, 16)) for vector, error in USER_FAULT.findall(trace)] != [
-            (13, 0), (14, 5), (14, 21), (6, 0),
+            (13, 0), (14, 5), (14, 21), (6, 0), (6, 0), (6, 0),
         ]:
             raise RuntimeError("QEMU did not observe the same CPL3 faults")
+        if len(USER_IRQ.findall(trace)) != 2:
+            raise RuntimeError("QEMU did not observe two timer IRQs from CPL3")
         if b"triple fault" in trace.lower():
             raise RuntimeError("Unexpected triple fault")
-        return dict(Faults=4, Nmis=3, Cleanup=True, UserCpl=3)
+        return dict(Faults=6, Nmis=5, UserIrqs=2, Cleanup=True, UserCpl=3)
+
+
+# ====== irq_negative ======
+
+def irq_negative(directory, image, case):
+    with qemu.Vm(directory, image, smp=1) as vm:
+        for index, cpl in enumerate((0, 0, 3), 1):
+            log = vm.wait("KERNEL_K5_NMI_ARMED", occurrences=index, level="OK")
+            first, last = (log.number(name, index - 1) for name in ("K5_NMI_FIRST", "K5_NMI_LAST"))
+            wait_window(vm, first, last, cpl)
+            vm.command("nmi")
+            vm.wait("KERNEL_K5_NMI_RESUMED", occurrences=index, level="OK")
+        log = vm.wait("KERNEL_K5_NMI_ARMED", occurrences=4, level="OK")
+        if case <= 3:
+            wait_window(vm, log.number("K5_NMI_FIRST", 3), log.number("K5_NMI_LAST", 3), 0)
+            vm.command("nmi")
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and vm.alive():
+            log = vm.log()
+            if log.has("KERNEL_K5_IRQ_RESUMED") or log.has("KERNEL_K5_IRQ_OK") or log.has("KERNEL_READY"):
+                raise RuntimeError("Negative IRQ case was accepted")
+            vm.command("info registers")
+            time.sleep(0.1)
+            halted = HALT.search(vm.monitor.read_bytes())
+            if (case == 5 and halted) or (case != 5 and log.terminal()):
+                trace = vm.trace.read_bytes()
+                if b"triple fault" in trace.lower():
+                    raise RuntimeError("Negative IRQ case caused a triple fault")
+                if len(USER_IRQ.findall(trace)) != (0 if case >= 4 else 1):
+                    raise RuntimeError("Unexpected CPL3 IRQ count")
+                return dict(ExpectedRejection=case)
+    raise RuntimeError("Negative IRQ case was not rejected")
 
 
 # ====== missing_nmi ======
@@ -95,11 +135,14 @@ def main():
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--boots", default=10, type=int, choices=range(1, 11))
     parser.add_argument("--missing-nmi", action="store_true")
+    parser.add_argument("--irq-negative", type=int, choices=range(1, 6))
     args = parser.parse_args()
     out = root / "kernel/build" / ("k5-privilege-" + uuid.uuid4().hex)
     out.mkdir()
     results = []
     scenario = missing_nmi if args.missing_nmi else boot
+    if args.irq_negative:
+        scenario = lambda directory, image: irq_negative(directory, image, args.irq_negative)
     for index in range(args.boots):
         try:
             results.append(scenario(out / f"boot-{index + 1}", args.image.resolve()))
