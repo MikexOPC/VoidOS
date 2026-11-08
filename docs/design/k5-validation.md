@@ -144,3 +144,45 @@ Limiti. Solo BSP e una vCPU, RSP utente in una variabile del probe, IF=0 in tutt
 la syscall, nessun puntatore utente. `SYSRETQ` non è provato. Il frame alterato è
 prodotto dal kernel di prova: il codice utente non può ottenerlo direttamente.
 Gli indirizzi di STAR, LSTAR e CSTAR non sono ricontrollati su Vol. 4.
+
+## K5-D, copie utente con SMEP e SMAP
+
+Risultato: superato sul profilo `k5-copy`, QEMU TCG, q35, OVMF, una vCPU. Dieci boot
+consecutivi. Evidenze in `kernel/build/k5-privilege-33562d880e954931a6ebe9ee3c1b4210`.
+
+Il payload copia dentro una pagina, a cavallo di due, con lunghezza zero e con 256
+byte. Riceve -2 per pagina assente, sola lettura, attraversamento verso pagina assente
+o in sola lettura, RSP0, indirizzo kernel, non canonico e wrap; -3 per 257 byte. La
+traccia QEMU mostra quattro #PF a `cpl=0` con error code 0, 3, 0, 3, tutti recuperati,
+e un NMI con AC=1. Il boot prosegue fino a `KERNEL_READY`.
+
+| Negativo, 3 boot ciascuno | Error code #PF | Esito |
+| --- | --- | --- |
+| `k5-copy-no-stac`, SMAP senza `STAC` | 3 | arresto |
+| `k5-copy-smep`, kernel esegue da pagina utente | 11h | arresto |
+| `k5-copy-cr2`, CR2 fuori dall'intervallo | 0 | arresto |
+| `k5-copy-rip`, RIP fuori dalla finestra | 0 | arresto |
+| `k5-copy-kernel-buffer`, fault sul buffer kernel | 2 | arresto |
+| `k5-copy-ac-open`, AC attivo al rientro in C | nessuno | arresto |
+
+Evidenze in `kernel/build/qemu-run-73f4dadd7197486f9eb6b73c2afbc7a2`, e
+`kernel/build/qemu-run-085da30597624a7e9cb9930b6319ca08` per `k5-copy-no-stac`.
+
+## Chiusura di K5
+
+Sul codice finale: `k5-privilege`, `k5-ap`, `k5-syscall` e `k5-copy` 10/10
+(`kernel/build/qemu-run-0e7bd9138e074ee7821e8f62d4d050f9` e il risultato sopra). Tutti i
+negativi K5 3/3 (`kernel/build/qemu-run-42133718e0b2494aae457982ea501178`,
+`kernel/build/qemu-run-0174e445d39d49c18c9125e50437bc05`,
+`kernel/build/qemu-run-1145b529882c42f1902b9a8e35929451`). `ap-runtime` e
+`ap-runtime-panic` 3/3. Suite host `layout` e `build-plan`, test Rust, clippy e cppcheck
+passati. Il caso senza NMI non è stato rieseguito dopo K5-B.
+
+Stato: K5 prova le primitive in profili diagnostici separati. Il kernel ordinario resta a
+`SCE=0`, senza SMEP e SMAP.
+
+Limiti per K6. Solo BSP per syscall e copie, una CPU alla volta su AP. CPU senza SMAP
+non provata. RSP utente e buffer sono variabili del probe. Nessun demand paging né copia
+concorrente. KPTI e mitigazioni non decisi: nessun codice non fidato prima di quella
+scelta. Tutto su QEMU TCG. Gli indirizzi di STAR, LSTAR e CSTAR non sono ricontrollati
+su Vol. 4.
