@@ -1,0 +1,195 @@
+# K6 — Primo processo utente
+
+Stato: design approvato con le correzioni di revisione. K6-A implementato, K6-B-D non iniziati.
+Il contratto delle due root resta da provare in K6-C.
+
+Obiettivo: il kernel ordinario carica un programma ELF nel suo spazio di indirizzi,
+lo esegue a ring 3 e ne raccoglie le risorse. Il test decisivo usa più programmi:
+uno stampa ed esce, uno provoca un fault, uno gira all'infinito. Il kernel li termina
+e continua a funzionare. [Roadmap G7](g7-smp-user.md) · [K5](k5-design.md).
+
+Direttiva: valorizzare al massimo Assembly e Rust. Build con Meson e Ninja. Eliminare
+PowerShell il più possibile, anche nei test, usando C, C++ e Rust.
+
+## Da dove partiamo
+
+K5 ha provato i meccanismi in profili di test separati. Il kernel ordinario resta a
+`SCE=0`, senza SMEP e SMAP, senza descrittori utente e con IRQ pensati per ring 0.
+
+Per la build: 136 script PowerShell (10.700 righe) e 92 script Python (10.900 righe).
+Meson e Ninja sono stati provati solo sui test host dell'editor di riga. Il planner Rust
+copre tre profili del kernel, senza eseguire tutto. Meson richiede Python.
+
+## Linguaggi in K6
+
+| Parte | Linguaggio | Contenuto |
+| --- | --- | --- |
+| ELF, syscall, processi, accounting | Rust | Parser, tabella chiamate, stati del processo, piano delle mappature |
+| Ingressi e ritorni | Assembly | `SYSCALL`, IRQ e fault da CPL3, copia, cambio di CR3 |
+| Programmi di prova | Rust e Assembly | ELF statici, `_start` in Assembly |
+| Collegamento al kernel esistente | C, solo sottile | Finestra di pagina, allocatore, console, scheduler |
+| Test host e runner | Rust | Sostituiscono PowerShell e Python per K6 |
+
+Non riscrivo in Rust i moduli C esistenti: K6 li chiama attraverso interfacce piccole.
+
+## Decisioni proposte
+
+1. **Programma incorporato nell'immagine, non letto dall'ESP.** Dopo `ExitBootServices`
+   il kernel non legge più file, e D7 richiederebbe di cambiare il loader per consegnare
+   moduli. Il blob resta un vero ELF, quindi parser e caricamento sono gli stessi. La
+   lettura da ESP arriva con il primo modulo o filesystem. Questa è una deviazione da D7.
+2. **ELF rigoroso.** Solo ELF64, x86-64, `ET_EXEC`. Solo `PT_LOAD`. `PT_INTERP` e
+   `PT_DYNAMIC` respinti. Nessun segmento W+X. Allineamento a pagina, `filesz <= memsz`,
+   niente sovrapposizioni o overflow, tutto sotto il limite utente, entry in un segmento
+   eseguibile, massimo di segmenti e pagine. Rust valida tutto prima di allocare.
+3. **Il kernel gira sulla propria root, non su quella del processo.** I validatori del
+   kernel e lo shootdown richiedono la mappatura ricorsiva e la root del kernel: K5-B ha
+   mostrato il problema e `xis_native_index` lo impone.
+   - Scelta: ogni ingresso da CPL3 passa alla root del kernel, ogni ritorno a quella del
+     processo. La copia utente riattiva quella del processo solo per l'istruzione di
+     copia, con IF=0.
+   - Alternativa scartata: mappatura ricorsiva in ogni root e validatori rilassati, che
+     toccherebbe molti moduli già chiusi.
+   - Costo: un flush del TLB a ogni ingresso, senza PCID. Da misurare. Non è KPTI, perché
+     la root del processo mappa ancora il kernel, ma lo prepara.
+4. **Metà alta condivisa solo in parte.** Vedi il contratto qui sotto: la root del processo
+   non copia tutti gli slot alti.
+5. **Stack.** Uno stack kernel per processo nella metà alta, con guardia: non più nella
+   metà bassa come nel probe. Sotto il limite utente solo pagine utente.
+6. **Stato per CPU.** `X86_CPU_LOCAL` riceve stack kernel e RSP utente salvato. È un
+   cambio dell'ABI validata in K3: offset e dimensione vanno aggiornati e riprovati.
+7. **Promozione nel kernel.** GDT con descrittori utente per BSP e AP, `CR4.SMEP` e
+   `CR4.SMAP` su ogni CPU da CPUID. `SCE` e MSR solo sul BSP in v0. Su una CPU senza
+   SMEP o SMAP il boot prosegue, il limite è nel log e il primo processo resta disabilitato.
+8. **Syscall v0.** `write(ptr, len)` verso la console, `exit(code)`, errore per numero
+   sconosciuto. Ritorno con `IRETQ`. Tabella errori definita in Rust. Il flag AC utente
+   resta respinto.
+9. **Fault utente.** Un'eccezione con CPL=3 termina il processo e registra motivo e
+   indirizzo. Con CPL=0 resta panic, salvo il recupero della copia.
+10. **IRQ da CPL3 nel percorso ordinario.** Il percorso oggi è ring 0. Va esteso con
+    `SWAPGS` condizionale e cambio di root. Il timer sostiene un budget: un processo che
+    non esce viene terminato. Niente preemption fra processi utente in v0.
+11. **Un processo alla volta, sul BSP.** Più processi concorrenti e AP sono un blocco
+    successivo. Qui si provano isolamento fra esecuzioni e recupero delle risorse.
+12. **KPTI non abilitato.** Il vincolo di K5 resta: solo programmi nostri.
+
+## Contratto delle due root
+
+Stato: su carta. Nessuna riga di Assembly prima della sua approvazione finale con K6-C.
+
+**Il problema.** Sette voci PML4 (FB, GPU, SURFACE, IOMMU, DMA, HEAP, AP) sono scritte e
+azzerate a runtime nella root del kernel. Una copia in ogni processo diventerebbe stantia.
+
+**La regola.** La root del processo contiene la metà bassa dell'utente e solo le voci alte
+necessarie alla transizione. Tutto il resto del kernel è raggiungibile solo dalla root del
+kernel, quindi si passa a quella prima di usarlo.
+
+| Struttura | Dove sta | Root del processo |
+| --- | --- | --- |
+| Codice di ingresso e ritorno, gestori NMI e fault | Immagine, slot 511 | Sì |
+| IDT, GDT, TSS del BSP | Immagine, slot 511 | Sì |
+| `X86_CPU_LOCAL` | Immagine, slot 511 | Sì |
+| Stack IST e stack kernel | Slot 488 | Sì |
+| Slot ricorsivo 510 | - | No, i validatori usano la root del kernel |
+| FB, GPU, SURFACE, IOMMU, DMA, HEAP, AP | Slot 481-487 | No |
+| LAPIC | Slot 488 | Sì come effetto, non usato in transizione |
+| Mappa e contratto di boot | Slot 479, 480 | No |
+
+La tabella va confermata sul codice all'inizio di K6-C. Lo slot 511 mappa l'intera immagine:
+non è isolamento, e KPTI resta una decisione separata. Lo slot 488 contiene anche la finestra
+di pagina, che non si usa mai con la root del processo.
+
+**Proprietà delle tabelle.**
+- Il kernel possiede le tabelle sotto gli slot 488 e 511. La root del processo punta alle stesse
+  tabelle e non le libera mai. Le modifiche sotto queste voci valgono per entrambe le root.
+- Quelle due voci PML4 non cambiano dopo il boot. Il kernel lo verifica alla creazione e alla
+  raccolta di ogni processo. Se cambiano: arresto.
+- Il processo possiede la propria PML4 e le tabelle della metà bassa. Si liberano solo quando il
+  processo è terminato e nessuna CPU ha caricato la sua root. In v0 basta il cambio sul BSP.
+- Le pagine vengono azzerate prima della restituzione e il budget fisico è ricontrollato.
+
+**Ordine all'ingresso `SYSCALL`.** `SWAPGS`, RSP utente salvato per CPU, stack kernel, frame,
+registro salvato, CR3 del kernel. **Al ritorno:** frame validato, CR3 del processo, `SWAPGS`,
+`IRETQ`. Lo stack resta mappato in entrambe le root. IF=0 per tutto il percorso.
+
+**NMI.** IF=0 non lo blocca. Il gestore non presume nulla: legge CS, CR3 e la coppia di MSR di
+GS. Salva CR3 e CR2, passa alla root del kernel e al GS kernel, poi rimette lo stato esatto
+prima di `IRETQ`, compreso AC. Lo stesso vale per #DB e per ogni fault fatale in transizione.
+Un panic da questi punti deve prima arrivare alla root del kernel.
+
+**Copia utente.** Dentro la finestra CR3 è quello del processo e AC=1. #PF resta sull'IST: il
+recupero usa solo codice e dati dell'immagine, ripristina AC=0 e la primitiva torna alla root
+del kernel. Un fault fuori dalla finestra passa prima alla root del kernel e poi va in panic.
+
+**Prove obbligatorie in K6-C.** Un NMI reale, con ripresa corretta, in ciascuna finestra:
+prima di `SWAPGS`, fra `SWAPGS` e CR3, dopo CR3 all'ingresso, prima di CR3 al ritorno, fra CR3 e
+`SWAPGS` al ritorno, durante la copia con root del processo e AC=1. Inoltre: accesso a uno slot
+assente dalla root del processo, voce PML4 alterata fra creazione e raccolta.
+
+## Stati del processo, non eseguibile
+
+`Validato → Mappato → In esecuzione → Terminato (exit | fault | budget) → Raccolto`.
+Ogni errore prima di `In esecuzione` rilascia ciò che ha preso. `Raccolto` azzera e
+restituisce le pagine e verifica il budget fisico.
+
+## Blocchi
+
+| Blocco | Contenuto | Prova principale |
+| --- | --- | --- |
+| K6-A | Parser ELF e piano delle mappature in Rust | Test host con un ELF reale, corrotti e mutazioni |
+| K6-B | Promozione: GDT, SMEP, SMAP, per CPU; processo disabilitato senza supporto | Tutti i profili esistenti, 10 boot |
+| K6-C | Root, caricamento, `write`, `exit`, percorso minimo di fault e IRQ da CPL3 | Stampa ed esce; un fault termina il processo; NMI nelle finestre; pagine restituite |
+| K6-D | Budget temporale e campagna completa | Programmi che sbagliano e che non escono |
+
+Casi finali, 10 boot sul BSP: stampa ed esce, poi fault nullo, scrittura su sola lettura,
+istruzione privilegiata, salto al kernel, puntatore kernel in `write`, ciclo infinito. Fra
+un programma e l'altro il secondo non deve vedere i dati del primo. Alla fine budget fisico
+uguale e `KERNEL_READY`. Negativi: ELF corrotti respinti prima di allocare, panic per
+fault del kernel, risorse trattenute se il ripristino è incerto.
+
+## Migrazione della build
+
+Sostituire 136 script insieme bloccherebbe K6 e perderebbe prove già valide. Propongo una
+sostituzione progressiva: ogni percorso sparisce solo dopo aver mostrato parità.
+
+Regola da subito: nessun nuovo script PowerShell. Tutto ciò che K6 aggiunge usa Meson,
+Ninja e runner Rust. K6-A e la migrazione avanzano in parallelo.
+
+| Passo | Contenuto | Criterio per cancellare il vecchio |
+| --- | --- | --- |
+| M1 | Runner QEMU in Rust: VM posseduta, monitor, parser seriale, risultati | `k5-copy` e negativi con stesso esito di `qemu.py`, compresi timeout, cleanup della VM ed evidenze diagnostiche |
+| M2 | Meson per kernel ordinario e K6, freestanding MSVC, MASM, rustc | Stessi sorgenti, flag e ordine di link del planner, gate del profilo |
+| M3 | Campagne e suite host per gruppi, a partire da K5 | Stesso conteggio di casi e stesso esito |
+| M4 | Bootloader e profili rimanenti | Immagine validata e campagne verdi |
+
+Da verificare in M2: `meson setup --vsenv` per l'ambiente MSVC senza script, regole per
+oggetti freestanding e `.asm`, invalidazione di header e asset, target Rust per gli ELF
+utente, già usato da K6-A. Meson 1.12.1 è installato e K6-A lo usa con `--vsenv`.
+
+Limiti da dichiarare:
+- Meson richiede Python, salvo un pacchetto che lo include. PowerShell può sparire,
+  Python resta finché non si sceglie diversamente per Meson.
+- La migrazione completa non finisce dentro K6. A fine K6 restano script per i vecchi profili.
+- Una prova di parità va rifatta per ogni profilo: oggi i profili diagnostici sono molti.
+
+## K6-A, risultato
+
+Il parser è `kernel/process/rust/elf/parser.rs`: Rust sicuro, senza allocazioni, solo `core`.
+Limiti: 8 segmenti, 1024 pagine, immagine fra 0x400000 e 0x30000000. Non è ancora collegato al
+kernel: l'interfaccia FFI arriva con K6-C.
+
+Prova, senza PowerShell:
+
+```bash
+meson setup kernel/build/meson-k6-elf test/kernel/process/elf --vsenv
+```
+
+```bash
+meson test -C kernel/build/meson-k6-elf
+```
+
+La fixture è un ELF reale prodotto da `rustc` per `x86_64-unknown-none` con `rust-lld`, con tre
+segmenti e un `.bss`. I test girano a `opt-level` 0 e 2 con controllo overflow: ELF reale,
+confini, identità e tabella corrotte, segmenti e layout respinti, ogni troncamento, ogni bit di
+header e tabella, 200.000 mutazioni con seme fisso. Il codice è sicuro, quindi non serve il
+sanitizer. Coverage non misurata. Nessuna prova in QEMU: K6-A non tocca il kernel.
