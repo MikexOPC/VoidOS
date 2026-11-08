@@ -112,12 +112,12 @@ def sys_negative(directory, image, case):
     with qemu.Vm(directory, image, smp=1) as vm:
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline and vm.alive():
-            log = vm.log()
-            if log.has("KERNEL_K5_SYSCALL_OK") or log.has("KERNEL_READY"):
-                raise RuntimeError("Negative syscall case was accepted")
             vm.command("info registers")
             time.sleep(0.1)
             halted = HALT.search(vm.monitor.read_bytes())
+            log = vm.log()
+            if log.has("KERNEL_K5_SYSCALL_OK") or log.has("KERNEL_READY"):
+                raise RuntimeError("Negative syscall case was accepted")
             if (case == 17 and log.terminal()) or (case != 17 and halted):
                 trace = vm.trace.read_bytes()
                 if b"triple fault" in trace.lower() or SYS_TF.search(trace):
@@ -185,12 +185,12 @@ def irq_negative(directory, image, case):
             vm.command("nmi")
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline and vm.alive():
-            log = vm.log()
-            if log.has("KERNEL_K5_IRQ_RESUMED") or log.has("KERNEL_K5_IRQ_OK") or log.has("KERNEL_READY"):
-                raise RuntimeError("Negative IRQ case was accepted")
             vm.command("info registers")
             time.sleep(0.1)
             halted = HALT.search(vm.monitor.read_bytes())
+            log = vm.log()
+            if log.has("KERNEL_K5_IRQ_RESUMED") or log.has("KERNEL_K5_IRQ_OK") or log.has("KERNEL_READY"):
+                raise RuntimeError("Negative IRQ case was accepted")
             if (case in (3, 5) and halted) or (case not in (3, 5) and log.terminal()):
                 trace = vm.trace.read_bytes()
                 if b"triple fault" in trace.lower():

@@ -257,7 +257,10 @@ Limiti:
 - Le altre campagne usano ancora `qemu.py`, `serial.py` e il resto di `firmware.py`, che quindi
   restano fino a M3. Dopo la rimozione: smoke da 1 boot di `k5-privilege`, `k5-syscall`, `k5-ap`,
   `k5-irq-simd`, `k5-sys-rip` e `k5-ap-gs`, tutti verdi; le campagne complete non sono state rifatte.
-- I negativi rimasti in `firmware.py` hanno ancora la lettura del log prima dell'attesa.
+- `sys_negative` e `irq_negative` in `firmware.py` hanno avuto la stessa correzione della lettura
+  del log. Con un falso VM che stampa l'accettazione e si arresta durante l'attesa, il vecchio codice
+  sbaglia 4 casi su 4 e il nuovo nessuno. Campagne complete, 3 boot ciascuna: `k5-irq-*` 5/5 e
+  `k5-sys-*` 9/9. Quel falso VM è una prova temporanea, non è nel repository.
 - Solo Windows. Prove su QEMU 11.1.0 TCG, q35, OVMF, una vCPU, con altre VM accese sulla macchina.
 - Il criterio di M1 è la parità con Python: non aggiunge prove sul kernel oltre a quelle di K5.
   Coverage non misurata.
