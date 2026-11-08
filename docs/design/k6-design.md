@@ -1,6 +1,6 @@
 # K6 — Primo processo utente
 
-Stato: design approvato con le correzioni di revisione. K6-A implementato, K6-B-D non iniziati.
+Stato: design approvato con le correzioni di revisione. K6-A e K6-B implementati, K6-C e K6-D non iniziati.
 Il contratto delle due root resta da provare in K6-C.
 
 Obiettivo: il kernel ordinario carica un programma ELF nel suo spazio di indirizzi,
@@ -193,3 +193,52 @@ segmenti e un `.bss`. I test girano a `opt-level` 0 e 2 con controllo overflow: 
 confini, identità e tabella corrotte, segmenti e layout respinti, ogni troncamento, ogni bit di
 header e tabella, 200.000 mutazioni con seme fisso. Il codice è sicuro, quindi non serve il
 sanitizer. Coverage non misurata. Nessuna prova in QEMU: K6-A non tocca il kernel.
+
+## K6-B, risultato
+
+Il kernel ordinario ha ora i descrittori utente in GDT e SMEP e SMAP attivi su ogni CPU che
+li supporta. Il primo processo non esiste ancora: `x86_user_mode_allowed` è la condizione
+che K6-C dovrà controllare. `SCE` resta spento.
+
+**Layout.** I selettori sono 2Bh e 33h, adatti a un futuro `SYSRET`. Per tenerli contigui
+la struttura `X86_KERNEL_SEGMENTS` cambia: limite GDT 55, TSS a +64, GDTR a +168, dimensione
+192 byte. Il loader mantiene la propria GDT.
+
+**Politica.** Rust calcola i bit da CPUID e decide se i processi sono ammessi. Assembly legge
+CPUID e scrive CR4 con rilettura. C collega i due. Su una CPU senza SMEP o SMAP il boot
+prosegue, abilita ciò che esiste e registra `USER_MODE_DISABLED`. Un AP che non ha un bit
+del BSP disabilita i processi per tutti; questo caso non è provato, perché QEMU espone la stessa
+CPU a tutte le vCPU.
+
+**Prove.**
+
+| Prova | Boot | Esito |
+| --- | --- | --- |
+| `k6-protection`, 4 vCPU: CR4 letto su ogni CPU | 10 | 10/10 |
+| `k6-protection-no-smap`, `-no-smep`, `-none` | 3 ciascuno | 3/3 |
+| `k5-*` e negativi K5 | 10 positivi, 3 negativi | tutti verdi |
+| 20 positivi AP, IPI, `percpu`, `ap-runtime`, `paging-retirement` | 10 ciascuno | 20/20 |
+| 19 panic attesi e negativi AP | 3 ciascuno | 19/19 |
+| `kernel-boot` | 23 scenari | 23/23 |
+| Tutti i 102 profili | 1 ciascuno | 101/102, poi `kernel-boot` corretto |
+| Suite host | - | 58/58 |
+
+Evidenze in `kernel/build/`: `qemu-run-2d21de2c1654483e9f0a0489b101cdf3`,
+`qemu-run-3374ae565b324f69a2ecbfedb1b68062`, `qemu-run-b63516bf74084d1da6c54b78a0cbb662`,
+`qemu-run-2475133611c546f2a63347c88728ae63`, `qemu-run-bd0f562e9fa54b478765bf7f59b40815`.
+Passati anche i test Rust con Meson, clippy e cppcheck su `protection.c`.
+
+**Limiti.**
+- I profili VirtIO, framebuffer, console, shell, heap, sync, `k3-soak` e i restanti `percpu-*`
+  hanno 1 boot, non 10: non usano il codice cambiato. La chiusura di K6 rifà l'intero set.
+- Alcune campagne di panic da 10 boot sono state eseguite con 3.
+- `k6-protection` è ancora un runner Python: va portato sul runner Rust di M1. È un'eccezione
+  temporanea alla direzione di K6.
+- Un timer non calibrato ha fatto fallire una volta `kernel-boot` (`stack-128`) con la macchina al
+  71% di CPU. Non si è ripetuto. La causa non è dimostrata.
+
+**Test corretti.** Oltre al layout, `kernel-boot` non passava da almeno il 6 novembre: non contava
+le pagine AP nell'inventario, cosa che riguarda K3, non K6-B. Il selettore invalido del test di
+#GP passa da 28h a 38h, perché 28h è ora valido. L'NMI via stdin del monitor viene reinviato ogni
+2 secondi: il primo invio andava perso, con il kernel che gestiva correttamente quello inviato
+da `qemu.py`. La causa della perdita non è stata chiarita.

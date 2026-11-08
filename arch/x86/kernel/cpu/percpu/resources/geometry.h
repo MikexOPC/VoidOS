@@ -14,7 +14,7 @@
 // Software layout of one 64-page AP slot; page 0 and the gaps are unmapped guards.
 //   1-16  main stack (TSS RSP0), private frame in its top 1024 bytes
 //   19-22 IST1, 25-28 IST2, 31-34 IST3
-//   48    metadata: GDT at +0, TSS at +48, panic record at +256
+//   48    metadata: GDT at +0, TSS at +64, panic record at +256
 #define X86_AP_PAGE                 4096ULL
 #define X86_AP_SLOT_PAGES           64ULL
 #define X86_AP_REGION_BYTES         (64ULL * X86_AP_STRIDE)
@@ -39,7 +39,7 @@
 
 #define X86_AP_METADATA_PAGE        48ULL
 #define X86_AP_METADATA(cpu)        X86_AP_PAGE_ADDRESS(cpu, X86_AP_METADATA_PAGE)
-#define X86_AP_TSS_OFFSET           48ULL
+#define X86_AP_TSS_OFFSET           64ULL
 #define X86_AP_RECORD_OFFSET        256ULL
 // Mapped pages per AP: stack, three IST stacks and metadata (29, mirrored in rust/geometry/pages.rs).
 #define X86_AP_MAPPED_PAGES         (uint32_t)(X86_AP_STACK_PAGES + 3 * X86_AP_IST_PAGES + 1)

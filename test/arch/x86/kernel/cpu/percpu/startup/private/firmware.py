@@ -48,18 +48,18 @@ def memory(code, data, record, high, split_ist=False, extra_pages=()):
         map_high(address, b"", NX | 3)
     segment = bytearray(4096)
     struct.pack_into("<QQQ", segment, 0, 0, 0x00af9b000000ffff, 0x00cf93000000ffff)
-    task = descriptors + 48
+    task = descriptors + 64
     tss = struct.pack("<H", 103) + task.to_bytes(8, "little")[:3] + bytes([0x89, 0, (task >> 24) & 255])
     segment[24:40] = tss + struct.pack("<II", task >> 32, 0)
-    struct.pack_into("<Q", segment, 52, stack)
-    for index, offset in enumerate((84, 92, 100), 1):
+    struct.pack_into("<Q", segment, 68, stack)
+    for index, offset in enumerate((100, 108, 116), 1):
         top = stack + index * 24576 if split_ist else stack - 8192
         struct.pack_into("<Q", segment, offset, top)
         if split_ist:
             for address in range(top - 16384, top, 4096):
                 map_high(address, b"", NX | 3)
-    struct.pack_into("<H", segment, 150, 104)
-    struct.pack_into("<HQ", segment, 152, 39, descriptors)
+    struct.pack_into("<H", segment, 166, 104)
+    struct.pack_into("<HQ", segment, 168, 55, descriptors)
     map_high(descriptors, segment, NX | 3)
     map_high(local, struct.pack("<Q", local), NX | 3)
     for address, content, flags in extra_pages:
@@ -142,8 +142,8 @@ def run_case(out, packages, code_address, mode):
         if physical_read(vm, 0x20000, 2048) != bytes(2048):
             raise RuntimeError("Operational root retains low mappings")
         if mode == "positive":
-            for pattern in (rf"GS =0000 {local:016x}\b", rf"TR =0018 {descriptors + 48:016x}\b",
-                rf"GDT=\s*{descriptors:016x}\s+00000027", rf"IDT=\s*{frame + 128:016x}\s+000001ff"):
+            for pattern in (rf"GS =0000 {local:016x}\b", rf"TR =0018 {descriptors + 64:016x}\b",
+                rf"GDT=\s*{descriptors:016x}\s+00000037", rf"IDT=\s*{frame + 128:016x}\s+000001ff"):
                 if not re.search(pattern, registers, re.I):
                     raise RuntimeError(f"Private descriptor/GS missing: {pattern}")
             if blob.read(vm, descriptors + 29, 1) != b"\x8b":

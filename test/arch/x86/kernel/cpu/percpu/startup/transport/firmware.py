@@ -131,7 +131,7 @@ def verify(vm, log, no_nmi, remote_panic=False, sequence=False):
         if frame[:13] != actual_data[:13] or frame[83] != 6:
             raise RuntimeError("Actual AP private record or PARKED frame differs")
         meta = top + 31 * 4096
-        if not re.search(rf"GDT=\s*{meta:016x}\s+00000027", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
+        if not re.search(rf"GDT=\s*{meta:016x}\s+00000037", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
             raise RuntimeError("Actual private GDT/TR differs")
         idtr = b"".join(w.to_bytes(8, "little") for w in cpu.memory(vm, log.number("KERNEL_AP_PANIC_IDTR"), 2))
         base = int.from_bytes(idtr[2:10], "little")
@@ -192,7 +192,7 @@ def verify_parked_cpus(vm, log, root, first, panic=False, reporter=0, count=4, s
         if value(text, "CR0") & 0x80010001 != 0x80010001 or value(text, "EFER") & 0xd00 != 0xd00 or value(text, "CR4") & 0x620 != 0x620:
             raise RuntimeError("Group paging/WP/NX/SSE prerequisites missing")
         meta = top + 31 * 4096
-        if not re.search(rf"GDT=\s*{meta:016x}\s+00000027", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
+        if not re.search(rf"GDT=\s*{meta:016x}\s+00000037", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
             raise RuntimeError("Group private GDT/TR mismatch")
 
 

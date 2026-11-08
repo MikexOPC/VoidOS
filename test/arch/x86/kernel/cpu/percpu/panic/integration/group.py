@@ -78,7 +78,7 @@ def verify_cpu(vm, log, index, text, root, first, final_record, origin):
             raise RuntimeError("Private AP record or parked phase changed")
         if cpu.gs_base(text) != first + (index - 1) * 448:
             raise RuntimeError("Actual private AP GS differs")
-        if not re.search(rf"GDT=\s*{meta:016x}\s+00000027", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
+        if not re.search(rf"GDT=\s*{meta:016x}\s+00000037", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
             raise RuntimeError("Actual private AP GDT/TR differs")
         idtr = log.number("KERNEL_AP_PANIC_IDTR")
     else:

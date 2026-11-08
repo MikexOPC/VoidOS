@@ -117,12 +117,10 @@ static int descriptors_prepare(void)
     x86_kernel_segments_read(&gdt_previous);
     x86_exception_read_idt(&idt_previous);
     BOOT_U64 base = descriptor_base(gdt_previous.Bytes);
-    if (gdt_previous.Bytes[0] != 39 || gdt_previous.Bytes[1] || (base & 7) ||
+    if (gdt_previous.Bytes[0] != X86_KERNEL_GDT_LIMIT || gdt_previous.Bytes[1] || (base & 7) ||
         (!k5_cpu && (!X86_KERNEL_IMAGE_CONTAINS(base, 40) || !x86_kernel_segments_retire_ready()))) return 0;
-    for (BOOT_U32 index = 0; index < 5; ++index) gdt[index] = ((const BOOT_U64 *)base)[index];
-    // Intel SDM 3A §3.4.5: P=1, DPL=3, S=1, accessed flat RW data / 64-bit RX code.
-    gdt[5] = 0x00cff3000000ffffULL;
-    gdt[6] = 0x00affb000000ffffULL;
+    for (BOOT_U32 index = 0; index < 7; ++index) gdt[index] = ((const BOOT_U64 *)base)[index];
+    if (gdt[5] != X86_USER_DATA_DESCRIPTOR || gdt[6] != X86_USER_CODE_DESCRIPTOR) return 0;
     descriptor_pointer(gdt_probe.Bytes, sizeof(gdt) - 1, (BOOT_U64)gdt);
     descriptor_pointer(idt_probe.Bytes, sizeof(idt) - 1, (BOOT_U64)&idt);
     for (BOOT_U32 vector = 0; vector < 32; ++vector) gate_private(vector, (BOOT_U64)x86_k5_stop, 3);

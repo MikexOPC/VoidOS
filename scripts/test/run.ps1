@@ -110,7 +110,7 @@ function Invoke-IsolatedSuite([string]$Shell, [string]$Script, [string]$Log, [st
 
 $listed = @($suites.Values) + $excluded
 # Source folders only: kernel/build holds ~20 GB of run evidence, reuse/ is reference only.
-$roots = Get-ChildItem -LiteralPath $project -Directory | Where-Object { $_.Name -notin @('reuse','build','.git') }
+$roots = Get-ChildItem -LiteralPath $project -Directory | Where-Object { $_.Name -notin @('reuse','build','.git','.claude') }
 $missing = $roots | ForEach-Object {
         if ($_.Name -eq 'kernel') {
             Get-ChildItem -LiteralPath $_.FullName -Directory | Where-Object Name -ne 'build' |

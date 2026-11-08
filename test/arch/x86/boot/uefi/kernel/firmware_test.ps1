@@ -101,7 +101,7 @@ foreach ($fault in @('none', 'contract-write', 'stack-guard', 'execute-data')) {
             ((Read-Hex $registers 'CR4=([0-9A-Fa-f]{8,16})') -band 128) -ne 0 -or
             ((Read-Hex $registers 'RFL=([0-9A-Fa-f]{8})') -band 1536) -ne 0 -or
             $registers -notmatch 'HLT=1' -or $registers -notmatch 'CS =0008' -or
-            $registers -notmatch 'TR =0018' -or $registers -notmatch 'GDT=\s+[0-9A-Fa-f]+\s+00000027' -or
+            $registers -notmatch 'TR =0018' -or $registers -notmatch 'GDT=\s+[0-9A-Fa-f]+\s+00000037' -or
             $registers -notmatch 'IDT=\s+[0-9A-Fa-f]+\s+000001ff') {
             throw "Ambiente kernel non attivo: $scenario"
         }

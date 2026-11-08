@@ -12,6 +12,7 @@
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
 #include "arch/x86/mm/paging/retirement/retire.h"
+#include "arch/x86/kernel/descriptors/protection.h"
 
 #ifdef KERNEL_TEST_SYNC
 #include "test/kernel/sync/integration/probe.h"
@@ -89,6 +90,7 @@ void kernel_startup_platform(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CO
 {
     KERNEL_BOOTSTRAP_MEMORY *memory = startup->Memory;
     if (!x86_paging_retire_loader(&memory->Context, &memory->Physical)) kernel_panic("LOADER_RETIRE_FAILED");
+    if (!x86_user_protection_boot()) kernel_panic("USER_PROTECTION_FAILED");
 #ifdef KERNEL_TEST_K5_PRIVILEGE
     if (!x86_k5_privilege_probe(&memory->Window)) kernel_panic("K5_PRIVILEGE_DIAGNOSTIC_FAILED");
 #endif

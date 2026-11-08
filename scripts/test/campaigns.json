@@ -169,6 +169,30 @@
       "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "25"],
       "boots": 3, "smoke": 1, "heavy": true
     },
+    "k6-protection": {
+      "summary": "Ordinary boot on 4 vCPUs: SMEP and SMAP in CR4 of every CPU, user mode allowed",
+      "build": [],
+      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "k6-protection-no-smap": {
+      "summary": "CPU without SMAP: boot continues, user mode disabled",
+      "build": [],
+      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max,-smap"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-protection-no-smep": {
+      "summary": "CPU without SMEP: boot continues, user mode disabled",
+      "build": [],
+      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max,-smep"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-protection-none": {
+      "summary": "CPU without SMEP and SMAP: boot continues, user mode disabled",
+      "build": [],
+      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max,-smep,-smap"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
     "ap-console": {
       "summary": "AP1 producers, BSP RAM consumer, 2000 FIFO requests, forced full queue and cleanup",
       "build": ["-TestApService", "ap-console"],

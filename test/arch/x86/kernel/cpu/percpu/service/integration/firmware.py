@@ -206,7 +206,7 @@ def verify(vm, log, case, count, batch_steps=8192, extra_shootdowns=0):
             continue
         base = log.number("KERNEL_AP_BASE") + index * 0x40000
         top, meta = base + 17 * 4096 - 1024, base + 48 * 4096
-        if cpu.gs_base(text) != first + (index - 1) * 448 or not re.search(rf"GDT=\s*{meta:016x}\s+00000027", text, re.I):
+        if cpu.gs_base(text) != first + (index - 1) * 448 or not re.search(rf"GDT=\s*{meta:016x}\s+00000037", text, re.I):
             raise RuntimeError("AP private context/GDT differs")
         if not re.search(rf"IDT=\s*{address:016x}\s+00000fff", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
             raise RuntimeError("AP IDTR/TR differs")

@@ -151,6 +151,10 @@ function Test-MixedInventory($log, $registers, $mapping, $physical, $cache, $vir
     if ($log.Contains('KERNEL_HEAP_READY') -and (Read-Hex $log 'KERNEL_HEAP_INVENTORY: 0x([0-9a-f]{16})') -eq $paging) {
         $finalRam += Read-Hex $log 'KERNEL_HEAP_PAGES: 0x([0-9a-f]{16})'
     }
+    # K3: AP slots are RAM leaves mapped after this log line when more than one CPU starts.
+    if ($log.Contains('KERNEL_AP_DATA_PAGES')) {
+        $finalRam += Read-Hex $log 'KERNEL_AP_DATA_PAGES: 0x([0-9a-f]{16})'
+    }
     if (!$log.Contains('KERNEL_PAGING_MIXED_OK') -or $mmio -ne 1 -or $ram+1 -ne $total -or
         $registers -notmatch ('(?im)^'+($paging+3096).ToString('x16')+':\s+0x'+$finalRam.ToString('x16')+'\s+0x'+$finalMmio.ToString('x16')) -or
         $registers -notmatch ('(?im)^'+($paging+3112).ToString('x16')+':\s+0x'+$virtual.ToString('x16')+'\s+0x'+$physical.ToString('x16')) -or

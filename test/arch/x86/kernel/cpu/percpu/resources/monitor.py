@@ -67,13 +67,13 @@ def verify(vm, log, memory, configured, ordinary, executing=0):
     for cpu in range(1, configured):
         unit = base + cpu * 0x40000
         meta = unit + 48 * 4096
-        block = b"".join(v.to_bytes(8, "little") for v in memory(vm, meta, 22))
-        if int.from_bytes(block[152:154], "little") != 39 or int.from_bytes(block[154:162], "little") != meta:
+        block = b"".join(v.to_bytes(8, "little") for v in memory(vm, meta, 24))
+        if int.from_bytes(block[168:170], "little") != 55 or int.from_bytes(block[170:178], "little") != meta:
             raise RuntimeError("Inactive AP GDTR")
-        if block[24] != 103 or block[29] != (0x8b if cpu <= executing else 0x89) or int.from_bytes(block[150:152], "little") != 104:
+        if block[24] != 103 or block[29] != (0x8b if cpu <= executing else 0x89) or int.from_bytes(block[166:168], "little") != 104:
             raise RuntimeError("Inactive AP TSS descriptor or IO map")
         for offset, top in ((4, 17), (36, 23), (44, 29), (52, 35)):
-            if int.from_bytes(block[48 + offset:56 + offset], "little") != unit + top * 4096:
+            if int.from_bytes(block[64 + offset:72 + offset], "little") != unit + top * 4096:
                 raise RuntimeError("AP RSP0/IST points to wrong stack")
         for start, end in ((1, 16), (19, 22), (25, 28), (31, 34)):
             if cpu <= executing:

@@ -80,7 +80,9 @@ int x86_kernel_segments_prepare(X86_KERNEL_SEGMENTS *owner)
             X86_BOOT_STACK_TOP - X86_KERNEL_IST_BYTES, x86_ist_base(1))) {
         return 0;
     }
-    owner->Pointer.Bytes[0] = 39;
+    owner->User[0] = X86_USER_DATA_DESCRIPTOR;
+    owner->User[1] = X86_USER_CODE_DESCRIPTOR;
+    owner->Pointer.Bytes[0] = X86_KERNEL_GDT_LIMIT;
     additional_ist(&owner->Task);
     return x86_kernel_segments_verify(owner, 0);
 }
@@ -93,7 +95,8 @@ int x86_kernel_segments_verify(const X86_KERNEL_SEGMENTS *owner, BOOT_U32 busy)
     X86_TSS_DESCRIPTOR descriptor;
     X86_BOOT_TSS task;
     BOOT_U32 byte, stack;
-    if (!valid_owner(owner) || !stack_layout() || busy > 1 || owner->Pointer.Bytes[0] != 39 ||
+    if (!valid_owner(owner) || !stack_layout() || busy > 1 || owner->Pointer.Bytes[0] != X86_KERNEL_GDT_LIMIT ||
+        owner->User[0] != X86_USER_DATA_DESCRIPTOR || owner->User[1] != X86_USER_CODE_DESCRIPTOR ||
         owner->Descriptor.Bytes[5] != (busy ? 0x8b : 0x89)) {
         return 0;
     }
