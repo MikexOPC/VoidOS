@@ -74,7 +74,7 @@ int x86_ap_gate(const KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, const X86_
     x86_kernel_segments_read(&gdtr); x86_exception_read_idt(&idtr);
     uint64_t gdt_base = 0;
     for (uint32_t byte = 0; byte < 8; ++byte) gdt_base |= (uint64_t)gdtr.Bytes[byte + 2] << (byte * 8);
-    if (gdtr.Bytes[0] != 39 || gdtr.Bytes[1] || gdt_base != X86_AP_METADATA(cpu_private())) return 0;
+    if (gdtr.Bytes[0] != X86_KERNEL_GDT_LIMIT || gdtr.Bytes[1] || gdt_base != X86_AP_METADATA(cpu_private())) return 0;
     for (uint32_t byte = 0; byte < 10; ++byte)
         if (idtr.Bytes[byte] != xis_native.Idtr.Bytes[byte]) return 0;
     uint64_t base = X86_AP_STACK_BASE(cpu_private());

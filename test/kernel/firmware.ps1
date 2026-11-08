@@ -99,16 +99,17 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $expected = if ($nestedCase) { 'KERNEL_NESTED_FAULT_READY' } elseif ($faultCase) { 'KERNEL_EXCEPTION_HALTED' } elseif ($case.Variant -eq 'panic') { 'INTENTIONAL_TEST_PANIC' } elseif ($case.Variant -eq 'main-return') { 'KERNEL_MAIN_RETURN_TEST_READY' } else { 'KERNEL_READY' }
         $deadline = [DateTime]::UtcNow.AddSeconds(40)
         $found = $false
-        $nmiInjected = $false
+        $nmiRetry = [DateTime]::MinValue
         while ([DateTime]::UtcNow -lt $deadline) {
             if (Test-Path -LiteralPath $serial) {
                 $stream = [IO.File]::Open($serial, 'Open', 'Read', 'ReadWrite')
                 $reader = [IO.StreamReader]::new($stream)
                 try { $raw = $reader.ReadToEnd() } finally { $reader.Dispose() }
                 $log = [regex]::Replace($raw, '\x1b\[[0-?]*[ -/]*[@-~]', '')
-                if ($case.Nmi -and !$nmiInjected -and $log.Contains('KERNEL_READY')) {
+                if ($case.Nmi -and $log.Contains('KERNEL_READY') -and !$log.Contains($expected) -and
+                    [DateTime]::UtcNow -ge $nmiRetry) {
                     $vm.StandardInput.WriteLine('nmi'); $vm.StandardInput.Flush()
-                    $nmiInjected = $true
+                    $nmiRetry = [DateTime]::UtcNow.AddSeconds(2)
                 }
                 if ($log.Contains($expected)) { $found = $true; break }
             }
@@ -206,6 +207,11 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
             $pagingLeaves += Read-Hex $log 'KERNEL_HEAP_PAGES: 0x([0-9a-f]{16})'
             $pagingCount += Read-Hex $log 'KERNEL_HEAP_TABLES: 0x([0-9a-f]{16})'
         }
+        # K3: AP slots are mapped after the inventory log line when more than one CPU starts.
+        if ($log.Contains('KERNEL_AP_DATA_PAGES')) {
+            $pagingLeaves += Read-Hex $log 'KERNEL_AP_DATA_PAGES: 0x([0-9a-f]{16})'
+            $pagingCount += Read-Hex $log 'KERNEL_AP_TABLE_PAGES: 0x([0-9a-f]{16})'
+        }
         if (!$pagingCount -or $pagingCount -gt 128 -or !$pagingLeaves -or ($pagingInventory -band 7) -or
             $pagingInventory -lt $arenaInventory + 24 -or $pagingInventory + 3144 -gt ($OsWindows + 0xB3000) -or
             $registers -notmatch ('(?im)^' + $pagingInventory.ToString('x16') + ':\s+0x' + $pagingRoot.ToString('x16') + '\s+0x' + $pagingLeaves.ToString('x16')) -or
@@ -258,14 +264,14 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
         $gdt = [regex]::Match($log, '(?i)KERNEL_GDT_BASE: 0x([0-9a-f]{16})')
         $tss = [regex]::Match($log, '(?i)KERNEL_TSS_BASE: 0x([0-9a-f]{16})')
         if (!$gdt.Success -or !$tss.Success -or
-            $registers -notmatch ('(?i)GDT=\s*' + $gdt.Groups[1].Value + '\s+00000027') -or
+            $registers -notmatch ('(?i)GDT=\s*' + $gdt.Groups[1].Value + '\s+00000037') -or
             $registers -notmatch ('(?i)TR =0018\s+' + $tss.Groups[1].Value + '\s+00000067\s+00008900')) {
             throw 'GDTR o cache TR diversi dallo storage kernel.'
         }
         $gdtBase = [Convert]::ToUInt64($gdt.Groups[1].Value,16)
         $tssBase = [Convert]::ToUInt64($tss.Groups[1].Value,16)
         if ($gdtBase -lt $OsImageBase -or $gdtBase -ge $OsImageLimit -or ($gdtBase -band 15) -or
-            $tssBase -ne $gdtBase + 48) { throw 'Storage GDT TSS fuori dal kernel.' }
+            $tssBase -ne $gdtBase + 64) { throw 'Storage GDT TSS fuori dal kernel.' }
         $descriptor = [regex]::Match($registers, '(?im)^' + ($gdtBase + 24).ToString('x16') + ':\s+0x([0-9a-f]{16})\s+0x([0-9a-f]{16})')
         if (!$descriptor.Success -or ([Convert]::ToUInt64($descriptor.Groups[1].Value,16) -shr 40 -band 255) -ne 0x8b) {
             throw 'LTR non ha marcato busy il descrittore TSS in memoria.'
@@ -342,7 +348,7 @@ foreach ($case in @(@{Name='ready-128';Variant='ready';Ram=128}, @{Name='ready-2
                 ($case.Variant -eq 'main-return' -and $log.Contains('KERNEL_READY'))) { throw 'Arresto kernel errato.' }
         } else {
             $rsp = Read-Hex $registers 'RSP=([0-9a-f]{16})'
-            $errorCode = switch ($case.Variant) { 'execute' {17} 'main-execute' {17} 'region-execute' {17} 'selector' {40} 'stack' {2} default {0} }
+            $errorCode = switch ($case.Variant) { 'execute' {17} 'main-execute' {17} 'region-execute' {17} 'selector' {56} 'stack' {2} default {0} }
             $vector = if ($case.Nmi) { 2 } else { switch ($case.Variant) { 'opcode' {6} 'selector' {13} 'divide' {0} 'double' {8} default {14} } }
             $istTop = if ($vector -eq 2) { ($OsWindows + 0x4A000) } elseif ($vector -eq 8) { ($OsWindows + 0x4F000) } else { ($OsWindows + 0x45000) }
             $faultAddress = switch ($case.Variant) {

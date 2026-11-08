@@ -4,6 +4,11 @@
 
 #define X86_BOOT_CODE_SELECTOR 8U
 #define X86_BOOT_DATA_SELECTOR 16U
+#define X86_USER_DATA_SELECTOR 0x2bU
+#define X86_USER_CODE_SELECTOR 0x33U
+// Intel SDM 3A §3.4.5: P=1, DPL=3, S=1, accessed flat RW data and 64-bit RX code.
+#define X86_USER_DATA_DESCRIPTOR UINT64_C(0x00cff3000000ffff)
+#define X86_USER_CODE_DESCRIPTOR UINT64_C(0x00affb000000ffff)
 
 // ====== tre segmenti e operando GDTR x64 senza padding ====== //
 

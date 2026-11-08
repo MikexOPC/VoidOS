@@ -14,8 +14,10 @@ static int prepare_private(X86_KERNEL_SEGMENTS *output, BOOT_U32 cpu) {
         BOOT_U64 top = X86_AP_IST_TOP(cpu, stack);
         for (BOOT_U32 byte = 0; byte < 8; ++byte) output->Task.Bytes[36 + (stack - 1) * 8 + byte] = (unsigned char)(top >> (byte * 8));
     }
-    // Three segment entries plus the 16-byte available TSS descriptor: limit 40-1. No LGDT/LTR here.
-    output->Pointer.Bytes[0] = 39;
+    // Three segments, the 16-byte TSS descriptor and two user segments. No LGDT/LTR here.
+    output->User[0] = X86_USER_DATA_DESCRIPTOR;
+    output->User[1] = X86_USER_CODE_DESCRIPTOR;
+    output->Pointer.Bytes[0] = X86_KERNEL_GDT_LIMIT;
     return 1;
 }
 

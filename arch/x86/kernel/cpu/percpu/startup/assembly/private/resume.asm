@@ -68,7 +68,7 @@ xs_private_resume:
     cmp ax, 0x18
     jne xsr_reject
     sgdt [r15 + 720]
-    cmp word [r15 + 720], 39
+    cmp word [r15 + 720], 55
     jne xsr_reject
     mov rsi, [r15 + 64]
     cmp [r15 + 722], rsi
@@ -76,16 +76,16 @@ xs_private_resume:
     cmp byte [rsi + 29], 0x8b
     jne xsr_reject
     mov rax, [r15 + 56]
-    cmp [rsi + 52], rax
-    jne xsr_reject
-    add rax, 24576
-    cmp [rsi + 84], rax
-    jne xsr_reject
-    add rax, 24576
-    cmp [rsi + 92], rax
+    cmp [rsi + 68], rax
     jne xsr_reject
     add rax, 24576
     cmp [rsi + 100], rax
+    jne xsr_reject
+    add rax, 24576
+    cmp [rsi + 108], rax
+    jne xsr_reject
+    add rax, 24576
+    cmp [rsi + 116], rax
     jne xsr_reject
 
 ; ====== final_idt_before_unblocking ======

@@ -25,7 +25,7 @@ static void fixture_private(void) {
     memset(map, 0, sizeof(map));
     cpu = (X86_RETIRE_CPU){0x80010000, 0x400000, 0x20, 0xd00, 2,
         X86_KERNEL_IMAGE_BASE + 256, X86_KERNEL_MAIN_BASE + 4096,
-        X86_KERNEL_IMAGE_BASE + 4096, 39, X86_KERNEL_IMAGE_BASE + 8192, 511, 24, 8, 16, 0};
+        X86_KERNEL_IMAGE_BASE + 4096, 55, X86_KERNEL_IMAGE_BASE + 8192, 511, 24, 8, 16, 0};
     context.MemoryMap = map;
     context.Info.MemoryMapBytes = sizeof(map);
     context.Info.MemoryDescriptorBytes = 40;

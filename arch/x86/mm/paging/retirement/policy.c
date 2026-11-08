@@ -24,9 +24,9 @@ int x86_retire_cpu_valid(const X86_RETIRE_CPU *cpu, BOOT_U64 root) {
         !X86_KERNEL_IMAGE_CONTAINS(cpu->Rip, 1) ||
         cpu->Rsp < X86_KERNEL_MAIN_BASE ||
         cpu->Rsp >= X86_KERNEL_MAIN_TOP ||
-        cpu->GdtLimit != 39 ||
+        cpu->GdtLimit != 55 ||
         cpu->IdtLimit != 511 ||
-        !X86_KERNEL_IMAGE_CONTAINS(cpu->GdtBase, 40) ||
+        !X86_KERNEL_IMAGE_CONTAINS(cpu->GdtBase, 56) ||
         !X86_KERNEL_IMAGE_CONTAINS(cpu->IdtBase, 512)
     )
         return 0;

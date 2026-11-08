@@ -29,10 +29,10 @@ static int corruption_tests(void)
     unsigned char *data = (unsigned char *)&segments;
     if (!x86_kernel_segments_prepare(&segments) || !x86_kernel_segments_verify(&segments, 0)) return 1;
     if (segments.Gdt.Entries[1] != 0x00af9b000000ffffULL || segments.Gdt.Entries[2] != 0x00cf93000000ffffULL ||
-        segments.Pointer.Bytes[0] != 39 || segments.Descriptor.Bytes[5] != 0x89) return 2;
+        segments.Pointer.Bytes[0] != X86_KERNEL_GDT_LIMIT || segments.Descriptor.Bytes[5] != 0x89) return 2;
     for (byte = 0; byte < sizeof(segments); ++byte) {
         // Padding tra GDT e TSS e padding finale non vengono usati dalla CPU.
-        if ((byte >= 40 && byte < offsetof(X86_KERNEL_SEGMENTS, Task)) ||
+        if ((byte >= 56 && byte < offsetof(X86_KERNEL_SEGMENTS, Task)) ||
             byte >= offsetof(X86_KERNEL_SEGMENTS, Pointer) + 10) continue;
         for (bit = 0; bit < 8; ++bit) {
             data[byte] ^= (unsigned char)(1U << bit);
@@ -56,7 +56,7 @@ static int busy_corruption_tests(void)
     unsigned char *data = (unsigned char *)&segments;
     segments.Descriptor.Bytes[5] = 0x8b;
     for (byte = 0; byte < sizeof(segments); ++byte) {
-        if ((byte >= 40 && byte < offsetof(X86_KERNEL_SEGMENTS, Task)) ||
+        if ((byte >= 56 && byte < offsetof(X86_KERNEL_SEGMENTS, Task)) ||
             byte >= offsetof(X86_KERNEL_SEGMENTS, Pointer) + 10) continue;
         for (bit = 0; bit < 8; ++bit) {
             data[byte] ^= (unsigned char)(1U << bit);
@@ -145,7 +145,8 @@ static int encoding_tests(void)
         read_le(segments.Descriptor.Bytes, 2) != 103 ||
         segments.Descriptor.Bytes[6] != 0 ||
         read_le(segments.Descriptor.Bytes + 12, 4) != 0 ||
-        read_le(segments.Pointer.Bytes, 2) != 39 ||
+        read_le(segments.Pointer.Bytes, 2) != X86_KERNEL_GDT_LIMIT ||
+        segments.User[0] != X86_USER_DATA_DESCRIPTOR || segments.User[1] != X86_USER_CODE_DESCRIPTOR ||
         read_le(segments.Pointer.Bytes + 2, 8) != (BOOT_U64)&segments.Gdt ||
         read_le(segments.Task.Bytes + 102, 2) != sizeof(segments.Task)) return 8;
     return 0;

@@ -40,7 +40,7 @@ volatile uint64_t *x86_scheduler_code_entries(uint32_t level, uint64_t target)
 { (void)target; ++reads; return level < 4 ? entries[level] : NULL; }
 void x86_kernel_segments_read(X86_GDT_POINTER *output)
 {
-    *output = (X86_GDT_POINTER){{39,0}};
+    *output = (X86_GDT_POINTER){{55,0}};
     uint64_t address = X86_AP_METADATA(owner.Index);
     for (uint32_t byte = 0; byte < 8; ++byte) output->Bytes[byte + 2] = (unsigned char)(address >> (byte * 8));
     if (corrupt_gdt) output->Bytes[0] = 38;

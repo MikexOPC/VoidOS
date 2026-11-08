@@ -92,7 +92,7 @@ xs_private_cs:
     cmp rax, rdx
     jne xs_private_fault
     mov rbx, [r15 + 64]
-    lgdt [rbx + 152]
+    lgdt [rbx + 168]
     mov ax, 0x10
     mov ss, ax
     mov ds, ax

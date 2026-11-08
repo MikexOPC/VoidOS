@@ -22,7 +22,7 @@ invalid_opcode:
     ud2
     ret
 invalid_selector:
-    mov ax, 28h
+    mov ax, 38h
     mov ds, ax
     ret
 invalid_stack:

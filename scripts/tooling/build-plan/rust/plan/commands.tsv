@@ -129,6 +129,7 @@ c	arch/x86/mm/devices/lapic.c
 c	arch/x86/kernel/exceptions/terminal.c
 c	arch/x86/kernel/descriptors/stacks.c
 c	arch/x86/kernel/descriptors/segments.c
+c	arch/x86/kernel/descriptors/protection.c
 c	arch/x86/kernel/descriptors/stack_access.c
 c	arch/x86/kernel/stack/main.c
 c	arch/x86/lib/descriptors/gdt.c
@@ -139,6 +140,7 @@ c	lib/geometry/damage.c
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/io.obj	{repo}/arch/x86/kernel/assembly/platform/io.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/exception-entry.obj	{repo}/arch/x86/kernel/exceptions/assembly/entry/terminal.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/segment-entry.obj	{repo}/arch/x86/kernel/descriptors/assembly/activation/segments.asm
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/user-protection-entry.obj	{repo}/arch/x86/kernel/descriptors/assembly/protection/apply.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/stack-switch.obj	{repo}/arch/x86/kernel/stack/assembly/switch/main.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/apic-capture.obj	{repo}/arch/x86/kernel/interrupts/apic/assembly/profile/capture.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/uart-wait.obj	{repo}/arch/x86/kernel/interrupts/registry/assembly/wait/bounded.asm
@@ -177,6 +179,7 @@ rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/regions/rust/layout/validation.rs	-o	{out}/region-layout.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/mm/physical/rust/alignment/placement.rs	-o	{out}/physical-alignment.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/descriptors/rust/layout/validation.rs	-o	{out}/ist-layout.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/descriptors/rust/protection/policy.rs	-o	{out}/user-protection-policy.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/exceptions/rust/frame/validation.rs	-o	{out}/exception-frame.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/mm/rust/regions/validation.rs	-o	{out}/validation.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/window/rust/layout/validation.rs	-o	{out}/window-layout.obj

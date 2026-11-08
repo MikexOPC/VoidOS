@@ -1,3 +1,4 @@
+#include "arch/x86/kernel/descriptors/protection.h"
 #include "entry.h"
 #include "../group.h"
 #include "../../internal.h"
@@ -102,6 +103,7 @@ uint32_t xa_native_admit(XS_PRIVATE_FRAME *frame, uint64_t token) {
         !idt_private() || !wait_private(cpu)) return fail_private(frame, token, 0, 4);
     if (!xs_return_build(&frame->Return, r, (uint64_t)xs_private_park, (uint64_t)&xp_panic_native.Idtr,
         group->Header.PhysicalBits)) return fail_private(frame, token, 0, 5);
+    if (!x86_user_protection_ap()) return fail_private(frame, token, 0, 5);
     if (!xs_entry_claim(r, group->Header.PhysicalBits, cpu->ApicId)) return fail_private(frame, token, 0, 6);
     if (!x86_percpu_ap_enter(cpu->Index, cpu->ApicId, cpu->Local, (const KERNEL_LOCK_WAIT *)cpu->Wait))
         return fail_private(frame, token, 1, 7);

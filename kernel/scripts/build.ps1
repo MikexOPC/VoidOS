@@ -180,7 +180,7 @@ foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sc
     'arch/x86/kernel/timer/hpet/watchdog/recovery/control.c',
     'arch/x86/kernel/timer/hpet/watchdog/integration/kernel.c',
     'arch/x86/mm/devices/access.c','arch/x86/mm/devices/lapic.c',
-    'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c',
+    'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c','arch/x86/kernel/descriptors/protection.c',
     'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c','lib/geometry/rect.c','lib/geometry/damage.c') + $diagnosticSources)) {
     $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
@@ -199,6 +199,9 @@ $objects += ($output + '/exception-entry.obj')
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/segment-entry.obj'),
     (Join-Path $project 'arch/x86/kernel/descriptors/assembly/activation/segments.asm'))
 $objects += ($output + '/segment-entry.obj')
+Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/user-protection-entry.obj'),
+    (Join-Path $project 'arch/x86/kernel/descriptors/assembly/protection/apply.asm'))
+$objects += ($output + '/user-protection-entry.obj')
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/stack-switch.obj'),
     (Join-Path $project 'arch/x86/kernel/stack/assembly/switch/main.asm'))
 $objects += ($output + '/stack-switch.obj')
@@ -397,6 +400,10 @@ Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--tar
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/descriptors/rust/layout/validation.rs'),
     '-o',($output + '/ist-layout.obj'))
 $objects += ($output + '/ist-layout.obj')
+Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+    '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/descriptors/rust/protection/policy.rs'),
+    '-o',($output + '/user-protection-policy.obj'))
+$objects += ($output + '/user-protection-policy.obj')
 Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
     '-C','panic=abort','-C','opt-level=2','-D','warnings',(Join-Path $project 'arch/x86/kernel/exceptions/rust/frame/validation.rs'),
     '-o',($output + '/exception-frame.obj'))
