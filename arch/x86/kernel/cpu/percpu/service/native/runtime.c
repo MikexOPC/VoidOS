@@ -230,6 +230,9 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
         if (!timer_command(index, operation)) xis_native_abort(0x4b344354434d4400ULL);
     } else
 #endif
+#if KERNEL_TEST_AP_SERVICE == 10
+    if (operation != XIS_K5_IRQ)
+#endif
     if (operation != XIS_PING &&
         (operation != XIS_FLUSH_CONTEXT || !xis_native_flush_context()))
         xis_native_abort(0x4b34544c42464c53ULL);
@@ -244,6 +247,9 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     if (xis_mmio_read(0x100 + (XIS_VECTOR / 32) * 16)) xis_native_abort(0x4b34495049454f49ULL);
     ks_atomic_store_release(&cpu->Eois, generation);
     ks_atomic_store_release(&cpu->Delivered, generation);
+#if KERNEL_TEST_AP_SERVICE == 10
+    if (operation == XIS_K5_IRQ) x86_k5_ap_run(index);
+#endif
 #if KERNEL_TEST_AP_SERVICE == 2
     if (index == 1 && round == XIS_FLUSH_ROUND) return;
 #elif KERNEL_TEST_AP_SERVICE == 3

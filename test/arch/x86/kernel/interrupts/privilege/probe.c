@@ -6,6 +6,12 @@
 #include "arch/x86/kernel/timer/lapic/runtime/runtime.h"
 #include "arch/x86/mm/window/access.h"
 #include "kernel/diagnostics/log.h"
+#ifdef KERNEL_TEST_K5_AP
+#include "arch/x86/kernel/cpu/percpu/resources/geometry.h"
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#include "arch/x86/kernel/interrupts/apic/icr/icr.h"
+#include "arch/x86/kernel/interrupts/apic/lvt.h"
+#endif
 #include <intrin.h>
 
 // Intel SDM 3A §§2.5, 5.5.4, 5.6; vol. 4, table 2-2.
@@ -14,7 +20,6 @@
 #define K5_USER_CODE 0x400000ULL
 #define K5_USER_STACK 0x402000ULL
 #define K5_RSP0_PAGE 0x404000ULL
-#define K5_TIMER_VECTOR 0x41U
 #define K5_PAGE_PRESENT 1ULL
 #define K5_PAGE_WRITE 2ULL
 #define K5_PAGE_USER 4ULL
@@ -47,7 +52,7 @@ volatile BOOT_U64 k5_owner, k5_phase, k5_first, k5_last;
 volatile BOOT_U64 k5_nmi_count, k5_nmi_rip, k5_nmi_gs, k5_cr2, k5_live_root;
 volatile BOOT_U64 k5_nmi_stack, k5_fault_stack;
 volatile X86_EXCEPTION_FRAME k5_fault;
-volatile BOOT_U64 k5_irq_count, k5_irq_goal, k5_irq_stack, k5_irq_frame[5];
+volatile BOOT_U64 k5_irq_waiting, k5_irq_count, k5_irq_goal, k5_irq_stack, k5_irq_frame[5];
 static BOOT_U64 k5_irq_last;
 #ifndef KERNEL_K5_IRQ_NEGATIVE
 #define KERNEL_K5_IRQ_NEGATIVE 0
@@ -66,6 +71,8 @@ static X86_GDT_POINTER gdt_previous, gdt_probe;
 static X86_KERNEL_IDTR idt_previous, idt_probe;
 static KERNEL_PHYSICAL_LEASE held;
 static X86_LAPIC_TIMER *k5_timer;
+static BOOT_U32 k5_vector = 0x41U, k5_reload;
+static volatile BOOT_U64 k5_cpu, k5_ap_cpu, k5_ap_tss_cpu, k5_ap_passed, k5_ap_tss, k5_ap_gs;
 static BOOT_U32 admitted;
 
 void x86_k5_load_gdt(const X86_GDT_POINTER *pointer);
@@ -111,9 +118,8 @@ static int descriptors_prepare(void)
     x86_kernel_segments_read(&gdt_previous);
     x86_exception_read_idt(&idt_previous);
     BOOT_U64 base = descriptor_base(gdt_previous.Bytes);
-    if (gdt_previous.Bytes[0] != 39 || gdt_previous.Bytes[1] ||
-        !X86_KERNEL_IMAGE_CONTAINS(base, 40) || (base & 7) ||
-        !x86_kernel_segments_retire_ready()) return 0;
+    if (gdt_previous.Bytes[0] != 39 || gdt_previous.Bytes[1] || (base & 7) ||
+        (!k5_cpu && (!X86_KERNEL_IMAGE_CONTAINS(base, 40) || !x86_kernel_segments_retire_ready()))) return 0;
     for (BOOT_U32 index = 0; index < 5; ++index) gdt[index] = ((const BOOT_U64 *)base)[index];
     // Intel SDM 3A §3.4.5: P=1, DPL=3, S=1, accessed flat RW data / 64-bit RX code.
     gdt[5] = 0x00cff3000000ffffULL;
@@ -125,7 +131,7 @@ static int descriptors_prepare(void)
     gate_private(6, (BOOT_U64)x86_k5_ud, 1);
     gate_private(13, (BOOT_U64)x86_k5_gp, 1);
     gate_private(14, (BOOT_U64)x86_k5_pf, 1);
-    gate_private(K5_TIMER_VECTOR, (BOOT_U64)x86_k5_irq, 0);
+    gate_private(k5_vector, (BOOT_U64)x86_k5_irq, 0);
     return 1;
 }
 
@@ -171,7 +177,18 @@ static int address_space_prepare(X86_PAGE_WINDOW *window)
 
 static int trace_field(const char *label, BOOT_U64 value)
 {
+    if (k5_cpu) return 1;
     return kernel_text(label) && kernel_number(value) && kernel_text("\n");
+}
+
+// ====== ist_top ======
+
+static BOOT_U64 ist_top(BOOT_U32 stack)
+{
+#ifdef KERNEL_TEST_K5_AP
+    if (k5_cpu) return X86_AP_IST_TOP(k5_cpu, stack);
+#endif
+    return x86_ist_top(stack);
 }
 
 // ====== nmi_arm ======
@@ -186,7 +203,7 @@ static int nmi_arm(BOOT_U64 phase, BOOT_U64 first, BOOT_U64 last)
     k5_first = first;
     k5_last = last;
     return trace_field("K5_NMI_FIRST: ", first) && trace_field("K5_NMI_LAST: ", last) &&
-        kernel_log(0, "KERNEL_K5_NMI_ARMED");
+        (k5_cpu || kernel_log(0, "KERNEL_K5_NMI_ARMED"));
 }
 
 // ====== nmi_report ======
@@ -194,9 +211,9 @@ static int nmi_arm(BOOT_U64 phase, BOOT_U64 first, BOOT_U64 last)
 static int nmi_report(BOOT_U64 active)
 {
     return k5_nmi_count == 1 && k5_nmi_rip >= k5_first && k5_nmi_rip < k5_last &&
-        k5_nmi_stack == x86_ist_top(2) - 5 * sizeof(BOOT_U64) &&
+        k5_nmi_stack == ist_top(2) - 5 * sizeof(BOOT_U64) &&
         k5_nmi_gs == active && trace_field("K5_NMI_RIP: ", k5_nmi_rip) &&
-        trace_field("K5_NMI_GS: ", k5_nmi_gs) && kernel_log(0, "KERNEL_K5_NMI_RESUMED");
+        trace_field("K5_NMI_GS: ", k5_nmi_gs) && (k5_cpu || kernel_log(0, "KERNEL_K5_NMI_RESUMED"));
 }
 
 // ====== user_address ======
@@ -228,6 +245,17 @@ static int user_case(BOOT_U32 mode, BOOT_U64 root)
         trace_field("K5_FAULT_ERROR: ", k5_fault.Error) && trace_field("K5_USER_CS: ", k5_fault.Cs);
 }
 
+// ====== pages_release ======
+
+static int pages_release(X86_PAGE_WINDOW *window, BOOT_U64 budget)
+{
+    if (!x86_page_window_resume(window, &held)) x86_k5_stop();
+    volatile unsigned char *alias = x86_window_bytes();
+    for (BOOT_U64 index = 0; index < K5_PAGES * K5_PAGE; ++index) alias[index] = 0;
+    if (!x86_page_window_release(window)) x86_k5_stop();
+    return x86_page_window_idle_valid(window) && kernel_physical_budget_matches(window->Pool, budget);
+}
+
 // ====== verify_and_release ======
 
 static int verify_and_release(X86_PAGE_WINDOW *window, BOOT_U64 root, BOOT_U64 budget, BOOT_U64 alternate)
@@ -246,12 +274,9 @@ static int verify_and_release(X86_PAGE_WINDOW *window, BOOT_U64 root, BOOT_U64 b
         if (current_gdt.Bytes[index] != gdt_previous.Bytes[index] ||
             current_idt.Bytes[index] != idt_previous.Bytes[index]) x86_k5_stop();
     }
-    if (__readmsr(K5_KERNEL_GS_BASE) != alternate || !x86_page_window_resume(window, &held)) x86_k5_stop();
-    volatile unsigned char *alias = x86_window_bytes();
-    for (BOOT_U64 index = 0; index < K5_PAGES * K5_PAGE; ++index) alias[index] = 0;
-    if (!x86_page_window_release(window)) x86_k5_stop();
+    if (__readmsr(K5_KERNEL_GS_BASE) != alternate) x86_k5_stop();
     k5_owner = 0;
-    return x86_page_window_idle_valid(window) && kernel_physical_budget_matches(window->Pool, budget);
+    return pages_release(window, budget);
 }
 
 // ====== session_open ======
@@ -311,9 +336,10 @@ int x86_k5_irq_service(void)
     BOOT_U32 value, index;
     // Intel SDM 3A §13.5.4: the one-shot current count (390h) reads zero after expiry.
     if (!x86_lapic_native_read(0x390, &value) || value) return 0;
-    // Intel SDM 3A §13.8.4: ISR 100h-170h; vector 41h is bank 2 (120h), bit 1.
+    // Intel SDM 3A §13.8.4: ISR 100h-170h, one 32-bit bank per 16-byte step, indexed by vector.
     for (index = 0; index < 8; ++index) {
-        if (!x86_lapic_native_read(0x100 + index * 16, &value) || value != (index == 2 ? 2U : 0U)) return 0;
+        if (!x86_lapic_native_read(0x100 + index * 16, &value) ||
+            value != (index == k5_vector / 32 ? 1U << (k5_vector % 32) : 0U)) return 0;
     }
     // Intel SDM 3A §13.8.5: writing zero to EOI (B0h) retires the highest ISR bit.
     if (!x86_k5_irq_frame_valid(k5_irq_frame[0], k5_irq_frame[1], k5_irq_frame[2], k5_irq_frame[3],
@@ -323,7 +349,7 @@ int x86_k5_irq_service(void)
         if (!x86_lapic_native_read(0x100 + index * 16, &value) || value) return 0;
     }
     // Intel SDM 3A §13.5.4: writing the initial count (380h) restarts the one-shot timer.
-    if (k5_irq_count + 1 < k5_irq_goal) *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x380) = k5_timer->Reload;
+    if (k5_irq_count + 1 < k5_irq_goal) *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x380) = k5_reload;
     return 1;
 }
 
@@ -354,11 +380,30 @@ static BOOT_U64 rsp0_swap(volatile unsigned char *field, BOOT_U64 value)
 
 static int timer_arm(void)
 {
-    const X86_LAPIC_MAPPING *mapping = k5_timer->Mapping;
     // Intel SDM 3A §13.5.4: divide 3E0h = 3 (by 16), LVT 320h one-shot unmasked, initial count 380h.
+    if (k5_cpu) {
+        *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x3e0) = 3;
+        *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x320) = k5_vector;
+        *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x380) = k5_reload;
+        return *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x320) == k5_vector;
+    }
+    const X86_LAPIC_MAPPING *mapping = k5_timer->Mapping;
     return x86_timer_confirm_write(mapping, 0x3e0, 3) &&
-        x86_timer_confirm_write(mapping, 0x320, K5_TIMER_VECTOR) &&
-        x86_timer_write(mapping, 0x380, k5_timer->Reload);
+        x86_timer_confirm_write(mapping, 0x320, k5_vector) &&
+        x86_timer_write(mapping, 0x380, k5_reload);
+}
+
+// ====== timer_quiet ======
+
+static int timer_quiet(void)
+{
+    // Intel SDM 3A §13.5.1: LVT mask bit 16; §13.5.4: zero initial count stops the timer.
+    if (k5_cpu) {
+        *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x320) = 0x10000U | k5_vector;
+        *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x380) = 0;
+        return !*(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x390);
+    }
+    return x86_timer_stop(k5_timer->Mapping);
 }
 
 // ====== irq_case ======
@@ -366,14 +411,15 @@ static int timer_arm(void)
 static int irq_case(BOOT_U64 phase, BOOT_U64 root)
 {
     BOOT_U64 first = user_address(x86_k5_user_irq_first), last = user_address(x86_k5_user_irq_last);
-    int armed = phase == 4 ?
-        nmi_arm(4, (BOOT_U64)x86_k5_irq_wait_first, (BOOT_U64)x86_k5_irq_wait_last) :
-        nmi_arm(5, first, last);
-    if (!armed) return 0;
+    k5_irq_waiting = 0;
     k5_irq_count = 0;
     k5_irq_goal = phase == 4 ? 3 : 1;
     k5_irq_last = last;
     k5_irq_stack = 0;
+    int armed = phase == 4 ?
+        nmi_arm(4, (BOOT_U64)x86_k5_irq_wait_first, (BOOT_U64)x86_k5_irq_wait_last) :
+        nmi_arm(5, first, last);
+    if (!armed) return 0;
     if (k5_negative != 4 && !timer_arm()) return 0;
     if (k5_negative == 5) {
         _enable();
@@ -381,7 +427,7 @@ static int irq_case(BOOT_U64 phase, BOOT_U64 root)
         x86_k5_stop();
     }
     x86_k5_enter(K5_USER_CODE, 5, phase == 5);
-    int stopped = x86_timer_stop(k5_timer->Mapping);
+    int stopped = timer_quiet();
     return stopped && k5_irq_count == k5_irq_goal && x86_kernel_root() == root &&
         __readmsr(K5_GS_BASE) == k5_owner && __readmsr(K5_KERNEL_GS_BASE) == 0 &&
         k5_live_root == k5_root &&
@@ -392,7 +438,7 @@ static int irq_case(BOOT_U64 phase, BOOT_U64 root)
         k5_fault.Rip == user_address(x86_k5_user_ud) &&
         nmi_report(phase == 4 ? k5_owner : 0) &&
         trace_field("K5_IRQ_RIP: ", k5_irq_frame[0]) && trace_field("K5_IRQ_CS: ", k5_irq_frame[1]) &&
-        trace_field("K5_IRQ_STACK: ", k5_irq_stack) && kernel_log(0, "KERNEL_K5_IRQ_RESUMED");
+        trace_field("K5_IRQ_STACK: ", k5_irq_stack) && (k5_cpu || kernel_log(0, "KERNEL_K5_IRQ_RESUMED"));
 }
 
 // ====== x86_k5_irq_probe ======
@@ -408,6 +454,7 @@ int x86_k5_irq_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
         !x86_lapic_idle(timer->Mapping)) return 0;
     admitted |= 2;
     k5_timer = timer;
+    k5_reload = timer->Reload;
     if (!session_open(window, &root, &budget, &alternate)) return 0;
     volatile unsigned char *field = tss_rsp0();
     if (!field) x86_k5_stop();
@@ -421,3 +468,129 @@ int x86_k5_irq_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     if (!verify_and_release(window, root, budget, alternate)) return 0;
     return passed && kernel_log(0, "KERNEL_K5_IRQ_OK");
 }
+
+#ifdef KERNEL_TEST_K5_AP
+// ====== x86_k5_ap_run ======
+
+void x86_k5_ap_run(uint32_t index)
+{
+    // Intel SDM 3A §2.5: forbid PGE, LA57, FSGSBASE, PCIDE and CET.
+    const BOOT_U64 incompatible = (1ULL << 7) | (1ULL << 12) | (1ULL << 16) |
+        (1ULL << 17) | (1ULL << 23);
+    BOOT_U64 root = __readcr3(), alternate, previous;
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    k5_ap_passed = 0;
+    if (index != k5_ap_cpu || (BOOT_U64)owner != k5_owner || owner->Index != index ||
+        __readmsr(K5_GS_BASE) != k5_owner || !x86_k5_selectors() || !x86_irq_cpu_state() ||
+        (__readcr4() & incompatible) || __readmsr(K5_FS_BASE)) return;
+    k5_cpu = index;
+    if (!descriptors_prepare()) return;
+    volatile unsigned char *field = tss_rsp0();
+    if (!field || (BOOT_U64)field != X86_AP_METADATA(k5_ap_tss_cpu) + X86_AP_TSS_OFFSET + 4) return;
+    alternate = __readmsr(K5_KERNEL_GS_BASE);
+    __writemsr(K5_KERNEL_GS_BASE, 0);
+    x86_k5_load_gdt(&gdt_probe);
+    x86_exception_load_idt(&idt_probe);
+    previous = rsp0_swap(field, K5_RSP0_PAGE + K5_PAGE);
+    int passed = previous && irq_case(4, root) && irq_case(5, root);
+    if (!timer_quiet() || rsp0_swap(field, previous) != K5_RSP0_PAGE + K5_PAGE) x86_k5_stop();
+    if (__readcr3() != root || __readmsr(K5_GS_BASE) != k5_owner || __readmsr(K5_KERNEL_GS_BASE)) x86_k5_stop();
+    x86_k5_load_gdt(&gdt_previous);
+    x86_exception_load_idt(&idt_previous);
+    __writemsr(K5_KERNEL_GS_BASE, alternate);
+    k5_ap_tss = (BOOT_U64)field - 4;
+    k5_ap_gs = __readmsr(K5_GS_BASE);
+    k5_ap_passed = passed ? 1 : 0;
+}
+
+// ====== nmi_send ======
+
+static void nmi_send(uint32_t index)
+{
+    // Intel SDM 3A §13.6.1: ICR high 310h destination 31:24; low 300h delivery mode 100b (NMI),
+    // assert bit 14, delivery status bit 12. Same physical, no-shorthand form as the panic IPI.
+    uint32_t low = X86_ICR_PENDING;
+    for (uint32_t poll = 0; poll < 1000000 && (low & X86_ICR_PENDING); ++poll) {
+        if (!xp_panic_hw_read(NULL, X86_ICR_LOW, &low)) xis_native_abort(0x4b35415049524400ULL);
+    }
+    if ((low & X86_ICR_PENDING) || !xp_panic_hw_write(NULL, X86_ICR_HIGH, xp_panic_native.Ids[index] << 24) ||
+        !xp_panic_hw_write(NULL, X86_ICR_LOW, 0x4400)) xis_native_abort(0x4b35415049574e00ULL);
+}
+
+// ====== supervise ======
+
+static void supervise(uint32_t index, uint64_t generation)
+{
+    const uint32_t mask = xp_panic_native.Source.Mask;
+    uint64_t elapsed = 0, settled = 0;
+    uint32_t last, now, sent = 0;
+    if (!xis_native_now(NULL, &last)) xis_native_abort(0x4b354150434c4b00ULL);
+    while (xis_value(index, XIS_ACK) != generation) {
+        if (!xis_native_now(NULL, &now)) xis_native_abort(0x4b354150434c4b01ULL);
+        uint32_t delta = (now - last) & mask;
+        last = now;
+        elapsed += delta;
+        if (elapsed > 30ULL * KERNEL_PM_TIMER_HZ) xis_native_abort(0x4b354150544d4f00ULL);
+        if (!sent && k5_phase == 4 && k5_irq_waiting) {
+            if (k5_negative == 9) {
+                if (!xis_native_shootdown()) xis_native_abort(0x4b35415053444e00ULL);
+                xis_native_abort(0x4b35415053444e01ULL);
+            }
+            if (k5_negative != 8) nmi_send(index);
+            sent = 1;
+        }
+        if (sent == 1 && k5_phase == 5 && k5_irq_goal == 1 && k5_irq_count == 1) {
+            settled += delta;
+            if (settled >= KERNEL_PM_TIMER_HZ / 10) {
+                nmi_send(index);
+                sent = 2;
+            }
+        }
+        _mm_pause();
+    }
+}
+
+// ====== service_call ======
+
+static void service_call(uint32_t index, uint32_t operation)
+{
+    uint64_t generation = xis_publish_operation(index, 0, operation);
+    if (!generation || generation == XIS_INVALID || !xis_native_send(index))
+        xis_native_abort(0x4b35415050554200ULL);
+    if (operation == XIS_K5_IRQ) supervise(index, generation);
+    XIS_WAIT wait = {xis_native_now, NULL, xp_panic_native.Source.Mask, KERNEL_PM_TIMER_HZ, 1000000, 0};
+    if (xis_wait(index, generation, &wait) != XIS_WAIT_ACK || !xis_native_wait(index, 1, generation))
+        xis_native_abort(0x4b35415057414900ULL);
+}
+
+// ====== x86_k5_ap_probe ======
+
+void x86_k5_ap_probe(X86_PAGE_WINDOW *window)
+{
+    BOOT_U64 budget;
+    k5_reload = x86_timer_diagnostic_reload();
+    k5_vector = XIS_TIMER_VECTOR;
+    if (!k5_reload || xis_native.Count < 3) xis_native_abort(0x4b35415052454c00ULL);
+    for (uint32_t index = 1; index <= 2; ++index) {
+        if (!kernel_physical_budget_read(window->Pool, &budget) || !address_space_prepare(window))
+            xis_native_abort(0x4b35415050414700ULL);
+        k5_ap_cpu = index;
+        k5_ap_tss_cpu = k5_negative == 7 ? 3 - index : index;
+        k5_owner = (BOOT_U64)xp_panic_native.Contexts[k5_negative == 6 ? 3 - index : index];
+        BOOT_U64 shootdowns = xis_native_shootdowns();
+        service_call(index, XIS_K5_IRQ);
+        k5_cpu = 0;
+        if (k5_ap_passed != 1 || xis_native_shootdowns() != shootdowns ||
+            k5_ap_gs != (BOOT_U64)xp_panic_native.Contexts[index]) xis_native_abort(0x4b35415046414900ULL);
+        pages_release(window, budget);
+        k5_owner = 0;
+        if (!trace_field("K5_AP_CPU: ", index) || !trace_field("K5_AP_GS: ", k5_ap_gs) ||
+            !trace_field("K5_AP_TSS: ", k5_ap_tss) || !trace_field("K5_IRQ_CS: ", k5_irq_frame[1]) ||
+            !trace_field("K5_IRQ_STACK: ", k5_irq_stack) || !trace_field("K5_NMI_RIP: ", k5_nmi_rip))
+            xis_native_abort(0x4b354150544c4f47ULL);
+        service_call(index, XIS_PING);
+    }
+    if (!kernel_log(0, "KERNEL_K5_AP_OK")) xis_native_abort(0x4b354150544c4f48ULL);
+    x86_kernel_stop(0x4b35415050415353ULL);
+}
+#endif

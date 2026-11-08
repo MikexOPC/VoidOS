@@ -5,6 +5,9 @@
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "kernel/diagnostics/log.h"
 #include "arch/x86/kernel/stack/main.h"
+#if KERNEL_TEST_AP_SERVICE == 10
+#include "test/arch/x86/kernel/interrupts/privilege/probe.h"
+#endif
 #if KERNEL_TEST_AP_SERVICE == 8
 __declspec(noreturn) void xad_admission_probe(void);
 #endif
@@ -98,6 +101,9 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
     number_private("KERNEL_IPI_BASE_GENERATION: ", base);
 #if KERNEL_TEST_AP_SERVICE == 7
     timer_probe();
+#elif KERNEL_TEST_AP_SERVICE == 10
+    x86_k5_ap_probe(&startup->Memory->Window);
+    x86_kernel_stop(0x4b35415050415354ULL);
 #elif KERNEL_TEST_AP_SERVICE == 8
     xad_admission_probe();
 #elif KERNEL_TEST_AP_SERVICE == 9
