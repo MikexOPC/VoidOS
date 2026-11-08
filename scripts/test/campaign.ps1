@@ -18,7 +18,17 @@ $code = 0
 # ============ build and run ============
 
 try {
-    if ($null -ne $entry.build) {
+    if ($entry.meson) {
+        $meson = (Get-Command meson -ErrorAction SilentlyContinue).Source
+        if (!$meson) { $meson = Join-Path $env:APPDATA 'Python/Python312/Scripts/meson.exe' }
+        $images = Join-Path $Output $Name
+        $buildLog = Join-Path $Output ($Name + '.build.log')
+        & $meson setup $images (Join-Path $project 'kernel') --vsenv "-Dprofile=$($entry.meson)" *> $buildLog
+        if ($LASTEXITCODE) { throw "Meson setup failed: $Name" }
+        & $meson test -C $images *>> $buildLog
+        if ($LASTEXITCODE) { throw "Meson build or plan parity failed: $Name" }
+        $image = Join-Path $images 'kernel.elf'
+    } elseif ($null -ne $entry.build) {
         $images = Join-Path $Output $Name
         $build = @{ OutputDirectory = $images }
         for ($index = 0; $index -lt $entry.build.Count; ++$index) {
