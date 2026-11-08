@@ -17,10 +17,6 @@ USER_FAULT = re.compile(rb"\bv=(06|0d|0e) e=([0-9a-f]+) i=0 cpl=3\b", re.I)
 AP_IRQ = re.compile(rb"\bv=d1 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 USER_IRQ = re.compile(rb"\bv=41 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 RSP0_FRAME = 0x409000 - 40
-KERNEL_PF = re.compile(
-    rb"\bv=0e e=([0-9a-f]+) i=0 cpl=0 IP=[0-9a-f]+:([0-9a-f]+)[^\r\n]*\bCR2=([0-9a-f]+)",
-    re.I,
-)
 SYS_TF = re.compile(rb"\bv=01 e=[0-9a-f]+ i=0 cpl=0\b", re.I)
 USER_TF = re.compile(rb"\bv=01 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 AP_REASON = {6: 0x4b35415046414900, 7: 0x4b35415046414900, 8: 0x4b354150544d4f00, 9: 0x4b34544c4241434b}
@@ -134,57 +130,6 @@ def sys_negative(directory, image, case):
     raise RuntimeError("Negative syscall case was not rejected")
 
 
-# ====== copy_boot ======
-
-def copy_boot(directory, image):
-    with qemu.Vm(directory, image, smp=1) as vm:
-        log = vm.wait("KERNEL_K5_NMI_ARMED", level="OK")
-        wait_window(vm, log.number("K5_NMI_FIRST"), log.number("K5_NMI_LAST"), 0)
-        vm.command("nmi")
-        log = vm.wait("KERNEL_READY", level="OK")
-        if log.failures() or log.terminal() or not log.before("KERNEL_K5_COPY_OK", "KERNEL_READY"):
-            raise RuntimeError("Missing clean copy continuation")
-        if not log.has("KERNEL_K5_SMEP_SMAP_SUPPORTED") or log.numbers("K5_COPY_FAULTS") != [4]:
-            raise RuntimeError("Missing SMAP or fault evidence")
-        trace = vm.trace.read_bytes()
-        instruction = log.number("K5_COPY_INSTRUCTION")
-        faults = [(int(error, 16), int(cr2, 16)) for error, rip, cr2 in KERNEL_PF.findall(trace)
-                  if int(rip, 16) == instruction]
-        if faults != [(0, 0x401000), (3, 0x406000), (0, 0x401000), (3, 0x406000)] or (
-            USER_FAULT.findall(trace) != [(b"06", b"0000")]
-        ):
-            raise RuntimeError(f"Unexpected fault sequence {faults}")
-        if b"triple fault" in trace.lower():
-            raise RuntimeError("Unexpected triple fault")
-        return dict(RecoveredFaults=4, Nmis=1, Smap=True, Smep=True)
-
-
-# ====== copy_negative ======
-
-def copy_negative(directory, image, case):
-    expected = {20: 0x3, 21: 0x11, 22: 0x0, 23: 0x0, 24: 0x2, 25: None}[case]
-    with qemu.Vm(directory, image, smp=1) as vm:
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline and vm.alive():
-            log = vm.log()
-            if log.has("KERNEL_K5_COPY_OK") or log.has("KERNEL_READY"):
-                raise RuntimeError("Negative copy case was accepted")
-            vm.command("info registers")
-            time.sleep(0.1)
-            if HALT.search(vm.monitor.read_bytes()):
-                trace = vm.trace.read_bytes()
-                events = [tuple(int(item, 16) for item in event) for event in KERNEL_PF.findall(trace)]
-                faults = [error for error, _, _ in events]
-                if b"triple fault" in trace.lower():
-                    raise RuntimeError("Negative copy case caused a triple fault")
-                if expected is None and faults or expected is not None and (not faults or faults[-1] != expected):
-                    raise RuntimeError(f"Unexpected kernel faults {faults}")
-                if case == 23 and events[-1] != (0, log.number("K5_COPY_OUTSIDE"), 0x401000):
-                    raise RuntimeError(f"RIP negative did not fault at its isolated copy instruction: {events[-1]}")
-                return dict(ExpectedRejection=case, Faults=faults[-1:])
-    raise RuntimeError("Negative copy case was not rejected")
-
-
 # ====== ap_boot ======
 
 def ap_boot(directory, image):
@@ -285,8 +230,6 @@ def main():
     parser.add_argument("--irq-negative", type=int, choices=range(1, 6))
     parser.add_argument("--ap", action="store_true")
     parser.add_argument("--sys", action="store_true")
-    parser.add_argument("--copy", action="store_true")
-    parser.add_argument("--copy-negative", type=int, choices=range(20, 26))
     parser.add_argument("--sys-negative", type=int, choices=range(10, 19))
     parser.add_argument("--ap-negative", type=int, choices=range(6, 10))
     args = parser.parse_args()
@@ -294,10 +237,6 @@ def main():
     out.mkdir()
     results = []
     scenario = missing_nmi if args.missing_nmi else boot
-    if args.copy:
-        scenario = copy_boot
-    if args.copy_negative:
-        scenario = lambda directory, image: copy_negative(directory, image, args.copy_negative)
     if args.sys:
         scenario = sys_boot
     if args.sys_negative:

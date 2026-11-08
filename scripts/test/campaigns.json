@@ -1,5 +1,5 @@
 {
-  "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: script and arguments, {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
+  "_comment": "G2 Q4: QEMU campaigns by name. build: kernel/scripts/build.ps1 switches (null = the runner builds its own images). runner: python or powershell with script and arguments, or qemu-runner (Rust, compiled with Meson) with arguments; {image} and {boots} are substituted. heavy: VirtIO/IOMMU campaigns, at most one at a time with -Parallel (TCG slows them past their deadlines). boots: full campaign; smoke: boots of the smoke set.",
   "campaigns": {
     "k5-privilege": {
       "summary": "BSP ring 3, expected faults and real NMI entry during GS transitions",
@@ -130,43 +130,43 @@
     "k5-copy": {
       "summary": "User copies with SMEP and SMAP: range, recovered #PF, NMI with AC set, returned errors",
       "build": ["-TestK5Copy"],
-      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--copy"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--copy"],
       "boots": 10, "smoke": 1, "heavy": true
     },
     "k5-copy-no-stac": {
       "summary": "Expected stop of the K5 copy probe: no-stac",
       "build": ["-TestK5Copy", "-TestK5IrqNegative", "20"],
-      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "20"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "20"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k5-copy-smep": {
       "summary": "Expected stop of the K5 copy probe: smep",
       "build": ["-TestK5Copy", "-TestK5IrqNegative", "21"],
-      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "21"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "21"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k5-copy-cr2": {
       "summary": "Expected stop of the K5 copy probe: cr2",
       "build": ["-TestK5Copy", "-TestK5IrqNegative", "22"],
-      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "22"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "22"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k5-copy-rip": {
       "summary": "Expected stop of the K5 copy probe: rip",
       "build": ["-TestK5Copy", "-TestK5IrqNegative", "23"],
-      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "23"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "23"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k5-copy-kernel-buffer": {
       "summary": "Expected stop of the K5 copy probe: kernel-buffer",
       "build": ["-TestK5Copy", "-TestK5IrqNegative", "24"],
-      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "24"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "24"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k5-copy-ac-open": {
       "summary": "Expected stop of the K5 copy probe: ac-open",
       "build": ["-TestK5Copy", "-TestK5IrqNegative", "25"],
-      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "25"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--copy-negative", "25"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k6-protection": {
