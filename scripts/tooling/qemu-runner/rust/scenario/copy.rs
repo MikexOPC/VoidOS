@@ -118,14 +118,18 @@ fn copy_negative(vm: &mut Vm, case: u32) -> Result<Value, String> {
     let expected = expected_error(case)?;
     vm.inject_on("info registers");
     let deadline = Instant::now() + vm.limits.negative;
+    let accepted = |log: &SerialLog| log.has("KERNEL_K5_COPY_OK") || log.has("KERNEL_READY");
     while Instant::now() < deadline && vm.alive() {
-        let log = vm.log();
-        if log.has("KERNEL_K5_COPY_OK") || log.has("KERNEL_READY") {
+        if accepted(&vm.log()) {
             return Err("Negative copy case was accepted".to_string());
         }
         vm.command("info registers");
         std::thread::sleep(NEGATIVE_POLL_SLEEP);
         if trace::halted(&vm.monitor_bytes()?) {
+            let log = vm.log();
+            if accepted(&log) {
+                return Err("Negative copy case was accepted".to_string());
+            }
             return judge_negative(vm, case, expected, &log);
         }
     }

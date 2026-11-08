@@ -174,13 +174,13 @@ Limiti da dichiarare:
 
 ### M1, risultato
 
-Stato: parità mostrata su `k5-copy` e sui sei negativi. Il percorso Python non è cancellato:
-la decisione spetta all'utente, e la campagna continua a usarlo finché `campaigns.json` non
-cambia.
+Stato: parità mostrata su `k5-copy` e sui sei negativi. Con l'approvazione dell'utente queste
+sette campagne usano il runner Rust e `copy_boot` e `copy_negative` sono usciti da `firmware.py`.
+Il tratto Python rimosso resta nella storia di git.
 
 Il runner è `scripts/tooling/qemu-runner/`: Rust senza dipendenze esterne, test host in
-`test/tooling/qemu-runner/`. Riceve gli stessi argomenti di `firmware.py`, quindi
-`campaigns.json` potrà puntarlo cambiando solo il programma.
+`test/tooling/qemu-runner/`. `campaigns.json` lo indica come `qemu-runner` e `campaign.ps1` lo
+compila con Meson prima dell'uso. Le campagne si lanciano ancora da `scripts/test/qemu.ps1`.
 
 ```bash
 meson setup kernel/build/meson-qemu-runner test/tooling/qemu-runner --vsenv
@@ -239,11 +239,25 @@ Differenze volute rispetto a Python:
 - Una VM che non termina entro 5 s diventa un fallimento registrato, non un'eccezione non gestita.
 - Ogni boot aggiunge `vm.json`: PID, argomenti, guasto iniettato e modo di chiusura.
 - `--inject drop|stop|quit` serve solo alle prove di guasto.
+- Un negativo rilegge il log seriale dopo aver visto l'arresto. Python usava una lettura di 100 ms
+  prima: poteva perdere `K5_COPY_OUTSIDE` e fallire a torto, o non vedere `KERNEL_READY` e accettare
+  a torto. I test host con il falso QEMU lo hanno mostrato sotto carico. Non è mai successo nei boot
+  reali provati.
+
+Prove sul binario finale:
+- da `scripts/test/qemu.ps1`, immagini ricompilate: 7/7 campagne, 28 boot;
+- sulle stesse immagini delle evidenze Python: `PARITY SAME` per tutte e sette;
+- test host: 10 ripetizioni in serie e 20 con quattro processi insieme, tutti verdi.
+
+Le immagini cambiano hash se cambia la cartella di output della build, quindi `parity` va usato su
+campagne eseguite con lo stesso file immagine.
 
 Limiti:
 - Il runner copre solo `k5-copy` e i negativi, con video `std` e senza `screendump` o `xp`.
-- Le altre campagne usano ancora `qemu.py` e `serial.py`, che quindi non si possono cancellare.
-  Di `firmware.py` si possono togliere solo `copy_boot` e `copy_negative`.
+- Le altre campagne usano ancora `qemu.py`, `serial.py` e il resto di `firmware.py`, che quindi
+  restano fino a M3. Dopo la rimozione: smoke da 1 boot di `k5-privilege`, `k5-syscall`, `k5-ap`,
+  `k5-irq-simd`, `k5-sys-rip` e `k5-ap-gs`, tutti verdi; le campagne complete non sono state rifatte.
+- I negativi rimasti in `firmware.py` hanno ancora la lettura del log prima dell'attesa.
 - Solo Windows. Prove su QEMU 11.1.0 TCG, q35, OVMF, una vCPU, con altre VM accese sulla macchina.
 - Il criterio di M1 è la parità con Python: non aggiunge prove sul kernel oltre a quelle di K5.
   Coverage non misurata.

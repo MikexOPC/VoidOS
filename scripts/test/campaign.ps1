@@ -38,9 +38,24 @@ try {
     }
     $arguments = @($entry.runner | Select-Object -Skip 1 | ForEach-Object {
         $_.Replace('{image}', $image).Replace('{boots}', [string]$Count) })
-    $arguments[0] = Join-Path $project $arguments[0]
-    if ($entry.runner[0] -eq 'python') { $program = $python; $runnerArguments = $arguments }
-    else { $program = 'powershell.exe'; $runnerArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File') + $arguments }
+    if ($entry.runner[0] -eq 'qemu-runner') {
+        $meson = (Get-Command meson -ErrorAction SilentlyContinue).Source
+        if (!$meson) { $meson = Join-Path $env:APPDATA 'Python/Python312/Scripts/meson.exe' }
+        $runnerBuild = Join-Path $project 'kernel/build/meson-qemu-runner'
+        $runnerLog = Join-Path $Output ($Name + '.runner-build.log')
+        if (!(Test-Path -LiteralPath (Join-Path $runnerBuild 'meson-private/build.dat'))) {
+            & $meson setup $runnerBuild (Join-Path $project 'test/tooling/qemu-runner') --vsenv *> $runnerLog
+            if ($LASTEXITCODE) { throw "Runner setup failed: $Name" }
+        }
+        & $meson compile -C $runnerBuild *>> $runnerLog
+        if ($LASTEXITCODE) { throw "Runner build failed: $Name" }
+        $program = Join-Path $runnerBuild 'qemu_runner.exe'
+        $runnerArguments = $arguments
+    } else {
+        $arguments[0] = Join-Path $project $arguments[0]
+        if ($entry.runner[0] -eq 'python') { $program = $python; $runnerArguments = $arguments }
+        else { $program = 'powershell.exe'; $runnerArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File') + $arguments }
+    }
     Push-Location $project
     try {
         & $program @runnerArguments 1> $log 2> ($log + '.stderr')

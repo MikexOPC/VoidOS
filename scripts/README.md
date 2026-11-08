@@ -16,7 +16,7 @@ sottocartella `scripts/`, per esempio `kernel/scripts/` per il kernel.
 | `test/` | Runner delle suite host, campagne QEMU e registro `campaigns.json`. |
 | `format/` | Strumenti di formattazione dei sorgenti. |
 | `tooling/build-plan/` | Planner Rust per confrontare tre profili di build del kernel. |
-| `tooling/qemu-runner/` | Runner QEMU Rust per `k5-copy` e negativi, in parità con il percorso Python ([M1](../docs/design/k6-design.md#m1-risultato)). |
+| `tooling/qemu-runner/` | Runner QEMU Rust delle campagne `k5-copy`, compilato con Meson da `campaign.ps1` ([M1](../docs/design/k6-design.md#m1-risultato)). |
 | [clean.ps1](clean.ps1) | Pulizia controllata delle directory di esecuzione in `kernel/build/`. |
 
 `lib/common.ps1` raccoglie helper MSVC e analisi statica.
