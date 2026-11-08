@@ -12,6 +12,9 @@
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
 #include "arch/x86/kernel/scheduler/idle/idle.h"
 #endif
+#ifdef KERNEL_TEST_K5_PRIVILEGE
+#include "test/arch/x86/kernel/interrupts/privilege/probe.h"
+#endif
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 finished;
 #ifdef KERNEL_EVENT_LOOP
@@ -310,6 +313,9 @@ cleanup:
     }
 #ifdef KERNEL_TEST_SCHEDULER_PERIODIC
     if (!x86_scheduler_periodic_run(&timer)) return 0;
+#endif
+#ifdef KERNEL_TEST_K5_PRIVILEGE
+    if (!x86_k5_irq_probe(window,&timer)) return 0;
 #endif
     return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);
 }

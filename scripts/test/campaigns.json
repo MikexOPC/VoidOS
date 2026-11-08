@@ -7,6 +7,36 @@
       "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}"],
       "boots": 10, "smoke": 1, "heavy": true
     },
+    "k5-irq-simd": {
+      "summary": "Expected rejection of the CPL3 IRQ probe: simd",
+      "build": ["-TestK5Privilege", "-TestK5IrqNegative", "1"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--irq-negative", "1"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-irq-gpr": {
+      "summary": "Expected rejection of the CPL3 IRQ probe: gpr",
+      "build": ["-TestK5Privilege", "-TestK5IrqNegative", "2"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--irq-negative", "2"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-irq-rsp0": {
+      "summary": "Expected rejection of the CPL3 IRQ probe: rsp0",
+      "build": ["-TestK5Privilege", "-TestK5IrqNegative", "3"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--irq-negative", "3"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-irq-timeout": {
+      "summary": "Expected rejection of the CPL3 IRQ probe: timeout",
+      "build": ["-TestK5Privilege", "-TestK5IrqNegative", "4"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--irq-negative", "4"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-irq-cpl0": {
+      "summary": "Expected rejection of the CPL3 IRQ probe: cpl0",
+      "build": ["-TestK5Privilege", "-TestK5IrqNegative", "5"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--irq-negative", "5"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
     "ap-console": {
       "summary": "AP1 producers, BSP RAM consumer, 2000 FIFO requests, forced full queue and cleanup",
       "build": ["-TestApService", "ap-console"],
