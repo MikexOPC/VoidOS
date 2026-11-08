@@ -5,6 +5,10 @@
 #include "arch/x86/kernel/timer/lapic/timer.h"
 
 int x86_k5_privilege_probe(X86_PAGE_WINDOW *window);
+#ifdef KERNEL_TEST_K5_AP
+void x86_k5_ap_probe(X86_PAGE_WINDOW *window);
+void x86_k5_ap_run(unsigned int index);
+#endif
 int x86_k5_irq_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer);
 
 #endif

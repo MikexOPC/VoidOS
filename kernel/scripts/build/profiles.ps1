@@ -9,7 +9,7 @@ if ($TestSchedulerPreemption -or $TestSchedulerPeriodic) {
 
 if ($TestApService -ne 'none') {
     foreach ($key in $boundBuildOptions) {
-        if ($key -notin @('TestApService','OutputDirectory','ToolchainBin')) { throw 'AP service requires an isolated diagnostic profile.' }
+        if ($key -notin @('TestApService','OutputDirectory','ToolchainBin') -and !($TestApService -eq 'k5-ap' -and $key -eq 'TestK5IrqNegative')) { throw 'AP service requires an isolated diagnostic profile.' }
     }
 }
 

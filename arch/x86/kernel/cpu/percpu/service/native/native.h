@@ -33,6 +33,12 @@ extern uint64_t xis_timer_ticks[64];
 uint32_t x86_timer_diagnostic_reload(void);
 #endif
 
+#if KERNEL_TEST_AP_SERVICE == 10
+#define XIS_K5_IRQ XIS_ARM_TIMER
+uint32_t x86_timer_diagnostic_reload(void);
+void x86_k5_ap_run(unsigned int index);
+#endif
+
 #define XIS_VECTOR 0xe1U
 #define XIS_TIMER_VECTOR 0xd1U
 // Stack bytes reserved by xis_service_loop (idle.asm: sub rsp, 576) below the private frame.

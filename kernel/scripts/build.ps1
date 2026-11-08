@@ -1,4 +1,4 @@
-param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-handler','release-missing-ack','ap-timer','admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete','ap-console','ap-console-incomplete','ap-console-ipi','ap-console-ipi-no-ack','ap-console-ipi-inflight')][string]$TestApService = 'none', [ValidateSet('none','withhold-ack','lock-held','contended')][string]$TestApStress = 'none', [ValidateSet('none','bsp','ap')][string]$TestApGroupPanic = 'none', [switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic, [switch]$TestApSequence, [switch]$TestApSequenceFault,
+param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-handler','release-missing-ack','ap-timer','k5-ap','admission','ap-batch','ap-batch-rollback','ap-preempt','ap-concurrent','ap-concurrent-stress','ap-concurrent-incomplete','ap-four','ap-four-incomplete','ap-console','ap-console-incomplete','ap-console-ipi','ap-console-ipi-no-ack','ap-console-ipi-inflight')][string]$TestApService = 'none', [ValidateSet('none','withhold-ack','lock-held','contended')][string]$TestApStress = 'none', [ValidateSet('none','bsp','ap')][string]$TestApGroupPanic = 'none', [switch]$TestApLaunch, [switch]$TestApNoNmi, [switch]$TestApRemotePanic, [switch]$TestApSequence, [switch]$TestApSequenceFault,
     [switch]$TestSchedulerPeriodic, [switch]$TestSchedulerPreemption, [ValidateSet('none','guard-low','guard-high','nx','retired','rollback','blocked','irq-timeout','idle-timeout','idle-repeat-timeout')][string]$TestSchedulerFault = 'none',
     [ValidateSet('none','guard','nx')][string]$TestApResourceFault = 'none',
     [ValidateSet('none','prepare','voluntary','opcode','page','nmi','double','no-simd','recursive','lock-held','prepare-rollback','no-simd-call')][string]$TestSmpPanic = 'none',
@@ -78,8 +78,10 @@ if ($UseRustPlan) {
 . (Join-Path $PSScriptRoot 'build/profiles/flags.ps1')
 $flags += '/DKERNEL_PANIC_RUNTIME=1'
 if ($TestK5Privilege) { $flags += '/DKERNEL_TEST_K5_PRIVILEGE=1' }
+if ($TestApService -eq 'k5-ap') { $flags += '/DKERNEL_TEST_K5_AP=1' }
 if ($TestK5IrqNegative) {
-    if (!$TestK5Privilege -or $TestK5IrqNegative -notin 1..5) { throw 'Invalid K5 IRQ negative case.' }
+    if (($TestK5Privilege -and $TestK5IrqNegative -notin 1..5) -or ($TestApService -eq 'k5-ap' -and $TestK5IrqNegative -notin 6..9) -or
+        (!$TestK5Privilege -and $TestApService -ne 'k5-ap')) { throw 'Invalid K5 IRQ negative case.' }
     $flags += "/DKERNEL_K5_IRQ_NEGATIVE=$TestK5IrqNegative"
 }
 if ($TestApTransition -ne 'none') {
@@ -418,7 +420,7 @@ if ($TestPs2Decoder -or $Ps2Input) {
 if ($ApRuntime -or $TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) {
     . (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/installation/scripts/build.ps1')
 }
-if ($TestK5Privilege) {
+if ($TestK5Privilege -or $TestApService -eq 'k5-ap') {
     $probe = Join-Path $project 'test/arch/x86/kernel/interrupts/privilege'
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$probe/probe.c",("/Fo$output/k5-probe.obj")))
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',

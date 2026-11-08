@@ -14,8 +14,10 @@ spec.loader.exec_module(qemu)
 REGISTERS = re.compile(rb"RIP=([0-9a-fA-F]+)[^\r\n]*\bCPL=([0-3])\b")
 HALT = re.compile(rb"RAX=000000004b354641[^\r\n]*\r?\n(?:[^\r\n]*\r?\n){0,4}RIP=[^\r\n]*\bHLT=1\b", re.I)
 USER_FAULT = re.compile(rb"\bv=(06|0d|0e) e=([0-9a-f]+) i=0 cpl=3\b", re.I)
+AP_IRQ = re.compile(rb"\bv=d1 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 USER_IRQ = re.compile(rb"\bv=41 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 RSP0_FRAME = 0x405000 - 40
+AP_REASON = {6: 0x4b35415046414900, 7: 0x4b35415046414900, 8: 0x4b354150544d4f00, 9: 0x4b34544c4241434b}
 
 
 # ====== wait_window ======
@@ -77,6 +79,45 @@ def boot(directory, image):
         return dict(Faults=6, Nmis=5, UserIrqs=4, Cleanup=True, UserCpl=3)
 
 
+# ====== ap_boot ======
+
+def ap_boot(directory, image):
+    with qemu.Vm(directory, image, smp=3) as vm:
+        log = vm.wait("KERNEL_K5_AP_OK", level="OK", timeout=120)
+        if log.failures() or log.terminal():
+            raise RuntimeError("Unexpected failure in the AP profile")
+        if log.numbers("K5_AP_CPU") != [1, 2]:
+            raise RuntimeError("Unexpected AP sequence")
+        gs, tss = log.numbers("K5_AP_GS"), log.numbers("K5_AP_TSS")
+        if len(set(gs)) != 2 or tss[1] - tss[0] != 0x40000:
+            raise RuntimeError("AP probes did not use per-CPU GS and TSS")
+        if log.numbers("K5_IRQ_CS") != [0x33] * 2 or log.numbers("K5_IRQ_STACK") != [RSP0_FRAME] * 2:
+            raise RuntimeError("AP IRQ did not enter from ring 3 on RSP0")
+        trace = vm.trace.read_bytes()
+        if len(AP_IRQ.findall(trace)) != 8 or b"triple fault" in trace.lower():
+            raise RuntimeError("QEMU did not observe eight AP IRQs from CPL3")
+        return dict(Aps=2, UserIrqs=8, Cleanup=True)
+
+
+# ====== ap_negative ======
+
+def ap_negative(directory, image, case):
+    with qemu.Vm(directory, image, smp=3) as vm:
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline and vm.alive():
+            log = vm.log()
+            if log.has("KERNEL_K5_AP_OK"):
+                raise RuntimeError("Negative AP case was accepted")
+            if "KERNEL_SMP_PANIC_HALTED" in log.text:
+                irqs = len(AP_IRQ.findall(vm.trace.read_bytes()))
+                reason = log.number("PANIC_REASON_ADDRESS")
+                if reason != AP_REASON[case] or (irqs != 0 if case <= 7 else irqs == 0):
+                    raise RuntimeError(f"Unexpected AP rejection: reason {reason:x}, IRQs {irqs}")
+                return dict(ExpectedRejection=case, Reason=hex(reason), Irqs=irqs)
+            time.sleep(0.1)
+    raise RuntimeError("Negative AP case was not rejected")
+
+
 # ====== irq_negative ======
 
 def irq_negative(directory, image, case):
@@ -136,11 +177,17 @@ def main():
     parser.add_argument("--boots", default=10, type=int, choices=range(1, 11))
     parser.add_argument("--missing-nmi", action="store_true")
     parser.add_argument("--irq-negative", type=int, choices=range(1, 6))
+    parser.add_argument("--ap", action="store_true")
+    parser.add_argument("--ap-negative", type=int, choices=range(6, 10))
     args = parser.parse_args()
     out = root / "kernel/build" / ("k5-privilege-" + uuid.uuid4().hex)
     out.mkdir()
     results = []
     scenario = missing_nmi if args.missing_nmi else boot
+    if args.ap:
+        scenario = ap_boot
+    if args.ap_negative:
+        scenario = lambda directory, image: ap_negative(directory, image, args.ap_negative)
     if args.irq_negative:
         scenario = lambda directory, image: irq_negative(directory, image, args.irq_negative)
     for index in range(args.boots):

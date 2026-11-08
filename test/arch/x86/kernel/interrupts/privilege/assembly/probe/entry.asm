@@ -17,6 +17,7 @@ EXTERN k5_stack:QWORD
 EXTERN k5_root:QWORD
 EXTERN k5_irq_count:QWORD
 EXTERN k5_irq_goal:QWORD
+EXTERN k5_irq_waiting:QWORD
 EXTERN k5_irq_stack:QWORD
 EXTERN k5_irq_frame:QWORD
 EXTERN k5_negative:QWORD
@@ -326,6 +327,7 @@ x86_k5_irq PROC
     fxrstor64 [k5_fx_clean]
     cmp QWORD PTR [k5_phase], 4
     jne irq_service
+    mov QWORD PTR [k5_irq_waiting], 1
     mov r9d, 4000000h
 x86_k5_irq_wait_first LABEL BYTE
     pause

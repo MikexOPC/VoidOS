@@ -218,6 +218,115 @@ interfaccia. Nessuna modifica al percorso IRQ ordinario del kernel.
 Limite dichiarato: un solo IRQ, una sola CPU, nessuna preemption o
 cambio di task; la consegna da CPL3 su AP resta per K6.
 
+## K5-B2 — IRQ da ring 3 su un AP
+
+Stato: implementato nel profilo `k5-ap`, QEMU/OVMF, tre vCPU.
+[Validazione](k5-validation.md).
+
+Obiettivo: ripetere la prova K5-B su AP1 e AP2, uno alla volta. La prova
+deve mostrare che TSS, RSP0, GS, LAPIC e stack usati sono quelli della CPU
+che esegue, e che il percorso non dipende dal BSP. Serve almeno `-smp 3`.
+
+### Da dove partiamo
+
+- Ogni AP ha GDT e TSS propri nella pagina metadati del suo slot, con RSP0
+  e tre IST. La sua GDT non ha descrittori utente.
+- Il servizio AP riceve comandi dal BSP tramite mailbox ed è in ciclo idle.
+- Il LAPIC è allo stesso indirizzo virtuale su ogni CPU, ma ogni CPU vede
+  il proprio. La calibrazione del BSP è già riusata da `ap-timer`.
+
+### Problemi nuovi rispetto al BSP
+
+1. **NMI.** Il comando `nmi` del monitor QEMU va verificato: se raggiunge
+   tutte le vCPU, colpisce anche BSP e AP fuori prova. Per questo il runner
+   non può più iniettarlo.
+2. **Log.** Nell'handler dell'AP non si scrive sulla seriale. Il runner non
+   può quindi coordinare le finestre: lo fa il BSP.
+3. **Shootdown e panic.** Sulla root privata l'AP usa la IDT del probe. Uno
+   shootdown o una richiesta di panic in arrivo lo fermerebbero.
+4. **Stato condiviso.** Le variabili `k5_*` sono globali e hanno un solo
+   owner.
+
+### Decisioni proposte
+
+1. **Avvio con un comando del servizio.** Nuova operazione mailbox
+   `XIS_K5_IRQ`, presente solo nel profilo di test. Alternativa scartata:
+   un hook nell'avvio dell'AP, che girerebbe prima che il servizio sia pronto
+   e non proverebbe il kernel nello stato di esercizio.
+2. **Una CPU alla volta.** Il BSP pubblica owner, root e pagine, comanda un
+   AP, attende l'ack con deadline, verifica e passa al successivo. Così le
+   variabili `k5_*` restano a owner unico. La concorrenza fra CPU in ring 3
+   appartiene a K6.
+3. **Risorse per prova.** Il BSP prepara root e sette pagine, che riusa o
+   rilascia dopo ogni AP. L'AP carica una GDT privata con i descrittori
+   utente e il proprio TSS, poi una IDT del probe.
+4. **RSP0.** Come su K5-B: pagina a 0x404000 nella root privata. Il campo è
+   quello della TSS dell'AP, letta dal descrittore e confrontata con
+   `X86_AP_METADATA(cpu) + X86_AP_TSS_OFFSET`. Il valore precedente torna al
+   suo posto a fine prova.
+5. **Timer.** Stesso reload del BSP, LAPIC locale, vettore `XIS_TIMER_VECTOR`
+   (D1h) già riservato agli AP. Il controllo dell'ISR dipende quindi dal
+   vettore: banco 160h, bit 17.
+6. **NMI mirato dal BSP.** Il BSP invia un IPI con delivery mode NMI
+   all'APIC ID dell'AP, senza runner. Prima attende che l'handler pubblichi
+   l'ingresso nella finestra. Per CPL3 attende l'ultimo IRQ completato; il
+   payload aspetta l'NMI nel suo ciclo. Più vicino all'hardware reale del
+   comando del monitor.
+7. **Quiescenza.** Il BSP non emette shootdown mentre una prova è armata, e
+   lo verifica sul contatore `Shootdowns`. Un panic durante la prova ferma
+   l'AP sul percorso `x86_k5_stop`: il report lo mostra come ack mancante e
+   le risorse restano trattenute. È accettabile solo in questo profilo.
+8. **Profilo separato.** Nuova campagna `k5-ap`, tre vCPU. `k5-privilege`
+   resta invariata e a una vCPU.
+
+### Sequenza, non eseguibile
+
+1. BSP: fine dei gate K5-A e K5-B, reload disponibile, AP idle.
+2. BSP: prepara root e pagine, pubblica owner = contesto dell'AP e numero
+   della CPU, comanda `XIS_K5_IRQ`.
+3. AP: verifica indice, GS e TSS, salva i propri stati, entra in ring 3.
+4. AP: riceve tre IRQ; nel primo pubblica l'attesa e riceve l'NMI dal BSP.
+   Seconda entrata: un IRQ e un NMI nel payload a IF=1.
+5. AP: ripristina timer, RSP0, GDT, IDT e root; torna al ciclo idle e
+   conferma con l'ack.
+6. BSP: legge i risultati, azzera e rilascia le pagine, controlla il budget.
+   Prova un `PING` all'AP per mostrare che il servizio è ancora vivo.
+
+### Casi da provare
+
+- Positivo, dieci boot: quattro IRQ a `cpl=3` per AP, otto in tutto. Per ogni
+  AP: GS uguale al contesto di quella CPU, indice corretto, TSS di quello
+  slot, RSP di ingresso atteso, due NMI, stato FPU/SIMD intatto, `PING` dopo
+  la prova, poi `KERNEL_READY` o marker finale.
+- Prova di non dipendenza dal BSP: la traccia BSP non deve mostrare D1h
+  durante le prove, e il timer locale del BSP resta mascherato.
+- Negativi, tre boot ciascuno: GS di un'altra CPU; TSS o RSP0 di un'altra
+  CPU; nessun NMI dal BSP; AP che non conferma, con arresto alla deadline;
+  shootdown durante la prova, respinto senza invio.
+- Regressioni: `k5-privilege`, `ap-timer`, `ap-runtime`, `ap-runtime-panic`.
+
+### Perimetro e limiti
+
+Tocca il servizio percpu con un'operazione sotto `#ifdef`, il probe K5, build
+e campagne. Il percorso IRQ ordinario degli AP non cambia. Non prova ring 3
+simultaneo su più CPU, preemption o processi: restano a K6. La prova resta su
+QEMU TCG.
+
+### Differenze emerse nell'implementazione
+
+- **Comando.** La mailbox ha solo due bit per l'operazione, tutti usati. Il
+  profilo riusa il codice 2 come `XIS_K5_IRQ`, libero fuori da `ap-timer`.
+- **Punto di ingresso.** La prova parte dal gestore dell'IPI, dopo il suo EOI e
+  prima dell'ack: senza EOI l'ISR di E1h bloccherebbe D1h.
+- **Quiescenza.** Il contatore `Shootdowns` è confrontato solo sulla singola
+  prova: il rilascio delle pagine ne emette di legittimi fra un AP e l'altro.
+- **Shootdown durante la prova.** Il negativo lo invia davvero e il BSP lo rileva
+  per ack mancante, invece di bloccarlo prima dell'invio.
+- **Panic.** L'AP in prova non distingue l'NMI di panic da quello di test: nella
+  finestra lo tratta come test e continua. Il panic resta riportato dal BSP.
+- **Portata di `nmi`.** Il comando del monitor non è più usato, quindi non è stata
+  verificata la sua portata. L'invio usa la stessa forma ICR del panic IPI.
+
 ## Blocchi successivi
 
 1. **K5-B**: vedi sezione sopra.

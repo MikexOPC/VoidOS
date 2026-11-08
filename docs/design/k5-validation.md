@@ -84,3 +84,33 @@ Vol. 1 e Vol. 2 (MXCSR, FCW, FXSAVE, SWAPGS) non sono state ricontrollate.
 
 Limiti. Una vCPU, TCG, nessun hardware reale, nessuna preemption, nessun IRQ su
 AP. XMM controllati: XMM0 e XMM15, non tutti i sedici.
+
+## K5-B2, IRQ da ring 3 su AP
+
+Risultato: superato sul profilo `k5-ap`, QEMU TCG, q35, OVMF, tre vCPU. Dieci
+boot consecutivi. Evidenze in `kernel/build/qemu-run-2ea0d95a42c74d02b8dc039197d3c80e`.
+
+AP1 e AP2 eseguono la prova uno alla volta. La traccia vede otto IRQ D1h a
+`cpl=3`. Il log mostra GS diversi e TSS distanti uno slot. Ogni AP riceve due
+NMI inviati dal BSP con l'ICR, risponde a un `PING` dopo la prova e il BSP
+ritrova il budget fisico.
+
+| Negativo, 3 boot ciascuno | Esito atteso |
+| --- | --- |
+| `k5-ap-gs`, contesto di un'altra CPU | l'AP rifiuta, panic `FAI` del BSP |
+| `k5-ap-tss`, TSS di un'altra CPU | l'AP rifiuta, panic `FAI` del BSP |
+| `k5-ap-nmi`, nessun NMI | l'AP si ferma, panic per deadline |
+| `k5-ap-shootdown`, shootdown durante la prova | panic per ack mancante |
+
+Il runner controlla il codice di abort di ciascun caso.
+
+Regressioni sul codice finale: `k5-privilege` 10/10, negativi BSP, `ap-timer`,
+`ap-runtime` e `ap-runtime-panic` 3/3 ciascuno, suite host `layout` e
+`build-plan`, cppcheck su `probe.c` nel profilo AP.
+
+Limiti. Ring 3 su un AP alla volta, non simultaneo. Il coordinamento fra BSP e AP
+usa letture `volatile` di campi a singolo scrittore, adatte al solo x86 di questa
+prova. L'attesa di 100 ms prima dell'NMI a CPL3 è temporale, non un handshake:
+il payload non può scrivere in memoria kernel. Nessun hardware reale. La prova
+non attesta quale vCPU abbia eseguito ogni riga della traccia QEMU: l'identità
+viene da GS, indice e TSS letti sull'AP.

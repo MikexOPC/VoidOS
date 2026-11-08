@@ -37,6 +37,36 @@
       "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--irq-negative", "5"],
       "boots": 3, "smoke": 1, "heavy": true
     },
+    "k5-ap": {
+      "summary": "AP1 and AP2 in turn: CPL3 timer IRQs on RSP0, BSP-targeted NMIs, per-CPU GS and TSS",
+      "build": ["-TestApService", "k5-ap"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ap"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "k5-ap-gs": {
+      "summary": "Expected rejection of the AP CPL3 IRQ probe: gs",
+      "build": ["-TestApService", "k5-ap", "-TestK5IrqNegative", "6"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ap-negative", "6"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-ap-tss": {
+      "summary": "Expected rejection of the AP CPL3 IRQ probe: tss",
+      "build": ["-TestApService", "k5-ap", "-TestK5IrqNegative", "7"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ap-negative", "7"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-ap-nmi": {
+      "summary": "Expected rejection of the AP CPL3 IRQ probe: nmi",
+      "build": ["-TestApService", "k5-ap", "-TestK5IrqNegative", "8"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ap-negative", "8"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-ap-shootdown": {
+      "summary": "Expected rejection of the AP CPL3 IRQ probe: shootdown",
+      "build": ["-TestApService", "k5-ap", "-TestK5IrqNegative", "9"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ap-negative", "9"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
     "ap-console": {
       "summary": "AP1 producers, BSP RAM consumer, 2000 FIFO requests, forced full queue and cleanup",
       "build": ["-TestApService", "ap-console"],
