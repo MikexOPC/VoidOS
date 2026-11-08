@@ -1,4 +1,4 @@
-#include "probe.h"
+#include "internal.h"
 #include "arch/x86/kernel/cpu/percpu/percpu.h"
 #include "arch/x86/kernel/descriptors/segments.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
@@ -15,11 +15,8 @@
 #include <intrin.h>
 
 // Intel SDM 3A §§2.5, 5.5.4, 5.6; vol. 4, table 2-2.
-#define K5_PAGE 4096ULL
 #define K5_PAGES 7ULL
-#define K5_USER_CODE 0x400000ULL
 #define K5_USER_STACK 0x402000ULL
-#define K5_RSP0_PAGE 0x404000ULL
 #define K5_PAGE_PRESENT 1ULL
 #define K5_PAGE_WRITE 2ULL
 #define K5_PAGE_USER 4ULL
@@ -53,7 +50,8 @@ volatile BOOT_U64 k5_nmi_count, k5_nmi_rip, k5_nmi_gs, k5_cr2, k5_live_root;
 volatile BOOT_U64 k5_nmi_stack, k5_fault_stack;
 volatile X86_EXCEPTION_FRAME k5_fault;
 volatile BOOT_U64 k5_irq_waiting, k5_irq_count, k5_irq_goal, k5_irq_stack, k5_irq_frame[5];
-static BOOT_U64 k5_irq_last;
+BOOT_U64 k5_irq_last;
+const unsigned char *k5_blob, *k5_blob_end;
 #ifndef KERNEL_K5_IRQ_NEGATIVE
 #define KERNEL_K5_IRQ_NEGATIVE 0
 #endif
@@ -70,8 +68,8 @@ static X86_IRQ_IDT idt;
 static X86_GDT_POINTER gdt_previous, gdt_probe;
 static X86_KERNEL_IDTR idt_previous, idt_probe;
 static KERNEL_PHYSICAL_LEASE held;
-static X86_LAPIC_TIMER *k5_timer;
-static BOOT_U32 k5_vector = 0x41U, k5_reload;
+X86_LAPIC_TIMER *k5_timer;
+BOOT_U32 k5_vector = 0x41U, k5_reload;
 static volatile BOOT_U64 k5_cpu, k5_ap_cpu, k5_ap_tss_cpu, k5_ap_passed, k5_ap_tss, k5_ap_gs;
 static BOOT_U32 admitted;
 
@@ -139,7 +137,8 @@ static int descriptors_prepare(void)
 
 static int address_space_prepare(X86_PAGE_WINDOW *window)
 {
-    BOOT_U64 bytes = (BOOT_U64)x86_k5_user_end - (BOOT_U64)x86_k5_user;
+    const unsigned char *blob = k5_blob ? k5_blob : x86_k5_user;
+    BOOT_U64 bytes = (BOOT_U64)(k5_blob ? k5_blob_end : x86_k5_user_end) - (BOOT_U64)blob;
     const volatile BOOT_U64 *current = x86_window_entries(0);
     if (!bytes || bytes > K5_PAGE || !x86_page_window_idle_valid(window)) return 0;
     for (BOOT_U32 slot = 0; slot < 512; ++slot) {
@@ -160,9 +159,9 @@ static int address_space_prepare(X86_PAGE_WINDOW *window)
     tables[1536 + 2] = (base + 5 * K5_PAGE) | branch | K5_PAGE_NX;
     // PT[3] is the RSP0 guard; PT[4] is the supervisor RSP0 stack, never user-accessible.
     tables[1536 + 4] = (base + 6 * K5_PAGE) | K5_PAGE_PRESENT | K5_PAGE_WRITE | K5_PAGE_NX;
-    for (BOOT_U64 index = 0; index < bytes; ++index) alias[4 * K5_PAGE + index] = x86_k5_user[index];
+    for (BOOT_U64 index = 0; index < bytes; ++index) alias[4 * K5_PAGE + index] = blob[index];
     for (BOOT_U64 index = 0; index < bytes; ++index) {
-        if (alias[4 * K5_PAGE + index] != x86_k5_user[index]) {
+        if (alias[4 * K5_PAGE + index] != blob[index]) {
             if (!x86_page_window_release(window)) x86_k5_stop();
             return 0;
         }
@@ -175,7 +174,7 @@ static int address_space_prepare(X86_PAGE_WINDOW *window)
 
 // ====== trace_field ======
 
-static int trace_field(const char *label, BOOT_U64 value)
+int trace_field(const char *label, BOOT_U64 value)
 {
     if (k5_cpu) return 1;
     return kernel_text(label) && kernel_number(value) && kernel_text("\n");
@@ -193,7 +192,7 @@ static BOOT_U64 ist_top(BOOT_U32 stack)
 
 // ====== nmi_arm ======
 
-static int nmi_arm(BOOT_U64 phase, BOOT_U64 first, BOOT_U64 last)
+int nmi_arm(BOOT_U64 phase, BOOT_U64 first, BOOT_U64 last)
 {
     if (last <= first) return 0;
     k5_nmi_count = 0;
@@ -208,7 +207,7 @@ static int nmi_arm(BOOT_U64 phase, BOOT_U64 first, BOOT_U64 last)
 
 // ====== nmi_report ======
 
-static int nmi_report(BOOT_U64 active)
+int nmi_report(BOOT_U64 active)
 {
     return k5_nmi_count == 1 && k5_nmi_rip >= k5_first && k5_nmi_rip < k5_last &&
         k5_nmi_stack == ist_top(2) - 5 * sizeof(BOOT_U64) &&
@@ -258,7 +257,7 @@ static int pages_release(X86_PAGE_WINDOW *window, BOOT_U64 budget)
 
 // ====== verify_and_release ======
 
-static int verify_and_release(X86_PAGE_WINDOW *window, BOOT_U64 root, BOOT_U64 budget, BOOT_U64 alternate)
+int verify_and_release(X86_PAGE_WINDOW *window, BOOT_U64 root, BOOT_U64 budget, BOOT_U64 alternate)
 {
     X86_GDT_POINTER current_gdt;
     X86_KERNEL_IDTR current_idt;
@@ -281,7 +280,7 @@ static int verify_and_release(X86_PAGE_WINDOW *window, BOOT_U64 root, BOOT_U64 b
 
 // ====== session_open ======
 
-static int session_open(X86_PAGE_WINDOW *window, BOOT_U64 *root, BOOT_U64 *budget, BOOT_U64 *alternate)
+int session_open(X86_PAGE_WINDOW *window, BOOT_U64 *root, BOOT_U64 *budget, BOOT_U64 *alternate)
 {
     // Intel SDM 3A §2.5: forbid PGE, LA57, FSGSBASE, PCIDE and CET.
     const BOOT_U64 incompatible = (1ULL << 7) | (1ULL << 12) | (1ULL << 16) |
@@ -355,7 +354,7 @@ int x86_k5_irq_service(void)
 
 // ====== tss_rsp0 ======
 
-static volatile unsigned char *tss_rsp0(void)
+volatile unsigned char *tss_rsp0(void)
 {
     // Intel SDM 3A §10.2.3: 64-bit busy TSS descriptor (type 1011b, P=1), base 15:0, 23:16, 31:24, 63:32.
     // Intel SDM 3A §10.7, figure 10-11: RSP0 at TSS offset 4.
@@ -368,7 +367,7 @@ static volatile unsigned char *tss_rsp0(void)
 
 // ====== rsp0_swap ======
 
-static BOOT_U64 rsp0_swap(volatile unsigned char *field, BOOT_U64 value)
+BOOT_U64 rsp0_swap(volatile unsigned char *field, BOOT_U64 value)
 {
     BOOT_U64 previous = 0;
     for (BOOT_U32 index = 0; index < 8; ++index) previous |= (BOOT_U64)field[index] << (8 * index);
@@ -395,7 +394,7 @@ static int timer_arm(void)
 
 // ====== timer_quiet ======
 
-static int timer_quiet(void)
+int timer_quiet(void)
 {
     // Intel SDM 3A §13.5.1: LVT mask bit 16; §13.5.4: zero initial count stops the timer.
     if (k5_cpu) {

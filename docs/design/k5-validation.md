@@ -114,3 +114,33 @@ prova. L'attesa di 100 ms prima dell'NMI a CPL3 è temporale, non un handshake:
 il payload non può scrivere in memoria kernel. Nessun hardware reale. La prova
 non attesta quale vCPU abbia eseguito ogni riga della traccia QEMU: l'identità
 viene da GS, indice e TSS letti sull'AP.
+
+## K5-C, prima syscall
+
+Risultato: superato sul profilo `k5-syscall`, QEMU TCG, q35, OVMF, una vCPU. Dieci
+boot consecutivi. Evidenze in `kernel/build/k5-privilege-b6bc6fa95d71458e906fd85c07838835`.
+
+In ogni boot il payload esegue due volte tre chiamate: `ECHO`, `CPU` e un numero
+sconosciuto, che restituisce -1. Ritrova GPR, 128 bit di XMM0, MXCSR e FCW. Un NMI
+arriva nell'ingresso prima di `SWAPGS` (CPL0, GS e RSP utente), uno nel payload.
+Dopo le chiamate un IRQ del timer interrompe il ring 3. Con SCE spento la stessa
+istruzione dà #UD. Poi il boot arriva a `KERNEL_READY`.
+
+| Negativo, 3 boot ciascuno | Esito atteso |
+| --- | --- |
+| `k5-sys-rip`, `k5-sys-kernel-rip`, `k5-sys-cs`, `k5-sys-iopl`: frame alterato | arresto senza ritorno a ring 3 |
+| `k5-sys-rsp`, RSP kernel al momento della chiamata | arresto senza fault |
+| `k5-sys-swapgs`, `SWAPGS` mancante | arresto prima di usare GS |
+| `k5-sys-tf`, TF attivo | nessun #DB a CPL0, #DB a CPL3, arresto |
+| `k5-sys-nmi`, nessun NMI nella finestra | arresto |
+| `k5-sys-register`, registro non conservato | il payload lo rileva, panic |
+
+Evidenze in `kernel/build/qemu-run-780e84b30e21437c8eb14c1d90a1dc62`. Regressioni
+in `kernel/build/qemu-run-0a40facf82794c6ba50a0f551c106a35`: `k5-privilege`, `k5-ap`,
+`ap-runtime` e `ap-runtime-panic` 3/3 ciascuno. Passati i 3 test Rust, clippy sul
+validatore, cppcheck su `syscall.c` e `probe.c`, suite host `layout` e `build-plan`.
+
+Limiti. Solo BSP e una vCPU, RSP utente in una variabile del probe, IF=0 in tutta
+la syscall, nessun puntatore utente. `SYSRETQ` non è provato. Il frame alterato è
+prodotto dal kernel di prova: il codice utente non può ottenerlo direttamente.
+Gli indirizzi di STAR, LSTAR e CSTAR non sono ricontrollati su Vol. 4.

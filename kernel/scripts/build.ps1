@@ -12,11 +12,15 @@ param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-h
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none',
-    [switch]$PlanOnly, [switch]$UseRustPlan, [switch]$TestK5Privilege, [int]$TestK5IrqNegative = 0)
+    [switch]$PlanOnly, [switch]$UseRustPlan, [switch]$TestK5Privilege, [switch]$TestK5Syscall, [int]$TestK5IrqNegative = 0)
 . (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
 if (!$PlanOnly) { Assert-LayoutCopies }
 $ErrorActionPreference = 'Stop'
 $boundBuildOptions = @($PSBoundParameters.Keys | Where-Object { $_ -notin @('PlanOnly','UseRustPlan') })
+if ($TestK5Syscall -and ($PlanOnly -or $UseRustPlan -or
+    @($boundBuildOptions | Where-Object { $_ -notin @('TestK5Syscall','TestK5IrqNegative','OutputDirectory','ToolchainBin') }).Count)) {
+    throw 'K5 syscall requires an isolated diagnostic profile.'
+}
 if ($TestK5Privilege -and ($PlanOnly -or $UseRustPlan -or
     @($boundBuildOptions | Where-Object { $_ -notin @('TestK5Privilege','TestK5IrqNegative','OutputDirectory','ToolchainBin') }).Count)) {
     throw 'K5 privilege requires an isolated diagnostic profile.'
@@ -79,9 +83,10 @@ if ($UseRustPlan) {
 $flags += '/DKERNEL_PANIC_RUNTIME=1'
 if ($TestK5Privilege) { $flags += '/DKERNEL_TEST_K5_PRIVILEGE=1' }
 if ($TestApService -eq 'k5-ap') { $flags += '/DKERNEL_TEST_K5_AP=1' }
+if ($TestK5Syscall) { $flags += '/DKERNEL_TEST_K5_SYSCALL=1' }
 if ($TestK5IrqNegative) {
-    if (($TestK5Privilege -and $TestK5IrqNegative -notin 1..5) -or ($TestApService -eq 'k5-ap' -and $TestK5IrqNegative -notin 6..9) -or
-        (!$TestK5Privilege -and $TestApService -ne 'k5-ap')) { throw 'Invalid K5 IRQ negative case.' }
+    if (($TestK5Syscall -and $TestK5IrqNegative -notin 10..18) -or ($TestK5Privilege -and $TestK5IrqNegative -notin 1..5) -or ($TestApService -eq 'k5-ap' -and $TestK5IrqNegative -notin 6..9) -or
+        (!$TestK5Privilege -and !$TestK5Syscall -and $TestApService -ne 'k5-ap')) { throw 'Invalid K5 IRQ negative case.' }
     $flags += "/DKERNEL_K5_IRQ_NEGATIVE=$TestK5IrqNegative"
 }
 if ($TestApTransition -ne 'none') {
@@ -420,7 +425,16 @@ if ($TestPs2Decoder -or $Ps2Input) {
 if ($ApRuntime -or $TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) {
     . (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/installation/scripts/build.ps1')
 }
-if ($TestK5Privilege -or $TestApService -eq 'k5-ap') {
+if ($TestK5Syscall) {
+    $probeSys = Join-Path $project 'test/arch/x86/kernel/interrupts/privilege'
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$probeSys/syscall.c",("/Fo$output/k5-syscall.obj")))
+    Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',
+        ("/Fo$output/k5-syscall-entry.obj"),"$probeSys/assembly/syscall/entry.asm")
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--emit=obj','--target','x86_64-pc-windows-msvc',
+        '-D','warnings','-C','panic=abort','-C','opt-level=2',"$probeSys/rust/syscall/validation.rs",'-o',"$output/k5-syscall-validation.obj")
+    $objects += @("$output/k5-syscall.obj","$output/k5-syscall-entry.obj","$output/k5-syscall-validation.obj")
+}
+if ($TestK5Privilege -or $TestK5Syscall -or $TestApService -eq 'k5-ap') {
     $probe = Join-Path $project 'test/arch/x86/kernel/interrupts/privilege'
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$probe/probe.c",("/Fo$output/k5-probe.obj")))
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',

@@ -67,6 +67,66 @@
       "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--ap-negative", "9"],
       "boots": 3, "smoke": 1, "heavy": true
     },
+    "k5-syscall": {
+      "summary": "BSP SYSCALL from ring 3: three calls, NMI at entry and in the payload, IRQ after return, #UD with SCE off",
+      "build": ["-TestK5Syscall"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "k5-sys-rip": {
+      "summary": "Expected rejection of the K5 syscall probe: rip",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "10"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "10"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-sys-kernel-rip": {
+      "summary": "Expected rejection of the K5 syscall probe: kernel-rip",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "11"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "11"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-sys-cs": {
+      "summary": "Expected rejection of the K5 syscall probe: cs",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "12"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "12"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-sys-iopl": {
+      "summary": "Expected rejection of the K5 syscall probe: iopl",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "13"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "13"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-sys-swapgs": {
+      "summary": "Expected rejection of the K5 syscall probe: swapgs",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "14"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "14"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-sys-tf": {
+      "summary": "Expected rejection of the K5 syscall probe: tf",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "15"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "15"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-sys-nmi": {
+      "summary": "Expected rejection of the K5 syscall probe: nmi",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "16"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "16"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-sys-register": {
+      "summary": "Expected rejection of the K5 syscall probe: register",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "17"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "17"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k5-sys-rsp": {
+      "summary": "Expected rejection of the K5 syscall probe: rsp",
+      "build": ["-TestK5Syscall", "-TestK5IrqNegative", "18"],
+      "runner": ["python", "test/arch/x86/kernel/interrupts/privilege/firmware.py", "--image", "{image}", "--boots", "{boots}", "--sys-negative", "18"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
     "ap-console": {
       "summary": "AP1 producers, BSP RAM consumer, 2000 FIFO requests, forced full queue and cleanup",
       "build": ["-TestApService", "ap-console"],
