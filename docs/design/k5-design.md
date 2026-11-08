@@ -425,19 +425,140 @@ Solo il probe K5, build e campagne, con il kernel ordinario a `SCE=0`. Dimension
 MSR per CPU e si aggiungono dopo. Niente puntatori utente, cioè K5-D, né SMEP,
 SMAP o KPTI. IF=0 in tutta la syscall, quindi niente attese né preemption.
 
-## Blocchi successivi
+## K5-D — Accesso sicuro alla memoria utente
 
-1. **K5-B**: vedi sezione sopra.
-2. **K5-C, prima syscall.** Una chiamata senza puntatori. Definire ABI,
-   selettori e stack prima di abilitare `IA32_EFER.SCE`. Proposta di
-   rollout per D5: ingresso `SYSCALL`, ritorno iniziale via `IRETQ`
-   con frame verificato. Valutare `SYSRETQ` come percorso separato dopo
-   prove su RIP non canonico e fault durante il ritorno.
-3. **K5-D, accessi utente.** Convalidare range, permessi effettivi,
-   durata delle pagine, bounds e recupero da #PF soltanto nelle
-   istruzioni autorizzate. Abilitare SMEP/SMAP dopo verifica CPUID e
-   prove negative, con AC ripulito ai confini. Decidere KPTI sul modello
-   di minaccia prima di promuovere il profilo oltre il diagnostico.
+Stato: implementato nel profilo `k5-copy`, QEMU/OVMF, una vCPU.
+[Validazione](k5-validation.md).
+
+Obiettivo: una syscall riceve un puntatore e una lunghezza. Il kernel copia i
+dati da e verso ring 3 solo nell'intervallo autorizzato, con SMEP e SMAP attivi.
+Un puntatore cattivo restituisce un errore al chiamante e non ferma il kernel.
+Qualsiasi altro fault nel kernel resta fatale.
+
+### Fonti
+
+- Intel SDM 3A §2.5: `CR4.SMEP` è il bit 20, `CR4.SMAP` il bit 21.
+- Intel SDM 3A §5.6.1: con SMAP la lettura esplicita di una pagina utente da
+  supervisor è ammessa solo con `EFLAGS.AC=1`.
+- Intel SDM 2B, STAC. Intel SDM 3A §7.15, Interrupt 14: error code di #PF.
+- [Linux v6.12](https://github.com/torvalds/linux/blob/v6.12/arch/x86/lib/copy_user_64.S)
+  e [FreeBSD 14.2](https://github.com/freebsd/freebsd-src/blob/releng/14.2/sys/amd64/amd64/support.S):
+  controllo del limite, `STAC`/`CLAC` attorno alla copia, poi recupero del fault.
+  Linux usa una tabella di istruzioni autorizzate, FreeBSD un puntatore
+  `pcb_onfault` per thread.
+- Intel SDM 3A §2.5: CPUID.07H.00H:EBX SMEP bit 7, SMAP bit 20. §7.12: la consegna
+  azzera TF, VM, RF e NT, non AC: per questo serve `CLAC` negli ingressi.
+
+### Perché il solo hardware non basta
+
+SMAP blocca l'accesso a una pagina utente, non a una supervisor. Un puntatore
+alla pagina RSP0 del probe (0x404000, oggi dentro la metà bassa) passerebbe:
+il kernel leggerebbe il proprio stack per conto dell'utente. Il controllo del
+range è quindi la difesa per le pagine supervisor. L'hardware copre le pagine
+assenti e quelle in sola lettura (`CR0.WP=1`, già richiesto dal probe).
+
+### Decisioni proposte
+
+1. **Regola dell'intervallo.** Sotto `USER_LIMIT` esistono solo pagine utente.
+   Il probe sposta RSP0 da 0x404000 a 0x408000, sopra il limite 0x407000. K6 metterà
+   gli stack kernel nella metà alta. Le prove K5-A/B/C vanno rieseguite.
+2. **Permessi: hardware e recupero, senza percorrere le tabelle.** La scelta
+   corrisponde a Linux e FreeBSD. Alternativa scartata: percorrere le PTE prima
+   della copia, un controllo duplicato che diventa stantio appena un'altra CPU
+   cambia la mappatura. L'hardware controlla ogni pagina nel momento dell'accesso.
+3. **Recupero con finestra di istruzioni.** Una sola funzione Assembly di copia
+   con etichette di inizio e fine. Il gestore #PF recupera solo se tutto vale:
+   CS=08h, RIP nella finestra, AC=1 nel frame, error code supervisor e dati
+   (U/S, RSVD, I/D e PK a zero, W secondo la direzione), CR2 nell'intervallo
+   utente chiesto. In ogni altro caso arresto. Alternativa rimandata: tabella
+   estesa a più funzioni, che servirà quando ci sarà più di una primitiva.
+4. **AC aperto il meno possibile.** `STAC` subito prima della copia, `CLAC` subito
+   dopo e nel percorso di recupero. Il codice C non gira mai con AC=1. Gli ingressi
+   di NMI e fault eseguono `CLAC` prima di ogni altro accesso; `IRETQ` ripristina
+   lo stato interrotto.
+5. **Una sola lettura.** I dati passano una volta nel buffer kernel, e si valida solo
+   la copia, per evitare letture ripetute di memoria utente modificabile.
+6. **Limiti di copia.** Massimo 256 byte, buffer kernel del probe. In errore il
+   buffer viene azzerato. Una `copy_out` parziale resta visibile all'utente, che
+   riceve comunque l'errore.
+7. **Durata delle mappature.** In v0 IF=0 e una CPU: nessuno può smappare durante la
+   copia. K6 dovrà tenere un riferimento allo spazio di indirizzi per tutta la
+   copia. La copia non dorme e non attende.
+8. **Speculazione.** `LFENCE` dopo il controllo del range, prima di `STAC`. Mitigazione
+   semplice e misurabile in seguito.
+9. **SMEP e SMAP solo nel probe.** Il probe verifica CPUID, imposta i bit e ripristina
+   CR4. Senza supporto la prova fallisce nel profilo positivo. L'abilitazione al
+   boot per ogni CPU arriva con K6, che avrà la politica definitiva. QEMU `-cpu max`
+   dovrebbe esporre entrambi: lo verifico all'avvio della prova.
+10. **KPTI: non ora, con un gate esplicito.** Il payload è incorporato e fidato, quindi
+    KPTI non cambia il modello di minaccia della prova. Prima di eseguire codice non
+    fidato si deciderà per modello di CPU. Finché non c'è, il profilo non si promuove
+    oltre il diagnostico. K6 usa solo programmi di test nostri, e lo dichiara.
+11. **Flag AC utente.** Resta respinto nel frame di ritorno. `CR0.AM` è una scelta di
+    K6: conservare AC serve solo se il kernel abilita il controllo di allineamento.
+
+### ABI v0
+
+Si aggiungono `COPY_IN(ptr, len)`, che restituisce la somma dei byte, e
+`COPY_OUT(ptr, len)`, che scrive uno schema noto. Errori provvisori: -2 per fault o
+range, -3 per lunghezza oltre il massimo. Lunghezza zero: successo senza accessi, se
+il puntatore è nel range.
+
+### Mappe del probe
+
+| Indirizzo | Pagina |
+| --- | --- |
+| 0x400000 | codice utente RX |
+| 0x402000 | stack utente RW/NX |
+| 0x405000, 0x406000 | dati utente, RW e poi sola lettura |
+| 0x407000 | limite utente, guardia |
+| 0x408000 | RSP0 supervisor |
+
+### Sequenza, non eseguibile
+
+1. Il probe verifica CPUID, attiva SMEP e SMAP, abilita SCE.
+2. Il payload esegue le copie positive: dentro una pagina, a cavallo di due pagine,
+   lunghezza zero, 256 byte.
+3. Il payload prova i puntatori cattivi e controlla il codice di errore.
+4. Il kernel ripristina CR4, MSR e pagine, poi continua il boot.
+
+### Casi da provare
+
+- Positivo, 10 boot su BSP:
+  - copie sopra elencate, verificate byte per byte da entrambe le parti;
+  - errori ricevuti in ring 3: pagina assente (0x401000), `COPY_OUT` su pagina in sola
+    lettura, attraversamento da RW verso assente, RSP0, indirizzo kernel, non canonico,
+    wrap di `ptr + len`, lunghezza 257;
+  - NMI nella finestra con AC=1, poi copia corretta;
+  - la traccia QEMU mostra #PF a `cpl=0` solo nella finestra, e i contatori coincidono.
+- Negativi, 3 boot ciascuno, tutti con arresto:
+  - accesso del kernel a pagina utente senza `STAC` (SMAP);
+  - esecuzione del kernel da pagina utente (SMEP);
+  - #PF con CR2 fuori dall'intervallo chiesto;
+  - #PF con RIP fuori dalla finestra;
+  - fault sul buffer kernel durante la copia;
+  - AC ancora attivo al rientro in C.
+- Host: test Rust su range ed error code, con confini e overflow.
+- Regressioni: `k5-privilege`, `k5-ap`, `k5-syscall`, `ap-runtime`, `ap-runtime-panic`.
+
+### Differenze emerse nell'implementazione
+
+- **`CLAC` agli ingressi.** Solo in NMI e #PF del profilo. #UD e #GP arrivano qui da
+  CPL3, dove AC è zero. Il #PF da CPL3 prosegue sul percorso K5-A.
+- **Numeri di errore.** Un `ptr + len` con wrap e lunghezza oltre 256 restituisce -3:
+  la lunghezza si controlla per prima.
+- **Timer.** Il profilo non usa IRQ durante le copie. Parte comunque dopo il timer, per
+  riusare lo stesso punto di aggancio.
+
+### Perimetro e limiti
+
+Nuovi `copy.c`, `assembly/copy/entry.asm`, `rust/copy/validation.rs` e campagna
+`k5-copy`. Tocca il probe per la mappa, la pagina RSP0 e gli ingressi NMI e #PF. Serve
+verificare che la finestra ammetta nove pagine. Solo BSP, una vCPU. Il caso senza SMAP
+non è coperto, salvo aggiungere un `-cpu` configurabile al runner. Non prova copie
+concorrenti, demand paging o pagine che cambiano durante la copia: restano a K6.
+
+## Blocchi successivi
 
 K6 collega queste primitive al primo processo ELF. La sicurezza
 architetturale del diagnostico e le mitigazioni speculative per codice

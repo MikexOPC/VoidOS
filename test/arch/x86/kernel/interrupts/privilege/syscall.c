@@ -14,9 +14,6 @@
 #define K5_FLAGS_MASK 0x47700ULL
 // Intel SDM 3A §6.8.8: STAR 47:32 gives CS 08h and SS 10h; 63:48 + 8 and + 16 give 2Bh and 33h.
 #define K5_STAR_VALUE ((0x23ULL << 48) | (8ULL << 32))
-#define K5_FX_WORDS 64U
-#define K5_GPR(frame, index) ((frame)[K5_FX_WORDS + (index)])
-#define K5_IRET(frame, index) ((frame)[K5_FX_WORDS + 15U + (index)])
 
 extern const unsigned char x86_k5_sys_user[], x86_k5_sys_user_end[];
 extern const unsigned char x86_k5_sys_loop_first[], x86_k5_sys_loop_last[];
@@ -32,6 +29,7 @@ BOOT_U32 x86_k5_frame_valid(BOOT_U64 mode, BOOT_U64 vector, BOOT_U64 error,
 
 volatile BOOT_U64 k5_sys_window, k5_sys_budget, k5_sys_stack, k5_sys_user_rsp;
 static volatile BOOT_U64 calls;
+int (*k5_sys_extra)(BOOT_U64 *frame);
 
 // ====== sys_address ======
 
@@ -58,17 +56,47 @@ int x86_k5_sys_dispatch(BOOT_U64 *frame)
     negative_frame(frame);
     if (!x86_k5_sys_frame_valid(K5_IRET(frame, 0), K5_IRET(frame, 1), K5_IRET(frame, 2),
         K5_IRET(frame, 3), K5_IRET(frame, 4))) return 0;
+    if (k5_sys_extra && K5_GPR(frame, 14) - 2 < 2) return k5_sys_extra(frame);
     BOOT_U32 kind = x86_k5_sys_number(K5_GPR(frame, 14));
     if (kind == 1) K5_GPR(frame, 14) = K5_GPR(frame, 8) + 1;
     else if (kind == 2) K5_GPR(frame, 14) = 0;
     else K5_GPR(frame, 14) = ~0ULL;
-    if (++calls % 3 == 0) {
+    if (++calls % 3 == 0 && !k5_sys_extra) {
         // Intel SDM 3A §13.5.4: divide 3E0h = 3, LVT 320h one-shot unmasked, initial count 380h.
         *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x3e0) = 3;
         *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x320) = k5_vector;
         *(volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + 0x380) = k5_reload;
     }
     return 1;
+}
+
+// ====== k5_sys_open ======
+
+void k5_sys_open(BOOT_U64 saved[5])
+{
+    saved[0] = __readmsr(K5_STAR);
+    saved[1] = __readmsr(K5_LSTAR);
+    saved[2] = __readmsr(K5_CSTAR);
+    saved[3] = __readmsr(K5_FMASK);
+    saved[4] = __readmsr(K5_EFER_MSR);
+    k5_sys_stack = K5_RSP0_PAGE + K5_PAGE;
+    __writemsr(K5_STAR, K5_STAR_VALUE);
+    __writemsr(K5_LSTAR, (BOOT_U64)x86_k5_syscall);
+    __writemsr(K5_CSTAR, (BOOT_U64)x86_k5_stop);
+    __writemsr(K5_FMASK, K5_FLAGS_MASK);
+    __writemsr(K5_EFER_MSR, saved[4] | K5_EFER_SCE);
+}
+
+// ====== k5_sys_close ======
+
+void k5_sys_close(const BOOT_U64 saved[5])
+{
+    __writemsr(K5_EFER_MSR, saved[4]);
+    __writemsr(K5_STAR, saved[0]);
+    __writemsr(K5_LSTAR, saved[1]);
+    __writemsr(K5_CSTAR, saved[2]);
+    __writemsr(K5_FMASK, saved[3]);
+    if (__readmsr(K5_EFER_MSR) & K5_EFER_SCE) x86_k5_stop();
 }
 
 // ====== sys_case ======
@@ -104,9 +132,8 @@ static int sys_case(BOOT_U64 phase, BOOT_U64 root)
 int x86_k5_syscall_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
 {
     static BOOT_U32 admitted_once;
-    BOOT_U64 root, budget, alternate, previous, saved[4];
+    BOOT_U64 root, budget, alternate, previous, saved[5];
     BOOT_U32 lvt, divide, count;
-    const BOOT_U32 msrs[4] = {K5_STAR, K5_LSTAR, K5_CSTAR, K5_FMASK};
     if (admitted_once || !timer || !timer->Mapping || !timer->Reload || timer->Active ||
         !x86_timer_read(timer->Mapping, 0x320, &lvt) || !(lvt & 0x10000) ||
         !x86_timer_read(timer->Mapping, 0x3e0, &divide) ||
@@ -121,18 +148,9 @@ int x86_k5_syscall_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     volatile unsigned char *field = tss_rsp0();
     if (!field) x86_k5_stop();
     previous = rsp0_swap(field, K5_RSP0_PAGE + K5_PAGE);
-    k5_sys_stack = K5_RSP0_PAGE + K5_PAGE;
-    BOOT_U64 efer = __readmsr(K5_EFER_MSR);
-    for (BOOT_U32 index = 0; index < 4; ++index) saved[index] = __readmsr(msrs[index]);
-    __writemsr(K5_STAR, K5_STAR_VALUE);
-    __writemsr(K5_LSTAR, (BOOT_U64)x86_k5_syscall);
-    __writemsr(K5_CSTAR, (BOOT_U64)x86_k5_stop);
-    __writemsr(K5_FMASK, K5_FLAGS_MASK);
-    __writemsr(K5_EFER_MSR, efer | K5_EFER_SCE);
+    k5_sys_open(saved);
     int passed = sys_case(2, root) && sys_case(5, root);
-    __writemsr(K5_EFER_MSR, efer);
-    for (BOOT_U32 index = 0; index < 4; ++index) __writemsr(msrs[index], saved[index]);
-    if (__readmsr(K5_EFER_MSR) & K5_EFER_SCE) x86_k5_stop();
+    k5_sys_close(saved);
     if (passed) {
         x86_k5_enter(K5_USER_CODE, 5, 2);
         passed = k5_fault.Vector == 6 && k5_fault.Cs == 0x33 && k5_fault.Rip == sys_address(x86_k5_sys_nosce) &&

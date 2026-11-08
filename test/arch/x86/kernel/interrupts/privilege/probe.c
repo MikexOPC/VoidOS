@@ -15,7 +15,7 @@
 #include <intrin.h>
 
 // Intel SDM 3A §§2.5, 5.5.4, 5.6; vol. 4, table 2-2.
-#define K5_PAGES 7ULL
+#define K5_PAGES 9ULL
 #define K5_USER_STACK 0x402000ULL
 #define K5_PAGE_PRESENT 1ULL
 #define K5_PAGE_WRITE 2ULL
@@ -52,6 +52,7 @@ volatile X86_EXCEPTION_FRAME k5_fault;
 volatile BOOT_U64 k5_irq_waiting, k5_irq_count, k5_irq_goal, k5_irq_stack, k5_irq_frame[5];
 BOOT_U64 k5_irq_last;
 const unsigned char *k5_blob, *k5_blob_end;
+BOOT_U64 k5_gate_nmi, k5_gate_pf;
 #ifndef KERNEL_K5_IRQ_NEGATIVE
 #define KERNEL_K5_IRQ_NEGATIVE 0
 #endif
@@ -125,10 +126,10 @@ static int descriptors_prepare(void)
     descriptor_pointer(gdt_probe.Bytes, sizeof(gdt) - 1, (BOOT_U64)gdt);
     descriptor_pointer(idt_probe.Bytes, sizeof(idt) - 1, (BOOT_U64)&idt);
     for (BOOT_U32 vector = 0; vector < 32; ++vector) gate_private(vector, (BOOT_U64)x86_k5_stop, 3);
-    gate_private(2, (BOOT_U64)x86_k5_nmi, 2);
+    gate_private(2, k5_gate_nmi ? k5_gate_nmi : (BOOT_U64)x86_k5_nmi, 2);
     gate_private(6, (BOOT_U64)x86_k5_ud, 1);
     gate_private(13, (BOOT_U64)x86_k5_gp, 1);
-    gate_private(14, (BOOT_U64)x86_k5_pf, 1);
+    gate_private(14, k5_gate_pf ? k5_gate_pf : (BOOT_U64)x86_k5_pf, 1);
     gate_private(k5_vector, (BOOT_U64)x86_k5_irq, 0);
     return 1;
 }
@@ -157,8 +158,12 @@ static int address_space_prepare(X86_PAGE_WINDOW *window)
     tables[1024 + 2] = (base + 3 * K5_PAGE) | branch;
     tables[1536] = (base + 4 * K5_PAGE) | K5_PAGE_PRESENT | K5_PAGE_USER;
     tables[1536 + 2] = (base + 5 * K5_PAGE) | branch | K5_PAGE_NX;
-    // PT[3] is the RSP0 guard; PT[4] is the supervisor RSP0 stack, never user-accessible.
-    tables[1536 + 4] = (base + 6 * K5_PAGE) | K5_PAGE_PRESENT | K5_PAGE_WRITE | K5_PAGE_NX;
+    // PT[5] user RW data, PT[6] user read-only data, PT[7] guard at the user limit.
+    tables[1536 + 5] = (base + 7 * K5_PAGE) | branch | K5_PAGE_NX;
+    tables[1536 + 6] = (base + 8 * K5_PAGE) | K5_PAGE_PRESENT | K5_PAGE_USER | K5_PAGE_NX;
+    for (BOOT_U64 index = 0; index < K5_PAGE; ++index) alias[8 * K5_PAGE + index] = 0x5a;
+    // PT[8] is the supervisor RSP0 stack, above the user limit and never user-accessible.
+    tables[1536 + 8] = (base + 6 * K5_PAGE) | K5_PAGE_PRESENT | K5_PAGE_WRITE | K5_PAGE_NX;
     for (BOOT_U64 index = 0; index < bytes; ++index) alias[4 * K5_PAGE + index] = blob[index];
     for (BOOT_U64 index = 0; index < bytes; ++index) {
         if (alias[4 * K5_PAGE + index] != blob[index]) {
