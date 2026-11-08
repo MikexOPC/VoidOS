@@ -70,11 +70,11 @@ def boot(directory, image):
             (13, 0), (14, 5), (14, 21), (6, 0), (6, 0), (6, 0),
         ]:
             raise RuntimeError("QEMU did not observe the same CPL3 faults")
-        if len(USER_IRQ.findall(trace)) != 2:
-            raise RuntimeError("QEMU did not observe two timer IRQs from CPL3")
+        if len(USER_IRQ.findall(trace)) != 4:
+            raise RuntimeError("QEMU did not observe four timer IRQs from CPL3")
         if b"triple fault" in trace.lower():
             raise RuntimeError("Unexpected triple fault")
-        return dict(Faults=6, Nmis=5, UserIrqs=2, Cleanup=True, UserCpl=3)
+        return dict(Faults=6, Nmis=5, UserIrqs=4, Cleanup=True, UserCpl=3)
 
 
 # ====== irq_negative ======
@@ -99,11 +99,11 @@ def irq_negative(directory, image, case):
             vm.command("info registers")
             time.sleep(0.1)
             halted = HALT.search(vm.monitor.read_bytes())
-            if (case == 5 and halted) or (case != 5 and log.terminal()):
+            if (case in (3, 5) and halted) or (case not in (3, 5) and log.terminal()):
                 trace = vm.trace.read_bytes()
                 if b"triple fault" in trace.lower():
                     raise RuntimeError("Negative IRQ case caused a triple fault")
-                if len(USER_IRQ.findall(trace)) != (0 if case >= 4 else 1):
+                if len(USER_IRQ.findall(trace)) != {1: 3, 2: 3, 3: 1, 4: 0, 5: 0}[case]:
                     raise RuntimeError("Unexpected CPL3 IRQ count")
                 return dict(ExpectedRejection=case)
     raise RuntimeError("Negative IRQ case was not rejected")

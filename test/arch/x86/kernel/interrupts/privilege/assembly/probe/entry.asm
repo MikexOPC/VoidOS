@@ -16,6 +16,7 @@ EXTERN k5_fx_saved:BYTE
 EXTERN k5_stack:QWORD
 EXTERN k5_root:QWORD
 EXTERN k5_irq_count:QWORD
+EXTERN k5_irq_goal:QWORD
 EXTERN k5_irq_stack:QWORD
 EXTERN k5_irq_frame:QWORD
 EXTERN k5_negative:QWORD
@@ -314,15 +315,15 @@ x86_k5_irq PROC
     K5_KERNEL_GS
     test r10d, r10d
     jz x86_k5_stop
-    cmp QWORD PTR [k5_irq_count], 0
-    jne x86_k5_stop
+    mov rax, [k5_irq_count]
+    cmp rax, QWORD PTR [k5_irq_goal]
+    jae x86_k5_stop
     cld
     lea rsi, [rsp+632]
     lea rdi, k5_irq_frame
     mov ecx, 5
     rep movsq
-    pxor xmm0, xmm0
-    pxor xmm1, xmm1
+    fxrstor64 [k5_fx_clean]
     cmp QWORD PTR [k5_phase], 4
     jne irq_service
     mov r9d, 4000000h
@@ -341,8 +342,12 @@ irq_service:
     mov rsp, rbx
     cmp eax, 1
     jne x86_k5_stop
-    mov QWORD PTR [k5_irq_count], 1
+    inc QWORD PTR [k5_irq_count]
+    mov rax, [k5_irq_count]
+    cmp rax, QWORD PTR [k5_irq_goal]
+    jne irq_negative_gpr
     mov QWORD PTR [rsp+616], 1
+irq_negative_gpr:
     cmp QWORD PTR [k5_negative], 2
     jne irq_simd
     xor QWORD PTR [rsp+536], 1
@@ -408,8 +413,17 @@ x86_k5_user_read LABEL BYTE
 user_irq_setup:
     mov r12, 5a5a1234c3c35678h
     mov r13, 0a5a5edcb3c3ca987h
+    ; Vol. 1 §10.2.3 MXCSR FZ bit 15; Vol. 1 §8.1.5 FCW: stato non predefinito da preservare.
+    mov DWORD PTR [rsp-4], 9f80h
+    ldmxcsr DWORD PTR [rsp-4]
+    mov WORD PTR [rsp-8], 27fh
+    fldcw WORD PTR [rsp-8]
     movq xmm0, r12
     movq xmm1, r13
+    movdqa xmm15, xmm1
+    punpcklqdq xmm0, xmm1
+    movq xmm1, r12
+    punpcklqdq xmm15, xmm1
     xor eax, eax
     xor ebx, ebx
     mov ecx, 4000000h
@@ -430,8 +444,22 @@ user_irq_done:
     movq rdx, xmm0
     cmp rdx, r12
     jne NEAR PTR x86_k5_user_irq_last
-    movq rdx, xmm1
+    psrldq xmm0, 8
+    movq rdx, xmm0
     cmp rdx, r13
+    jne NEAR PTR x86_k5_user_irq_last
+    movq rdx, xmm15
+    cmp rdx, r13
+    jne NEAR PTR x86_k5_user_irq_last
+    psrldq xmm15, 8
+    movq rdx, xmm15
+    cmp rdx, r12
+    jne NEAR PTR x86_k5_user_irq_last
+    stmxcsr DWORD PTR [rsp-4]
+    cmp DWORD PTR [rsp-4], 9f80h
+    jne NEAR PTR x86_k5_user_irq_last
+    fnstcw WORD PTR [rsp-8]
+    cmp WORD PTR [rsp-8], 27fh
     jne NEAR PTR x86_k5_user_irq_last
     mov rdx, 5a5a1234c3c35678h
     cmp r12, rdx
