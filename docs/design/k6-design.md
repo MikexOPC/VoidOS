@@ -172,6 +172,82 @@ Limiti da dichiarare:
 - La migrazione completa non finisce dentro K6. A fine K6 restano script per i vecchi profili.
 - Una prova di parità va rifatta per ogni profilo: oggi i profili diagnostici sono molti.
 
+### M1, risultato
+
+Stato: parità mostrata su `k5-copy` e sui sei negativi. Il percorso Python non è cancellato:
+la decisione spetta all'utente, e la campagna continua a usarlo finché `campaigns.json` non
+cambia.
+
+Il runner è `scripts/tooling/qemu-runner/`: Rust senza dipendenze esterne, test host in
+`test/tooling/qemu-runner/`. Riceve gli stessi argomenti di `firmware.py`, quindi
+`campaigns.json` potrà puntarlo cambiando solo il programma.
+
+```bash
+meson setup kernel/build/meson-qemu-runner test/tooling/qemu-runner --vsenv
+```
+
+```bash
+meson test -C kernel/build/meson-qemu-runner
+```
+
+```bash
+kernel/build/meson-qemu-runner/qemu_runner --image IMMAGINE --boots 10 --copy
+```
+
+```bash
+kernel/build/meson-qemu-runner/qemu_runner parity CAMPAGNA_A CAMPAGNA_B
+```
+
+Le immagini e il loader si compilano ancora con `kernel/scripts/build.ps1` e
+`arch/x86/boot/uefi/scripts/build.ps1 -BootKernel`: è il passo M2.
+
+| Prova, stessa immagine e stesso loader | Python | Rust |
+| --- | --- | --- |
+| `k5-copy`, tre campagne da 10 boot | 30/30 | 30/30 |
+| Sei negativi, 3 boot ciascuno | 18/18 | 18/18 |
+| Guest senza NMI, deadline 40 s | `Missing KERNEL_READY` | uguale |
+| VM ferma con `stop`, deadline 40 s | `Missing KERNEL_READY` | uguale |
+| Negativo con VM ferma, deadline 60 s | `Negative copy case was not rejected` | uguale |
+| VM uscita con `quit` | `Owned VM exited before KERNEL_READY` | uguale |
+| Negativo con VM uscita | `Negative copy case was not rejected` | uguale |
+| QEMU ucciso dall'esterno | `Owned VM exited before KERNEL_K5_NMI_ARMED` | uguale |
+| Runner ucciso | VM orfana | VM terminata, evidenze conservate |
+| VM estranea accesa durante le prove | intatta | intatta |
+
+Cosa confronta `parity`, boot per boot:
+- `results.json`, con hash di immagine e loader, a meno del percorso delle evidenze e dei fine riga;
+- elenco dei file, hash dell'ESP, stderr;
+- sequenza dei marker e valori dei campi seriali;
+- arresto letto dal monitor, triple fault;
+- fault in CPL3 e `#PF` del kernel nella traccia `-d int`.
+
+Ignora solo ciò che dipende dai tempi del guest, ma ne controlla la presenza: `K5_NMI_RIP`,
+tentativo di calibrazione e `TIMER_CALIBRATION_RETRY`, tempi del timer, `RIP` e flag dell'IRQ del
+scheduler. Il numero di comandi al monitor varia con il carico e non viene confrontato. Nei 60
+boot di `k5-copy` `K5_NMI_RIP` resta dentro la finestra attesa. Il ritentativo di calibrazione
+compare in 2 boot su 48 per ciascun percorso.
+
+Il parser sostituisce le regex a mano. Confronto con `serial.py` e le regex di `firmware.py`:
+5012 log, 12 reali e il resto mutati con seme fisso, nessuna differenza. Un valore esadecimale
+oltre 64 bit satura: QEMU ne stampa 16 cifre. Lo script di confronto era temporaneo e non è nel
+repository, perché il riferimento Python è destinato a sparire.
+
+Differenze volute rispetto a Python:
+- Il runner sta in un Job Object con `KILL_ON_JOB_CLOSE`: se muore, muore anche la sua VM.
+- I comandi al monitor passano da un thread: una QEMU che non legge stdin non blocca le deadline.
+  Python invece può restare bloccato quando il pipe si riempie.
+- Una VM che non termina entro 5 s diventa un fallimento registrato, non un'eccezione non gestita.
+- Ogni boot aggiunge `vm.json`: PID, argomenti, guasto iniettato e modo di chiusura.
+- `--inject drop|stop|quit` serve solo alle prove di guasto.
+
+Limiti:
+- Il runner copre solo `k5-copy` e i negativi, con video `std` e senza `screendump` o `xp`.
+- Le altre campagne usano ancora `qemu.py` e `serial.py`, che quindi non si possono cancellare.
+  Di `firmware.py` si possono togliere solo `copy_boot` e `copy_negative`.
+- Solo Windows. Prove su QEMU 11.1.0 TCG, q35, OVMF, una vCPU, con altre VM accese sulla macchina.
+- Il criterio di M1 è la parità con Python: non aggiunge prove sul kernel oltre a quelle di K5.
+  Coverage non misurata.
+
 ## K6-A, risultato
 
 Il parser è `kernel/process/rust/elf/parser.rs`: Rust sicuro, senza allocazioni, solo `core`.
