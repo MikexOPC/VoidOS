@@ -17,6 +17,8 @@ USER_FAULT = re.compile(rb"\bv=(06|0d|0e) e=([0-9a-f]+) i=0 cpl=3\b", re.I)
 AP_IRQ = re.compile(rb"\bv=d1 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 USER_IRQ = re.compile(rb"\bv=41 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 RSP0_FRAME = 0x405000 - 40
+SYS_TF = re.compile(rb"\bv=01 e=[0-9a-f]+ i=0 cpl=0\b", re.I)
+USER_TF = re.compile(rb"\bv=01 e=[0-9a-f]+ i=0 cpl=3\b", re.I)
 AP_REASON = {6: 0x4b35415046414900, 7: 0x4b35415046414900, 8: 0x4b354150544d4f00, 9: 0x4b34544c4241434b}
 
 
@@ -77,6 +79,55 @@ def boot(directory, image):
         if b"triple fault" in trace.lower():
             raise RuntimeError("Unexpected triple fault")
         return dict(Faults=6, Nmis=5, UserIrqs=4, Cleanup=True, UserCpl=3)
+
+
+# ====== sys_boot ======
+
+def sys_boot(directory, image):
+    with qemu.Vm(directory, image, smp=1) as vm:
+        for index, cpl in enumerate((0, 3), 1):
+            log = vm.wait("KERNEL_K5_NMI_ARMED", occurrences=index, level="OK")
+            first, last = (log.number(name, index - 1) for name in ("K5_NMI_FIRST", "K5_NMI_LAST"))
+            wait_window(vm, first, last, cpl)
+            vm.command("nmi")
+            vm.wait("KERNEL_K5_NMI_RESUMED", occurrences=index, level="OK")
+        log = vm.wait("KERNEL_READY", level="OK")
+        if log.failures() or log.terminal() or not log.before("KERNEL_K5_SYSCALL_OK", "KERNEL_READY"):
+            raise RuntimeError("Missing clean syscall continuation")
+        if not log.has("KERNEL_K5_SCE_OFF_UD") or log.numbers("K5_SYS_CALLS") != [3, 3]:
+            raise RuntimeError("Missing syscall evidence")
+        if log.numbers("K5_NMI_GS") != [0, 0]:
+            raise RuntimeError("Unexpected GS at the syscall NMI windows")
+        trace = vm.trace.read_bytes()
+        if len(USER_IRQ.findall(trace)) != 2 or USER_FAULT.findall(trace) != [(b"06", b"0000")] * 3:
+            raise RuntimeError("Unexpected CPL3 events")
+        if SYS_TF.search(trace) or b"triple fault" in trace.lower():
+            raise RuntimeError("Unexpected kernel debug or triple fault")
+        return dict(Calls=6, Nmis=2, UserIrqs=2, SceOff=True)
+
+
+# ====== sys_negative ======
+
+def sys_negative(directory, image, case):
+    with qemu.Vm(directory, image, smp=1) as vm:
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline and vm.alive():
+            log = vm.log()
+            if log.has("KERNEL_K5_SYSCALL_OK") or log.has("KERNEL_READY"):
+                raise RuntimeError("Negative syscall case was accepted")
+            vm.command("info registers")
+            time.sleep(0.1)
+            halted = HALT.search(vm.monitor.read_bytes())
+            if (case == 17 and log.terminal()) or (case != 17 and halted):
+                trace = vm.trace.read_bytes()
+                if b"triple fault" in trace.lower() or SYS_TF.search(trace):
+                    raise RuntimeError("Unexpected kernel fault in the negative case")
+                if case == 15 and not USER_TF.search(trace):
+                    raise RuntimeError("Missing CPL3 debug trap after the return")
+                if case in (10, 11, 12, 13, 18) and USER_FAULT.findall(trace):
+                    raise RuntimeError("Invalid frame reached ring 3")
+                return dict(ExpectedRejection=case)
+    raise RuntimeError("Negative syscall case was not rejected")
 
 
 # ====== ap_boot ======
@@ -178,12 +229,18 @@ def main():
     parser.add_argument("--missing-nmi", action="store_true")
     parser.add_argument("--irq-negative", type=int, choices=range(1, 6))
     parser.add_argument("--ap", action="store_true")
+    parser.add_argument("--sys", action="store_true")
+    parser.add_argument("--sys-negative", type=int, choices=range(10, 19))
     parser.add_argument("--ap-negative", type=int, choices=range(6, 10))
     args = parser.parse_args()
     out = root / "kernel/build" / ("k5-privilege-" + uuid.uuid4().hex)
     out.mkdir()
     results = []
     scenario = missing_nmi if args.missing_nmi else boot
+    if args.sys:
+        scenario = sys_boot
+    if args.sys_negative:
+        scenario = lambda directory, image: sys_negative(directory, image, args.sys_negative)
     if args.ap:
         scenario = ap_boot
     if args.ap_negative:

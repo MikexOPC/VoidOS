@@ -327,6 +327,104 @@ QEMU TCG.
 - **Portata di `nmi`.** Il comando del monitor non è più usato, quindi non è stata
   verificata la sua portata. L'invio usa la stessa forma ICR del panic IPI.
 
+## K5-C — Prima syscall
+
+Stato: implementato nel profilo `k5-syscall`, QEMU/OVMF, una vCPU.
+[Validazione](k5-validation.md).
+
+Obiettivo: il payload a ring 3 chiama il kernel con `SYSCALL`, senza
+puntatori, e riprende con il risultato. Il kernel respinge i numeri sconosciuti
+e non riprende mai da un frame non valido. Fuori dalla prova `SYSCALL` resta
+disabilitata.
+
+### Cosa dice l'hardware
+
+- Intel SDM 3A §6.8.8: CS viene da `IA32_STAR[47:32]`, SS è quel valore più 8,
+  RIP da `IA32_LSTAR`. I flag sono mascherati con `IA32_FMASK`.
+- `SYSCALL` non cambia RSP e non scrive in memoria. RCX riceve il RIP di ritorno
+  e R11 i flag utente. Fino al cambio esplicito, RSP è controllato dall'utente.
+- Con la GDT del probe `IA32_STAR[47:32]` = 8 dà CS 08h e SS 10h, come richiesto.
+- Intel SDM 2B, SYSCALL: conferma RCX, R11 e RSP non salvato; `IA32_FMASK` è
+  C0000084h. Gli indirizzi di STAR, LSTAR e CSTAR non sono ricontrollati su Vol. 4.
+
+### Decisioni proposte
+
+1. **ABI v0.** Numero in RAX, un argomento in RDI, risultato in RAX. Cambiano
+   solo RAX, RCX e R11. Due chiamate: `ECHO` restituisce `RDI + 1`, `CPU`
+   restituisce l'indice della CPU. Un numero sconosciuto restituisce -1 e non è
+   un fault. Il valore è provvisorio: la tabella degli errori arriva con K6.
+2. **Ritorno con `IRETQ`.** Più lento di `SYSRETQ`, ma senza il suo caso noto:
+   con RCX non canonico il fault nasce a CPL0 con RSP utente. Il percorso è già
+   provato da K5-B. `SYSRETQ` resta un'ottimizzazione da misurare più avanti.
+3. **Ingresso, Assembly.** Primo passo `SWAPGS`, poi salvataggio di RSP utente e
+   caricamento dello stack kernel, quindi frame come quello degli IRQ, GPR e
+   `FXSAVE64`. Solo dopo si chiama codice C o Rust.
+4. **Dove salvare RSP utente.** In v0 una variabile del probe, valida perché la
+   prova gira su una CPU alla volta. Alternativa rimandata: un campo per CPU in
+   `X86_CPU_LOCAL`, che cambia un'ABI validata e serve solo con ring 3 simultaneo.
+   K6 dovrà introdurlo.
+5. **Stack.** La stessa pagina RSP0 del probe. Con IF=0 per tutta la syscall non
+   c'è annidamento di IRQ. NMI e fault restano sui propri IST.
+6. **`IA32_FMASK`.** Azzera TF, DF, IF, IOPL, NT e AC. Così l'ingresso non subisce
+   IRQ né #DB a passo singolo.
+7. **Validazione, Rust.** Numero di chiamata e frame di ritorno: CS 33h, SS 2Bh,
+   RIP canonico e nella pagina utente, RSP nello stack utente, flag con IF=1 e
+   IOPL, NT, VM a zero. Un frame non valido ferma la prova. Non si tenta `IRETQ`.
+8. **Abilitazione limitata.** Il probe salva `EFER` e i quattro MSR, imposta SCE
+   e `CSTAR` verso l'arresto, poi ripristina tutto. Nel probe non esistono
+   segmenti utente a 32 bit.
+9. **Finestra NMI.** Solo nel profilo di test, un'attesa all'inizio dell'ingresso
+   prima di `SWAPGS`, con contatore in memoria per non toccare registri e stack.
+   Prova il caso peggiore: CPL0, GS utente, RSP utente.
+10. **Una consegna IRQ dopo.** Un IRQ del timer subito dopo il ritorno mostra che
+    syscall e percorso IRQ convivono.
+
+### Sequenza, non eseguibile
+
+1. Il probe, a IF=0, salva gli MSR e abilita SCE.
+2. Il payload carica valori noti, chiama `ECHO`, verifica risultato e registri
+   conservati, anche FPU/SIMD.
+3. Chiama `CPU`, poi un numero sconosciuto, e verifica -1.
+4. Altra entrata con NMI nella finestra di ingresso e nel payload.
+5. `UD2` riporta al kernel. Ripristino di MSR, EFER e pagine.
+6. Il payload senza SCE riceve #UD: prova che l'abilitazione è davvero limitata.
+
+### Casi da provare
+
+- Positivo, 10 boot sul BSP: tre chiamate, NMI, IRQ dopo il ritorno, poi
+  `KERNEL_READY` con `SCE=0`.
+- Negativi, 3 boot ciascuno:
+  - frame alterato con RIP non canonico, RIP kernel, CS errato, IOPL 3: arresto
+    senza `IRETQ`;
+  - stack utente non valido in RSP: l'ingresso non lo usa e la prova passa;
+  - TF attivo prima di `SYSCALL`: nessun #DB nel kernel prima del ritorno;
+  - `SWAPGS` mancante, nessun NMI, registro non conservato: rilevati.
+- Host: test Rust su numeri e frame, con confini e overflow.
+- Regressioni: `k5-privilege`, `k5-ap`, `ap-runtime`, `ap-runtime-panic`.
+
+### Differenze emerse nell'implementazione
+
+- **Profilo separato.** `k5-syscall` non esegue K5-A e K5-B, così `k5-privilege`
+  resta invariata. Parte con un hook in `x86_timer_run`, come K5-B.
+- **File.** La syscall sta in `syscall.c`, `assembly/syscall/entry.asm` e
+  `rust/syscall/validation.rs`, con un proprio payload. Non è servito dividere
+  `assembly/probe/entry.asm`, che resta a 490 righe.
+- **RSP non valido.** Il design diceva che la prova sarebbe passata. Il validatore
+  controlla però RSP nel frame di ritorno: la prova si ferma senza fault, e questo
+  mostra che l'ingresso non ha usato lo stack utente.
+- **TF.** Con TF attivo nessun #DB a CPL0; il frame lo conserva, quindi #DB arriva
+  a CPL3 dopo il ritorno e il probe si ferma.
+- **Flag.** AC attivo nei flag utente è respinto: il payload non lo usa e la scelta
+  va rivista con K5-D.
+
+### Perimetro e limiti
+
+Solo il probe K5, build e campagne, con il kernel ordinario a `SCE=0`. Dimensione:
+`probe.c` è già a 596 righe, quindi la parte syscall va in file separati, e
+`entry.asm` si divide per funzione. Solo BSP e una vCPU in v0: gli AP richiedono
+MSR per CPU e si aggiungono dopo. Niente puntatori utente, cioè K5-D, né SMEP,
+SMAP o KPTI. IF=0 in tutta la syscall, quindi niente attese né preemption.
+
 ## Blocchi successivi
 
 1. **K5-B**: vedi sezione sopra.

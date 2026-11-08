@@ -12,7 +12,7 @@
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
 #include "arch/x86/kernel/scheduler/idle/idle.h"
 #endif
-#ifdef KERNEL_TEST_K5_PRIVILEGE
+#if defined(KERNEL_TEST_K5_PRIVILEGE) || defined(KERNEL_TEST_K5_SYSCALL)
 #include "test/arch/x86/kernel/interrupts/privilege/probe.h"
 #endif
 static X86_LAPIC_TIMER timer;
@@ -316,6 +316,9 @@ cleanup:
 #endif
 #ifdef KERNEL_TEST_K5_PRIVILEGE
     if (!x86_k5_irq_probe(window,&timer)) return 0;
+#endif
+#ifdef KERNEL_TEST_K5_SYSCALL
+    if (!x86_k5_syscall_probe(window,&timer)) return 0;
 #endif
     return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);
 }
