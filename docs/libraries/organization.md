@@ -44,8 +44,8 @@ funzionale del componente, senza un livello `c/`. Gli altri linguaggi
 usano `<linguaggio>/<funzione>/...`, sia nella produzione sia nei test:
 `cpp/`, `rust/` e `assembly/`. Gli header C++ seguono il componente cpp/.
 Non si creano cartelle per linguaggi ancora assenti.
-Per esempio, il bridge C delle tabelle e in `test/paging/bridge.c`,
-mentre i test Rust sono in `test/paging/rust/allocation/`.
+I test delle librerie condivise sono in `test/lib/` e rispecchiano
+la struttura funzionale delle sorgenti.
 La separazione dei linguaggi non cambia proprieta o interfacce FFI.
 
 ```text
@@ -55,13 +55,19 @@ memory/
 ├── buffer_capacity.h
 ├── rust/
 │   └── capacity/
-└── test/
-    ├── address_ranges_test.c
-    └── rust/capacity/
+
+test/lib/memory/
+├── address_ranges_test.c
+├── host.c
+└── rust/capacity/
 ```
 
 La divisione funzionale resta valida anche quando il componente contiene
 solo C. I file Rust e C++ mantengono i nomi dei compiti che svolgono.
+
+`./scripts/test/run.ps1 -Suite lib` esegue i test degli intervalli in C
+con AddressSanitizer e i test Rust delle capacità. Il runner riusa i casi
+già eseguiti dalla build UEFI e salva gli artefatti sotto `kernel/build/`.
 
 La build UEFI genera `os_memory.lib` e `x86_processor.lib` nella propria
 cartella `build/`, poi li collega staticamente. La build di un futuro
