@@ -458,6 +458,41 @@
       "heavy": true,
       "summary": "Rust plan, AP timer interrupts, PING, shootdown and verified timer stop"
     },
+    "meson-ordinary": {
+      "build": [],
+      "meson": "ordinary",
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4"],
+      "boots": 5,
+      "smoke": 1,
+      "summary": "ordinary image compiled by Meson, BSP continuation and three parked APs"
+    },
+    "meson-bsp-periodic": {
+      "build": [],
+      "meson": "periodic",
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4", "--periodic"],
+      "boots": 5,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson, six BSP timer preemptions, IRQ return and verified timer stop"
+    },
+    "meson-ap-timer": {
+      "build": [],
+      "meson": "ap-timer",
+      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/service/integration/firmware.py", "--image", "{image}", "--boots", "{boots}", "--case", "ap-timer", "--smp", "4"],
+      "boots": 5,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson, AP timer interrupts, PING, shootdown and verified timer stop"
+    },
+    "meson-k6-protection": {
+      "build": [],
+      "meson": "ordinary",
+      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max"],
+      "boots": 5,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson, ordinary boot on 4 vCPUs: SMEP and SMAP in CR4 of every CPU, user mode allowed"
+    },
     "ap-runtime-panic": {
       "build": ["-TestPanic"],
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4", "--panic"],

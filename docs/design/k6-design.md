@@ -198,8 +198,8 @@ kernel/build/meson-qemu-runner/qemu_runner --image IMMAGINE --boots 10 --copy
 kernel/build/meson-qemu-runner/qemu_runner parity CAMPAGNA_A CAMPAGNA_B
 ```
 
-Le immagini e il loader si compilano ancora con `kernel/scripts/build.ps1` e
-`arch/x86/boot/uefi/scripts/build.ps1 -BootKernel`: è il passo M2.
+Le immagini di queste campagne e il loader si compilano ancora con `kernel/scripts/build.ps1` e
+`arch/x86/boot/uefi/scripts/build.ps1 -BootKernel`: il profilo `k5-copy` non è nel planner.
 
 | Prova, stessa immagine e stesso loader | Python | Rust |
 | --- | --- | --- |
@@ -264,6 +264,88 @@ Limiti:
 - Solo Windows. Prove su QEMU 11.1.0 TCG, q35, OVMF, una vCPU, con altre VM accese sulla macchina.
 - Il criterio di M1 è la parità con Python: non aggiunge prove sul kernel oltre a quelle di K5.
   Coverage non misurata.
+
+### M2, risultato
+
+Stato: Meson compila i tre profili del planner, `ordinary`, `periodic` e `ap-timer`, con gli stessi
+comandi e la stessa immagine a meno del timestamp del linker. Nessun percorso vecchio è stato
+rimosso: `build.ps1`, `convert-image.ps1` e il planner restano, e cancellarli è una decisione a parte.
+
+```bash
+meson setup kernel/build/meson-kernel kernel --vsenv -Dprofile=ordinary
+```
+
+```bash
+meson compile -C kernel/build/meson-kernel
+```
+
+```bash
+meson test -C kernel/build/meson-kernel
+```
+
+Come è fatto:
+- `kernel/meson.build` non ha una lista di sorgenti: a configure compila il planner, ne legge il
+  piano e crea un target per riga. Il planner resta l'unica autorità, e `test/tooling/build-plan/parity.ps1`
+  continua a confrontarlo con `build.ps1 -PlanOnly`.
+- `scripts/tooling/kernel-build/` è lo strumento Rust, senza dipendenze esterne: risolve il piano,
+  esegue i comandi, scrive i depfile, fa il link e converte PE in ELF.
+- `k6-protection` gira sull'immagine ordinaria, quindi è coperto. Il profilo `k6-process` di K6-C
+  no: lo vedi tra i limiti.
+
+| Criterio | Prova | Esito |
+| --- | --- | --- |
+| Stessi sorgenti e flag | `meson test`: ogni comando eseguito confrontato col piano | 256, 256 e 257 comandi uguali |
+| Stesso ordine di link | stesso confronto, sul file di risposta del linker | uguale |
+| Stessa immagine | ELF Meson contro `build.ps1 -UseRustPlan`, stessa cartella | 1 byte su 376832, timestamp della debug directory |
+| Stesso EXE | stesso confronto | 3 o 4 byte: timestamp nell'header e nella debug directory, checksum PE |
+| Stessa mappa di link | confronto riga per riga | diversa solo la riga del timestamp |
+| Conversione | `convert-image.ps1` contro Rust sullo stesso EXE, tre profili | byte uguali |
+| Gate del profilo | `-Dprofile=k5-copy` e valori non previsti | rifiutati a configure |
+| Boot reali | `meson-ordinary`, `meson-bsp-periodic`, `meson-ap-timer`, `meson-k6-protection` | 4/4 campagne, 20 boot |
+
+Invalidazione provata su un build già completo:
+
+| Modifica | Effetto |
+| --- | --- |
+| Nessuna | `no work to do` |
+| Header incluso da pochi `.c` | ricompila solo quegli oggetti, link e immagine |
+| Modulo Rust dello staticlib dello scheduler | ricompila lo staticlib, link e immagine |
+| `trampoline/entry.asm` | ricompila il template e `template/image.asm` che lo include con `incbin` |
+| Riga tolta da `commands.tsv` | riconfigura, il sorgente esce dal piano |
+| Costante copiata da `layout.h` alterata | configurazione rifiutata |
+
+Scelte che vale la pena sapere:
+- `/showIncludes` non è usabile qui: `cl` risponde in italiano e ignora `VSLANG`, quindi il prefisso
+  cambia con la lingua. Lo strumento usa `/sourceDependencies`, che produce JSON.
+- `ml64` non può scrivere dipendenze. Un `.asm` con `include` viene rifiutato, così non si perde
+  l'invalidazione senza accorgersene. Oggi nessun sorgente MASM del piano lo usa.
+- Le dipendenze Rust vengono da una seconda chiamata a `rustc` con `--emit=dep-info`: il comando che
+  produce l'oggetto resta identico al piano.
+- `--vsenv` su questa macchina attiva VS Insiders con MSVC 14.51. Il kernel usa comunque la regola di
+  `build.ps1`: la versione più recente di 2022 BuildTools, oggi 14.44. Se seguisse `--vsenv`
+  cambierebbe compilatore e la parità non varrebbe.
+- `Assert-LayoutCopies` è stato portato in `layout.rs` e gira a ogni configurazione: senza, Meson
+  avrebbe perso un controllo che `build.ps1` esegue a ogni build.
+- L'hash di NASM è verificato prima di ogni esecuzione, come in `assembler.ps1`.
+
+Differenza voluta dal PowerShell: su 120 PE alterati, confrontati in una prova temporanea non presente
+nel repository, 119 danno lo stesso esito, con 34 accettati e 85 rifiutati. L'unico caso diverso è un
+nome di sezione `.data\0\x08`: `convert-image.ps1` lo accetta perché il confronto tra stringhe ignora
+quei caratteri, Rust lo rifiuta.
+
+Limiti:
+- M2 è completo solo per il kernel ordinario. Il profilo `-TestK6Process` di K6-C è arrivato dopo, è
+  in `build.ps1` e non nel planner, quindi Meson non lo compila: la voce "K6" di M2 resta aperta.
+- `k5-copy` e gli altri profili diagnostici usano ancora `build.ps1`, fino a M4. Il bootloader resta
+  `arch/x86/boot/uefi/scripts/build.ps1`.
+- Il timestamp rende l'immagine diversa a ogni link: `parity` del runner QEMU va ancora usato sullo
+  stesso file immagine.
+- NASM deve essere già presente in `kernel/build/tools/`; lo scarica solo `assembler.ps1 -Download`.
+- Il test di parità legge ciò che lo strumento ha registrato prima di lanciare ogni comando: dimostra
+  cosa è stato chiesto ai compilatori. Che l'esito sia lo stesso lo dimostra il confronto delle immagini,
+  fatto a mano e non ripetuto da `meson test`.
+- Le campagne `rust-plan-*` e le complete da 10 boot di `k6-protection` non sono state rifatte per M2.
+  I test host dello strumento sono 15, coverage non misurata.
 
 ## K6-A, risultato
 

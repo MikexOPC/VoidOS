@@ -1,0 +1,6 @@
+option(
+    'profile',
+    type: 'combo',
+    choices: ['ordinary', 'periodic', 'ap-timer'],
+    value: 'ordinary',
+)
