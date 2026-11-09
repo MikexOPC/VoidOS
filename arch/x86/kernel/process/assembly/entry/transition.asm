@@ -5,6 +5,7 @@ EXTERN k6_user_root:QWORD
 EXTERN k6_stack_top:QWORD
 EXTERN k6_user_rsp:QWORD
 EXTERN k6_saved_rsp:QWORD
+IFDEF K6_DIAGNOSTICS
 EXTERN k6_window:QWORD
 EXTERN k6_window_budget:QWORD
 EXTERN k6_negative:QWORD
@@ -15,6 +16,8 @@ EXTERN k6_nmi_cs:QWORD
 EXTERN k6_nmi_cr3:QWORD
 EXTERN k6_nmi_gs:QWORD
 EXTERN k6_nmi_flags:QWORD
+ENDIF
+EXTERN k6_drain:QWORD
 EXTERN k6_fault:QWORD
 EXTERN k6_fault_cr2:QWORD
 EXTERN k6_exit_kind:QWORD
@@ -22,6 +25,7 @@ EXTERN k6_fx_clean:BYTE
 EXTERN k6_fx_saved:BYTE
 EXTERN x86_process_syscall_dispatch:PROC
 EXTERN x86_process_irq_service:PROC
+EXTERN x86_process_irq_drained:PROC
 EXTERN x86_process_copy_recover:PROC
 EXTERN x86_process_kernel_fatal:PROC
 
@@ -33,6 +37,7 @@ K6_EXIT_FAULT EQU 2
 
 K6_WAIT MACRO number
     LOCAL skip, done
+IFDEF K6_DIAGNOSTICS
     cmp QWORD PTR [k6_window], number
     jne skip
 PUBLIC x86_process_window_&number&_first, x86_process_window_&number&_last
@@ -47,6 +52,7 @@ x86_process_window_&number&_last LABEL BYTE
 done:
     mov QWORD PTR [k6_window], 0
 skip:
+ENDIF
 ENDM
 
 K6_PUSH_GPR MACRO
@@ -105,8 +111,10 @@ x86_process_stop ENDP
 PUBLIC x86_process_syscall
 x86_process_syscall PROC
     K6_WAIT 1
+IFDEF K6_DIAGNOSTICS
     cmp QWORD PTR [k6_negative], 35
     je syscall_swapped
+ENDIF
     swapgs
 syscall_swapped:
     lfence
@@ -226,18 +234,24 @@ x86_process_leave PROC
     ret
 x86_process_leave ENDP
 
-; ====== IRQ da CPL3 sullo stack RSP0 ======
+; ====== IRQ del timer da CPL3 sullo stack RSP0 ======
 
 ; Intel SDM 3A §7.14.4: con IST zero e cambio di privilegio RSP viene da TSS.RSP0.
+; Intel SDM 3A §7.12: la consegna non azzera AC, quindi CLAC prima di ogni altro passo.
 PUBLIC x86_process_irq
 x86_process_irq PROC
+    clac
     test BYTE PTR [rsp+8], 3
-    jz x86_process_stop
+    jz irq_kernel
     swapgs
     lfence
     K6_PUSH_GPR
     mov rax, [k6_kernel_root]
     mov cr3, rax
+    ; Intel SDM 3A §7.14.4: il cambio di privilegio carica SS nullo. I validatori del LAPIC
+    ; richiedono il selettore del kernel. IRETQ riprende SS utente dal frame.
+    mov ax, 16
+    mov ss, ax
     sub rsp, 512
     fxsave64 [rsp]
     fxrstor64 [k6_fx_clean]
@@ -247,6 +261,8 @@ x86_process_irq PROC
     sub rsp, 32
     call x86_process_irq_service
     mov rsp, rbx
+    cmp eax, 2
+    je x86_process_leave
     cmp eax, 1
     jne x86_process_stop
     fxrstor64 [rsp]
@@ -256,7 +272,52 @@ x86_process_irq PROC
     swapgs
     K6_POP_GPR
     iretq
+irq_kernel:
+    cmp QWORD PTR [k6_drain], 1
+    jne irq_kernel_stray
+    push rax
+    push rcx
+    push rdx
+    push r8
+    push r9
+    push r10
+    push r11
+    cld
+    sub rsp, 32
+    call x86_process_irq_drained
+    add rsp, 32
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
+irq_kernel_stray:
+    push 0
+    push 0ffffh
+    jmp fault_fatal
 x86_process_irq ENDP
+
+; ====== vettori esterni inattesi ======
+
+; Nessuna origine attesa durante un processo: arresto con diagnosi dalla root del kernel.
+PUBLIC x86_process_stray
+x86_process_stray PROC
+    clac
+    push 0
+    push 0ffffh
+    jmp fault_fatal
+x86_process_stray ENDP
+
+; ====== spurious del LAPIC ======
+
+; Intel SDM 3A, Local APIC, Handling Spurious Interrupts: nessun bit ISR, nessun EOI.
+PUBLIC x86_process_spurious
+x86_process_spurious PROC
+    iretq
+x86_process_spurious ENDP
 
 ; ====== NMI senza presupposti su CR3, GS o AC ======
 
@@ -294,10 +355,11 @@ nmi_gs_ready:
     lfence
     mov rax, [k6_kernel_root]
     mov cr3, rax
+IFDEF K6_DIAGNOSTICS
     cmp QWORD PTR [k6_nmi_armed], 1
-    jne x86_process_stop
+    jne nmi_stray
     cmp QWORD PTR [k6_nmi_count], 0
-    jne x86_process_stop
+    jne nmi_stray
     mov rax, [rsp+56]
     mov [k6_nmi_rip], rax
     mov rax, [rsp+64]
@@ -322,6 +384,12 @@ nmi_restore:
     pop rcx
     pop rax
     iretq
+nmi_stray:
+ENDIF
+    add rsp, 56
+    push 0
+    push 2
+    jmp fault_fatal
 x86_process_nmi ENDP
 
 ; ====== fault con frame uniforme vettore, errore, RIP, CS, RFLAGS, RSP, SS ======
@@ -448,6 +516,7 @@ x86_process_copy_fixup LABEL BYTE
     ret
 x86_process_copy ENDP
 
+IFDEF K6_DIAGNOSTICS
 ; ====== x86_process_probe_read ======
 
 ; Solo prova negativa: lettura di un indirizzo con la root del processo attiva.
@@ -460,6 +529,16 @@ x86_process_probe_read PROC
     mov cr3, rax
     ret
 x86_process_probe_read ENDP
+
+; ====== x86_process_spurious_check ======
+
+; Solo prova: il gate spurious torna senza EOI e senza toccare stato.
+PUBLIC x86_process_spurious_check
+x86_process_spurious_check PROC
+    int 0ffh
+    ret
+x86_process_spurious_check ENDP
+ENDIF
 
 ; ====== indirizzi dei gate in memoria non eseguibile ======
 

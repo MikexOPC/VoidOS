@@ -30,6 +30,7 @@ Invoke-Compiler $rustc @('--edition=2024','-D','warnings',$source,'-o',$planner)
 $profileArguments = @()
 if ($TestSchedulerPeriodic) { $profileArguments += '-TestSchedulerPeriodic' }
 if ($TestApService -eq 'ap-timer') { $profileArguments += @('-TestApService','ap-timer') }
+if ($TestK6Process) { $profileArguments += '-TestK6Process' }
 $plan = @(& $planner @profileArguments)
 if ($LASTEXITCODE -ne 0) { throw 'Rust build planning failed.' }
 

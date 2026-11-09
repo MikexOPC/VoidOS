@@ -31,6 +31,7 @@ pub fn profile_arguments(profile: &str) -> Result<Vec<&'static str>, String> {
         "ordinary" => Ok(vec![]),
         "periodic" => Ok(vec!["-TestSchedulerPeriodic"]),
         "ap-timer" => Ok(vec!["-TestApService", "ap-timer"]),
+        "k6-process" => Ok(vec!["-TestK6Process"]),
         _ => Err(format!("Unsupported Meson kernel profile: {profile}")),
     }
 }

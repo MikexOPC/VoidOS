@@ -94,6 +94,8 @@ if ($TestApResourceFault -ne 'none') {
 
 $ApRuntime = $TestApTransition -eq 'none' -and $TestSmpPanic -eq 'none' -and !$TestApCommit -and !$TestBootstrapMemory
 if ($ApRuntime) { $flags += '/DKERNEL_AP_RUNTIME=1' }
+$UserProcess = !@($boundBuildOptions | Where-Object { $_ -notin @('OutputDirectory','ToolchainBin','Install','ConsoleShell','Ps2Input','Ps2Mouse','InteractiveInput') -and ($_ -ne 'TestApService' -or $TestApService -ne 'none') }).Count
+if ($UserProcess) { $flags += '/DKERNEL_USER_PROCESS=1' }
 $ApTasks = $ApRuntime -and $ConsoleShell -and $Ps2Input -and $TestApService -eq 'none'
 if ($ApTasks) { $flags += '/DKERNEL_AP_TASKS=1' }
 if ($TestApService -ne 'none') {

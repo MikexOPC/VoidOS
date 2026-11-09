@@ -26,7 +26,7 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
     if !log.failures().is_empty() || log.terminal() || !log.before("KERNEL_K6_PROCESS_OK", "KERNEL_READY") {
         return Err("Missing clean process continuation".to_string());
     }
-    for marker in ["KERNEL_K6_ELF_REJECTED", "KERNEL_K6_HELLO_OK", "KERNEL_K6_FAULTS_OK", "KERNEL_K6_POINTERS_OK", "KERNEL_K6_ISOLATION_OK", "KERNEL_K6_IRQ_OK"] {
+    for marker in ["KERNEL_K6_ELF_REJECTED", "KERNEL_K6_HELLO_OK", "KERNEL_K6_FAULTS_OK", "KERNEL_K6_POINTERS_OK", "KERNEL_K6_ISOLATION_OK", "KERNEL_K6_IRQ_OK", "KERNEL_K6_BUDGET_OK", "KERNEL_K6_AC_REJECTED", "KERNEL_K6_AFTER_BUDGET_OK", "KERNEL_K6_DRAIN_OK", "KERNEL_K6_SPURIOUS_OK", "KERNEL_K6_SPURIOUS_USER_OK", "KERNEL_K6_WRITE_QUOTA_OK"] {
         if !log.has(marker) {
             return Err(format!("Missing {marker}"));
         }
@@ -74,14 +74,19 @@ fn process_negative(vm: &mut Vm, case: u32) -> Result<Value, String> {
         31 | 32 => "PROCESS_KERNEL_FAULT",
         33 => "PROCESS_ROOT_CHANGED",
         34 | 35 => "",
+        36 => "PROCESS_STRAY_IRQ",
+        37 => "PROCESS_STRAY_NMI",
         _ => return Err(format!("Unknown process negative: {case}")),
     };
-    vm.inject_on("info registers");
+    vm.inject_on(if case == 37 { "nmi" } else { "info registers" });
     let deadline = Instant::now() + vm.limits.negative;
     while Instant::now() < deadline && vm.alive() {
         let log = vm.log();
         if accepted(&log) {
             return Err("Negative process case was accepted".to_string());
+        }
+        if case == 37 && log.has("KERNEL_K6_STRAY_NMI_READY") {
+            vm.command("nmi");
         }
         vm.command("info registers");
         std::thread::sleep(POLL_SLEEP);

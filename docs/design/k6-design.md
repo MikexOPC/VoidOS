@@ -1,6 +1,6 @@
 # K6 — Primo processo utente
 
-Stato: design approvato con le correzioni di revisione. K6-A, K6-B e K6-C implementati, K6-D non iniziato.
+Stato: design approvato con le correzioni di revisione. K6-A, K6-B, K6-C e K6-D implementati; campagna di chiusura in corso.
 Il contratto delle due root è provato in K6-C, nel profilo `k6-process`.
 
 Obiettivo: il kernel ordinario carica un programma ELF nel suo spazio di indirizzi,
@@ -464,3 +464,26 @@ test del runner, clippy, cppcheck e `build-plan`.
 - Solo BSP, una vCPU, un processo alla volta, QEMU TCG. `KPTI` non abilitato: solo programmi nostri.
 - Gli indirizzi di STAR, LSTAR e CSTAR non sono ricontrollati su Vol. 4.
 - Il costo del cambio di root sul TLB non è misurato.
+
+## K6-D, risultato
+
+Il kernel ordinario esegue al boot un vero ELF, `kernel/process/programs/init.rs`, e lo raccoglie
+prima di `KERNEL_READY`; nel profilo shell prima della sessione di input. Senza SMEP o SMAP scrive
+`PROCESS_DISABLED` e prosegue.
+
+- Budget: 200 tick del timer LAPIC per processo, anche durante le syscall. Oltre: processo terminato.
+- IRQ e NMI inattesi durante un processo: root del kernel, poi panic con `PROCESS_STRAY_IRQ` o
+  `PROCESS_STRAY_NMI`. Spurious ignorato, provato anche da ring 3.
+- `write`: al massimo 4096 byte per processo, poi errore -4. Stampa a blocchi di 128 byte: in K6-C
+  una `write` da 256 byte fermava il kernel.
+- Un frame IRQ con AC attivo termina il processo, non il kernel. IRQ in sospeso all'uscita consumato.
+- `k6-protection` usa il runner Rust; `firmware.py` rimosso. `k6-process` è nel planner e in Meson.
+- STAR, LSTAR, CSTAR e FMASK ricontrollati sul Vol. 4.
+
+**Prove.** Smoke da 1 boot di ogni nuovo caso, test Rust, test del runner e parità del planner verdi.
+Campagna completa di chiusura: al momento del commit 78 campagne su 119 verdi, nessun fallimento,
+evidenze in `kernel/build/qemu-run-f0da8292b828400ca5d63471a7f513d0`. Il push segue l'esito completo.
+
+**Limiti.** Un processo alla volta sul BSP; stack kernel statico senza guardia; panic di un AP
+durante un processo non provato; budget dipendente dal timer LAPIC; `init` non gira nei profili
+con `-VgpuIommu` o con opzioni di test; KPTI spento, solo programmi nostri; solo QEMU TCG.

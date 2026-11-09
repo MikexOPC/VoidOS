@@ -6,7 +6,11 @@
 #define PROGRAM(name) extern const unsigned char k6_program_##name[]; extern const BOOT_U64 k6_program_##name##_length
 PROGRAM(hello); PROGRAM(null); PROGRAM(readonly); PROGRAM(privileged);
 PROGRAM(kernel_jump); PROGRAM(bad_pointer); PROGRAM(bss); PROGRAM(irq);
+PROGRAM(spin); PROGRAM(syscall_spin); PROGRAM(flags_spin); PROGRAM(flags_ac);
+PROGRAM(write_flood); PROGRAM(spurious);
 #define IMAGE(name) {k6_program_##name, 0}
+
+extern volatile BOOT_U64 k6_negative;
 
 static _Alignas(8) unsigned char corrupted[64];
 
@@ -42,6 +46,15 @@ static int faults(const unsigned char *bytes, BOOT_U64 length, BOOT_U64 vector, 
         field("K6_FAULT_VECTOR: ", result.Vector) && field("K6_FAULT_ERROR: ", result.Error);
 }
 
+// ====== over_budget ======
+
+static int over_budget(const unsigned char *bytes, BOOT_U64 length)
+{
+    X86_PROCESS_RESULT result;
+    return run(bytes, length, &result) && result.Kind == X86_PROCESS_BUDGET &&
+        result.Irqs == x86_process_budget_ticks() && field("K6_BUDGET_RIP: ", result.Rip);
+}
+
 // ====== nmi_case ======
 
 static int nmi_case(BOOT_U64 window)
@@ -61,6 +74,10 @@ static int nmi_case(BOOT_U64 window)
 static int cases(void)
 {
     X86_PROCESS_RESULT result;
+    if (k6_negative == 37) {
+        (void)kernel_log(0, "KERNEL_K6_STRAY_NMI_READY");
+        return over_budget(k6_program_spin, k6_program_spin_length);
+    }
     for (BOOT_U32 index = 0; index < sizeof(corrupted); ++index) corrupted[index] = k6_program_hello[index];
     corrupted[16] = 3;
     if (!run(corrupted, sizeof(corrupted), &result) || result.Kind != X86_PROCESS_REJECTED ||
@@ -77,8 +94,23 @@ static int cases(void)
     if (!exits(k6_program_bss, k6_program_bss_length, 0, &result) ||
         !exits(k6_program_bss, k6_program_bss_length, 0, &result) ||
         !kernel_log(0, "KERNEL_K6_ISOLATION_OK")) return 0;
-    if (!x86_process_timer_arm() || !exits(k6_program_irq, k6_program_irq_length, 0, &result) ||
-        result.Irqs != 1 || !kernel_log(0, "KERNEL_K6_IRQ_OK")) return 0;
+    if (!exits(k6_program_irq, k6_program_irq_length, 0, &result) || !result.Irqs ||
+        !field("K6_IRQS: ", result.Irqs) || !kernel_log(0, "KERNEL_K6_IRQ_OK")) return 0;
+    if (!over_budget(k6_program_spin, k6_program_spin_length) ||
+        !over_budget(k6_program_syscall_spin, k6_program_syscall_spin_length) ||
+        !over_budget(k6_program_flags_spin, k6_program_flags_spin_length) ||
+        !kernel_log(0, "KERNEL_K6_BUDGET_OK")) return 0;
+    if (!run(k6_program_flags_ac, k6_program_flags_ac_length, &result) || result.Kind != X86_PROCESS_BAD_FRAME ||
+        !kernel_log(0, "KERNEL_K6_AC_REJECTED")) return 0;
+    if (!exits(k6_program_hello, k6_program_hello_length, 0, &result) || result.Writes != 1 ||
+        !kernel_log(0, "KERNEL_K6_AFTER_BUDGET_OK")) return 0;
+    if (!x86_process_drain_check() || !kernel_log(0, "KERNEL_K6_DRAIN_OK")) return 0;
+    x86_process_spurious_check();
+    if (!kernel_log(0, "KERNEL_K6_SPURIOUS_OK")) return 0;
+    if (!exits(k6_program_spurious, k6_program_spurious_length, 0, &result) ||
+        !kernel_log(0, "KERNEL_K6_SPURIOUS_USER_OK")) return 0;
+    if (!exits(k6_program_write_flood, k6_program_write_flood_length, 0, &result) || result.Writes != 16 ||
+        !kernel_log(0, "KERNEL_K6_WRITE_QUOTA_OK")) return 0;
     for (BOOT_U64 window = 1; window <= 6; ++window) {
         if (!nmi_case(window)) return 0;
     }
@@ -92,7 +124,6 @@ int x86_k6_process_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     if (!x86_user_mode_allowed()) return kernel_log(2, "PROCESS_DISABLED");
     if (!x86_process_open(window, timer)) return 0;
     int passed = cases();
-    int stopped = x86_timer_stop(timer->Mapping);
-    if (!x86_process_close() || !stopped) return 0;
+    if (!x86_process_close()) return 0;
     return passed && kernel_log(0, "KERNEL_K6_PROCESS_OK");
 }

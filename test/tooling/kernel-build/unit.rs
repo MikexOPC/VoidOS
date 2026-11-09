@@ -184,6 +184,7 @@ fn profile_gate() {
     assert!(plan::profile_arguments("ordinary").unwrap().is_empty());
     assert_eq!(plan::profile_arguments("periodic").unwrap(), ["-TestSchedulerPeriodic"]);
     assert_eq!(plan::profile_arguments("ap-timer").unwrap(), ["-TestApService", "ap-timer"]);
+    assert_eq!(plan::profile_arguments("k6-process").unwrap(), ["-TestK6Process"]);
     for profile in ["", "ORDINARY", "k5-copy", "ping"] {
         assert!(plan::profile_arguments(profile).is_err());
     }

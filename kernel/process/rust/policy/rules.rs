@@ -15,6 +15,9 @@ pub const STATE_RUNNING: u32 = 3;
 pub const STATE_TERMINATED: u32 = 4;
 pub const STATE_REAPED: u32 = 5;
 
+pub const BUDGET_TICKS: u64 = 200;
+pub const MAX_PROCESS_WRITE: u64 = 4096;
+
 const LOWER_LIMIT: u64 = 1 << 47;
 const AC: u64 = 1 << 18;
 
@@ -99,6 +102,18 @@ pub fn filter_console(bytes: &mut [u8]) {
             *byte = b'?';
         }
     }
+}
+
+// ====== budget_next ======
+
+pub fn budget_next(remaining: u64) -> u64 {
+    remaining.saturating_sub(1)
+}
+
+// ====== write_allowed ======
+
+pub fn write_allowed(total: u64, length: u64) -> bool {
+    total.checked_add(length).is_some_and(|sum| sum <= MAX_PROCESS_WRITE)
 }
 
 // ====== state_next ======
@@ -219,6 +234,33 @@ mod tests {
         assert_eq!(&text, b"ok?[3??\n");
         let mut empty = [0u8; 0];
         filter_console(&mut empty);
+    }
+
+    // ====== budget ======
+
+    #[test]
+    fn budget() {
+        let mut remaining = BUDGET_TICKS;
+        let mut ticks = 0;
+        while remaining != 0 {
+            remaining = budget_next(remaining);
+            ticks += 1;
+        }
+        assert_eq!(ticks, BUDGET_TICKS);
+        assert_eq!(budget_next(1), 0);
+        assert_eq!(budget_next(0), 0);
+    }
+
+    // ====== write_quota ======
+
+    #[test]
+    fn write_quota() {
+        assert!(write_allowed(0, MAX_PROCESS_WRITE));
+        assert!(write_allowed(MAX_PROCESS_WRITE - 1, 1));
+        assert!(write_allowed(MAX_PROCESS_WRITE, 0));
+        assert!(!write_allowed(MAX_PROCESS_WRITE, 1));
+        assert!(!write_allowed(0, MAX_PROCESS_WRITE + 1));
+        assert!(!write_allowed(u64::MAX, 1));
     }
 
     // ====== states ======
