@@ -1,7 +1,7 @@
 use crate::vm::machine::Inject;
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "qemu_runner --image FILE [--boots 1..10] (--copy | --copy-negative 20..25)\n\
+pub const USAGE: &str = "qemu_runner --image FILE [--boots 1..10] (--copy | --copy-negative 20..25 | --process | --process-negative 31..35 | --process-disabled)\n\
     \x20   [--root DIR] [--qemu-dir DIR] [--loader FILE] [--out DIR] [--inject drop|stop|quit]\n\
     qemu_runner dump BOOT_DIR\n\
     qemu_runner parity CAMPAIGN_DIR CAMPAIGN_DIR";
@@ -16,6 +16,8 @@ pub struct RunOptions {
     pub loader: Option<PathBuf>,
     pub out: Option<PathBuf>,
     pub inject: Inject,
+    pub process: bool,
+    pub cpu: &'static str,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -74,6 +76,8 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String
         loader: None,
         out: None,
         inject: Inject::None,
+        process: false,
+        cpu: "max",
     };
     let mut selected = false;
     while let Some(argument) = arguments.next() {
@@ -84,6 +88,22 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String
             "--copy-negative" => {
                 let text = value_of(&mut arguments, "--copy-negative")?;
                 options.negative = Some(number_in(&text, "--copy-negative", 20..=25)?);
+                selected = true;
+            }
+            "--process" => {
+                options.process = true;
+                selected = true;
+            }
+            "--process-negative" => {
+                let text = value_of(&mut arguments, "--process-negative")?;
+                options.negative = Some(number_in(&text, "--process-negative", 31..=35)?);
+                options.process = true;
+                selected = true;
+            }
+            "--process-disabled" => {
+                options.negative = Some(0);
+                options.process = true;
+                options.cpu = "max,-smap";
                 selected = true;
             }
             "--root" => options.root = Some(value_of(&mut arguments, "--root")?.into()),
@@ -98,7 +118,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String
         return Err("--image is required".to_string());
     }
     if !selected {
-        return Err("Choose --copy or --copy-negative".to_string());
+        return Err("Choose a scenario".to_string());
     }
     Ok(Mode::Run(options))
 }

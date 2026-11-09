@@ -40,6 +40,7 @@ pub struct Plan {
     pub memory: u32,
     pub smp: u32,
     pub inject: Inject,
+    pub cpu: &'static str,
 }
 
 pub struct Vm {
@@ -101,8 +102,10 @@ fn prepare_esp(directory: &Path, image: &Path, paths: &Paths) -> Result<PathBuf,
 pub fn arguments(directory: &Path, paths: &Paths, plan: &Plan) -> Vec<String> {
     let share = paths.qemu_dir.join("share");
     let mut list: Vec<String> = [
-        "-machine", "q35", "-cpu", "max", "-accel", "tcg", "-m",
+        "-machine", "q35", "-cpu",
     ].map(String::from).to_vec();
+    list.push(plan.cpu.to_string());
+    list.extend(["-accel", "tcg", "-m"].map(String::from));
     list.push(plan.memory.to_string());
     list.push("-smp".to_string());
     list.push(plan.smp.to_string());

@@ -97,13 +97,7 @@ fn check_identity(bytes: &[u8]) -> Result<(), Error> {
     if bytes.len() < HEADER_BYTES {
         return Err(Error::TooSmall);
     }
-    let identity = &bytes[..16];
-    let valid = identity[..4] == [0x7f, b'E', b'L', b'F']
-        && identity[4] == 2
-        && identity[5] == 1
-        && identity[6] == 1
-        && identity[7] == 0;
-    if !valid {
+    if bytes.get(..8) != Some(&[0x7f, b'E', b'L', b'F', 2, 1, 1, 0]) {
         return Err(Error::Identity);
     }
     if read_u16(bytes, 16) != Some(2) {
@@ -198,7 +192,7 @@ pub fn parse(bytes: &[u8]) -> Result<Image, Error> {
         entry_valid |= segment.flags & PF_X != 0
             && entry >= segment.virt
             && entry - segment.virt < segment.file_bytes;
-        image.segments[image.count] = segment;
+        *image.segments.get_mut(image.count).ok_or(Error::SegmentCount)? = segment;
         image.count += 1;
     }
     if image.count == 0 {
@@ -214,7 +208,7 @@ pub fn parse(bytes: &[u8]) -> Result<Image, Error> {
 
 impl Image {
     pub fn pages(&self) -> impl Iterator<Item = PagePlan> + '_ {
-        self.segments[..self.count].iter().flat_map(|segment| {
+        self.segments.get(..self.count).unwrap_or(&[]).iter().flat_map(|segment| {
             let total = segment.memory_bytes.div_ceil(PAGE);
             (0..total).map(move |index| {
                 let offset = index * PAGE;

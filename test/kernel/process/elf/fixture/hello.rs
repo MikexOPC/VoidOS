@@ -10,11 +10,11 @@ global_asm!(
     "_start:",
     "lea rdi, [rip + MESSAGE]",
     "mov esi, 13",
-    "mov eax, 2",
+    "mov eax, 1",
     "syscall",
     "call fixture_touch",
     "mov edi, eax",
-    "mov eax, 3",
+    "xor eax, eax",
     "syscall",
     "ud2",
 );

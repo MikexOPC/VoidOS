@@ -58,7 +58,7 @@ fn run_injected(name: &str, case: &str, negative: Option<u32>, inject: Inject) -
     let bench = bench(name);
     let directory = bench.root.join("boot-1");
     unsafe { std::env::set_var("VOIDOS_FAKE_CASE", case) };
-    let plan = Plan { memory: 128, smp: 1, inject };
+    let plan = Plan { memory: 128, smp: 1, inject, cpu: "max" };
     let outcome = run_copy(&directory, &bench.image, &bench.paths, &plan, short_limits(), negative);
     let text = outcome.map(|value| qemu_runner_core::evidence::results::render(&value));
     (bench, directory, text)
@@ -203,7 +203,7 @@ fn dead_vm() {
 
     let bench = bench("nostart");
     fs::remove_file(bench.paths.qemu_dir.join("qemu-system-x86_64.exe")).expect("remove");
-    let plan = Plan { memory: 128, smp: 1, inject: Inject::None };
+    let plan = Plan { memory: 128, smp: 1, inject: Inject::None, cpu: "max" };
     let outcome = run_copy(&bench.root.join("boot-1"), &bench.image, &bench.paths, &plan, short_limits(), None);
     assert!(outcome.expect_err("no VM").starts_with("QEMU start:"));
 

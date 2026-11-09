@@ -35,3 +35,14 @@ foreach optimization : ['0', '2']
     )
     test(name, binary, depends: fixture, env: {'VOIDOS_ELF_FIXTURE': fixture.full_path()}, timeout: 120)
 endforeach
+
+foreach optimization : ['0', '2']
+    name = 'process_policy_o' + optimization
+    binary = executable(
+        name,
+        repo / 'kernel/process/rust/lib.rs',
+        rust_args: ['--test', '-C', 'overflow-checks=yes'],
+        override_options: ['optimization=' + optimization],
+    )
+    test(name, binary, timeout: 120)
+endforeach

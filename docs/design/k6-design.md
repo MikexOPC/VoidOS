@@ -1,7 +1,7 @@
 # K6 — Primo processo utente
 
-Stato: design approvato con le correzioni di revisione. K6-A e K6-B implementati, K6-C e K6-D non iniziati.
-Il contratto delle due root resta da provare in K6-C.
+Stato: design approvato con le correzioni di revisione. K6-A, K6-B e K6-C implementati, K6-D non iniziato.
+Il contratto delle due root è provato in K6-C, nel profilo `k6-process`.
 
 Obiettivo: il kernel ordinario carica un programma ELF nel suo spazio di indirizzi,
 lo esegue a ring 3 e ne raccoglie le risorse. Il test decisivo usa più programmi:
@@ -75,7 +75,7 @@ Non riscrivo in Rust i moduli C esistenti: K6 li chiama attraverso interfacce pi
 
 ## Contratto delle due root
 
-Stato: su carta. Nessuna riga di Assembly prima della sua approvazione finale con K6-C.
+Stato: implementato e provato in K6-C. La tabella è confermata sul codice.
 
 **Il problema.** Sette voci PML4 (FB, GPU, SURFACE, IOMMU, DMA, HEAP, AP) sono scritte e
 azzerate a runtime nella root del kernel. Una copia in ogni processo diventerebbe stantia.
@@ -335,3 +335,50 @@ le pagine AP nell'inventario, cosa che riguarda K3, non K6-B. Il selettore inval
 #GP passa da 28h a 38h, perché 28h è ora valido. L'NMI via stdin del monitor viene reinviato ogni
 2 secondi: il primo invio andava perso, con il kernel che gestiva correttamente quello inviato
 da `qemu.py`. La causa della perdita non è stata chiarita.
+
+## K6-C, risultato
+
+Il profilo `k6-process` carica veri ELF nella propria root, li esegue a ring 3 e ne raccoglie le
+risorse. Il kernel ordinario non esegue ancora processi: passa a farlo alla chiusura di K6-D.
+
+| Parte | Dove |
+| --- | --- |
+| Piano delle pagine, range, frame, recupero, finestre NMI, stati | `kernel/process/rust/`, Rust |
+| Ingresso, ritorno, fault, IRQ, NMI, copia | `arch/x86/kernel/process/assembly/entry/transition.asm` |
+| Collegamento a finestra, TSS, MSR e console | `arch/x86/kernel/process/process.c` |
+| Programmi di prova | `test/kernel/process/programs/program.rs`, Rust e `global_asm` |
+| Scenario di prova | `scripts/tooling/qemu-runner/rust/scenario/process.rs`, Rust |
+
+**Prove sull'immagine finale.**
+
+| Prova | Boot | Esito |
+| --- | --- | --- |
+| `k6-process`: un ELF stampa ed esce, ELF corrotto respinto senza allocare, 4 fault utente terminati, puntatori cattivi con errore e copia recuperata, memoria non visibile fra due esecuzioni, IRQ del timer da CPL3, NMI nelle 6 finestre | 10 | 10/10 |
+| `k6-process-disabled`, CPU senza SMAP: nessun processo, boot completo | 3 | 3/3 |
+| `k6-process-kernel-fault`, fault del kernel durante una syscall: panic | 3 | 3/3 |
+| `k6-process-absent-slot`, slot assente letto dalla root del processo: panic | 3 | 3/3 |
+| `k6-process-root-changed`, voce PML4 cambiata fra creazione e raccolta: panic | 3 | 3/3 |
+| `k6-process-no-nmi`, nessun NMI nella finestra: arresto | 3 | 3/3 |
+| `k6-process-no-swapgs`, `SWAPGS` mancante: arresto | 3 | 3/3 |
+
+Evidenze in `kernel/build/`: `qemu-run-9d1bfe167ae040909840cb5e82b38387` e
+`qemu-run-a35837f296d74616a9efdd5161499307`. Le regressioni `k5-copy`, `k5-copy-rip`, `k5-syscall` e
+`k5-privilege` (3 boot) sono passate prima dell'ultima modifica, che riguarda solo il codice di
+`k6-process`: `qemu-run-c1346d535eab4904a4662832b66431b1`. Passati anche i test Rust con Meson, i
+test del runner, clippy, cppcheck e `build-plan`.
+
+**Differenze dal design.**
+- `X86_CPU_LOCAL` non cambia. Con un processo sul BSP bastano variabili dedicate. Più CPU in ring 3
+  richiederanno il campo per CPU.
+- Lo stack kernel è statico nell'immagine, con canary controllato alla raccolta, senza guardia.
+- Un processo ha al massimo 10 pagine di immagine, per il limite di 16 pagine della finestra, e
+  sta in una sola tabella PT fra 0x400000 e 0x600000. Stack utente di 2 pagine con guardia.
+- Un frame di ritorno non valido, per esempio con AC attivo, termina il processo senza fermare il kernel.
+
+**Limiti, da chiudere in K6-D o dopo.**
+- Il solo IRQ gestito da CPL3 è il timer del profilo, vettore 41h. Ogni altro vettore e ogni NMI non
+  armato fermano la CPU: niente IRQ di dispositivo né panic SMP coordinato durante un processo.
+- Nessun budget temporale: un ciclo infinito non viene terminato.
+- Solo BSP, una vCPU, un processo alla volta, QEMU TCG. `KPTI` non abilitato: solo programmi nostri.
+- Gli indirizzi di STAR, LSTAR e CSTAR non sono ricontrollati su Vol. 4.
+- Il costo del cambio di root sul TLB non è misurato.
