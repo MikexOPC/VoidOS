@@ -12,11 +12,15 @@ param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-h
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none',
-    [switch]$PlanOnly, [switch]$UseRustPlan, [switch]$TestK5Privilege, [switch]$TestK5Syscall, [switch]$TestK5Copy, [int]$TestK5IrqNegative = 0)
+    [switch]$PlanOnly, [switch]$UseRustPlan, [switch]$TestK5Privilege, [switch]$TestK5Syscall, [switch]$TestK5Copy, [int]$TestK5IrqNegative = 0, [switch]$TestK6Process, [int]$TestK6Negative = 0)
 . (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
 if (!$PlanOnly) { Assert-LayoutCopies }
 $ErrorActionPreference = 'Stop'
 $boundBuildOptions = @($PSBoundParameters.Keys | Where-Object { $_ -notin @('PlanOnly','UseRustPlan') })
+if ($TestK6Process -and ($PlanOnly -or $UseRustPlan -or
+    @($boundBuildOptions | Where-Object { $_ -notin @('TestK6Process','TestK6Negative','OutputDirectory','ToolchainBin') }).Count)) {
+    throw 'K6 process requires an isolated diagnostic profile.'
+}
 if (($TestK5Syscall -or $TestK5Copy) -and ($PlanOnly -or $UseRustPlan -or
     @($boundBuildOptions | Where-Object { $_ -notin @('TestK5Syscall','TestK5Copy','TestK5IrqNegative','OutputDirectory','ToolchainBin') }).Count)) {
     throw 'K5 syscall requires an isolated diagnostic profile.'
@@ -85,6 +89,11 @@ if ($TestK5Privilege) { $flags += '/DKERNEL_TEST_K5_PRIVILEGE=1' }
 if ($TestApService -eq 'k5-ap') { $flags += '/DKERNEL_TEST_K5_AP=1' }
 if ($TestK5Syscall) { $flags += '/DKERNEL_TEST_K5_SYSCALL=1' }
 if ($TestK5Copy) { $flags += '/DKERNEL_TEST_K5_COPY=1' }
+if ($TestK6Process) { $flags += '/DKERNEL_TEST_K6_PROCESS=1' }
+if ($TestK6Negative) {
+    if (!$TestK6Process -or $TestK6Negative -notin 31..35) { throw 'Invalid K6 negative case.' }
+    $flags += "/DKERNEL_K6_NEGATIVE=$TestK6Negative"
+}
 if ($TestK5IrqNegative) {
     if (($TestK5Copy -and $TestK5IrqNegative -notin 20..25) -or ($TestK5Syscall -and $TestK5IrqNegative -notin 10..18) -or ($TestK5Privilege -and $TestK5IrqNegative -notin 1..5) -or ($TestApService -eq 'k5-ap' -and $TestK5IrqNegative -notin 6..9) -or
         (!$TestK5Privilege -and !$TestK5Syscall -and !$TestK5Copy -and $TestApService -ne 'k5-ap')) { throw 'Invalid K5 IRQ negative case.' }
@@ -432,6 +441,27 @@ if ($TestPs2Decoder -or $Ps2Input) {
 . (Join-Path $project 'kernel/sync/scripts/build.ps1')
 if ($ApRuntime -or $TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) {
     . (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/installation/scripts/build.ps1')
+}
+if ($TestK6Process) {
+    $programs = Join-Path $output 'k6-programs'
+    New-Item -ItemType Directory -Force -Path $programs | Out-Null
+    $programRoot = Join-Path $project 'test/kernel/process'
+    foreach ($program in 'hello','null','readonly','privileged','kernel_jump','bad_pointer','bss','irq') {
+        Invoke-Compiler $rustc @('--edition=2024','-D','warnings','--crate-type=bin','--crate-name',"k6_$program",'--target','x86_64-unknown-none',
+            '--cfg',"program_$program",'-C','panic=abort','-C','opt-level=s','-C','relocation-model=static',
+            '-C',"link-arg=-T$programRoot/elf/fixture/link.ld",'-C','link-arg=-zmax-page-size=4096','-C','link-arg=--build-id=none',
+            '-C','link-arg=--no-gc-sections',"$programRoot/programs/program.rs",'-o',"$programs/$program.elf")
+    }
+    $env:K6_PROGRAM_DIR = $programs.Replace('\','/')
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--crate-name','k6_programs','--emit=obj','--target','x86_64-pc-windows-msvc',
+        '-D','warnings','-C','panic=abort','-C','opt-level=2',"$programRoot/integration/rust/programs.rs",'-o',"$output/k6-programs.obj")
+    Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--crate-name','k6_process','--emit=obj','--target','x86_64-pc-windows-msvc',
+        '-D','warnings','-C','panic=abort','-C','opt-level=2','-C','codegen-units=1',(Join-Path $project 'kernel/process/rust/lib.rs'),'-o',"$output/k6-policy.obj")
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'arch/x86/kernel/process/process.c'),("/Fo$output/k6-process.obj")))
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$programRoot/integration/probe.c",("/Fo$output/k6-probe.obj")))
+    Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',("/Fo$output/k6-transition.obj"),
+        (Join-Path $project 'arch/x86/kernel/process/assembly/entry/transition.asm'))
+    $objects += @("$output/k6-programs.obj","$output/k6-policy.obj","$output/k6-process.obj","$output/k6-probe.obj","$output/k6-transition.obj")
 }
 if ($TestK5Copy) {
     $probeCopy = Join-Path $project 'test/arch/x86/kernel/interrupts/privilege'

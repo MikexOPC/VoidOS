@@ -15,6 +15,9 @@
 #if defined(KERNEL_TEST_K5_PRIVILEGE) || defined(KERNEL_TEST_K5_SYSCALL) || defined(KERNEL_TEST_K5_COPY)
 #include "test/arch/x86/kernel/interrupts/privilege/probe.h"
 #endif
+#ifdef KERNEL_TEST_K6_PROCESS
+#include "test/kernel/process/integration/probe.h"
+#endif
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 finished;
 #ifdef KERNEL_EVENT_LOOP
@@ -322,6 +325,9 @@ cleanup:
 #endif
 #ifdef KERNEL_TEST_K5_COPY
     if (!x86_k5_copy_probe(window)) return 0;
+#endif
+#ifdef KERNEL_TEST_K6_PROCESS
+    if (!x86_k6_process_probe(window,&timer)) return 0;
 #endif
     return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);
 }

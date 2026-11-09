@@ -193,6 +193,48 @@
       "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max,-smep,-smap"],
       "boots": 3, "smoke": 1, "heavy": true
     },
+    "k6-process": {
+      "summary": "Real ELF programs at ring 3: write, exit, user faults, bad pointers, isolation, IRQ, NMI in six root windows",
+      "build": ["-TestK6Process"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "k6-process-disabled": {
+      "summary": "CPU without SMAP: boot continues and no process runs",
+      "build": ["-TestK6Process"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-disabled"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-process-kernel-fault": {
+      "summary": "Expected rejection of the K6 process probe: kernel-fault",
+      "build": ["-TestK6Process", "-TestK6Negative", "31"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "31"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-process-absent-slot": {
+      "summary": "Expected rejection of the K6 process probe: absent-slot",
+      "build": ["-TestK6Process", "-TestK6Negative", "32"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "32"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-process-root-changed": {
+      "summary": "Expected rejection of the K6 process probe: root-changed",
+      "build": ["-TestK6Process", "-TestK6Negative", "33"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "33"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-process-no-nmi": {
+      "summary": "Expected rejection of the K6 process probe: no-nmi",
+      "build": ["-TestK6Process", "-TestK6Negative", "34"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "34"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-process-no-swapgs": {
+      "summary": "Expected rejection of the K6 process probe: no-swapgs",
+      "build": ["-TestK6Process", "-TestK6Negative", "35"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "35"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
     "ap-console": {
       "summary": "AP1 producers, BSP RAM consumer, 2000 FIFO requests, forced full queue and cleanup",
       "build": ["-TestApService", "ap-console"],
