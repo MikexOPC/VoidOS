@@ -1,6 +1,7 @@
 use crate::evidence::results::{Value, object, render};
 use crate::evidence::sha256::hash_file;
 use crate::scenario::copy::run_copy;
+use crate::scenario::ordinary::run_ordinary;
 use crate::scenario::process::run_process;
 use crate::vm::machine::{Limits, Paths, Plan};
 use std::io::IsTerminal;
@@ -16,6 +17,7 @@ pub struct Campaign<'a> {
     pub limits: Limits,
     pub negative: Option<u32>,
     pub process: bool,
+    pub ordinary: bool,
     pub boots: u32,
 }
 
@@ -60,7 +62,13 @@ pub fn run(campaign: &Campaign) -> Result<bool, String> {
     let mut results = Vec::new();
     for index in 1..=campaign.boots {
         let directory = campaign.out.join(format!("boot-{index}"));
-        let scenario = if campaign.process { run_process } else { run_copy };
+        let scenario = if campaign.ordinary {
+            run_ordinary
+        } else if campaign.process {
+            run_process
+        } else {
+            run_copy
+        };
         let outcome = scenario(
             &directory,
             campaign.image,
@@ -82,7 +90,7 @@ pub fn run(campaign: &Campaign) -> Result<bool, String> {
     let image = hash_file(campaign.image).map_err(|error| format!("Image hash: {error}"))?;
     let loader = hash_file(&campaign.paths.loader).map_err(|error| format!("Loader hash: {error}"))?;
     let report = object(vec![
-        ("Runner", Value::Text(if campaign.process { "k6-process" } else { RUNNER }.to_string())),
+        ("Runner", Value::Text(if campaign.ordinary { "k6-ordinary" } else if campaign.process { "k6-process" } else { RUNNER }.to_string())),
         ("Image", Value::Text(image)),
         ("Loader", Value::Text(loader)),
         ("Passed", Value::Number(passed)),

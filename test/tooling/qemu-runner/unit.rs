@@ -3,6 +3,7 @@ use qemu_runner_core::evidence::results::{Value, object, render};
 use qemu_runner_core::evidence::serial::{SerialLog, split_lines, strip_ansi};
 use qemu_runner_core::evidence::sha256::hash_bytes;
 use qemu_runner_core::evidence::trace;
+use qemu_runner_core::scenario::ordinary::parse_cr4;
 use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, arguments};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -251,4 +252,21 @@ fn cli_mirrors_campaign_arguments() {
         assert!(parsed(rejected).is_err(), "{rejected:?}");
     }
     assert_eq!(parsed(&["dump", "d"]), Ok(Mode::Dump(PathBuf::from("d"))));
+}
+
+// ====== ordinary_options_and_cr4 ======
+
+#[test]
+fn ordinary_options_and_cr4() {
+    let args = strings(&["--image", "i", "--ordinary", "--smp", "4", "--cpu", "max,-smap"]);
+    let Ok(Mode::Run(options)) = cli::parse(args) else { panic!("rejected") };
+    assert!(options.ordinary);
+    assert_eq!((options.smp, options.cpu), (4, "max,-smap"));
+    assert!(cli::parse(strings(&["--image", "i", "--ordinary", "--smp", "9"])).is_err());
+    assert!(cli::parse(strings(&["--image", "i", "--ordinary", "--cpu", "other"])).is_err());
+    assert!(cli::parse(strings(&["--image", "i", "--process-negative", "37"])).is_ok());
+    assert!(cli::parse(strings(&["--image", "i", "--process-negative", "38"])).is_err());
+    assert_eq!(parse_cr4(b"CR3=1 CR4=00300ee8 \n"), Some(0x300ee8));
+    assert_eq!(parse_cr4(b"CR4= x"), None);
+    assert_eq!(parse_cr4(b"RAX=1"), None);
 }

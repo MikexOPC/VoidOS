@@ -50,6 +50,7 @@ Assert-PlanParity 'ordinary' @{} @()
 Assert-PlanParity 'ordinary-explicit' @{TestApService = 'none'} @('-TestApService', 'none')
 Assert-PlanParity 'bsp-periodic' @{TestSchedulerPeriodic = $true} @('-TestSchedulerPeriodic')
 Assert-PlanParity 'ap-timer' @{TestApService = 'ap-timer'} @('-TestApService', 'ap-timer')
+Assert-PlanParity 'k6-process' @{TestK6Process = $true} @('-TestK6Process')
 
 Assert-PlanRejected 'conflicting-preemption' @{TestSchedulerPeriodic = $true; TestSchedulerPreemption = $true} `
     @('-TestSchedulerPeriodic', '-TestSchedulerPreemption') 'Choose one preemption diagnostic.'

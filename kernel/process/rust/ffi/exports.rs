@@ -83,3 +83,24 @@ pub unsafe extern "C" fn x86_process_console_filter(bytes: *mut u8, length: u64)
 pub extern "C" fn x86_process_state_next(state: u32, next: u32) -> u32 {
     u32::from(rules::state_next(state, next))
 }
+
+// ====== x86_process_budget_initial ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_process_budget_initial() -> u64 {
+    rules::BUDGET_TICKS
+}
+
+// ====== x86_process_budget_next ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_process_budget_next(remaining: u64) -> u64 {
+    rules::budget_next(remaining)
+}
+
+// ====== x86_process_write_allowed ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn x86_process_write_allowed(total: u64, length: u64) -> u32 {
+    u32::from(rules::write_allowed(total, length))
+}

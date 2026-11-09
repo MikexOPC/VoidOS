@@ -18,6 +18,9 @@
 #ifdef KERNEL_TEST_K6_PROCESS
 #include "test/kernel/process/integration/probe.h"
 #endif
+#ifdef KERNEL_USER_PROCESS
+#include "kernel/process/boot.h"
+#endif
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 finished;
 #ifdef KERNEL_EVENT_LOOP
@@ -292,6 +295,10 @@ cleanup:
         int lvt = x86_timer_confirm_write(mapping,0x320,timer.OriginalLvt);
         restored = divider && lvt;
     }
+#ifdef KERNEL_USER_PROCESS
+    if (result && stopped && detached && restored &&
+        !kernel_process_boot(window,&timer)) kernel_panic("PROCESS_BOOT_FAILED");
+#endif
 #ifdef KERNEL_PS2_INPUT
     if (result && stopped && detached && restored &&
         !x86_ps2_session_run(watchdog,&timer.Clock,directory)) {

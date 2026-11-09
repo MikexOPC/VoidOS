@@ -1,6 +1,6 @@
 option(
     'profile',
     type: 'combo',
-    choices: ['ordinary', 'periodic', 'ap-timer'],
+    choices: ['ordinary', 'periodic', 'ap-timer', 'k6-process'],
     value: 'ordinary',
 )

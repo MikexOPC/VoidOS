@@ -10,6 +10,13 @@ nasm = repo / 'kernel/build/tools/nasm-3.01/package/nasm-3.01/nasm.exe'
 
 rustc = find_program('rustc')
 
+# ====== user program target ======
+
+sysroot = run_command(rustc, '--print', 'sysroot', check: true).stdout().strip()
+if get_option('profile') in ['ordinary', 'k6-process'] and not fs.is_dir(sysroot / 'lib/rustlib/x86_64-unknown-none')
+    error('Target Rust x86_64-unknown-none assente: rustup target add x86_64-unknown-none')
+endif
+
 # ====== configure dependencies ======
 
 foreach path : [
@@ -56,6 +63,7 @@ plan = run_command(tool, 'plan', context, check: true).stdout().strip()
 
 objects = []
 ap_template = []
+user_programs = []
 link_hash = ''
 
 foreach line : plan.split('\n')
@@ -68,11 +76,13 @@ foreach line : plan.split('\n')
             output: fields[1],
             depfile: fields[2],
             command: [tool, 'run', fields],
-            depends: fields[0] == 'after-template' ? ap_template : [],
+            depends: fields[0] == 'after-template' ? ap_template + user_programs : [],
         )
         objects += step
         if fields[1] == 'ap-template.bin'
             ap_template = [step]
+        elif fields[1].endswith('.elf')
+            user_programs += step
         endif
     endif
 endforeach

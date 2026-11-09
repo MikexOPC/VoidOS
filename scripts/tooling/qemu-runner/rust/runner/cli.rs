@@ -1,7 +1,7 @@
 use crate::vm::machine::Inject;
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "qemu_runner --image FILE [--boots 1..10] (--copy | --copy-negative 20..25 | --process | --process-negative 31..35 | --process-disabled)\n\
+pub const USAGE: &str = "qemu_runner --image FILE [--boots 1..10] (--copy | --copy-negative 20..25 | --process | --process-negative 31..37 | --process-disabled | --ordinary | --ordinary-shell) [--cpu MODEL] [--smp 1..8]\n\
     \x20   [--root DIR] [--qemu-dir DIR] [--loader FILE] [--out DIR] [--inject drop|stop|quit]\n\
     qemu_runner dump BOOT_DIR\n\
     qemu_runner parity CAMPAIGN_DIR CAMPAIGN_DIR";
@@ -17,7 +17,9 @@ pub struct RunOptions {
     pub out: Option<PathBuf>,
     pub inject: Inject,
     pub process: bool,
+    pub ordinary: bool,
     pub cpu: &'static str,
+    pub smp: u32,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -77,7 +79,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String
         out: None,
         inject: Inject::None,
         process: false,
+        ordinary: false,
         cpu: "max",
+        smp: 1,
     };
     let mut selected = false;
     while let Some(argument) = arguments.next() {
@@ -96,7 +100,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String
             }
             "--process-negative" => {
                 let text = value_of(&mut arguments, "--process-negative")?;
-                options.negative = Some(number_in(&text, "--process-negative", 31..=35)?);
+                options.negative = Some(number_in(&text, "--process-negative", 31..=37)?);
                 options.process = true;
                 selected = true;
             }
@@ -106,6 +110,25 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String
                 options.cpu = "max,-smap";
                 selected = true;
             }
+            "--ordinary" => {
+                options.ordinary = true;
+                selected = true;
+            }
+            "--ordinary-shell" => {
+                options.ordinary = true;
+                options.negative = Some(crate::scenario::ordinary::SHELL_CASE);
+                selected = true;
+            }
+            "--cpu" => {
+                options.cpu = match value_of(&mut arguments, "--cpu")?.as_str() {
+                    "max" => "max",
+                    "max,-smap" => "max,-smap",
+                    "max,-smep" => "max,-smep",
+                    "max,-smep,-smap" => "max,-smep,-smap",
+                    other => return Err(format!("Unknown CPU model: {other}")),
+                };
+            }
+            "--smp" => options.smp = number_in(&value_of(&mut arguments, "--smp")?, "--smp", 1..=8)?,
             "--root" => options.root = Some(value_of(&mut arguments, "--root")?.into()),
             "--qemu-dir" => options.qemu_dir = value_of(&mut arguments, "--qemu-dir")?.into(),
             "--loader" => options.loader = Some(value_of(&mut arguments, "--loader")?.into()),

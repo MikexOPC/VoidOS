@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![allow(unexpected_cfgs)]
+#![allow(unexpected_cfgs, dead_code)]
 
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
@@ -143,12 +143,111 @@ extern "C" fn program_main() -> ! {
 #[unsafe(no_mangle)]
 extern "C" fn program_main() -> ! {
     touch();
-    let mut remaining = 0x800000u64;
-    while unsafe { (&raw const remaining).read_volatile() } != 0 {
-        remaining -= 1;
+    let difference: u64;
+    unsafe {
+        asm!(
+            "mov r12, {magic}",
+            "mov r13, r12",
+            "mov r14, r12",
+            "mov r15, r12",
+            "movq xmm0, r12",
+            "2:",
+            "pause",
+            "dec {count}",
+            "jnz 2b",
+            "movq {out}, xmm0",
+            "xor {out}, r12",
+            "xor r13, r12",
+            "xor r14, r12",
+            "xor r15, r12",
+            "or {out}, r13",
+            "or {out}, r14",
+            "or {out}, r15",
+            magic = in(reg) 0x1122334455667788u64,
+            count = inout(reg) 0x200000u64 => _,
+            out = out(reg) difference,
+            out("r12") _,
+            out("r13") _,
+            out("r14") _,
+            out("r15") _,
+        );
+    }
+    exit(if difference == 0 { 0 } else { 4 })
+}
+
+#[cfg(program_spin)]
+#[unsafe(no_mangle)]
+extern "C" fn program_main() -> ! {
+    touch();
+    loop {
         unsafe { asm!("pause") };
     }
-    exit(0)
+}
+
+#[cfg(program_syscall_spin)]
+#[unsafe(no_mangle)]
+extern "C" fn program_main() -> ! {
+    touch();
+    loop {
+        syscall(99, 0, 0);
+    }
+}
+
+#[cfg(program_flags_spin)]
+#[unsafe(no_mangle)]
+extern "C" fn program_main() -> ! {
+    touch();
+    loop {
+        unsafe { asm!("pushfq", "and qword ptr [rsp], -513", "popfq", "pause") };
+    }
+}
+
+#[cfg(program_flags_ac)]
+#[unsafe(no_mangle)]
+extern "C" fn program_main() -> ! {
+    touch();
+    unsafe { asm!("pushfq", "or qword ptr [rsp], 0x40000", "popfq") };
+    loop {
+        unsafe { asm!("pause") };
+    }
+}
+
+#[cfg(program_write_flood)]
+#[unsafe(no_mangle)]
+extern "C" fn program_main() -> ! {
+    static BLOCK: [u8; 256] = {
+        let mut block = [b'x'; 256];
+        block[255] = b'\n';
+        block
+    };
+    touch();
+    let mut accepted = 0u64;
+    let refused = loop {
+        let written = syscall(1, BLOCK.as_ptr() as u64, 256);
+        if written != 256 {
+            break written;
+        }
+        accepted += 1;
+    };
+    exit(if refused == u64::MAX - 3 && accepted == 16 { 0 } else { 3 })
+}
+
+#[cfg(program_spurious)]
+#[unsafe(no_mangle)]
+extern "C" fn program_main() -> ! {
+    touch();
+    let preserved: u64;
+    unsafe {
+        asm!(
+            "mov r12, {magic}",
+            "int 0xff",
+            "mov {out}, r12",
+            magic = in(reg) 0x0fedcba987654321u64,
+            out = lateout(reg) preserved,
+            out("r12") _,
+        );
+    }
+    exit(if preserved == 0x0fedcba987654321 { 0 } else { 2 })
 }
 
 // ====== panic ======

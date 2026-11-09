@@ -172,31 +172,49 @@
     "k6-protection": {
       "summary": "Ordinary boot on 4 vCPUs: SMEP and SMAP in CR4 of every CPU, user mode allowed",
       "build": [],
-      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4", "--cpu", "max"],
       "boots": 10, "smoke": 1, "heavy": true
     },
     "k6-protection-no-smap": {
       "summary": "CPU without SMAP: boot continues, user mode disabled",
       "build": [],
-      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max,-smap"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4", "--cpu", "max,-smap"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k6-protection-no-smep": {
       "summary": "CPU without SMEP: boot continues, user mode disabled",
       "build": [],
-      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max,-smep"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4", "--cpu", "max,-smep"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k6-protection-none": {
       "summary": "CPU without SMEP and SMAP: boot continues, user mode disabled",
       "build": [],
-      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max,-smep,-smap"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4", "--cpu", "max,-smep,-smap"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k6-process": {
       "summary": "Real ELF programs at ring 3: write, exit, user faults, bad pointers, isolation, IRQ, NMI in six root windows",
       "build": ["-TestK6Process"],
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "k6-process-smp": {
+      "summary": "The K6 process suite with three parked APs",
+      "build": ["-TestK6Process"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process", "--smp", "4"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-ordinary": {
+      "summary": "Ordinary kernel, one vCPU: the embedded program prints, exits and is reaped before KERNEL_READY",
+      "build": [],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary"],
+      "boots": 10, "smoke": 1, "heavy": true
+    },
+    "k6-shell": {
+      "summary": "Product shell profile: the embedded program runs and is reaped before the input session opens",
+      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-shell", "--smp", "4"],
       "boots": 10, "smoke": 1, "heavy": true
     },
     "k6-process-disabled": {
@@ -233,6 +251,18 @@
       "summary": "Expected rejection of the K6 process probe: no-swapgs",
       "build": ["-TestK6Process", "-TestK6Negative", "35"],
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "35"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-process-stray-irq": {
+      "summary": "Expected rejection of the K6 process probe: stray IRQ from CPL3",
+      "build": ["-TestK6Process", "-TestK6Negative", "36"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "36"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-process-stray-nmi": {
+      "summary": "Expected rejection of the K6 process probe: NMI during a process",
+      "build": ["-TestK6Process", "-TestK6Negative", "37"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "37"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "ap-console": {
@@ -457,6 +487,15 @@
       "smoke": 1,
       "heavy": true,
       "summary": "Rust plan, AP timer interrupts, PING, shootdown and verified timer stop"
+    },
+    "meson-k6-process": {
+      "build": [],
+      "meson": "k6-process",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process"],
+      "boots": 3,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "K6 process suite on an image compiled by Meson"
     },
     "meson-ordinary": {
       "build": [],

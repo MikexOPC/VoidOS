@@ -5,12 +5,17 @@ use std::process::ExitCode;
 const CATALOG: &str = include_str!("commands.tsv");
 const LAYOUT: &str = include_str!("../../../../../arch/x86/configs/layout.h");
 const UNSUPPORTED: &str = "Unsupported plan-only options.";
+const K6_PROGRAMS: [&str; 14] = [
+    "hello", "null", "readonly", "privileged", "kernel_jump", "bad_pointer", "bss",
+    "irq", "spin", "syscall_spin", "flags_spin", "flags_ac", "write_flood", "spurious",
+];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Profile {
     Ordinary,
     Periodic,
     ApTimer,
+    Process,
 }
 
 // ====== parse_profile ======
@@ -29,6 +34,9 @@ fn parse_profile(args: impl IntoIterator<Item = String>) -> Result<Profile, &'st
         }
     }
 
+    if options.contains("-testk6process") {
+        return if options.len() == 1 { Ok(Profile::Process) } else { Err("K6 process requires an isolated diagnostic profile.") };
+    }
     let periodic = options.contains("-testschedulerperiodic");
     let preemption = options.contains("-testschedulerpreemption");
     if periodic && preemption {
@@ -72,10 +80,16 @@ fn c_command(profile: Profile, source: &str, object: Option<&str>, optimize: boo
         ]);
     }
     command.push("/DKERNEL_AP_RUNTIME=1".into());
+    if profile == Profile::Ordinary {
+        command.push("/DKERNEL_USER_PROCESS=1".into());
+    }
     if profile == Profile::ApTimer {
         command.push("/DKERNEL_TEST_AP_SERVICE=7".into());
     }
     command.push("/DKERNEL_PANIC_RUNTIME=1".into());
+    if profile == Profile::Process {
+        command.push("/DKERNEL_TEST_K6_PROCESS=1".into());
+    }
     if !optimize {
         command.push("/Od".into());
     }
@@ -95,7 +109,25 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
         .lines()
         .filter(|line| !line.starts_with('#') && !line.is_empty())
     {
-        let fields: Vec<_> = line.split('\t').collect();
+        let mut fields: Vec<_> = line.split('\t').collect();
+        let wanted = match fields[0] {
+            "ordinary" => Some(profile == Profile::Ordinary),
+            "user" => Some(matches!(profile, Profile::Ordinary | Profile::Process)),
+            "process" | "each-program" => Some(profile == Profile::Process),
+            _ => None,
+        };
+        if wanted == Some(false) {
+            continue;
+        }
+        if fields[0] == "each-program" {
+            for program in K6_PROGRAMS {
+                commands.push(fields[1..].iter().map(|field| field.replace("{program}", program)).collect());
+            }
+            continue;
+        }
+        if wanted.is_some() {
+            fields.remove(0);
+        }
         let mut command = match fields.as_slice() {
             ["c", source] => c_command(profile, source, None, true),
             ["c", source, object] => c_command(profile, source, Some(object), true),
@@ -110,6 +142,9 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
                 command.len() - 1,
                 "/DKERNEL_TEST_SCHEDULER_PREEMPTION=1".into(),
             );
+        }
+        if profile == Profile::Process && fields.contains(&"/Fo{out}/k6-transition.obj") {
+            command.insert(command.len() - 2, "/DK6_DIAGNOSTICS=1".into());
         }
         if profile == Profile::ApTimer {
             if fields.contains(&"{out}/ipi-mailbox.obj") {
@@ -194,7 +229,7 @@ fn link_command(commands: &[Vec<String>]) -> Result<Vec<String>, &'static str> {
         if !outputs.insert(output) {
             return Err("Duplicate compiler output.");
         }
-        if !first.contains(&output) && output != "{out}/ap-template.bin" {
+        if !first.contains(&output) && output != "{out}/ap-template.bin" && !output.ends_with(".elf") {
             link.push(output.into());
         }
     }
