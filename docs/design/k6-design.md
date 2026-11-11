@@ -302,7 +302,7 @@ Come è fatto:
 | Stessa immagine | EXE ed ELF Meson contro `build.ps1 -UseRustPlan`, stessa cartella, undici profili | 0 byte diversi |
 | Conversione | `convert-image.ps1` contro Rust sullo stesso EXE, undici profili | byte uguali |
 | Gate del profilo | `-Dprofile=k5-copy`, negativi 30 e 38, negativo senza `-TestK6Process` | rifiutati |
-| Boot reali, profili K6 | `meson-k6-process` e i sette negativi, 1 boot ciascuno | 8/8 |
+| Boot reali, profili K6 | `k6-process`, i sette negativi, `-smp` e `-disabled` su immagini Meson, 1 boot ciascuno | 10/10 |
 | Boot reali | `meson-ordinary`, `meson-bsp-periodic`, `meson-ap-timer`, `meson-k6-protection` | 4/4 campagne, 20 boot |
 
 Invalidazione provata su un build già completo:
@@ -344,8 +344,10 @@ Limiti:
 - Il test di parità legge ciò che lo strumento ha registrato prima di lanciare ogni comando: dimostra
   cosa è stato chiesto ai compilatori. Che l'esito sia lo stesso lo dimostra il confronto delle immagini,
   fatto a mano e non ripetuto da `meson test`.
-- Le campagne `k6-process*` compilano ancora con `build.ps1`. Le copie `meson-k6-process*` provano
-  le immagini Meson, ma con 1 boot ciascuna, non con le campagne complete.
+- Le dieci campagne `k6-process*` ora compilano con Meson. Con le immagini identiche byte per byte, le
+  campagne complete fatte da K6-C e K6-D su `build.ps1` valgono per le stesse immagini; dopo lo
+  spostamento ogni campagna ha girato 1 boot, non le campagne complete. `build.ps1 -TestK6Process`
+  resta per `-UseRustPlan` e per il confronto.
 - Le campagne `rust-plan-*` e le complete da 10 boot di `k6-protection` non sono state rifatte per M2.
   I test host dello strumento sono 15, coverage non misurata.
 
