@@ -255,12 +255,12 @@ c	arch/x86/kernel/cpu/percpu/startup/installation/install.c
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	no-vectorize-loops	-C	no-vectorize-slp	-D	warnings	{repo}/arch/x86/kernel/cpu/percpu/startup/rust/protocol/api.rs	-o	{out}/ap-startup-protocol.obj
 c	arch/x86/kernel/cpu/percpu/startup/commit/commit.c
 c	arch/x86/kernel/cpu/percpu/startup/commit/native.c
-ordinary	rustc.exe	--edition=2024	-D	warnings	--crate-type=bin	--crate-name	user_init	--target	x86_64-unknown-none	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	-C	link-arg=-T{repo}/kernel/process/programs/link.ld	-C	link-arg=-zmax-page-size=4096	-C	link-arg=--build-id=none	-C	link-arg=--no-gc-sections	{repo}/kernel/process/programs/init.rs	-o	{out}/user-init.elf
+ordinary	rustc.exe	--edition=2024	-D	warnings	--crate-type=bin	--crate-name	user_init	--target	x86_64-unknown-none	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	-C	link-arg=-T{repo}/userspace/init/link.ld	-C	link-arg=-zmax-page-size=4096	-C	link-arg=--build-id=none	-C	link-arg=--no-gc-sections	{repo}/userspace/init/init.rs	-o	{out}/user-init.elf
 ordinary	nasm.exe	-f	win64	-Wall	-Werror	-I{out}/	-o	{out}/user-init-image.obj	{repo}/kernel/process/programs/image.asm
 ordinary	c	kernel/process/boot.c	k6-boot.obj
 user	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	k6_process	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	codegen-units=1	{repo}/kernel/process/rust/lib.rs	-o	{out}/k6-policy.obj
 user	c	arch/x86/kernel/process/process.c	k6-process.obj
 user	ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/k6-transition.obj	{repo}/arch/x86/kernel/process/assembly/entry/transition.asm
-each-program	rustc.exe	--edition=2024	-D	warnings	--crate-type=bin	--crate-name	k6_{program}	--target	x86_64-unknown-none	--cfg	program_{program}	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	-C	link-arg=-T{repo}/kernel/process/programs/link.ld	-C	link-arg=-zmax-page-size=4096	-C	link-arg=--build-id=none	-C	link-arg=--no-gc-sections	{repo}/test/kernel/process/programs/program.rs	-o	{out}/k6-{program}.elf
+each-program	rustc.exe	--edition=2024	-D	warnings	--crate-type=bin	--crate-name	k6_{program}	--target	x86_64-unknown-none	--cfg	program_{program}	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	-C	link-arg=-T{repo}/userspace/init/link.ld	-C	link-arg=-zmax-page-size=4096	-C	link-arg=--build-id=none	-C	link-arg=--no-gc-sections	{repo}/test/kernel/process/programs/program.rs	-o	{out}/k6-{program}.elf
 process	nasm.exe	-f	win64	-Wall	-Werror	-I{out}/	-o	{out}/k6-programs.obj	{repo}/test/kernel/process/integration/programs.asm
 process	c	test/kernel/process/integration/probe.c	k6-probe.obj
