@@ -502,8 +502,14 @@ Correzioni trovate dalla campagna e da cppcheck:
 - `meson-k6-protection` lanciava ancora il runner Python rimosso; ora usa quello Rust.
 
 **Campagne più rapide.** Immagini compilate una volta e riusate, link riproducibile, nessun blocco in
-coda, salto delle corse già passate: vedi `scripts/README.md`. WHPX scartato per ora: OVMF va in crash
-prima del loader con `-cpu max`, `host` e 4 vCPU. Un boot TCG ordinario dura circa 4 s.
+coda, salto delle corse già passate: vedi `scripts/README.md`.
+
+**Accelerazione hardware, misurata e non adottata.** WHPX con `-cpu max` fa andare in crash OVMF prima del
+loader; con `-accel whpx,kernel-irqchip=off` oppure `-cpu Skylake-Client` l'immagine ordinaria arriva a
+`KERNEL_READY` ed esegue `init`, con 1 e 4 vCPU. Il tempo però non cambia: circa 5,5-6,5 s per boot sia in
+TCG sia in WHPX, due ripetizioni per variante. Il boot aspetta tempo reale (calibrazione sul clock ACPI,
+scadenze del timer, watchdog HPET), non calcolo. KVM richiederebbe WSL, non installato, e per lo stesso
+motivo non darebbe guadagno. Con WHPX non c'è la traccia `-d int`.
 
 **Limiti.** Un processo alla volta sul BSP; stack kernel statico senza guardia; panic di un AP
 durante un processo non provato; budget dipendente dal timer LAPIC; `init` non gira nei profili
