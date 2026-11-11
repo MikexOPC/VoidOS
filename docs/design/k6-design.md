@@ -267,9 +267,10 @@ Limiti:
 
 ### M2, risultato
 
-Stato: Meson compila i tre profili del planner, `ordinary`, `periodic` e `ap-timer`, con gli stessi
-comandi e la stessa immagine a meno del timestamp del linker. Nessun percorso vecchio è stato
-rimosso: `build.ps1`, `convert-image.ps1` e il planner restano, e cancellarli è una decisione a parte.
+Stato: Meson compila gli undici profili del planner, `ordinary`, `periodic`, `ap-timer`,
+`k6-process` e i suoi negativi `k6-process-31` … `k6-process-37`, con gli stessi comandi e la stessa
+immagine byte per byte. Nessun percorso vecchio è stato rimosso: `build.ps1`, `convert-image.ps1` e
+il planner restano, e cancellarli è una decisione a parte.
 
 ```bash
 meson setup kernel/build/meson-kernel kernel --vsenv -Dprofile=ordinary
@@ -289,18 +290,19 @@ Come è fatto:
   continua a confrontarlo con `build.ps1 -PlanOnly`.
 - `scripts/tooling/kernel-build/` è lo strumento Rust, senza dipendenze esterne: risolve il piano,
   esegue i comandi, scrive i depfile, fa il link e converte PE in ELF.
-- `k6-protection` gira sull'immagine ordinaria, quindi è coperto. Il profilo `k6-process` di K6-C
-  no: lo vedi tra i limiti.
+- `k6-protection` gira sull'immagine ordinaria. `k6-process` è entrato nel planner e in Meson con
+  K6-D; i negativi da 31 a 37 sono stati aggiunti dopo, con `-TestK6Negative N` nel planner e
+  `-Dprofile=k6-process-N` in Meson.
 
 | Criterio | Prova | Esito |
 | --- | --- | --- |
-| Stessi sorgenti e flag | `meson test`: ogni comando eseguito confrontato col piano | 256, 256 e 257 comandi uguali |
+| Planner uguale a `build.ps1` | `parity.ps1` contro `-PlanOnly`, undici profili | tutti uguali; 4 rifiuti K6 in più, con lo stesso messaggio |
+| Stessi sorgenti e flag | `meson test`: ogni comando eseguito confrontato col piano | 262, 256, 257 e 275 comandi uguali |
 | Stesso ordine di link | stesso confronto, sul file di risposta del linker | uguale |
-| Stessa immagine | ELF Meson contro `build.ps1 -UseRustPlan`, stessa cartella | 1 byte su 376832, timestamp della debug directory |
-| Stesso EXE | stesso confronto | 3 o 4 byte: timestamp nell'header e nella debug directory, checksum PE |
-| Stessa mappa di link | confronto riga per riga | diversa solo la riga del timestamp |
-| Conversione | `convert-image.ps1` contro Rust sullo stesso EXE, tre profili | byte uguali |
-| Gate del profilo | `-Dprofile=k5-copy` e valori non previsti | rifiutati a configure |
+| Stessa immagine | EXE ed ELF Meson contro `build.ps1 -UseRustPlan`, stessa cartella, undici profili | 0 byte diversi |
+| Conversione | `convert-image.ps1` contro Rust sullo stesso EXE, undici profili | byte uguali |
+| Gate del profilo | `-Dprofile=k5-copy`, negativi 30 e 38, negativo senza `-TestK6Process` | rifiutati |
+| Boot reali, profili K6 | `meson-k6-process` e i sette negativi, 1 boot ciascuno | 8/8 |
 | Boot reali | `meson-ordinary`, `meson-bsp-periodic`, `meson-ap-timer`, `meson-k6-protection` | 4/4 campagne, 20 boot |
 
 Invalidazione provata su un build già completo:
@@ -334,16 +336,16 @@ nome di sezione `.data\0\x08`: `convert-image.ps1` lo accetta perché il confron
 quei caratteri, Rust lo rifiuta.
 
 Limiti:
-- M2 è completo solo per il kernel ordinario. Il profilo `-TestK6Process` di K6-C è arrivato dopo, è
-  in `build.ps1` e non nel planner, quindi Meson non lo compila: la voce "K6" di M2 resta aperta.
 - `k5-copy` e gli altri profili diagnostici usano ancora `build.ps1`, fino a M4. Il bootloader resta
   `arch/x86/boot/uefi/scripts/build.ps1`.
-- Il timestamp rende l'immagine diversa a ogni link: `parity` del runner QEMU va ancora usato sullo
-  stesso file immagine.
+- La prima misura di M2 trovava 1 byte diverso nell'ELF, il timestamp del linker. Dal commit
+  `7ce1bf7` il link usa `/Brepro` e le immagini coincidono del tutto.
 - NASM deve essere già presente in `kernel/build/tools/`; lo scarica solo `assembler.ps1 -Download`.
 - Il test di parità legge ciò che lo strumento ha registrato prima di lanciare ogni comando: dimostra
   cosa è stato chiesto ai compilatori. Che l'esito sia lo stesso lo dimostra il confronto delle immagini,
   fatto a mano e non ripetuto da `meson test`.
+- Le campagne `k6-process*` compilano ancora con `build.ps1`. Le copie `meson-k6-process*` provano
+  le immagini Meson, ma con 1 boot ciascuna, non con le campagne complete.
 - Le campagne `rust-plan-*` e le complete da 10 boot di `k6-protection` non sono state rifatte per M2.
   I test host dello strumento sono 15, coverage non misurata.
 

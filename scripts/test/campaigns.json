@@ -497,6 +497,69 @@
       "heavy": true,
       "summary": "K6 process suite on an image compiled by Meson"
     },
+    "meson-k6-process-kernel-fault": {
+      "build": [],
+      "meson": "k6-process-31",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "31"],
+      "boots": 3,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson: Expected rejection of the K6 process probe: kernel-fault"
+    },
+    "meson-k6-process-absent-slot": {
+      "build": [],
+      "meson": "k6-process-32",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "32"],
+      "boots": 3,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson: Expected rejection of the K6 process probe: absent-slot"
+    },
+    "meson-k6-process-root-changed": {
+      "build": [],
+      "meson": "k6-process-33",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "33"],
+      "boots": 3,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson: Expected rejection of the K6 process probe: root-changed"
+    },
+    "meson-k6-process-no-nmi": {
+      "build": [],
+      "meson": "k6-process-34",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "34"],
+      "boots": 3,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson: Expected rejection of the K6 process probe: no-nmi"
+    },
+    "meson-k6-process-no-swapgs": {
+      "build": [],
+      "meson": "k6-process-35",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "35"],
+      "boots": 3,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson: Expected rejection of the K6 process probe: no-swapgs"
+    },
+    "meson-k6-process-stray-irq": {
+      "build": [],
+      "meson": "k6-process-36",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "36"],
+      "boots": 3,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson: Expected rejection of the K6 process probe: stray IRQ from CPL3"
+    },
+    "meson-k6-process-stray-nmi": {
+      "build": [],
+      "meson": "k6-process-37",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--process-negative", "37"],
+      "boots": 3,
+      "smoke": 1,
+      "heavy": true,
+      "summary": "Meson: Expected rejection of the K6 process probe: NMI during a process"
+    },
     "meson-ordinary": {
       "build": [],
       "meson": "ordinary",

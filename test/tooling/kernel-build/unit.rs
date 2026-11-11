@@ -185,7 +185,13 @@ fn profile_gate() {
     assert_eq!(plan::profile_arguments("periodic").unwrap(), ["-TestSchedulerPeriodic"]);
     assert_eq!(plan::profile_arguments("ap-timer").unwrap(), ["-TestApService", "ap-timer"]);
     assert_eq!(plan::profile_arguments("k6-process").unwrap(), ["-TestK6Process"]);
-    for profile in ["", "ORDINARY", "k5-copy", "ping"] {
+    for case in 31..=37 {
+        assert_eq!(
+            plan::profile_arguments(&format!("k6-process-{case}")).unwrap(),
+            ["-TestK6Process".to_string(), "-TestK6Negative".into(), case.to_string()],
+        );
+    }
+    for profile in ["", "ORDINARY", "k5-copy", "ping", "k6-process-30", "k6-process-38", "k6-process-x", "k6-process-"] {
         assert!(plan::profile_arguments(profile).is_err());
     }
 }

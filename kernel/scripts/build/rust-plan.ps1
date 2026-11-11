@@ -31,6 +31,7 @@ $profileArguments = @()
 if ($TestSchedulerPeriodic) { $profileArguments += '-TestSchedulerPeriodic' }
 if ($TestApService -eq 'ap-timer') { $profileArguments += @('-TestApService','ap-timer') }
 if ($TestK6Process) { $profileArguments += '-TestK6Process' }
+if ($TestK6Negative) { $profileArguments += @('-TestK6Negative', [string]$TestK6Negative) }
 $plan = @(& $planner @profileArguments)
 if ($LASTEXITCODE -ne 0) { throw 'Rust build planning failed.' }
 

@@ -4,6 +4,7 @@ use std::process::ExitCode;
 
 const CATALOG: &str = include_str!("commands.tsv");
 const LAYOUT: &str = include_str!("../../../../../arch/x86/configs/layout.h");
+const K6_NEGATIVES: std::ops::RangeInclusive<u8> = 31..=37;
 const UNSUPPORTED: &str = "Unsupported plan-only options.";
 const K6_PROGRAMS: [&str; 14] = [
     "hello", "null", "readonly", "privileged", "kernel_jump", "bad_pointer", "bss",
@@ -15,7 +16,7 @@ enum Profile {
     Ordinary,
     Periodic,
     ApTimer,
-    Process,
+    Process(u8),
 }
 
 // ====== parse_profile ======
@@ -24,6 +25,7 @@ fn parse_profile(args: impl IntoIterator<Item = String>) -> Result<Profile, &'st
     let mut args = args.into_iter();
     let mut options = HashSet::new();
     let mut service = None;
+    let mut negative = None;
     while let Some(arg) = args.next() {
         let key = arg.to_ascii_lowercase();
         if !key.starts_with('-') || !options.insert(key.clone()) {
@@ -32,10 +34,24 @@ fn parse_profile(args: impl IntoIterator<Item = String>) -> Result<Profile, &'st
         if key == "-testapservice" {
             service = Some(args.next().ok_or(UNSUPPORTED)?.to_ascii_lowercase());
         }
+        if key == "-testk6negative" {
+            negative = Some(args.next().ok_or(UNSUPPORTED)?);
+        }
     }
 
     if options.contains("-testk6process") {
-        return if options.len() == 1 { Ok(Profile::Process) } else { Err("K6 process requires an isolated diagnostic profile.") };
+        let allowed = 1 + usize::from(negative.is_some());
+        if options.len() != allowed {
+            return Err("K6 process requires an isolated diagnostic profile.");
+        }
+        return match negative.map(|value| value.parse::<u8>()) {
+            None => Ok(Profile::Process(0)),
+            Some(Ok(case)) if K6_NEGATIVES.contains(&case) => Ok(Profile::Process(case)),
+            Some(_) => Err("Invalid K6 negative case."),
+        };
+    }
+    if negative.is_some() {
+        return Err("Invalid K6 negative case.");
     }
     let periodic = options.contains("-testschedulerperiodic");
     let preemption = options.contains("-testschedulerpreemption");
@@ -87,8 +103,11 @@ fn c_command(profile: Profile, source: &str, object: Option<&str>, optimize: boo
         command.push("/DKERNEL_TEST_AP_SERVICE=7".into());
     }
     command.push("/DKERNEL_PANIC_RUNTIME=1".into());
-    if profile == Profile::Process {
+    if let Profile::Process(case) = profile {
         command.push("/DKERNEL_TEST_K6_PROCESS=1".into());
+        if case != 0 {
+            command.push(format!("/DKERNEL_K6_NEGATIVE={case}"));
+        }
     }
     if !optimize {
         command.push("/Od".into());
@@ -112,8 +131,8 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
         let mut fields: Vec<_> = line.split('\t').collect();
         let wanted = match fields[0] {
             "ordinary" => Some(profile == Profile::Ordinary),
-            "user" => Some(matches!(profile, Profile::Ordinary | Profile::Process)),
-            "process" | "each-program" => Some(profile == Profile::Process),
+            "user" => Some(matches!(profile, Profile::Ordinary | Profile::Process(_))),
+            "process" | "each-program" => Some(matches!(profile, Profile::Process(_))),
             _ => None,
         };
         if wanted == Some(false) {
@@ -143,7 +162,7 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
                 "/DKERNEL_TEST_SCHEDULER_PREEMPTION=1".into(),
             );
         }
-        if profile == Profile::Process && fields.contains(&"/Fo{out}/k6-transition.obj") {
+        if matches!(profile, Profile::Process(_)) && fields.contains(&"/Fo{out}/k6-transition.obj") {
             command.insert(command.len() - 2, "/DK6_DIAGNOSTICS=1".into());
         }
         if profile == Profile::ApTimer {

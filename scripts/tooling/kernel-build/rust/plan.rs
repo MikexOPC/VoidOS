@@ -26,14 +26,22 @@ pub fn normal(path: &str) -> String {
 
 // ====== profile_arguments ======
 
-pub fn profile_arguments(profile: &str) -> Result<Vec<&'static str>, String> {
-    match profile {
-        "ordinary" => Ok(vec![]),
-        "periodic" => Ok(vec!["-TestSchedulerPeriodic"]),
-        "ap-timer" => Ok(vec!["-TestApService", "ap-timer"]),
-        "k6-process" => Ok(vec!["-TestK6Process"]),
-        _ => Err(format!("Unsupported Meson kernel profile: {profile}")),
-    }
+pub fn profile_arguments(profile: &str) -> Result<Vec<String>, String> {
+    let fixed: &[&str] = match profile {
+        "ordinary" => &[],
+        "periodic" => &["-TestSchedulerPeriodic"],
+        "ap-timer" => &["-TestApService", "ap-timer"],
+        "k6-process" => &["-TestK6Process"],
+        _ => {
+            let case = profile
+                .strip_prefix("k6-process-")
+                .and_then(|case| case.parse::<u8>().ok())
+                .filter(|case| (31..=37).contains(case))
+                .ok_or_else(|| format!("Unsupported Meson kernel profile: {profile}"))?;
+            return Ok(vec!["-TestK6Process".into(), "-TestK6Negative".into(), case.to_string()]);
+        }
+    };
+    Ok(fixed.iter().map(|argument| argument.to_string()).collect())
 }
 
 // ====== newest_toolchain ======

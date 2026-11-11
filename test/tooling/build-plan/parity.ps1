@@ -51,6 +51,9 @@ Assert-PlanParity 'ordinary-explicit' @{TestApService = 'none'} @('-TestApServic
 Assert-PlanParity 'bsp-periodic' @{TestSchedulerPeriodic = $true} @('-TestSchedulerPeriodic')
 Assert-PlanParity 'ap-timer' @{TestApService = 'ap-timer'} @('-TestApService', 'ap-timer')
 Assert-PlanParity 'k6-process' @{TestK6Process = $true} @('-TestK6Process')
+foreach ($case in 31..37) {
+    Assert-PlanParity "k6-process-$case" @{TestK6Process = $true; TestK6Negative = $case} @('-TestK6Process', '-TestK6Negative', [string]$case)
+}
 
 Assert-PlanRejected 'conflicting-preemption' @{TestSchedulerPeriodic = $true; TestSchedulerPreemption = $true} `
     @('-TestSchedulerPeriodic', '-TestSchedulerPreemption') 'Choose one preemption diagnostic.'
@@ -61,6 +64,13 @@ Assert-PlanRejected 'ap-timer-with-ps2' @{TestApService = 'ap-timer'; Ps2Input =
 Assert-PlanRejected 'unsupported-ap-ping' @{TestApService = 'ping'} `
     @('-TestApService', 'ping') 'Unsupported plan-only options.'
 Assert-PlanRejected 'unsupported-install' @{Install = $true} @('-Install') 'Unsupported plan-only options.'
+Assert-PlanRejected 'k6-negative-low' @{TestK6Process = $true; TestK6Negative = 30} `
+    @('-TestK6Process', '-TestK6Negative', '30') 'Invalid K6 negative case.'
+Assert-PlanRejected 'k6-negative-high' @{TestK6Process = $true; TestK6Negative = 38} `
+    @('-TestK6Process', '-TestK6Negative', '38') 'Invalid K6 negative case.'
+Assert-PlanRejected 'k6-negative-alone' @{TestK6Negative = 31} @('-TestK6Negative', '31') 'Invalid K6 negative case.'
+Assert-PlanRejected 'k6-negative-with-ps2' @{TestK6Process = $true; TestK6Negative = 31; Ps2Input = $true} `
+    @('-TestK6Process', '-TestK6Negative', '31', '-Ps2Input') 'K6 process requires an isolated diagnostic profile.'
 
 # ====== Assert-RustBuildRejected ======
 
