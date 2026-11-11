@@ -471,7 +471,7 @@ test del runner, clippy, cppcheck e `build-plan`.
 
 ## K6-D, risultato
 
-Il kernel ordinario esegue al boot un vero ELF, `kernel/process/programs/init.rs`, e lo raccoglie
+Il kernel ordinario esegue al boot un vero ELF, `userspace/init/init.rs`, e lo raccoglie
 prima di `KERNEL_READY`; nel profilo shell prima della sessione di input. Senza SMEP o SMAP scrive
 `PROCESS_DISABLED` e prosegue.
 

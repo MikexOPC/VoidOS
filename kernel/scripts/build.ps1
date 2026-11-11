@@ -442,7 +442,7 @@ if ($TestPs2Decoder -or $Ps2Input) {
 if ($ApRuntime -or $TestApTransition -in @('image','image-rollback','joint','joint-fail-before','joint-fail-after','joint-panic')) {
     . (Join-Path $project 'arch/x86/kernel/cpu/percpu/startup/installation/scripts/build.ps1')
 }
-$userPrograms = Join-Path $project 'kernel/process/programs'
+$userPrograms = Join-Path $project 'userspace/init'
 if (($UserProcess -or $TestK6Process) -and !$PlanOnly) {
     $userTarget = Join-Path (& $rustc --print sysroot) 'lib/rustlib/x86_64-unknown-none'
     if (!(Test-Path -LiteralPath $userTarget)) { throw 'Target Rust x86_64-unknown-none assente: rustup target add x86_64-unknown-none' }
@@ -451,7 +451,7 @@ if ($UserProcess) {
     Invoke-Compiler $rustc @('--edition=2024','-D','warnings','--crate-type=bin','--crate-name','user_init','--target','x86_64-unknown-none',
         '-C','panic=abort','-C','opt-level=s','-C','relocation-model=static',"-C","link-arg=-T$userPrograms/link.ld",
         '-C','link-arg=-zmax-page-size=4096','-C','link-arg=--build-id=none','-C','link-arg=--no-gc-sections',"$userPrograms/init.rs",'-o',"$output/user-init.elf")
-    Invoke-Compiler $tool.Nasm @('-f','win64','-Wall','-Werror',"-I$output/",'-o',"$output/user-init-image.obj","$userPrograms/image.asm")
+    Invoke-Compiler $tool.Nasm @('-f','win64','-Wall','-Werror',"-I$output/",'-o',"$output/user-init-image.obj","$project/kernel/process/programs/image.asm")
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'kernel/process/boot.c'),("/Fo$output/k6-boot.obj")))
     $objects += @("$output/user-init-image.obj","$output/k6-boot.obj")
 }

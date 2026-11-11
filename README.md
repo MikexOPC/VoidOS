@@ -21,8 +21,10 @@ grafica.
 
 La shell ordinaria può eseguire un task del kernel alla volta sul primo
 core secondario (AP1) con `ap <n>`. I driver restano sul BSP. I profili
-diagnostici verificano anche la preemption su più core. Userspace, syscall
-e filesystem del kernel restano obiettivi futuri.
+diagnostici verificano anche la preemption su più core. Al boot il kernel
+può eseguire un primo programma Rust in ring 3. Sono disponibili syscall
+di base e una prova IPC tra due processi utente. I servizi utente
+permanenti e il filesystem restano obiettivi futuri.
 
 Per le prove e i limiti attuali, consulta lo [stato del progetto](docs/status.md).
 Le istruzioni per compilare ed eseguire i test sono nella [guida agli script](scripts/README.md).
@@ -35,6 +37,8 @@ Le istruzioni per compilare ed eseguire i test sono nella [guida agli script](sc
 |---|---|
 | [`arch/`](arch/) | Codice specifico della piattaforma. `arch/x86/` contiene bootloader UEFI, backend del kernel, paging e driver x86. |
 | [`kernel/`](kernel/) | Servizi del kernel, memoria, scheduler, console, shell e driver comuni. |
+| [`userspace/`](userspace/) | Programma iniziale e struttura per librerie e servizi utente. |
+| [`bridge/`](bridge/) | Progetto dell'API e del servizio che media le richieste delle applicazioni. |
 | [`lib/`](lib/) | Librerie e funzioni riutilizzabili. |
 | [`test/`](test/) | Test C, Rust e di integrazione, organizzati secondo i moduli sorgenti. |
 | [`scripts/`](scripts/) | Strumenti comuni di compilazione, test e gestione delle campagne QEMU. |
