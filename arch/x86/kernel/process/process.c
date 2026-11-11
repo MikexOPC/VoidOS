@@ -5,6 +5,10 @@
 #include "arch/x86/kernel/descriptors/segments.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
+#ifdef KERNEL_TEST_K6_PROCESS
+#include "arch/x86/configs/layout.h"
+#include "arch/x86/kernel/interrupts/apic/icr/icr.h"
+#endif
 #include "arch/x86/kernel/timer/lapic/runtime/runtime.h"
 #include "arch/x86/mm/window/access.h"
 #include "kernel/diagnostics/log.h"
@@ -85,6 +89,7 @@ typedef struct { BOOT_U64 Entry, Count; struct { BOOT_U64 Virt, FileOffset, File
 extern const BOOT_U64 x86_process_fault_targets[32];
 extern const unsigned char x86_process_copy_first[], x86_process_copy_last[], x86_process_copy_fixup[];
 #ifdef KERNEL_TEST_K6_PROCESS
+#define DEVICE_PROBE_VECTOR 0x42U
 typedef struct { BOOT_U64 Storage[142]; } IPC_CHANNEL;
 BOOT_U64 x86_ipc_open(IPC_CHANNEL *channel);
 void x86_ipc_close(IPC_CHANNEL *channel);
@@ -94,6 +99,7 @@ BOOT_U64 x86_ipc_send(IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, con
 BOOT_U64 x86_ipc_peek(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, unsigned char *bytes, BOOT_U64 capacity);
 BOOT_U64 x86_ipc_consume(IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle);
 void x86_process_resume(const BOOT_U64 *frame);
+void x86_process_device_irq(void);
 #define WINDOW_LABELS(number) \
     extern const unsigned char x86_process_window_##number##_first[], x86_process_window_##number##_last[]
 WINDOW_LABELS(1); WINDOW_LABELS(2); WINDOW_LABELS(3); WINDOW_LABELS(4); WINDOW_LABELS(5); WINDOW_LABELS(6);
@@ -151,6 +157,8 @@ static BOOT_U64 *yield_frame;
 static BOOT_U32 yielded;
 static IPC_CHANNEL ipc_channel;
 static BOOT_U64 ipc_endpoint;
+static X86_IRQ_TOKEN device_probe_token;
+static BOOT_U32 device_probe_armed, device_probe_delivered;
 #endif
 static X86_PROCESS_RESULT *current;
 static volatile BOOT_U64 window_pointer, window_length, window_write;
@@ -418,6 +426,29 @@ static void turn_finish(X86_PROCESS_RESULT *result)
     current = 0;
 }
 
+#ifdef KERNEL_TEST_K6_PROCESS
+// ====== device_probe_send ======
+
+static void device_probe_send(void)
+{
+    const X86_LAPIC_MAPPING *mapping = owner_timer->Mapping;
+    BOOT_U32 value;
+    // Intel SDM 325462-089 §12.6.1: ICR low +300h, busy bit 12, vector bits 7:0,
+    // fixed edge (delivery 10:8 and trigger 15 zero), assert bit 14, self shorthand 19:18 = 01.
+    volatile BOOT_U32 *icr = (volatile BOOT_U32 *)(X86_LAPIC_VIRTUAL + X86_ICR_LOW);
+    if (!x86_lapic_validate(mapping) || (*icr & X86_ICR_PENDING))
+        die("PROCESS_DEVICE_IRQ_ARM_FAILED");
+    *icr = (1U << 18) | (1U << 14) | DEVICE_PROBE_VECTOR;
+    // Intel SDM §12.8.4: IRR bank +200h + 16*(vector/32), bit vector%32.
+    for (BOOT_U32 attempt = 0; attempt < DRAIN_ATTEMPTS; ++attempt) {
+        if (!x86_lapic_native_read(0x200U + 16U * (DEVICE_PROBE_VECTOR / 32U), &value)) break;
+        if (value & (1U << (DEVICE_PROBE_VECTOR % 32U))) return;
+        _mm_pause();
+    }
+    die("PROCESS_DEVICE_IRQ_ARM_FAILED");
+}
+#endif
+
 // ====== x86_process_run ======
 
 int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
@@ -444,6 +475,9 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
     k6_exit_kind = 0;
     advance(3);
     timer_start();
+#ifdef KERNEL_TEST_K6_PROCESS
+    if (device_probe_armed) device_probe_send();
+#endif
     x86_process_enter(plan.Entry, STACK_TOP, 0);
     advance(4);
     turn_finish(result);
@@ -606,6 +640,66 @@ int x86_process_irq_service(BOOT_U64 *frame)
     if (!x86_timer_write(owner_timer->Mapping, 0x380, owner_timer->Reload)) die("PROCESS_TIMER_FAILED");
     return 1;
 }
+
+#ifdef KERNEL_TEST_K6_PROCESS
+// ====== device_probe_quiet ======
+
+static int device_probe_quiet(void)
+{
+    return !device_probe_armed && x86_lapic_idle(owner_timer->Mapping);
+}
+
+// ====== device_probe_handle ======
+
+static int device_probe_handle(void)
+{
+    BOOT_U32 value;
+    // Intel SDM §§12.8.4-12.8.5: verify the ISR bank, then issue one EOI.
+    const BOOT_U32 offset = 0x100U + 16U * (DEVICE_PROBE_VECTOR / 32U);
+    const BOOT_U32 bit = 1U << (DEVICE_PROBE_VECTOR % 32U);
+    if (!device_probe_armed || device_probe_delivered ||
+        !x86_lapic_native_read(offset, &value) || value != bit ||
+        !x86_lapic_native_eoi() || !x86_lapic_native_read(offset, &value) || value) return 0;
+    device_probe_delivered = 1;
+    return 1;
+}
+
+// ====== x86_process_device_irq_service ======
+
+int x86_process_device_irq_service(BOOT_U64 *frame)
+{
+    if (!current || (BOOT_U64)&IRET(frame, 0) != k6_stack_top - 40)
+        die("PROCESS_DEVICE_IRQ_INVALID");
+    if (!x86_irq_registry_deliver(x86_irq_registry(), DEVICE_PROBE_VECTOR))
+        die("PROCESS_DEVICE_IRQ_INVALID");
+    if (!x86_process_irq_frame_valid(IRET(frame, 0), IRET(frame, 1), IRET(frame, 2), IRET(frame, 3), IRET(frame, 4))) {
+        current->Kind = X86_PROCESS_BAD_FRAME;
+        return 2;
+    }
+    return budget_expired(IRET(frame, 0)) ? 2 : 1;
+}
+
+// ====== x86_process_device_irq_check ======
+
+int x86_process_device_irq_check(const X86_PROCESS_IMAGE *image)
+{
+    X86_PROCESS_RESULT result;
+    X86_IRQ_REGISTRY *registry = x86_irq_registry();
+    if (!opened || current || !registry ||
+        !x86_irq_registry_bind(registry, DEVICE_PROBE_VECTOR, device_probe_handle,
+            device_probe_quiet, &device_probe_token)) return 0;
+    gate(DEVICE_PROBE_VECTOR, (BOOT_U64)x86_process_device_irq, 0);
+    device_probe_delivered = 0;
+    device_probe_armed = 1;
+    int ran = x86_process_run(image, &result);
+    device_probe_armed = 0;
+    BOOT_U64 deliveries = x86_irq_registry_deliveries(registry, &device_probe_token);
+    if (!x86_irq_registry_unbind(registry, &device_probe_token)) die("PROCESS_DEVICE_IRQ_RETAINED");
+    gate(DEVICE_PROBE_VECTOR, (BOOT_U64)x86_process_stray, 3);
+    return ran && device_probe_delivered == 1 && deliveries == 1 &&
+        result.Kind == X86_PROCESS_EXIT && result.Code == 0 && result.Writes == 1;
+}
+#endif
 
 // ====== x86_process_irq_drained ======
 

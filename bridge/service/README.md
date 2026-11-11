@@ -55,6 +55,16 @@ seL4. VoidOS conserva il proprio formato e il proprio trasporto.
 1. Diagnostico IRQ a CPL3. Iniettare input durante una finestra utente
    verificata, osservare consegna ed EOI e verificare la ripresa utente.
    Coprire anche timer, NMI, fault e ripristino dello stato del BSP.
+   Il primo test accoda sul BSP un IPI LAPIC `0x42` con IF=0. Verifica
+   il frame CPL3, una sola consegna nel registro ordinario, un solo
+   EOI, la ripresa del programma e la rimozione della sottoscrizione.
+   La prova PS/2 richiede una verifica separata. Tastiera e timer K6
+   usano oggi entrambi il vettore `0x41`. Va verificata anche la
+   consegna a CPL0 durante il drenaggio del timer, quando il runtime
+   può riabilitare temporaneamente gli interrupt.
+   [Intel SDM 325462-089, vol. 3A, §§7.14 e 12.6–12.8](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf)
+   QEMU ha confermato l'IPI in 13 boot. Sono passati anche 3 casi
+   di IRQ inatteso e 5 boot ordinari.
 2. Bridge residente. Verificare più richieste sullo stesso processo,
    nessun polling in attesa e risveglio anche quando pubblicazione e
    attesa si sovrappongono. Provare timeout, fault, chiusura e ripristino

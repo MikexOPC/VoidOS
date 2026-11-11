@@ -26,6 +26,9 @@ EXTERN k6_fx_saved:BYTE
 EXTERN x86_process_syscall_dispatch:PROC
 EXTERN x86_process_irq_service:PROC
 EXTERN x86_process_irq_drained:PROC
+IFDEF K6_DIAGNOSTICS
+EXTERN x86_process_device_irq_service:PROC
+ENDIF
 EXTERN x86_process_copy_recover:PROC
 EXTERN x86_process_kernel_fatal:PROC
 
@@ -265,15 +268,11 @@ x86_process_leave PROC
     ret
 x86_process_leave ENDP
 
-; ====== IRQ del timer da CPL3 sullo stack RSP0 ======
+; ====== ingresso e ritorno comuni per IRQ da CPL3 ======
 
-; Intel SDM 3A §7.14.4: con IST zero e cambio di privilegio RSP viene da TSS.RSP0.
-; Intel SDM 3A §7.12: la consegna non azzera AC, quindi CLAC prima di ogni altro passo.
-PUBLIC x86_process_irq
-x86_process_irq PROC
-    clac
-    test BYTE PTR [rsp+8], 3
-    jz irq_kernel
+; Intel SDM 3A §§7.14.2-7.14.4: con IST=0 il frame CPL3 usa TSS.RSP0.
+; IRETQ ripristina RIP, CS, RFLAGS, RSP e SS dal frame.
+K6_USER_IRQ MACRO service
     swapgs
     lfence
     K6_PUSH_GPR
@@ -290,7 +289,7 @@ x86_process_irq PROC
     mov rbx, rsp
     mov rcx, rsp
     sub rsp, 32
-    call x86_process_irq_service
+    call service
     mov rsp, rbx
     cmp eax, 2
     je x86_process_leave
@@ -303,6 +302,18 @@ x86_process_irq PROC
     swapgs
     K6_POP_GPR
     iretq
+ENDM
+
+; ====== IRQ del timer da CPL3 sullo stack RSP0 ======
+
+; Intel SDM 3A §7.12: CLAC rimuove AC prima di usare la memoria.
+; Il CS salvato è a RSP+8 e RPL occupa i bit 1:0.
+PUBLIC x86_process_irq
+x86_process_irq PROC
+    clac
+    test BYTE PTR [rsp+8], 3
+    jz irq_kernel
+    K6_USER_IRQ x86_process_irq_service
 irq_kernel:
     cmp QWORD PTR [k6_drain], 1
     jne irq_kernel_stray
@@ -330,6 +341,18 @@ irq_kernel_stray:
     push 0ffffh
     jmp fault_fatal
 x86_process_irq ENDP
+
+IFDEF K6_DIAGNOSTICS
+; ====== IRQ diagnostico registrato da CPL3 ======
+
+PUBLIC x86_process_device_irq
+x86_process_device_irq PROC
+    clac
+    test BYTE PTR [rsp+8], 3
+    jz x86_process_stray
+    K6_USER_IRQ x86_process_device_irq_service
+x86_process_device_irq ENDP
+ENDIF
 
 ; ====== vettori esterni inattesi ======
 

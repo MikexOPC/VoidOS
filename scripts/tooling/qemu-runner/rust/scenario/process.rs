@@ -43,6 +43,10 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
     if !log.before("KERNEL_BRIDGE_STATUS_OK", "KERNEL_K6_PROCESS_OK") {
         return Err("Missing bridge status exchange, rejection or peer closure".to_string());
     }
+    if log.count("KERNEL_K6_EXTERNAL_IRQ_OK", Some("OK")) != 1 ||
+        !log.before("KERNEL_K6_EXTERNAL_IRQ_OK", "KERNEL_K6_PROCESS_OK") {
+        return Err("Missing CPL3 external interrupt delivery and return".to_string());
+    }
     if log.numbers("K6_FAULT_VECTOR") != [14, 14, 13, 14] || log.numbers("K6_FAULT_ERROR") != [4, 7, 0, 0x15] {
         return Err("Unexpected reported user faults".to_string());
     }
@@ -70,6 +74,7 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
         ("Nmis", Value::Number(WINDOWS)),
         ("Hello", Value::Bool(true)),
         ("BridgeStatus", Value::Bool(true)),
+        ("ExternalIrq", Value::Bool(true)),
     ]))
 }
 
