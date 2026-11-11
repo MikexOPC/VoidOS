@@ -128,13 +128,13 @@ foreach ($name in $selected) {
     if ($null -eq $entry.build) { continue }
     $key = Get-BuildKey $entry
     if ($images.Contains($key)) { continue }
-    $directory = Join-Path $cacheRoot ('image-' + (Get-TextHash ($sources + "`n" + $key)).Substring(0, 24))
-    $images[$key] = [pscustomobject]@{ Name = $name; Directory = $directory; Image = (Join-Path $directory 'kernel.elf'); Process = $null; Ready = $false }
+    $digest = Get-TextHash ($sources + "`n" + $key)
+    $directory = Join-Path $output $name
+    $images[$key] = [pscustomobject]@{ Name = $name; Directory = $directory; Image = (Join-Path $cacheRoot "elf-$digest.elf"); Process = $null; Ready = $false }
 }
 $building = @()
 foreach ($job in $images.Values) {
     if (Test-Path -LiteralPath $job.Image) { $job.Ready = $true; continue }
-    if (Test-Path -LiteralPath $job.Directory) { Remove-Item -Recurse -Force -LiteralPath $job.Directory }
     while (@($building | Where-Object { !$_.Process.HasExited }).Count -ge [Math]::Max(1, $BuildParallel)) { Start-Sleep -Milliseconds 300 }
     Write-Output "[ INFO ] Build $($job.Name)"
     $job.Process = Start-Campaign @('-Name', $job.Name, '-Count', '1', '-Output', $output, '-BuildOnly', '-Images', $job.Directory)
@@ -142,8 +142,19 @@ foreach ($job in $images.Values) {
 }
 foreach ($job in $building) {
     $job.Process.WaitForExit()
-    $job.Ready = $job.Process.ExitCode -eq 0 -and (Test-Path -LiteralPath $job.Image)
-    if (!$job.Ready -and (Test-Path -LiteralPath $job.Directory)) { Remove-Item -Recurse -Force -LiteralPath $job.Directory }
+    $builtImage = Join-Path $job.Directory 'kernel.elf'
+    if ($job.Process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $builtImage -PathType Leaf)) { continue }
+    $pendingImage = Join-Path $cacheRoot ("elf-" + [guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        [IO.File]::Copy($builtImage, $pendingImage)
+        try { [IO.File]::Move($pendingImage, $job.Image) }
+        catch [IO.IOException] {
+            if (!(Test-Path -LiteralPath $job.Image -PathType Leaf)) { throw }
+        }
+        $job.Ready = $true
+    } finally {
+        [IO.File]::Delete($pendingImage)
+    }
 }
 $builtCount = $building.Count
 Write-Output "[ INFO ] Images: $($images.Count) distinct, $builtCount built, $($images.Count - $builtCount) reused"

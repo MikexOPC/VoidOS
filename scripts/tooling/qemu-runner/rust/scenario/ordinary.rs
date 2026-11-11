@@ -24,13 +24,24 @@ fn expected_protection(cpu: &str) -> u64 {
 
 // ====== parse_cr4 ======
 
-pub fn parse_cr4(bytes: &[u8]) -> Option<u64> {
-    let start = bytes.windows(4).position(|window| window == b"CR4=")? + 4;
-    let digits: Vec<u8> = bytes[start..].iter().copied().take_while(u8::is_ascii_hexdigit).collect();
-    if digits.is_empty() {
-        return None;
+pub fn parse_cr4(bytes: &[u8], cpu: u32) -> Option<u64> {
+    let mut matching_cpu = false;
+    for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+        let Some(line) = line.strip_suffix(b"\n") else {
+            break;
+        };
+        let line = line.trim_ascii();
+        if let Some(index) = line.strip_prefix(b"CPU#") {
+            matching_cpu = std::str::from_utf8(index).ok().and_then(|index| index.parse::<u32>().ok()) == Some(cpu);
+        } else if matching_cpu {
+            for field in line.split(|byte| byte.is_ascii_whitespace()) {
+                if let Some(value) = field.strip_prefix(b"CR4=") {
+                    return u64::from_str_radix(std::str::from_utf8(value).ok()?, 16).ok();
+                }
+            }
+        }
     }
-    u64::from_str_radix(std::str::from_utf8(&digits).ok()?, 16).ok()
+    None
 }
 
 // ====== read_cr4 ======
@@ -42,7 +53,7 @@ fn read_cr4(vm: &mut Vm, cpu: u32) -> Result<u64, String> {
     let deadline = Instant::now() + CR4_DEADLINE;
     while Instant::now() < deadline {
         let bytes = vm.monitor_bytes()?;
-        if let Some(value) = bytes.get(offset..).and_then(parse_cr4) {
+        if let Some(value) = bytes.get(offset..).and_then(|bytes| parse_cr4(bytes, cpu)) {
             return Ok(value);
         }
         std::thread::sleep(CR4_POLL);

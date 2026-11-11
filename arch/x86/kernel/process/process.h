@@ -28,6 +28,7 @@ BOOT_U64 x86_process_window_first(BOOT_U64 window);
 BOOT_U64 x86_process_window_last(BOOT_U64 window);
 BOOT_U64 x86_process_copy_instruction(void);
 BOOT_U64 x86_process_budget_ticks(void);
+void x86_process_delay_next_syscall(void);
 int x86_process_drain_check(void);
 void x86_process_spurious_check(void);
 #endif
