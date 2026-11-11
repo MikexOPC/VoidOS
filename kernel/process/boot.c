@@ -4,13 +4,13 @@
 #include "kernel/diagnostics/log.h"
 
 extern const unsigned char kernel_user_init[];
-extern const unsigned char kernel_user_init_end[];
+extern const BOOT_U64 kernel_user_init_length;
 
 // ====== kernel_process_boot ======
 
 int kernel_process_boot(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
 {
-    X86_PROCESS_IMAGE image = {kernel_user_init, (BOOT_U64)(kernel_user_init_end - kernel_user_init)};
+    X86_PROCESS_IMAGE image = {kernel_user_init, kernel_user_init_length};
     X86_PROCESS_RESULT result;
     if (!x86_user_mode_allowed()) return kernel_log(2, "PROCESS_DISABLED");
     if (!x86_process_open(window, timer)) return 0;

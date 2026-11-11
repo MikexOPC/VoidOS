@@ -506,7 +506,7 @@ if ($TestK5Privilege -or $TestK5Syscall -or $TestK5Copy -or $TestApService -eq '
 }
 # Windows limits a command line to 32767 characters: the object list goes through a response file.
 $linkArguments = @('/nologo','/machine:x64','/subsystem:native',
-    '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed',('/base:0x' + $OsImageBase.ToString('X')),
+    '/entry:kernel_entry','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed','/Brepro',('/base:0x' + $OsImageBase.ToString('X')),
     ('/out:' + $output + '/kernel.exe'),('/map:' + $output + '/kernel.map'),($output + '/io.obj'),($output + '/validation.obj'),($output + '/window-layout.obj'),
     ($output + '/object-bounds.obj')) + $objects
 $linkResponse = Join-Path $output 'kernel.link.rsp'

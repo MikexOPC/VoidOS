@@ -46,6 +46,14 @@ compila le immagini e lancia i runner indicati nel registro. `-Smoke`
 esegue un boot per campagna; è il controllo previsto prima dei commit
 che toccano il kernel, non una campagna completa di affidabilità.
 
+`qemu.ps1` compila prima ogni immagine distinta, quattro alla volta
+(`-BuildParallel`), e la conserva in `kernel/build/campaign-cache` finché i
+sorgenti fuori da `docs/` non cambiano. Il link usa `/Brepro`, quindi stessi
+sorgenti danno la stessa immagine. Una campagna viene saltata se è già
+passata con la stessa immagine, lo stesso runner, loader, OVMF, QEMU, voce
+del registro e numero di boot; `-Fresh` riesegue tutto. Le campagne partono
+appena i limiti lo permettono, senza aspettare quelle davanti in coda.
+
 La suite `build-plan` compila lo strumento host Rust e confronta argomenti
 e ordine dei comandi con `kernel/scripts/build.ps1 -PlanOnly`. Copre il
 boot ordinario, il timer periodico BSP e il timer AP. Il confronto salva
