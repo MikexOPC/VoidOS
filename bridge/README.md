@@ -29,6 +29,5 @@ Per ripetere il collaudo da PowerShell 7, dalla radice del progetto:
 ./scripts/test/qemu.ps1 -Campaign 'k6-process,k6-process-smp' -Fresh
 ```
 
-Il prossimo passo è collegare `bridge status` alla shell ordinaria.
-Serve un client nel kernel e un dispatcher in grado di riprendere il
-servizio ring 3 mentre console e input continuano a ricevere IRQ.
+Il [progetto del servizio persistente](service/README.md#servizio-persistente)
+descrive come collegare `bridge status` alla shell ordinaria.
