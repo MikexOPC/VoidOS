@@ -6,10 +6,10 @@ const CATALOG: &str = include_str!("commands.tsv");
 const LAYOUT: &str = include_str!("../../../../../arch/x86/configs/layout.h");
 const K6_NEGATIVES: std::ops::RangeInclusive<u8> = 31..=37;
 const UNSUPPORTED: &str = "Unsupported plan-only options.";
-const K6_PROGRAMS: [&str; 18] = [
+const K6_PROGRAMS: &[&str] = &[
     "hello", "null", "readonly", "privileged", "kernel_jump", "bad_pointer", "bss",
     "irq", "spin", "syscall_spin", "flags_spin", "flags_ac", "write_flood", "spurious", "yield_a", "yield_b",
-    "ipc_client", "ipc_server",
+    "ipc_client", "ipc_server", "bridge_client", "bridge_server",
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]

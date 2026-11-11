@@ -5,6 +5,16 @@
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 
+#[cfg(program_bridge_server)]
+#[path = "../../../../bridge/api/rust/status/protocol.rs"]
+mod bridge_protocol;
+#[cfg(program_bridge_server)]
+#[path = "../../../../bridge/service/rust/status/dispatch.rs"]
+mod bridge_service;
+#[cfg(any(program_bridge_client, program_bridge_server))]
+#[path = "../../../bridge/rust/status/payload.rs"]
+mod bridge_payload;
+
 global_asm!(
     ".section .text._start",
     ".global _start",
@@ -288,7 +298,7 @@ extern "C" fn program_main() -> ! {
 
 // ====== ipc ======
 
-#[cfg(any(program_ipc_client, program_ipc_server))]
+#[cfg(any(program_ipc_client, program_ipc_server, program_bridge_client, program_bridge_server))]
 fn ipc(number: u64, handle: u64, pointer: u64, length: u64) -> i64 {
     let result: u64;
     unsafe {

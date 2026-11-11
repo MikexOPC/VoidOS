@@ -34,3 +34,5 @@ PROGRAM yield_a
 PROGRAM yield_b
 PROGRAM ipc_client
 PROGRAM ipc_server
+PROGRAM bridge_client
+PROGRAM bridge_server
