@@ -9,6 +9,7 @@ PROGRAM(kernel_jump); PROGRAM(bad_pointer); PROGRAM(bss); PROGRAM(irq);
 PROGRAM(spin); PROGRAM(syscall_spin); PROGRAM(flags_spin); PROGRAM(flags_ac);
 PROGRAM(write_flood); PROGRAM(spurious);
 PROGRAM(yield_a); PROGRAM(yield_b);
+PROGRAM(ipc_client); PROGRAM(ipc_server);
 #define IMAGE(name) {k6_program_##name, 0}
 
 extern volatile BOOT_U64 k6_negative;
@@ -80,12 +81,32 @@ static int yield_pair(void)
     };
     X86_PROCESS_RESULT results[2];
     BOOT_U32 yields[2];
-    if (x86_process_pair(images, results, yields)) return 0;
+    if (x86_process_pair(images, results, yields, 0)) return 0;
     images[1] = (X86_PROCESS_IMAGE){k6_program_yield_b, k6_program_yield_b_length};
-    return x86_process_pair(images, results, yields) && yields[0] == 2 && yields[1] == 2 &&
+    return x86_process_pair(images, results, yields, 0) && yields[0] == 2 && yields[1] == 2 &&
         results[0].Kind == X86_PROCESS_EXIT && results[1].Kind == X86_PROCESS_EXIT &&
         results[0].Code == 0x1122334455667788ULL && results[1].Code == 0x8877665544332211ULL &&
         kernel_log(0, "KERNEL_K6_YIELD_PAIR_OK");
+}
+
+// ====== ipc_pair ======
+
+static int ipc_pair(void)
+{
+    X86_PROCESS_IMAGE images[2] = {
+        {k6_program_ipc_client, k6_program_ipc_client_length},
+        {k6_program_ipc_server, k6_program_ipc_server_length},
+    };
+    X86_PROCESS_RESULT results[2];
+    BOOT_U32 yields[2];
+    if (!x86_process_pair(images, results, yields, 1) || yields[0] != 1 || yields[1] != 1 ||
+        results[0].Kind != X86_PROCESS_EXIT || results[0].Code ||
+        results[1].Kind != X86_PROCESS_EXIT || results[1].Code) return 0;
+    images[1] = (X86_PROCESS_IMAGE){k6_program_null, k6_program_null_length};
+    return x86_process_pair(images, results, yields, 1) && yields[0] == 1 && yields[1] == 0 &&
+        results[0].Kind == X86_PROCESS_EXIT && results[0].Code == 77 &&
+        results[1].Kind == X86_PROCESS_FAULT && results[1].Vector == 14 &&
+        results[1].Error == 4 && results[1].Cr2 == 0 && kernel_log(0, "KERNEL_K6_IPC_OK");
 }
 
 // ====== cases ======
@@ -136,7 +157,7 @@ static int cases(void)
     for (BOOT_U64 window = 1; window <= 6; ++window) {
         if (!nmi_case(window)) return 0;
     }
-    return yield_pair() && field("K6_COPY_INSTRUCTION: ", x86_process_copy_instruction());
+    return yield_pair() && ipc_pair() && field("K6_COPY_INSTRUCTION: ", x86_process_copy_instruction());
 }
 
 // ====== x86_k6_process_probe ======

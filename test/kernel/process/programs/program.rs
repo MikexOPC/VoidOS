@@ -286,6 +286,74 @@ extern "C" fn program_main() -> ! {
     exit(TAG)
 }
 
+// ====== ipc ======
+
+#[cfg(any(program_ipc_client, program_ipc_server))]
+fn ipc(number: u64, handle: u64, pointer: u64, length: u64) -> i64 {
+    let result: u64;
+    unsafe {
+        asm!(
+            "syscall",
+            inlateout("rax") number => result,
+            in("rdi") handle,
+            in("rsi") pointer,
+            in("rdx") length,
+            lateout("rcx") _,
+            lateout("r11") _,
+        );
+    }
+    result as i64
+}
+
+// ====== program_main ======
+
+#[cfg(program_ipc_client)]
+#[unsafe(no_mangle)]
+extern "C" fn program_main(handle: u64) -> ! {
+    let mut bytes = [0u8, b'!'];
+    let pointer = bytes.as_mut_ptr() as u64;
+    if ipc(4, handle, pointer, 2) != -6 || ipc(3, handle ^ 1, pointer, 2) != -5 ||
+        ipc(3, handle, 0x5fd000, 2) != -2 {
+        exit(1);
+    }
+    for value in 1..=4 {
+        bytes[0] = value;
+        if ipc(3, handle, pointer, 2) != 2 {
+            exit(2);
+        }
+    }
+    if ipc(3, handle, pointer, 2) != -6 || syscall(2, 0, 0) != 0 {
+        exit(3);
+    }
+    match ipc(4, handle, pointer, 2) {
+        2 if bytes == *b"OK" => exit(0),
+        -7 if ipc(3, handle, pointer, 2) == -7 => exit(77),
+        _ => exit(4),
+    }
+}
+
+// ====== program_main ======
+
+#[cfg(program_ipc_server)]
+#[unsafe(no_mangle)]
+extern "C" fn program_main(handle: u64) -> ! {
+    let mut bytes = [0u8; 2];
+    let pointer = bytes.as_mut_ptr() as u64;
+    if ipc(4, handle, pointer, 1) != -8 || ipc(4, handle, 0x400000, 2) != -2 {
+        exit(1);
+    }
+    for value in 1..=4 {
+        if ipc(4, handle, pointer, 2) != 2 || bytes != [value, b'!'] {
+            exit(2);
+        }
+    }
+    if ipc(4, handle, pointer, 2) != -6 ||
+        ipc(3, handle, b"OK".as_ptr() as u64, 2) != 2 || syscall(2, 0, 0) != 0 {
+        exit(3);
+    }
+    exit(if ipc(4, handle, pointer, 2) == -7 { 0 } else { 4 })
+}
+
 // ====== panic ======
 
 #[panic_handler]

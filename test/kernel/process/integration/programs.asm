@@ -32,3 +32,5 @@ PROGRAM write_flood
 PROGRAM spurious
 PROGRAM yield_a
 PROGRAM yield_b
+PROGRAM ipc_client
+PROGRAM ipc_server

@@ -9,3 +9,5 @@ pub mod plan;
 pub mod rules;
 #[path = "ffi/exports.rs"]
 pub mod exports;
+#[path = "ipc/channel.rs"]
+pub mod ipc;
