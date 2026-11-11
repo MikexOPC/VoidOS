@@ -1,9 +1,8 @@
 # Bridge
 
-Il bridge è un servizio di sistema previsto in ring 3. La prima
-operazione, `status`, servirà a verificare il percorso di richiesta e
-risposta. L'[API](api/) descrive cosa può chiedere un client. Il
-[servizio](service/) descrive come gestisce la richiesta.
+Il bridge gestisce la prima operazione, `status`, nel diagnostico
+`k6-process`. L'[API](api/) definisce il formato dei messaggi. Il
+[servizio](service/) valida la richiesta e produce la risposta in Rust.
 
 Il kernel identifica il mittente tramite il contesto del processo e
 applica i controlli sulle operazioni privilegiate. Quando il bridge
@@ -14,15 +13,22 @@ del servizio.
 
 ## Primo collaudo
 
-La proposta è eseguire due programmi ring 3 sul BSP nel diagnostico
-IPC già disponibile. Il client invia `status`, il servizio risponde e
-il kernel raccoglie i due processi. I test coprono anche richieste
-malformate, chiusura del canale e recupero delle risorse.
+Due programmi ring 3 si alternano sul BSP nel diagnostico IPC. Il client
+verifica le risposte a `status`, a due lunghezze errate, a una versione
+sconosciuta e a un'operazione sconosciuta. Dopo l'uscita del client, il
+servizio verifica la chiusura del canale. Il kernel raccoglie i processi
+e confronta il budget di pagine con quello iniziale.
 Il trasporto è descritto nel [contratto IPC v0](../docs/design/ipc.md).
 
-L'alternativa è collegare subito `bridge status` alla shell ordinaria.
-Richiede un client nel kernel e un dispatcher in grado di riprendere
-il servizio ring 3 mentre console e input continuano a ricevere IRQ.
-Oggi il runtime K6 usa temporaneamente l'IDT e il timer del BSP.
-Il primo percorso può quindi verificare protocollo e servizio prima
-dell'integrazione con la shell.
+Validazione iniziale: quattro test host Rust, dieci boot con una vCPU e
+tre boot con quattro vCPU. In entrambe le campagne il bridge gira sul BSP.
+
+Per ripetere il collaudo da PowerShell 7, dalla radice del progetto:
+
+```powershell
+./scripts/test/qemu.ps1 -Campaign 'k6-process,k6-process-smp' -Fresh
+```
+
+Il prossimo passo è collegare `bridge status` alla shell ordinaria.
+Serve un client nel kernel e un dispatcher in grado di riprendere il
+servizio ring 3 mentre console e input continuano a ricevere IRQ.

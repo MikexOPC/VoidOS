@@ -40,6 +40,9 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
     if !log.before("KERNEL_K6_IPC_OK", "KERNEL_READY") {
         return Err("Missing two-process IPC test".to_string());
     }
+    if !log.before("KERNEL_BRIDGE_STATUS_OK", "KERNEL_K6_PROCESS_OK") {
+        return Err("Missing bridge status exchange, rejection or peer closure".to_string());
+    }
     if log.numbers("K6_FAULT_VECTOR") != [14, 14, 13, 14] || log.numbers("K6_FAULT_ERROR") != [4, 7, 0, 0x15] {
         return Err("Unexpected reported user faults".to_string());
     }
@@ -66,6 +69,7 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
         ("RecoveredFaults", Value::Number(4)),
         ("Nmis", Value::Number(WINDOWS)),
         ("Hello", Value::Bool(true)),
+        ("BridgeStatus", Value::Bool(true)),
     ]))
 }
 

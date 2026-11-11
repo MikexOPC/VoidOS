@@ -10,6 +10,7 @@ PROGRAM(spin); PROGRAM(syscall_spin); PROGRAM(flags_spin); PROGRAM(flags_ac);
 PROGRAM(write_flood); PROGRAM(spurious);
 PROGRAM(yield_a); PROGRAM(yield_b);
 PROGRAM(ipc_client); PROGRAM(ipc_server);
+PROGRAM(bridge_client); PROGRAM(bridge_server);
 #define IMAGE(name) {k6_program_##name, 0}
 
 extern volatile BOOT_U64 k6_negative;
@@ -109,6 +110,25 @@ static int ipc_pair(void)
         results[1].Error == 4 && results[1].Cr2 == 0 && kernel_log(0, "KERNEL_K6_IPC_OK");
 }
 
+// ====== bridge_pair ======
+
+static int bridge_pair(void)
+{
+    const X86_PROCESS_IMAGE images[2] = {
+        {k6_program_bridge_client, k6_program_bridge_client_length},
+        {k6_program_bridge_server, k6_program_bridge_server_length},
+    };
+    X86_PROCESS_RESULT results[2];
+    BOOT_U32 yields[2];
+    return x86_process_pair(images, results, yields, 1) &&
+        field("BRIDGE_CLIENT_KIND: ", results[0].Kind) && field("BRIDGE_CLIENT_CODE: ", results[0].Code) &&
+        field("BRIDGE_SERVER_KIND: ", results[1].Kind) && field("BRIDGE_SERVER_CODE: ", results[1].Code) &&
+        yields[0] == 5 && yields[1] == 5 &&
+        results[0].Kind == X86_PROCESS_EXIT && results[0].Code == 0 &&
+        results[1].Kind == X86_PROCESS_EXIT && results[1].Code == 0 &&
+        kernel_log(0, "KERNEL_BRIDGE_STATUS_OK");
+}
+
 // ====== cases ======
 
 static int cases(void)
@@ -157,7 +177,8 @@ static int cases(void)
     for (BOOT_U64 window = 1; window <= 6; ++window) {
         if (!nmi_case(window)) return 0;
     }
-    return yield_pair() && ipc_pair() && field("K6_COPY_INSTRUCTION: ", x86_process_copy_instruction());
+    return yield_pair() && ipc_pair() && bridge_pair() &&
+        field("K6_COPY_INSTRUCTION: ", x86_process_copy_instruction());
 }
 
 // ====== x86_k6_process_probe ======

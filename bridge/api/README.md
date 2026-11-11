@@ -1,9 +1,15 @@
 # API del bridge
 
-`status` chiede al servizio se è operativo. La risposta riguarda il
-bridge stesso. L'API distinguerà una richiesta malformata o non
-supportata da una mancata risposta dovuta alla chiusura del canale.
+`status` chiede al bridge se è operativo. La richiesta ha due byte,
+versione e operazione, entrambi con valore 1. La risposta ha due byte,
+versione 1 e codice di esito.
 
-Per la prima prova è sufficiente una richiesta in volo per canale.
-Ogni messaggio deve rientrare nei 128 byte del trasporto IPC v0.
-Il formato binario e i codici saranno fissati con il primo client.
+| Codice | Esito |
+|---|---|
+| 0 | Bridge operativo |
+| 1 | Lunghezza della richiesta diversa da 2 |
+| 2 | Versione sconosciuta |
+| 3 | Operazione sconosciuta per la versione corrente |
+
+Il client diagnostico attende ogni risposta prima di inviare la
+richiesta successiva. La chiusura del canale è un esito del trasporto.
