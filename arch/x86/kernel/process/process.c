@@ -44,6 +44,7 @@
 #define RESULT_UNKNOWN (~0ULL)
 #define SYS_EXIT 0ULL
 #define SYS_WRITE 1ULL
+#define SYS_YIELD 2ULL
 // Intel SDM 2B, SYSCALL and SYSRET; 3A §2.2, §2.3, §6.8.8: STAR, LSTAR, CSTAR, FMASK, EFER.SCE.
 #define MSR_EFER 0xc0000080U
 #define MSR_STAR 0xc0000081U
@@ -63,6 +64,7 @@
 #define GPR_RSI 9U
 #define GPR_RDI 8U
 #define GPR_RAX 14U
+#define USER_FRAME_WORDS (FX_WORDS + 15U + 5U)
 
 #ifndef KERNEL_K6_NEGATIVE
 #define KERNEL_K6_NEGATIVE 0
@@ -79,6 +81,7 @@ typedef struct { BOOT_U64 Entry, Count; struct { BOOT_U64 Virt, FileOffset, File
 extern const BOOT_U64 x86_process_fault_targets[32];
 extern const unsigned char x86_process_copy_first[], x86_process_copy_last[], x86_process_copy_fixup[];
 #ifdef KERNEL_TEST_K6_PROCESS
+void x86_process_resume(const BOOT_U64 *frame);
 #define WINDOW_LABELS(number) \
     extern const unsigned char x86_process_window_##number##_first[], x86_process_window_##number##_last[]
 WINDOW_LABELS(1); WINDOW_LABELS(2); WINDOW_LABELS(3); WINDOW_LABELS(4); WINDOW_LABELS(5); WINDOW_LABELS(6);
@@ -132,6 +135,8 @@ static const KERNEL_CLOCK *budget_clock;
 static KERNEL_DEADLINE budget_deadline;
 #ifdef KERNEL_TEST_K6_PROCESS
 static BOOT_U32 delay_next_syscall;
+static BOOT_U64 *yield_frame;
+static BOOT_U32 yielded;
 #endif
 static X86_PROCESS_RESULT *current;
 static volatile BOOT_U64 window_pointer, window_length, window_write;
@@ -293,7 +298,7 @@ static int roots_stable(void)
 
 // ====== map_image ======
 
-static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan)
+static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, KERNEL_PHYSICAL_LEASE *lease_out)
 {
     BOOT_U64 pages = TABLE_PAGES + plan->Count + STACK_PAGES;
     if (!x86_page_window_idle_valid(owner_window) || !x86_page_window_acquire(owner_window, pages)) return 0;
@@ -320,30 +325,39 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan)
         BOOT_U64 lease = TABLE_PAGES + plan->Count + index;
         tables[PT_OFFSET(STACK_BASE + index * PAGE_BYTES)] = (base + lease * PAGE_BYTES) | branch | PTE_NX;
     }
-    if (!x86_page_window_park(owner_window, &held)) x86_process_stop();
-    k6_user_root = base;
+    if (!x86_page_window_park(owner_window, lease_out)) x86_process_stop();
     return 1;
 }
 
 // ====== reap ======
 
-static int reap(BOOT_U64 pages, BOOT_U64 budget)
+static int reap(KERNEL_PHYSICAL_LEASE *lease)
 {
     if (__readcr3() != k6_kernel_root || !roots_stable() || kernel_stack[0] != STACK_CANARY) return 0;
-    if (!x86_page_window_resume(owner_window, &held)) x86_process_stop();
+    BOOT_U64 pages = lease->Pages;
+    if (!x86_page_window_resume(owner_window, lease)) x86_process_stop();
     volatile unsigned char *alias = x86_window_bytes();
     for (BOOT_U64 index = 0; index < pages * PAGE_BYTES; ++index) alias[index] = 0;
     if (!x86_page_window_release(owner_window)) x86_process_stop();
     k6_user_root = 0;
-    return x86_page_window_idle_valid(owner_window) && kernel_physical_budget_matches(owner_window->Pool, budget);
+    return x86_page_window_idle_valid(owner_window);
+}
+
+// ====== timer_arm ======
+
+static void timer_arm(void)
+{
+    const X86_LAPIC_MAPPING *mapping = owner_timer->Mapping;
+    BOOT_U32 vector = K6_NEGATIVE(36) ? STRAY_TEST_VECTOR : TIMER_VECTOR;
+    // Intel SDM 3A §13.5.4: divide 3E0h = 3 (by 16), LVT 320h one-shot unmasked, initial count 380h.
+    if (!x86_timer_confirm_write(mapping, 0x3e0, 3) || !x86_timer_confirm_write(mapping, 0x320, vector) ||
+        !x86_timer_write(mapping, 0x380, owner_timer->Reload)) die("PROCESS_TIMER_FAILED");
 }
 
 // ====== timer_start ======
 
 static void timer_start(void)
 {
-    const X86_LAPIC_MAPPING *mapping = owner_timer->Mapping;
-    BOOT_U32 vector = K6_NEGATIVE(36) ? STRAY_TEST_VECTOR : TIMER_VECTOR;
     budget_left = x86_process_budget_initial();
     BOOT_U32 duration = PROCESS_BUDGET_MS;
 #ifdef KERNEL_TEST_K6_PROCESS
@@ -351,9 +365,7 @@ static void timer_start(void)
 #endif
     if (!kernel_deadline_start(budget_clock, kernel_clock_ms(budget_clock, duration), &budget_deadline))
         die("PROCESS_CLOCK_FAILED");
-    // Intel SDM 3A §13.5.4: divide 3E0h = 3 (by 16), LVT 320h one-shot unmasked, initial count 380h.
-    if (!x86_timer_confirm_write(mapping, 0x3e0, 3) || !x86_timer_confirm_write(mapping, 0x320, vector) ||
-        !x86_timer_write(mapping, 0x380, owner_timer->Reload)) die("PROCESS_TIMER_FAILED");
+    timer_arm();
 }
 
 // ====== timer_quiesce ======
@@ -375,6 +387,23 @@ static void timer_quiesce(void)
     if (!x86_lapic_idle(owner_timer->Mapping)) die("PROCESS_TIMER_RETAINED");
 }
 
+// ====== turn_finish ======
+
+static void turn_finish(X86_PROCESS_RESULT *result)
+{
+    timer_quiesce();
+    if (k6_exit_kind == X86_PROCESS_FAULT) {
+        result->Kind = X86_PROCESS_FAULT;
+        result->Vector = k6_fault[0];
+        result->Error = k6_fault[1];
+        result->Rip = k6_fault[2];
+        result->Cr2 = k6_fault_cr2;
+    }
+    __writemsr(MSR_FS_BASE, 0);
+    __writemsr(MSR_KERNEL_GS, 0);
+    current = 0;
+}
+
 // ====== x86_process_run ======
 
 int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
@@ -393,7 +422,8 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
         advance(5);
         return kernel_physical_budget_matches(owner_window->Pool, budget);
     }
-    if (!map_image(image, &plan)) return 0;
+    if (!map_image(image, &plan, &held)) return 0;
+    k6_user_root = held.Base;
     advance(2);
     current = result;
     written_bytes = 0;
@@ -402,18 +432,8 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
     timer_start();
     x86_process_enter(plan.Entry, STACK_TOP);
     advance(4);
-    timer_quiesce();
-    if (k6_exit_kind == X86_PROCESS_FAULT) {
-        result->Kind = X86_PROCESS_FAULT;
-        result->Vector = k6_fault[0];
-        result->Error = k6_fault[1];
-        result->Rip = k6_fault[2];
-        result->Cr2 = k6_fault_cr2;
-    }
-    __writemsr(MSR_FS_BASE, 0);
-    __writemsr(MSR_KERNEL_GS, 0);
-    current = 0;
-    if (!reap(TABLE_PAGES + plan.Count + STACK_PAGES, budget)) {
+    turn_finish(result);
+    if (!reap(&held) || !kernel_physical_budget_matches(owner_window->Pool, budget)) {
         die(roots_stable() ? "PROCESS_REAP_FAILED" : "PROCESS_ROOT_CHANGED");
     }
     advance(5);
@@ -493,6 +513,14 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         current->Code = GPR(frame, GPR_RDI);
         return 2;
     }
+#ifdef KERNEL_TEST_K6_PROCESS
+    if (number == SYS_YIELD && yield_frame) {
+        GPR(frame, GPR_RAX) = 0;
+        for (BOOT_U32 index = 0; index < USER_FRAME_WORDS; ++index) yield_frame[index] = frame[index];
+        yielded = 1;
+        return 2;
+    }
+#endif
     GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;
 #ifdef KERNEL_TEST_K6_PROCESS
     if (delay_next_syscall) {
@@ -574,6 +602,79 @@ void x86_process_kernel_fatal(const BOOT_U64 *frame, BOOT_U64 cr2)
 }
 
 #ifdef KERNEL_TEST_K6_PROCESS
+typedef struct {
+    _Alignas(16) BOOT_U64 Frame[USER_FRAME_WORDS];
+    KERNEL_PHYSICAL_LEASE Lease;
+    BOOT_U64 Entry, RemainingIrqs, Written;
+    BOOT_U32 RemainingTicks, Yields;
+} PROCESS_SLOT;
+
+// ====== run_slot ======
+
+static void run_slot(PROCESS_SLOT *slot, X86_PROCESS_RESULT *result)
+{
+    k6_user_root = slot->Lease.Base;
+    current = result;
+    written_bytes = slot->Written;
+    budget_left = slot->RemainingIrqs;
+    k6_exit_kind = 0;
+    yielded = 0;
+    yield_frame = slot->Frame;
+    if (!kernel_deadline_start(budget_clock, slot->RemainingTicks, &budget_deadline)) die("PROCESS_CLOCK_FAILED");
+    timer_arm();
+    if (slot->Yields) x86_process_resume(slot->Frame);
+    else x86_process_enter(slot->Entry, STACK_TOP);
+    BOOT_U32 elapsed = kernel_clock_elapsed(budget_clock, budget_deadline.Start);
+    yield_frame = 0;
+    turn_finish(result);
+    slot->Written = written_bytes;
+    slot->RemainingIrqs = budget_left;
+    if (yielded) {
+        ++slot->Yields;
+        if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
+        else slot->RemainingTicks -= elapsed;
+    }
+}
+
+// ====== x86_process_pair ======
+
+int x86_process_pair(const X86_PROCESS_IMAGE images[2], X86_PROCESS_RESULT results[2], BOOT_U32 yields[2])
+{
+    PROCESS_SLOT slots[2] = {0};
+    PROCESS_PLAN plan;
+    BOOT_U64 budget;
+    if (!opened || current || !images || !results || !yields ||
+        !kernel_physical_budget_read(owner_window->Pool, &budget)) return 0;
+    BOOT_U32 ticks = kernel_clock_ms(budget_clock, PROCESS_BUDGET_MS);
+    if (ticks == UINT32_MAX) return 0;
+    for (BOOT_U32 index = 0; index < 2; ++index) {
+        if (x86_process_plan(images[index].Bytes, images[index].Length, &plan) ||
+            !map_image(&images[index], &plan, &slots[index].Lease)) {
+            if (index && !reap(&slots[0].Lease)) die("PROCESS_REAP_FAILED");
+            if (!kernel_physical_budget_matches(owner_window->Pool, budget)) die("PROCESS_REAP_FAILED");
+            return 0;
+        }
+        slots[index].Entry = plan.Entry;
+        slots[index].RemainingTicks = ticks;
+        slots[index].RemainingIrqs = x86_process_budget_initial();
+        results[index] = (X86_PROCESS_RESULT){0};
+    }
+    for (BOOT_U32 turn = 0; turn < 32 && (!results[0].Kind || !results[1].Kind); ++turn) {
+        BOOT_U32 index = turn % 2;
+        if (results[index].Kind) continue;
+        run_slot(&slots[index], &results[index]);
+        if (__readcr3() != k6_kernel_root || !roots_stable() || kernel_stack[0] != STACK_CANARY)
+            die("PROCESS_ROOT_CHANGED");
+        if (results[index].Kind && !reap(&slots[index].Lease)) die("PROCESS_REAP_FAILED");
+    }
+    for (BOOT_U32 index = 0; index < 2; ++index) {
+        if (slots[index].Lease.Id && !reap(&slots[index].Lease)) die("PROCESS_REAP_FAILED");
+        yields[index] = slots[index].Yields;
+    }
+    if (!kernel_physical_budget_matches(owner_window->Pool, budget)) die("PROCESS_REAP_FAILED");
+    return results[0].Kind && results[1].Kind;
+}
+
 // ====== x86_process_nmi_arm ======
 
 void x86_process_nmi_arm(BOOT_U64 window)

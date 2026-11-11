@@ -250,6 +250,42 @@ extern "C" fn program_main() -> ! {
     exit(if preserved == 0x0fedcba987654321 { 0 } else { 2 })
 }
 
+// ====== program_main ======
+
+#[cfg(any(program_yield_a, program_yield_b))]
+#[unsafe(no_mangle)]
+extern "C" fn program_main() -> ! {
+    #[cfg(program_yield_a)]
+    const TAG: u64 = 0x1122334455667788;
+    #[cfg(program_yield_b)]
+    const TAG: u64 = 0x8877665544332211;
+    if touch() != 7 {
+        exit(1);
+    }
+    unsafe { (&raw mut COUNTER).write_volatile(TAG as u32) };
+    for _ in 0..2 {
+        let general: u64;
+        let vector: u64;
+        let status: u64;
+        unsafe {
+            asm!(
+                "movq xmm0, r12",
+                "syscall",
+                "movq {vector}, xmm0",
+                vector = lateout(reg) vector,
+                inout("r12") TAG => general,
+                inlateout("rax") 2u64 => status,
+                lateout("rcx") _,
+                lateout("r11") _,
+            );
+        }
+        if general != TAG || vector != TAG || status != 0 || touch() != TAG as u32 {
+            exit(2);
+        }
+    }
+    exit(TAG)
+}
+
 // ====== panic ======
 
 #[panic_handler]

@@ -34,6 +34,9 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
     if !log.has("KERNEL_K6_SYSCALL_DEADLINE_OK") {
         return Err("Missing expiry inside a syscall".to_string());
     }
+    if !log.before("KERNEL_K6_YIELD_PAIR_OK", "KERNEL_READY") {
+        return Err("Missing two-process yield test".to_string());
+    }
     if log.numbers("K6_FAULT_VECTOR") != [14, 14, 13, 14] || log.numbers("K6_FAULT_ERROR") != [4, 7, 0, 0x15] {
         return Err("Unexpected reported user faults".to_string());
     }

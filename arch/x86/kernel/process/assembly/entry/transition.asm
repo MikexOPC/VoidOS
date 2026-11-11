@@ -208,6 +208,37 @@ x86_process_enter PROC
     iretq
 x86_process_enter ENDP
 
+IFDEF K6_DIAGNOSTICS
+; ====== x86_process_resume ======
+
+; Intel SDM 3A §7.14.3: frame IRETQ a cinque slot. Vol. 2 FXRSTOR64: area da 512 byte allineata.
+PUBLIC x86_process_resume
+x86_process_resume PROC
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    push r12
+    push r13
+    push r14
+    push r15
+    mov [k6_saved_rsp], rsp
+    fxsave64 [k6_fx_saved]
+    fxrstor64 [rcx]
+    sub rsp, 160
+    lea rsi, [rcx+512]
+    mov rdi, rsp
+    mov ecx, 20
+    cld
+    rep movsq
+    mov rax, [k6_user_root]
+    mov cr3, rax
+    swapgs
+    K6_POP_GPR
+    iretq
+x86_process_resume ENDP
+ENDIF
+
 ; ====== x86_process_leave ======
 
 ; Root e GS del kernel gia attivi. Segmenti utente azzerati senza toccare la base GS del kernel.
