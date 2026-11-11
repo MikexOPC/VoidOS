@@ -158,6 +158,14 @@ def run_boot(project, image, qemu, out, index, stress, text_profile, line_stress
                         extra_keys += 1
                         command(vm, "sendkey ret 20")
                         wait_marker(vm, serial, "PS2_KEY: ", 5, 5 + stress + extra_keys)
+                        if line == "status":
+                            # The status report spans several lines: typing during it interleaves
+                            # key diagnostics inside a report line on the shared serial log.
+                            deadline = time.monotonic() + 10
+                            while not re.search(r"SHELL_INPUT_LINES: 0x[0-9a-fA-F]{16}\r?\n", read_serial(serial)):
+                                if time.monotonic() > deadline:
+                                    raise TimeoutError("Missing complete status report: " + str(serial))
+                                time.sleep(0.01)
                         time.sleep(0.12)
                         if pointer and not video_absent and line in ('status','echo exit'):
                             pointer_frames.append(pointer_firmware.verify(vm,scenario,serial,mouse_expected,read_serial,wait_marker,command,line.replace(' ','-')))

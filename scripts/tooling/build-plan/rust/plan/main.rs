@@ -202,6 +202,7 @@ fn link_command(commands: &[Vec<String>]) -> Result<Vec<String>, &'static str> {
         "/incremental:no",
         "/dynamicbase:no",
         "/fixed",
+        "/Brepro",
     ]
     .into_iter()
     .map(String::from)

@@ -526,7 +526,7 @@
     "meson-k6-protection": {
       "build": [],
       "meson": "ordinary",
-      "runner": ["python", "test/arch/x86/kernel/descriptors/protection/firmware.py", "--image", "{image}", "--boots", "{boots}", "--cpu", "max"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4"],
       "boots": 5,
       "smoke": 1,
       "heavy": true,

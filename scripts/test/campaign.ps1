@@ -1,10 +1,14 @@
 param(
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][int]$Count,
-    [Parameter(Mandatory)][string]$Output
+    [Parameter(Mandatory)][string]$Output,
+    [string]$Image = '',
+    [string]$Images = '',
+    [switch]$BuildOnly
 )
 # One campaign of campaigns.json: build its image into $Output/$Name, run the runner, exit with its
 # code. Called by qemu.ps1, sequentially or several at once (each campaign has its own directories).
+# -BuildOnly -Images DIR only builds the image into DIR; -Image FILE runs on an image already built.
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'Use qemu.ps1: campaign builds require PowerShell 7.' }
 $campaignShell = (Get-Process -Id $PID).Path
@@ -12,16 +16,18 @@ $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $entry = (Get-Content -Raw (Join-Path $PSScriptRoot 'campaigns.json') | ConvertFrom-Json).campaigns.$Name
 $python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
 $log = Join-Path $Output ($Name + '.log')
-$image = ''
+$image = $Image
 $code = 0
 
 # ============ build and run ============
 
 try {
-    if ($entry.meson) {
+    if ($image) {
+        if (!(Test-Path -LiteralPath $image)) { throw "Image missing: $image" }
+    } elseif ($entry.meson) {
         $meson = (Get-Command meson -ErrorAction SilentlyContinue).Source
         if (!$meson) { $meson = Join-Path $env:APPDATA 'Python/Python312/Scripts/meson.exe' }
-        $images = Join-Path $Output $Name
+        $images = if ($Images) { $Images } else { Join-Path $Output $Name }
         $buildLog = Join-Path $Output ($Name + '.build.log')
         & $meson setup $images (Join-Path $project 'kernel') --vsenv "-Dprofile=$($entry.meson)" *> $buildLog
         if ($LASTEXITCODE) { throw "Meson setup failed: $Name" }
@@ -29,7 +35,7 @@ try {
         if ($LASTEXITCODE) { throw "Meson build or plan parity failed: $Name" }
         $image = Join-Path $images 'kernel.elf'
     } elseif ($null -ne $entry.build) {
-        $images = Join-Path $Output $Name
+        $images = if ($Images) { $Images } else { Join-Path $Output $Name }
         $build = @{ OutputDirectory = $images }
         for ($index = 0; $index -lt $entry.build.Count; ++$index) {
             $token = [string]$entry.build[$index]
@@ -46,6 +52,7 @@ try {
         if ($LASTEXITCODE) { throw "Build failed: $Name" }
         $image = Join-Path $images 'kernel.elf'
     }
+    if ($BuildOnly) { exit 0 }
     $arguments = @($entry.runner | Select-Object -Skip 1 | ForEach-Object {
         $_.Replace('{image}', $image).Replace('{boots}', [string]$Count) })
     if ($entry.runner[0] -eq 'qemu-runner') {

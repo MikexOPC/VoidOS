@@ -1,6 +1,6 @@
 # K6 — Primo processo utente
 
-Stato: design approvato con le correzioni di revisione. K6-A, K6-B, K6-C e K6-D implementati; campagna di chiusura in corso.
+Stato: design approvato con le correzioni di revisione. K6 chiuso: K6-A, K6-B, K6-C e K6-D implementati e provati.
 Il contratto delle due root è provato in K6-C, nel profilo `k6-process`.
 
 Obiettivo: il kernel ordinario carica un programma ELF nel suo spazio di indirizzi,
@@ -480,9 +480,30 @@ prima di `KERNEL_READY`; nel profilo shell prima della sessione di input. Senza 
 - `k6-protection` usa il runner Rust; `firmware.py` rimosso. `k6-process` è nel planner e in Meson.
 - STAR, LSTAR, CSTAR e FMASK ricontrollati sul Vol. 4.
 
-**Prove.** Smoke da 1 boot di ogni nuovo caso, test Rust, test del runner e parità del planner verdi.
-Campagna completa di chiusura: al momento del commit 78 campagne su 119 verdi, nessun fallimento,
-evidenze in `kernel/build/qemu-run-f0da8292b828400ca5d63471a7f513d0`. Il push segue l'esito completo.
+**Prove.** Smoke da 1 boot di ogni nuovo caso, test Rust, test del runner, clippy, cppcheck e parità
+del planner verdi. Campagna di chiusura, tutte le 119 campagne con il numero pieno di boot:
+- 79 verdi in `kernel/build/qemu-run-f0da8292b828400ca5d63471a7f513d0`, poi la corsa si è fermata;
+- 20 verdi delle 40 rimanenti in `kernel/build/qemu-run-373469bfef314677bf1336266c63bf82`;
+- le restanti 19, più tutte quelle con `init` nell'immagine dopo la correzione di `boot.c`, 33 su 34 in
+  `kernel/build/qemu-run-18d3100870bb4ad7930b0330e6cbf6f3`.
+
+Le campagne della prima e della seconda corsa senza `init` hanno girato su immagini precedenti a
+`/Brepro`: stesso codice, file diverso solo per il timestamp del linker, verificato su due immagini
+ordinarie e non su tutte.
+
+`shell-text` falliva per il test, non per il kernel: digitava mentre `status` scriveva ancora sulla
+seriale, e una riga di diagnostica dei tasti si inseriva in mezzo a quella del rapporto. Ora il runner
+aspetta la fine del rapporto. Dopo la correzione `shell-text` 10/10, `shell-novideo` 3/3 e `plain` 3/3
+in `kernel/build/qemu-run-a3d8f15de78048afb74ed40c0ad5a330`: le 119 campagne sono tutte verdi. Resta un limite del kernel: le righe di log non sono atomiche fra la shell
+e l'input.
+
+Correzioni trovate dalla campagna e da cppcheck:
+- `boot.c` sottraeva due simboli diversi per la lunghezza di `init`; ora la scrive l'Assembly.
+- `meson-k6-protection` lanciava ancora il runner Python rimosso; ora usa quello Rust.
+
+**Campagne più rapide.** Immagini compilate una volta e riusate, link riproducibile, nessun blocco in
+coda, salto delle corse già passate: vedi `scripts/README.md`. WHPX scartato per ora: OVMF va in crash
+prima del loader con `-cpu max`, `host` e 4 vCPU. Un boot TCG ordinario dura circa 4 s.
 
 **Limiti.** Un processo alla volta sul BSP; stack kernel statico senza guardia; panic di un AP
 durante un processo non provato; budget dipendente dal timer LAPIC; `init` non gira nei profili

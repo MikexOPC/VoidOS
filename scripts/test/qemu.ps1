@@ -3,7 +3,9 @@ param(
     [switch]$Smoke,
     [switch]$List,
     [int]$Boots = 0,
-    [int]$Parallel = 1
+    [int]$Parallel = 1,
+    [int]$BuildParallel = 4,
+    [switch]$Fresh
 )
 # G2 Q4: builds and runs the QEMU campaigns of campaigns.json by name. -Smoke runs one boot of
 # every campaign (the check before a commit that touches the kernel). Every campaign runs even
@@ -11,6 +13,9 @@ param(
 # -Parallel N runs up to N campaigns at once (each has its own image and VM directories); the
 # campaigns that build their own images in the shared tree (build null) run alone, first, and the
 # heavy ones (VirtIO/IOMMU) one at a time.
+# Images are built first, once per distinct build, up to -BuildParallel at once, and reused while the
+# sources are unchanged. A campaign is skipped when the same image, runner, loader, OVMF, QEMU and
+# entry already passed with the same boots; -Fresh runs everything again.
 $ErrorActionPreference = 'Stop'
 $campaignShell = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
 if (!$campaignShell) {
@@ -39,17 +44,56 @@ foreach ($name in $selected) { if ($names -notcontains $name) { throw "Unknown c
 $output = Join-Path $project ('kernel/build/qemu-run-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $output | Out-Null
 
+# ============ fingerprints ============
+
+function Get-TextHash([string]$Text) {
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+    -join ([Security.Cryptography.SHA256]::HashData($bytes) | ForEach-Object { $_.ToString('x2') })
+}
+
+function Get-FilesHash([string[]]$Paths) {
+    Get-TextHash ((@($Paths | Sort-Object -Unique | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+        ForEach-Object { $_ + '=' + (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash })) -join "`n")
+}
+
+function Get-BuildKey($Entry) {
+    if ($Entry.meson) { 'meson:' + $Entry.meson } else { 'build:' + ($Entry.build | ConvertTo-Json -Compress) }
+}
+
+# Sources outside docs/ and the build tree: commit, tracked changes and untracked files.
+Push-Location $project
+try {
+    $head = git rev-parse HEAD
+    $changes = (git diff HEAD --binary -- . ':(exclude)docs') -join "`n"
+    $untracked = @(git ls-files --others --exclude-standard -- . ':(exclude)docs')
+} finally { Pop-Location }
+$sources = Get-TextHash ($head + "`n" + $changes + "`n" + (Get-FilesHash @($untracked | ForEach-Object { Join-Path $project $_ })))
+$qemuDir = 'C:/Program Files/qemu'
+$platform = Get-FilesHash @("$qemuDir/qemu-system-x86_64.exe", "$qemuDir/share/edk2-x86_64-code.fd",
+    "$qemuDir/share/edk2-i386-vars.fd", (Join-Path $project 'arch/x86/boot/uefi/build/esp/EFI/BOOT/BOOTX64.EFI'))
+$cacheRoot = Join-Path $project 'kernel/build/campaign-cache'
+$passFile = Join-Path $cacheRoot 'passes.json'
+New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+$passes = @{}
+if (!$Fresh -and (Test-Path -LiteralPath $passFile)) {
+    (Get-Content -Raw -LiteralPath $passFile | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $passes[$_.Name] = $_.Value }
+}
+
 # ============ campaigns ============
 
 $campaign = Join-Path $PSScriptRoot 'campaign.ps1'
 $results = @()
 $running = @()
 
-function Record-Campaign([string]$Name, [int]$Count, [int]$Code) {
+function Record-Campaign([string]$Name, [int]$Count, [int]$Code, [string]$Pass = '') {
     $log = Join-Path $output ($Name + '.log')
     $reportPattern = '^# ====== Boot [0-9]+ ====== #$|^\[ (Pass|Fail) \]$|^Causa: |^Boot non eseguiti: '
-    $script:results += [pscustomobject]@{ Campaign = $Name; Boots = $Count; ExitCode = $Code; Log = $log }
+    $script:results += [pscustomobject]@{ Campaign = $Name; Boots = $Count; ExitCode = $Code; Log = $log; Skipped = $false }
     $script:results | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
+    if (!$Code -and $Pass) {
+        $script:passes[$Pass] = $Name
+        $script:passes | ConvertTo-Json | Set-Content -LiteralPath $passFile -Encoding utf8
+    }
     if (Test-Path -LiteralPath $log) {
         foreach ($line in Get-Content -LiteralPath $log) {
             if ($line -eq '[ Pass ]') { Write-Host $line -ForegroundColor Green }
@@ -68,43 +112,124 @@ function Record-Campaign([string]$Name, [int]$Count, [int]$Code) {
     else { Write-Output "[ OK ] Campaign $Name; log: $log" }
 }
 
-function Complete-Campaign($job) {
-    $job.Process.WaitForExit()
-    $code = $job.Process.ExitCode
-    if ($null -eq $code) { throw "Campaign exit code unavailable: $($job.Name)" }
-    Record-Campaign $job.Name $job.Count $code
-}
-
-# Shared-tree campaigns first and alone, then the others up to $Parallel at a time.
-$ordered = @($selected | Where-Object { $null -eq $registry.$_.build }) + @($selected | Where-Object { $null -ne $registry.$_.build })
-foreach ($name in $ordered) {
-    $entry = $registry.$name
-    $count = if ($Boots) { $Boots } elseif ($Smoke) { $entry.smoke } else { $entry.boots }
-    $limit = if ($null -ne $entry.build) { [Math]::Max(1, $Parallel) } else { 1 }
-    while ($running.Count -ge $limit -or ($null -eq $entry.build -and $running.Count) -or
-        ($entry.heavy -and @($running | Where-Object { $registry.($_.Name).heavy }).Count)) {
-        $done = @($running | Where-Object { $_.Process.HasExited })
-        if (!$done) { Start-Sleep -Milliseconds 500; continue }
-        foreach ($job in $done) { Complete-Campaign $job }
-        $running = @($running | Where-Object { !$_.Process.HasExited })
-    }
-    Write-Output "[ INFO ] Campaign $name ($count boots)"
-    if ($Parallel -eq 1) {
-        & $campaign -Name $name -Count $count -Output $output
-        Record-Campaign $name $count $LASTEXITCODE
-        continue
-    }
-    [string[]]$campaignArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$campaign",
-        '-Name', "$name", '-Count', "$count", '-Output', "$output")
-    $process = Start-Process $campaignShell -ArgumentList $campaignArguments -WorkingDirectory $project -WindowStyle Hidden -PassThru
+function Start-Campaign([string[]]$Extra) {
+    [string[]]$arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$campaign") + $Extra
+    $process = Start-Process $campaignShell -ArgumentList $arguments -WorkingDirectory $project -WindowStyle Hidden -PassThru
     # PowerShell 5.1: ExitCode stays empty unless the handle is opened while the process runs.
     $null = $process.Handle
-    $running += [pscustomobject]@{ Name = $name; Count = $count; Process = $process }
+    $process
 }
-foreach ($job in $running) { Complete-Campaign $job }
+
+# ============ images ============
+
+$images = [ordered]@{}
+foreach ($name in $selected) {
+    $entry = $registry.$name
+    if ($null -eq $entry.build) { continue }
+    $key = Get-BuildKey $entry
+    if ($images.Contains($key)) { continue }
+    $directory = Join-Path $cacheRoot ('image-' + (Get-TextHash ($sources + "`n" + $key)).Substring(0, 24))
+    $images[$key] = [pscustomobject]@{ Name = $name; Directory = $directory; Image = (Join-Path $directory 'kernel.elf'); Process = $null; Ready = $false }
+}
+$building = @()
+foreach ($job in $images.Values) {
+    if (Test-Path -LiteralPath $job.Image) { $job.Ready = $true; continue }
+    if (Test-Path -LiteralPath $job.Directory) { Remove-Item -Recurse -Force -LiteralPath $job.Directory }
+    while (@($building | Where-Object { !$_.Process.HasExited }).Count -ge [Math]::Max(1, $BuildParallel)) { Start-Sleep -Milliseconds 300 }
+    Write-Output "[ INFO ] Build $($job.Name)"
+    $job.Process = Start-Campaign @('-Name', $job.Name, '-Count', '1', '-Output', $output, '-BuildOnly', '-Images', $job.Directory)
+    $building += $job
+}
+foreach ($job in $building) {
+    $job.Process.WaitForExit()
+    $job.Ready = $job.Process.ExitCode -eq 0 -and (Test-Path -LiteralPath $job.Image)
+    if (!$job.Ready -and (Test-Path -LiteralPath $job.Directory)) { Remove-Item -Recurse -Force -LiteralPath $job.Directory }
+}
+$builtCount = $building.Count
+Write-Output "[ INFO ] Images: $($images.Count) distinct, $builtCount built, $($images.Count - $builtCount) reused"
+
+# ============ runners ============
+
+$runnerBuild = Join-Path $project 'kernel/build/meson-qemu-runner'
+if (@($selected | Where-Object { $registry.$_.runner[0] -eq 'qemu-runner' }).Count) {
+    $meson = (Get-Command meson -ErrorAction SilentlyContinue).Source
+    if (!$meson) { $meson = Join-Path $env:APPDATA 'Python/Python312/Scripts/meson.exe' }
+    if (!(Test-Path -LiteralPath (Join-Path $runnerBuild 'meson-private/build.dat'))) {
+        & $meson setup $runnerBuild (Join-Path $project 'test/tooling/qemu-runner') --vsenv *> (Join-Path $output 'runner-build.log')
+    }
+    & $meson compile -C $runnerBuild *>> (Join-Path $output 'runner-build.log')
+    if ($LASTEXITCODE) { throw 'Runner build failed.' }
+}
+Push-Location $project
+try { $runnerSources = @(git ls-files -co --exclude-standard -- '*.py' | ForEach-Object { Join-Path $project $_ }) }
+finally { Pop-Location }
+
+function Get-RunnerHash($Entry) {
+    if ($Entry.runner[0] -eq 'qemu-runner') { return Get-FilesHash @(Join-Path $runnerBuild 'qemu_runner.exe') }
+    # Python runners load modules from other folders by path: every tracked runner file counts.
+    Get-FilesHash $runnerSources
+}
+
+# ============ schedule ============
+
+# Shared-tree campaigns first and alone; then any campaign whose limits allow it, not strictly in order.
+$pending = [Collections.Generic.List[string]]::new()
+@($selected | Where-Object { $null -eq $registry.$_.build }) + @($selected | Where-Object { $null -ne $registry.$_.build }) |
+    ForEach-Object { $pending.Add($_) }
+
+function Test-Startable([string]$Name) {
+    $entry = $registry.$Name
+    if ($null -eq $entry.build) { return $script:running.Count -eq 0 }
+    if (@($script:running | Where-Object { $null -eq $registry.($_.Name).build }).Count) { return $false }
+    if ($script:running.Count -ge [Math]::Max(1, $Parallel)) { return $false }
+    !($entry.heavy -and @($script:running | Where-Object { $registry.($_.Name).heavy }).Count)
+}
+
+while ($pending.Count -or $running.Count) {
+    $finished = @($running | Where-Object { $_.Process.HasExited })
+    foreach ($job in $finished) {
+        $job.Process.WaitForExit()
+        Record-Campaign $job.Name $job.Count $job.Process.ExitCode $job.Pass
+    }
+    $running = @($running | Where-Object { $finished -notcontains $_ })
+    $next = $null
+    foreach ($candidate in $pending) {
+        if (Test-Startable $candidate) { $next = $candidate; break }
+        if ($null -eq $registry.$candidate.build) { break }
+    }
+    if ($null -eq $next) { Start-Sleep -Milliseconds 300; continue }
+    $null = $pending.Remove($next)
+    $entry = $registry.$next
+    $count = if ($Boots) { $Boots } elseif ($Smoke) { $entry.smoke } else { $entry.boots }
+    $extra = @('-Name', $next, '-Count', "$count", '-Output', $output)
+    $pass = ''
+    if ($null -ne $entry.build) {
+        $image = $images[(Get-BuildKey $entry)]
+        if (!$image.Ready) {
+            "Build failed: $next" | Out-File (Join-Path $output ($next + '.log')) -Encoding utf8
+            Record-Campaign $next $count 1
+            continue
+        }
+        $extra += @('-Image', $image.Image)
+        if ($entry.runner[0] -ne 'powershell') {
+            $pass = Get-TextHash ((@($next, $count, ($entry | ConvertTo-Json -Compress -Depth 5),
+                (Get-FileHash -LiteralPath $image.Image -Algorithm SHA256).Hash, (Get-RunnerHash $entry), $platform)) -join "`n")
+            if ($passes.ContainsKey($pass)) {
+                $script:results += [pscustomobject]@{ Campaign = $next; Boots = $count; ExitCode = 0; Log = ''; Skipped = $true }
+                $results | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $output 'results.json') -Encoding utf8
+                Write-Output "[ SKIP ] Campaign ${next}: already passed on the same image and runner"
+                continue
+            }
+        }
+    }
+    Write-Output "[ INFO ] Campaign $next ($count boots)"
+    $running += [pscustomobject]@{ Name = $next; Count = $count; Pass = $pass; Process = (Start-Campaign $extra) }
+}
 
 # ============ summary ============
 
 $failed = @($results | Where-Object { $_.ExitCode })
-"RESULT {0} qemu {1}/{2}; evidence {3}" -f $(if ($failed) { 'FAIL' } else { 'PASS' }), ($results.Count - $failed.Count), $results.Count, $output
+$skipped = @($results | Where-Object { $_.Skipped }).Count
+"RESULT {0} qemu {1}/{2}, {3} skipped as already passed; evidence {4}" -f $(if ($failed) { 'FAIL' } else { 'PASS' }),
+    ($results.Count - $failed.Count), $results.Count, $skipped, $output
 if ($failed) { throw ('[ FAIL ] ' + (($failed | ForEach-Object Campaign) -join ', ')) }
