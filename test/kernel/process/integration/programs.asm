@@ -30,3 +30,5 @@ PROGRAM flags_spin
 PROGRAM flags_ac
 PROGRAM write_flood
 PROGRAM spurious
+PROGRAM yield_a
+PROGRAM yield_b

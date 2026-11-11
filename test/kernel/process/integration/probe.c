@@ -8,6 +8,7 @@ PROGRAM(hello); PROGRAM(null); PROGRAM(readonly); PROGRAM(privileged);
 PROGRAM(kernel_jump); PROGRAM(bad_pointer); PROGRAM(bss); PROGRAM(irq);
 PROGRAM(spin); PROGRAM(syscall_spin); PROGRAM(flags_spin); PROGRAM(flags_ac);
 PROGRAM(write_flood); PROGRAM(spurious);
+PROGRAM(yield_a); PROGRAM(yield_b);
 #define IMAGE(name) {k6_program_##name, 0}
 
 extern volatile BOOT_U64 k6_negative;
@@ -69,6 +70,24 @@ static int nmi_case(BOOT_U64 window)
         x86_process_nmi_report(window) && kernel_log(0, "KERNEL_K6_NMI_RESUMED");
 }
 
+// ====== yield_pair ======
+
+static int yield_pair(void)
+{
+    X86_PROCESS_IMAGE images[2] = {
+        {k6_program_yield_a, k6_program_yield_a_length},
+        {corrupted, sizeof(corrupted)},
+    };
+    X86_PROCESS_RESULT results[2];
+    BOOT_U32 yields[2];
+    if (x86_process_pair(images, results, yields)) return 0;
+    images[1] = (X86_PROCESS_IMAGE){k6_program_yield_b, k6_program_yield_b_length};
+    return x86_process_pair(images, results, yields) && yields[0] == 2 && yields[1] == 2 &&
+        results[0].Kind == X86_PROCESS_EXIT && results[1].Kind == X86_PROCESS_EXIT &&
+        results[0].Code == 0x1122334455667788ULL && results[1].Code == 0x8877665544332211ULL &&
+        kernel_log(0, "KERNEL_K6_YIELD_PAIR_OK");
+}
+
 // ====== cases ======
 
 static int cases(void)
@@ -117,7 +136,7 @@ static int cases(void)
     for (BOOT_U64 window = 1; window <= 6; ++window) {
         if (!nmi_case(window)) return 0;
     }
-    return field("K6_COPY_INSTRUCTION: ", x86_process_copy_instruction());
+    return yield_pair() && field("K6_COPY_INSTRUCTION: ", x86_process_copy_instruction());
 }
 
 // ====== x86_k6_process_probe ======
