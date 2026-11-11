@@ -13,7 +13,7 @@ rustc = find_program('rustc')
 # ====== user program target ======
 
 sysroot = run_command(rustc, '--print', 'sysroot', check: true).stdout().strip()
-if get_option('profile') in ['ordinary', 'k6-process'] and not fs.is_dir(sysroot / 'lib/rustlib/x86_64-unknown-none')
+if (get_option('profile') == 'ordinary' or get_option('profile').startswith('k6-process')) and not fs.is_dir(sysroot / 'lib/rustlib/x86_64-unknown-none')
     error('Target Rust x86_64-unknown-none assente: rustup target add x86_64-unknown-none')
 endif
 
