@@ -52,7 +52,7 @@ static int over_budget(const unsigned char *bytes, BOOT_U64 length)
 {
     X86_PROCESS_RESULT result;
     return run(bytes, length, &result) && result.Kind == X86_PROCESS_BUDGET &&
-        result.Irqs == x86_process_budget_ticks() && field("K6_BUDGET_RIP: ", result.Rip);
+        result.Irqs <= x86_process_budget_ticks() && field("K6_BUDGET_RIP: ", result.Rip);
 }
 
 // ====== nmi_case ======
@@ -100,6 +100,9 @@ static int cases(void)
         !over_budget(k6_program_syscall_spin, k6_program_syscall_spin_length) ||
         !over_budget(k6_program_flags_spin, k6_program_flags_spin_length) ||
         !kernel_log(0, "KERNEL_K6_BUDGET_OK")) return 0;
+    x86_process_delay_next_syscall();
+    if (!run(k6_program_syscall_spin, k6_program_syscall_spin_length, &result) ||
+        result.Kind != X86_PROCESS_BUDGET || result.Irqs != 0) return 0;
     if (!run(k6_program_flags_ac, k6_program_flags_ac_length, &result) || result.Kind != X86_PROCESS_BAD_FRAME ||
         !kernel_log(0, "KERNEL_K6_AC_REJECTED")) return 0;
     if (!exits(k6_program_hello, k6_program_hello_length, 0, &result) || result.Writes != 1 ||

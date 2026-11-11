@@ -1,4 +1,5 @@
 #include "process.h"
+#include "arch/x86/kernel/cpu/percpu/clock/clock.h"
 #include "arch/x86/kernel/cpu/percpu/percpu.h"
 #include "arch/x86/kernel/descriptors/protection.h"
 #include "arch/x86/kernel/descriptors/segments.h"
@@ -35,6 +36,7 @@
 #define DRAIN_ATTEMPTS 64U
 #define VECTOR_STRAY 0xffffULL
 #define STACK_BYTES 16384U
+#define PROCESS_BUDGET_MS 2000U
 #define STACK_CANARY 0x4b36435441434bULL
 #define RESULT_RANGE (~0ULL - 1)
 #define RESULT_LENGTH (~0ULL - 2)
@@ -126,6 +128,11 @@ static BOOT_U64 expected_image, expected_windows;
 static KERNEL_PHYSICAL_LEASE held;
 static BOOT_U32 state, opened, timer_lvt_saved, timer_divide_saved;
 static BOOT_U64 budget_left, drained, written_bytes;
+static const KERNEL_CLOCK *budget_clock;
+static KERNEL_DEADLINE budget_deadline;
+#ifdef KERNEL_TEST_K6_PROCESS
+static BOOT_U32 delay_next_syscall;
+#endif
 static X86_PROCESS_RESULT *current;
 static volatile BOOT_U64 window_pointer, window_length, window_write;
 static _Alignas(16) unsigned char buffer[MAX_COPY + 1];
@@ -218,6 +225,8 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     if (opened || !window || !timer || !owner || !x86_user_mode_allowed() ||
         !x86_exception_environment() || x86_percpu_current_local() != owner ||
         __readmsr(MSR_GS_BASE) != (BOOT_U64)owner || (__readmsr(MSR_EFER) & EFER_SCE)) return 0;
+    const KERNEL_LOCK_WAIT *wait = x86_percpu_wait_current();
+    if (!wait) return 0;
     const volatile BOOT_U64 *root = x86_window_entries(0);
     for (BOOT_U32 slot = 0; slot < 256; ++slot) if (root[slot]) return 0;
     tss_field = tss_rsp0();
@@ -225,6 +234,7 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
         !x86_timer_read(timer->Mapping, 0x3e0, &timer_divide_saved)) return 0;
     owner_window = window;
     owner_timer = timer;
+    budget_clock = &wait->Clock;
     k6_owner = (BOOT_U64)owner;
     k6_kernel_root = __readcr3();
     k6_stack_top = (BOOT_U64)kernel_stack + STACK_BYTES;
@@ -335,6 +345,12 @@ static void timer_start(void)
     const X86_LAPIC_MAPPING *mapping = owner_timer->Mapping;
     BOOT_U32 vector = K6_NEGATIVE(36) ? STRAY_TEST_VECTOR : TIMER_VECTOR;
     budget_left = x86_process_budget_initial();
+    BOOT_U32 duration = PROCESS_BUDGET_MS;
+#ifdef KERNEL_TEST_K6_PROCESS
+    if (delay_next_syscall) duration = 100;
+#endif
+    if (!kernel_deadline_start(budget_clock, kernel_clock_ms(budget_clock, duration), &budget_deadline))
+        die("PROCESS_CLOCK_FAILED");
     // Intel SDM 3A §13.5.4: divide 3E0h = 3 (by 16), LVT 320h one-shot unmasked, initial count 380h.
     if (!x86_timer_confirm_write(mapping, 0x3e0, 3) || !x86_timer_confirm_write(mapping, 0x320, vector) ||
         !x86_timer_write(mapping, 0x380, owner_timer->Reload)) die("PROCESS_TIMER_FAILED");
@@ -447,6 +463,16 @@ static BOOT_U64 sys_write(BOOT_U64 pointer, BOOT_U64 length)
     return length;
 }
 
+// ====== budget_expired ======
+
+static int budget_expired(BOOT_U64 rip)
+{
+    if (budget_left && !kernel_deadline_expired(budget_clock, &budget_deadline)) return 0;
+    current->Kind = X86_PROCESS_BUDGET;
+    current->Rip = rip;
+    return 1;
+}
+
 // ====== x86_process_syscall_dispatch ======
 
 int x86_process_syscall_dispatch(BOOT_U64 *frame)
@@ -460,6 +486,7 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         current->Rip = IRET(frame, 0);
         return 2;
     }
+    if (budget_expired(IRET(frame, 0))) return 2;
     BOOT_U64 number = GPR(frame, GPR_RAX);
     if (number == SYS_EXIT) {
         current->Kind = X86_PROCESS_EXIT;
@@ -467,7 +494,18 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         return 2;
     }
     GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;
-    return 1;
+#ifdef KERNEL_TEST_K6_PROCESS
+    if (delay_next_syscall) {
+        delay_next_syscall = 0;
+        BOOT_U32 attempt = 0;
+        while (!kernel_deadline_expired(budget_clock, &budget_deadline)) {
+            if (++attempt == 0x1000000U) die("PROCESS_CLOCK_FAILED");
+            _mm_pause();
+        }
+        if (!kernel_log(0, "KERNEL_K6_SYSCALL_DEADLINE_OK")) x86_process_stop();
+    }
+#endif
+    return budget_expired(IRET(frame, 0)) ? 2 : 1;
 }
 
 // ====== x86_process_irq_service ======
@@ -490,10 +528,7 @@ int x86_process_irq_service(BOOT_U64 *frame)
         return 2;
     }
     budget_left = x86_process_budget_next(budget_left);
-    if (!budget_left) {
-        current->Kind = X86_PROCESS_BUDGET;
-        return 2;
-    }
+    if (budget_expired(IRET(frame, 0))) return 2;
     if (!x86_timer_write(owner_timer->Mapping, 0x380, owner_timer->Reload)) die("PROCESS_TIMER_FAILED");
     return 1;
 }
@@ -593,6 +628,13 @@ BOOT_U64 x86_process_copy_instruction(void)
 BOOT_U64 x86_process_budget_ticks(void)
 {
     return x86_process_budget_initial();
+}
+
+// ====== x86_process_delay_next_syscall ======
+
+void x86_process_delay_next_syscall(void)
+{
+    delay_next_syscall = 1;
 }
 
 // ====== x86_process_drain_check ======

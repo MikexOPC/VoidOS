@@ -475,7 +475,10 @@ Il kernel ordinario esegue al boot un vero ELF, `kernel/process/programs/init.rs
 prima di `KERNEL_READY`; nel profilo shell prima della sessione di input. Senza SMEP o SMAP scrive
 `PROCESS_DISABLED` e prosegue.
 
-- Budget: 200 tick del timer LAPIC per processo, anche durante le syscall. Oltre: processo terminato.
+- Budget del processo: scadenza di 2 secondi sul clock ACPI PM, verificata agli IRQ
+  del LAPIC e all'ingresso e al ritorno delle syscall. Resta il limite di 200 IRQ
+  serviti come riserva se il clock si ferma. Una syscall già in corso può arrivare
+  al punto di controllo prima della raccolta.
 - IRQ e NMI inattesi durante un processo: root del kernel, poi panic con `PROCESS_STRAY_IRQ` o
   `PROCESS_STRAY_NMI`. Spurious ignorato, provato anche da ring 3.
 - `write`: al massimo 4096 byte per processo, poi errore -4. Stampa a blocchi di 128 byte: in K6-C
@@ -507,6 +510,13 @@ Correzioni trovate dalla campagna e da cppcheck:
 
 **Campagne più rapide.** Immagini compilate una volta e riusate, link riproducibile, nessun blocco in
 coda, salto delle corse già passate: vedi `scripts/README.md`.
+
+**Verifica delle correzioni di review.** `k6-process`, `k6-ordinary` e
+`k6-protection` hanno passato 10 boot ciascuna. Nel diagnostico una syscall
+supera la scadenza con zero IRQ di processo serviti. Il monitor associa ogni
+lettura di CR4 alla CPU richiesta. Il test di pubblicazione concorrente
+ottiene un ELF completo da due build indipendenti. Log in
+`kernel/build/qemu-run-0d2f725d065341538ca4f89391a395df`.
 
 **Accelerazione hardware, misurata e non adottata.** WHPX con `-cpu max` fa andare in crash OVMF prima del
 loader; con `-accel whpx,kernel-irqchip=off` oppure `-cpu Skylake-Client` l'immagine ordinaria arriva a

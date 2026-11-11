@@ -266,7 +266,11 @@ fn ordinary_options_and_cr4() {
     assert!(cli::parse(strings(&["--image", "i", "--ordinary", "--cpu", "other"])).is_err());
     assert!(cli::parse(strings(&["--image", "i", "--process-negative", "37"])).is_ok());
     assert!(cli::parse(strings(&["--image", "i", "--process-negative", "38"])).is_err());
-    assert_eq!(parse_cr4(b"CR3=1 CR4=00300ee8 \n"), Some(0x300ee8));
-    assert_eq!(parse_cr4(b"CR4= x"), None);
-    assert_eq!(parse_cr4(b"RAX=1"), None);
+    assert_eq!(parse_cr4(b"CPU#3\r\nCR3=1 CR4=00300ee8 \r\n", 3), Some(0x300ee8));
+    assert_eq!(parse_cr4(b"CPU#0\nCR4=00300ee8\n", 3), None);
+    assert_eq!(parse_cr4(b"CPU#3\nCPU#0\nCR4=00300ee8\n", 3), None);
+    assert_eq!(parse_cr4(b"CPU#0\nCR4=1\nCPU#3\nCR4=2\n", 3), Some(2));
+    assert_eq!(parse_cr4(b"CPU#3\nCR4=0030", 3), None);
+    assert_eq!(parse_cr4(b"CPU#3\nCR4=x\n", 3), None);
+    assert_eq!(parse_cr4(b"CR4=00300ee8\n", 3), None);
 }
