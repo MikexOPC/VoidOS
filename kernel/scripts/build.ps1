@@ -467,7 +467,7 @@ if ($UserProcess -or $TestK6Process) {
 }
 if ($TestK6Process) {
     $programRoot = Join-Path $project 'test/kernel/process'
-    foreach ($program in 'hello','null','readonly','privileged','kernel_jump','bad_pointer','bss','irq','spin','syscall_spin','flags_spin','flags_ac','write_flood','spurious','yield_a','yield_b') {
+    foreach ($program in 'hello','null','readonly','privileged','kernel_jump','bad_pointer','bss','irq','spin','syscall_spin','flags_spin','flags_ac','write_flood','spurious','yield_a','yield_b','ipc_client','ipc_server') {
         Invoke-Compiler $rustc @('--edition=2024','-D','warnings','--crate-type=bin','--crate-name',"k6_$program",'--target','x86_64-unknown-none',
             '--cfg',"program_$program",'-C','panic=abort','-C','opt-level=s','-C','relocation-model=static',
             '-C',"link-arg=-T$userPrograms/link.ld",'-C','link-arg=-zmax-page-size=4096','-C','link-arg=--build-id=none',

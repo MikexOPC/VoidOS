@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 const POLL_SLEEP: Duration = Duration::from_millis(100);
-const USER_FAULTS: [(&str, &str); 4] = [("0e", "0004"), ("0e", "0007"), ("0d", "0000"), ("0e", "0015")];
+const USER_FAULTS: [(&str, &str); 5] = [("0e", "0004"), ("0e", "0007"), ("0d", "0000"), ("0e", "0015"), ("0e", "0004")];
 const WINDOWS: u64 = 6;
 
 // ====== process_boot ======
@@ -37,6 +37,9 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
     if !log.before("KERNEL_K6_YIELD_PAIR_OK", "KERNEL_READY") {
         return Err("Missing two-process yield test".to_string());
     }
+    if !log.before("KERNEL_K6_IPC_OK", "KERNEL_READY") {
+        return Err("Missing two-process IPC test".to_string());
+    }
     if log.numbers("K6_FAULT_VECTOR") != [14, 14, 13, 14] || log.numbers("K6_FAULT_ERROR") != [4, 7, 0, 0x15] {
         return Err("Unexpected reported user faults".to_string());
     }
@@ -52,15 +55,15 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
         .filter(|fault| fault.rip == instruction)
         .map(|fault| (fault.error, fault.cr2))
         .collect();
-    if recovered != [(0, 0x5fd000)] {
+    if recovered != [(0, 0x5fd000), (0, 0x5fd000), (3, 0x400000), (0, 0x5fd000)] {
         return Err(format!("Unexpected recovered copy faults {recovered:?}"));
     }
     if trace::triple_fault(&bytes) {
         return Err("Unexpected triple fault".to_string());
     }
     Ok(object(vec![
-        ("UserFaults", Value::Number(4)),
-        ("RecoveredFaults", Value::Number(1)),
+        ("UserFaults", Value::Number(5)),
+        ("RecoveredFaults", Value::Number(4)),
         ("Nmis", Value::Number(WINDOWS)),
         ("Hello", Value::Bool(true)),
     ]))

@@ -168,7 +168,7 @@ x86_process_syscall ENDP
 ; ====== x86_process_enter ======
 
 ; Intel SDM 3A §§3.4.2, 7.14.3: selettori RPL3, frame IRETQ a cinque slot, IF=1 nell'immagine.
-; RCX = entry, RDX = stack utente. Registri utente azzerati prima di IRETQ.
+; Microsoft x64 ABI: RCX = entry, RDX = stack, R8 = argomento iniziale per RDI.
 PUBLIC x86_process_enter
 x86_process_enter PROC
     push rbx
@@ -195,7 +195,7 @@ x86_process_enter PROC
     xor edx, edx
     xor ebp, ebp
     xor esi, esi
-    xor edi, edi
+    mov rdi, r8
     xor r8d, r8d
     xor r9d, r9d
     xor r10d, r10d

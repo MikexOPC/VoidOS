@@ -1,9 +1,8 @@
 # Prima IPC tra processi utente
 
-Stato: code non bloccanti con `yield` approvate. L'alternanza dei due ELF
-è verificata. Nella prova del canale il client invia un messaggio, il server risponde e il kernel
-raccoglie entrambi. In una seconda prova il server termina prima della
-risposta e il client riceve un errore di chiusura.
+Stato: IPC v0 verificata nel diagnostico `k6-process`. Il client invia
+messaggi, il server risponde e il kernel raccoglie entrambi. In una seconda
+prova il server va in fault e il client riceve un errore di chiusura.
 
 ## Scelta della prima versione
 
@@ -38,6 +37,23 @@ generazioni il relativo slot viene ritirato.
 | `send(handle, ptr, len)` | Accoda un messaggio da 1 a 128 byte dopo la copia completa. Coda piena, handle errato o copia fallita restituiscono un errore. |
 | `recv(handle, ptr, capacity)` | Copia il primo messaggio e restituisce la lunghezza. Coda vuota, spazio insufficiente o copia fallita restituiscono un errore. |
 | `yield()` | Salva il contesto e restituisce il controllo al dispatcher BSP. Alla ripresa, restituisce successo. La prova K6 usa il numero di syscall 2. |
+
+Nel diagnostico K6 la routine di ingresso trasferisce l'handle iniziale
+da `R8`, terzo argomento MSVC x64, a `RDI` per il payload ELF.
+[ABI x64 Microsoft](https://learn.microsoft.com/en-us/cpp/build/x64-calling-convention?view=msvc-170)
+
+`send` e `recv` sono le syscall 3 e 4. Ricevono handle, puntatore e
+lunghezza o capacità in `RDI`, `RSI` e `RDX`. Il risultato in `RAX` è
+la lunghezza del messaggio oppure uno degli errori seguenti.
+
+| Codice | Errore |
+| --- | --- |
+| -2 | Intervallo utente invalido o fault durante la copia |
+| -3 | Lunghezza del messaggio fuori dai limiti |
+| -5 | Handle invalido, scaduto o appartenente al peer |
+| -6 | Coda piena per `send`, vuota per `recv` |
+| -7 | `PEER_CLOSED` |
+| -8 | Buffer di ricezione troppo piccolo |
 
 La ricezione rimuove il messaggio soltanto dopo una copia completa. Un
 fault durante la copia verso l'utente può lasciare un prefisso nel
@@ -103,3 +119,13 @@ parità Meson e 23 test host Rust passati. I due ELF hanno entry a
    fallita lasci il messaggio in coda, che il superstite osservi
    `PEER_CLOSED` e che il budget fisico finale torni al valore iniziale.
    Rieseguire `k6-process` e `k6-ordinary`.
+
+## Validazione IPC v0
+
+- QEMU/OVMF: `k6-process` 10/10 e `k6-ordinary` 10/10. Il probe verifica
+  coda piena e vuota, FIFO, handle del peer rifiutato, buffer piccolo,
+  fault di lettura e di scrittura recuperati, chiusura dopo exit e fault
+  e ripristino del budget fisico.
+- Host: 12/12 test Rust a ciascun livello di ottimizzazione e 13/13 test
+  del runner. Parità Meson e confronto dei piani PowerShell/Rust passati.
+- Evidenze QEMU in `kernel/build/qemu-run-a1c0fc7566e54d6db8b7466d84c28d5d`.
