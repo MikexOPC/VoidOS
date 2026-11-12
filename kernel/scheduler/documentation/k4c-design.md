@@ -2,7 +2,7 @@
 
 Design approvato il 4 novembre 2026, aggiornato il 5 novembre. Chiude K4 insieme a
 K4-A (IPI) e K4-B (shootdown). Decisione di base già presa: D3-A di
-[G7](../../../docs/design/g7-smp-user.md), cioè una coda globale con un
+[registro delle decisioni](../../../docs/decisions.md), cioè una coda globale con un
 lock e preemption dal timer LAPIC di ogni CPU, dietro un'interfaccia
 `pick/enqueue` sostituibile.
 

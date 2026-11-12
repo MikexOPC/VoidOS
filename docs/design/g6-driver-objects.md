@@ -1,7 +1,7 @@
 # G6: driver come oggetti
 
 25 ottobre 2026. Decisioni approvate: O1, O2-A, O3, O4, O5, O6. Si applicano le regole del §4 di
-[G7](g7-smp-user.md).
+[design del consolidamento](consolidamento.md#oggetti-driver).
 
 ## Decisioni
 

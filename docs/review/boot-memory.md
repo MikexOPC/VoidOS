@@ -1,7 +1,7 @@
 # Revisione del boot del 2 ottobre 2026
 
 Per la verifica successiva dello stato completo e gli hash delle nuove
-esecuzioni, vedere [stato verificato](verified-state.md).
+esecuzioni, vedere [validazione del consolidamento](../validation/consolidamento.md#boot-memoria-e-dispositivi).
 
 ## Ambito
 

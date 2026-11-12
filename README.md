@@ -60,5 +60,5 @@ avvia una VM senza finestra grafica, controlla i marker seriali e scrive
 `results.json` e i log nella directory indicata da `Evidence`.
 
 I sorgenti del kernel sono in [kernel/](kernel/) e [arch/x86/](arch/x86/).
-Per le altre prove vedi la [guida agli script](scripts/README.md).
+Consulta la [mappa del codice](docs/architecture.md), la [roadmap](docs/roadmap.md) e la [guida agli script](scripts/README.md).
 Il progetto è distribuito con licenza [GPL-3.0-only](LICENSE).
