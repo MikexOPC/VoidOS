@@ -49,6 +49,8 @@
 #define SYS_YIELD 2ULL
 #define SYS_SEND 3ULL
 #define SYS_RECV 4ULL
+#define SYS_WAIT_READABLE 5ULL
+#define IPC_WOULD_BLOCK (~5ULL)
 #define IPC_MESSAGE_BYTES 128U
 // Intel SDM 2B, SYSCALL and SYSRET; 3A §2.2, §2.3, §6.8.8: STAR, LSTAR, CSTAR, FMASK, EFER.SCE.
 #define MSR_EFER 0xc0000080U
@@ -100,6 +102,7 @@ BOOT_U64 x86_ipc_send_check(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64
 BOOT_U64 x86_ipc_send(IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, const unsigned char *bytes, BOOT_U64 len);
 BOOT_U64 x86_ipc_peek(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, unsigned char *bytes, BOOT_U64 capacity);
 BOOT_U64 x86_ipc_consume(IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle);
+BOOT_U64 x86_ipc_receive_ready(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle);
 void x86_process_resume(const BOOT_U64 *frame);
 void x86_process_device_irq(void);
 #define WINDOW_LABELS(number) \
@@ -157,6 +160,7 @@ static KERNEL_DEADLINE budget_deadline;
 static BOOT_U32 delay_next_syscall;
 static BOOT_U64 *yield_frame;
 static BOOT_U32 yielded;
+static BOOT_U32 waiting;
 static IPC_CHANNEL ipc_channel;
 static BOOT_U64 ipc_endpoint;
 static X86_IRQ_TOKEN device_probe_token;
@@ -591,8 +595,13 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         return 2;
     }
 #ifdef KERNEL_TEST_K6_PROCESS
-    if (number == SYS_YIELD && yield_frame) {
-        GPR(frame, GPR_RAX) = 0;
+    if (yield_frame && (number == SYS_YIELD || (ipc_endpoint && number == SYS_WAIT_READABLE))) {
+        BOOT_U64 result = number == SYS_YIELD ? 0 :
+            x86_ipc_receive_ready(&ipc_channel, ipc_endpoint, GPR(frame, GPR_RDI));
+        GPR(frame, GPR_RAX) = result;
+        if (number == SYS_WAIT_READABLE && result != IPC_WOULD_BLOCK)
+            return budget_expired(IRET(frame, 0)) ? 2 : 1;
+        waiting = number == SYS_WAIT_READABLE;
         for (BOOT_U32 index = 0; index < USER_FRAME_WORDS; ++index) yield_frame[index] = frame[index];
         yielded = 1;
         return 2;
@@ -749,7 +758,7 @@ typedef struct {
     _Alignas(16) BOOT_U64 Frame[USER_FRAME_WORDS];
     KERNEL_PHYSICAL_LEASE Lease;
     BOOT_U64 Entry, RemainingIrqs, Written;
-    BOOT_U32 RemainingTicks, Yields;
+    BOOT_U32 RemainingTicks, Yields, Waiting;
 } PROCESS_SLOT;
 
 // ====== run_slot ======
@@ -762,6 +771,7 @@ static void run_slot(PROCESS_SLOT *slot, X86_PROCESS_RESULT *result, BOOT_U64 en
     budget_left = slot->RemainingIrqs;
     k6_exit_kind = 0;
     yielded = 0;
+    waiting = 0;
     yield_frame = slot->Frame;
     ipc_endpoint = endpoint;
     if (!kernel_deadline_start(budget_clock, slot->RemainingTicks, &budget_deadline)) die("PROCESS_CLOCK_FAILED");
@@ -776,6 +786,7 @@ static void run_slot(PROCESS_SLOT *slot, X86_PROCESS_RESULT *result, BOOT_U64 en
     slot->RemainingIrqs = budget_left;
     if (yielded) {
         ++slot->Yields;
+        slot->Waiting = waiting;
         if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
         else slot->RemainingTicks -= elapsed;
     }
@@ -808,7 +819,14 @@ int x86_process_pair(const X86_PROCESS_IMAGE images[2], X86_PROCESS_RESULT resul
     for (BOOT_U32 turn = 0; turn < 32 && (!use_ipc || channel) && (!results[0].Kind || !results[1].Kind); ++turn) {
         BOOT_U32 index = turn % 2;
         if (results[index].Kind) continue;
-        run_slot(&slots[index], &results[index], channel ? channel | index : 0);
+        BOOT_U64 endpoint = channel ? channel | index : 0;
+        if (slots[index].Waiting) {
+            BOOT_U64 ready = x86_ipc_receive_ready(&ipc_channel, endpoint, endpoint);
+            if (ready == IPC_WOULD_BLOCK) continue;
+            GPR(slots[index].Frame, GPR_RAX) = ready;
+            slots[index].Waiting = 0;
+        }
+        run_slot(&slots[index], &results[index], endpoint);
         if (__readcr3() != k6_kernel_root || !roots_stable() || kernel_stack[0] != STACK_CANARY)
             die("PROCESS_ROOT_CHANGED");
         if (results[index].Kind) {

@@ -7,7 +7,9 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 const POLL_SLEEP: Duration = Duration::from_millis(100);
-const USER_FAULTS: [(&str, &str); 5] = [("0e", "0004"), ("0e", "0007"), ("0d", "0000"), ("0e", "0015"), ("0e", "0004")];
+const USER_FAULTS: [(&str, &str); 6] = [
+    ("0e", "0004"), ("0e", "0007"), ("0d", "0000"), ("0e", "0015"), ("0e", "0004"), ("0e", "0004"),
+];
 const WINDOWS: u64 = 6;
 
 // ====== process_boot ======
@@ -43,6 +45,9 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
     if !log.before("KERNEL_BRIDGE_STATUS_OK", "KERNEL_K6_PROCESS_OK") {
         return Err("Missing bridge status exchange, rejection or peer closure".to_string());
     }
+    if !log.before("KERNEL_BRIDGE_WAIT_RECOVERY_OK", "KERNEL_K6_PROCESS_OK") {
+        return Err("Missing bridge wake after peer fault or budget expiry".to_string());
+    }
     if log.count("KERNEL_K6_EXTERNAL_IRQ_OK", Some("OK")) != 1 ||
         !log.before("KERNEL_K6_EXTERNAL_IRQ_OK", "KERNEL_K6_PROCESS_OK") {
         return Err("Missing CPL3 external interrupt delivery and return".to_string());
@@ -69,7 +74,7 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
         return Err("Unexpected triple fault".to_string());
     }
     Ok(object(vec![
-        ("UserFaults", Value::Number(5)),
+        ("UserFaults", Value::Number(USER_FAULTS.len() as u64)),
         ("RecoveredFaults", Value::Number(4)),
         ("Nmis", Value::Number(WINDOWS)),
         ("Hello", Value::Bool(true)),

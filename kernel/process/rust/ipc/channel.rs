@@ -185,6 +185,15 @@ pub unsafe extern "C" fn x86_ipc_send(
     channel.send(owner, handle, bytes, len).unwrap_or_else(|error| error)
 }
 
+// ====== x86_ipc_receive_ready ======
+
+/// # Safety
+/// Channel storage must be initialized and readable for this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn x86_ipc_receive_ready(channel: &Channel, owner: u64, handle: u64) -> u64 {
+    channel.receive_slot(owner, handle).map_or_else(|error| error, |_| 0)
+}
+
 // ====== x86_ipc_peek ======
 
 /// # Safety
@@ -213,6 +222,23 @@ mod tests {
 
     fn channel() -> Channel {
         Channel { generation: 0, phase: 0, queues: [EMPTY_QUEUE; 2] }
+    }
+
+    // ====== receive_readiness_tracks_publication_and_close ======
+
+    #[test]
+    fn receive_readiness_tracks_publication_and_close() {
+        let mut channel = channel();
+        let left = channel.open();
+        let right = left | 1;
+        assert_eq!(unsafe { x86_ipc_receive_ready(&channel, right, left) }, INVALID);
+        assert_eq!(unsafe { x86_ipc_receive_ready(&channel, right, right) }, WOULD_BLOCK);
+        assert_eq!(channel.send(left, left, &[7; MAX_MESSAGE], 1), Ok(1));
+        assert_eq!(unsafe { x86_ipc_receive_ready(&channel, right, right) }, 0);
+        assert_eq!(channel.consume(right, right), Ok(0));
+        assert_eq!(unsafe { x86_ipc_receive_ready(&channel, right, right) }, WOULD_BLOCK);
+        channel.close();
+        assert_eq!(unsafe { x86_ipc_receive_ready(&channel, right, right) }, PEER_CLOSED);
     }
 
     // ====== fifo_keeps_head_until_consume ======
