@@ -1,7 +1,10 @@
 # Piano sicurezza dei sottosistemi
 
-Stato: avviato (bounds, entropia, SHA-256, memory, HMAC e DRBG pronti). Questo file e il punto di partenza per chi lavora sulla
-sicurezza; va aggiornato a ogni passo.
+Stato: avviato. Primitive comuni pronte ma non ancora usate dal kernel;
+user mode, syscall e user copy esistono con SMEP/SMAP obbligatori; mancano
+sorgente di entropia, stack canary e UMIP. Stato riallineato al codice il
+2026-11-12 (vedi "Classifica"). Questo file e il punto di partenza per chi
+lavora sulla sicurezza; va aggiornato a ogni passo.
 
 ## Ordine concordato — 6 novembre 2026
 
@@ -57,6 +60,11 @@ futuri syscall/user mode vengono prima di console o layout.
 | Architettura | `arch/x86/security/<funzione>/` | Protezioni della CPU: NX/XD, WP, SMEP/SMAP, UMIP, CET, mitigazioni speculative, validazione frame di interrupt |
 | Sottosistema | cartella del modulo | Uso delle primitive e invarianti propri del modulo |
 
+- `arch/x86/security/` non esiste ancora. Oggi le protezioni CPU stanno
+  nei moduli che le usano: SMEP/SMAP in `arch/x86/kernel/descriptors/`
+  (`protection.c`, `rust/protection/`, `assembly/protection/`), confine
+  user/kernel in `arch/x86/kernel/process/` e regole in
+  `kernel/process/rust/policy/`.
 - Le cartelle `<funzione>` si creano solo quando esiste il modulo, senza
   segnaposto. Massimo 6-8 file per cartella.
 - Test in `test/lib/security/...` e `test/arch/x86/security/...`, guidati da
@@ -80,16 +88,34 @@ ogni passo.
 
 ## Classifica
 
-Prima stesura, 2026-11-06, da sola lettura del codice e di `docs/status.md`.
-Da confermare prima di aprire ciascun passo. Il passo 4 e stato anticipato: i passi 1-3
+Prima stesura 2026-11-06; riallineata il 2026-11-12 da sola lettura del
+codice (nessun test rieseguito). Da confermare prima di aprire ciascun passo. Il passo 4 e stato anticipato: i passi 1-3
 toccano `arch/` e il kernel, in uso per K4-C5.
 
 **Gia presente:** paging NX/WP, guard page sugli stack e IST, heap con canary e
 rifiuto del double free, autorizzazione DMA e base VT-d, TLB shootdown prima
-del riuso.
+del riuso. Dal lavoro K5/K6: SMEP e SMAP abilitati via CPUID e riletti da CR4
+(user mode negato se ne manca uno), user mode con root di paging separata
+per processo, ingresso SYSCALL con ritorno `iretq` e frame validato, user
+copy limitata a 256 byte con `stac`/`clac` e recupero del page fault solo
+nella finestra di copia, budget di tempo per processo.
 
 **Mancante:** stack canary (tutto compila con `/GS-`), sorgente di entropia,
-W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
+W^X dell'immagine kernel verificato per sezione, UMIP, KASLR, mitigazioni
+speculative oltre a `lfence` dopo `swapgs`.
+
+**Limiti noti del codice presente:**
+
+- `lib/security` non ha consumatori nel kernel: nessuna chiamata a
+  `os_bounds_*`, nessun header C, SHA-256/HMAC/DRBG senza sorgente.
+- La root del processo mappa tutta l'immagine kernel (serve a ingresso e
+  user copy): non e KPTI e non va dichiarata come isolamento Meltdown.
+- Lo stack delle syscall e un array statico con un canary alla parola 0,
+  controllato a fine turno; guard page non trovata, da verificare.
+- `arch/x86/kernel/process/process.c`: 993 righe, stato globale, un solo
+  processo sul BSP, simboli `k6_*`, hook di test nel percorso reale sotto
+  `#ifdef`. Da dividere.
+- `x86_process_stop` ferma la CPU senza messaggio (`cli; hlt`).
 
 | # | Passo | Rischio | Motivo |
 |---|---|---|---|
@@ -98,9 +124,10 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
 | 3 | W^X dell'immagine kernel | Alto | Verificare e imporre `.text` RX, `.rdata` RO+NX, dati RW+NX; test negativo su scrittura in `.text` |
 | 4 | Primitive comuni `lib/security/bounds` | Medio-alto | **Fatto per primo** (2026-11-06): non tocca hardware ne kernel, utile a tutti i passi successivi |
 | 5 | Input non fidati: ACPI, VirtIO, PS/2, shell | Medio | Tabelle firmware e device sono input esterni: limiti, lunghezze, checksum |
-| 6 | SMEP/SMAP/UMIP | Medio, ora | Utili davvero con lo user mode; abilitabili prima solo se CPUID li offre e il kernel non tocca pagine user |
+| 6 | UMIP | Medio, ora | **SMEP/SMAP fatti** con K5/K6. Resta UMIP: CR4 bit 11, da abilitare solo con verifica CPUID |
 | 7 | DMA: VT-d attivo per i device | Medio | Il DMA bypassa il paging della CPU; da collegare a VirtIO |
-| 8 | Syscall, user copy, KPTI | Futuro | Solo quando esiste lo user mode |
+| 8 | Consolidamento del confine user/kernel | Alto, ora | **Syscall e user copy fatti** con K5/K6. Restano: guard page sullo stack delle syscall, divisione di `process.c`, arresti con diagnostica, decisione su KPTI |
+| 9 | Collegare `lib/security/bounds` ai moduli | Medio | Header C e sostituzione dei controlli scritti a mano |
 
 ## Progressi
 
@@ -158,3 +185,9 @@ W^X dell'immagine kernel verificato per sezione, SMEP/SMAP/UMIP, user mode.
   `assessment.exe restart`: controllo di sanita binomiale, H_r e H_c su righe
   e colonne, regola H_I/2. H_r e H_c coincidono con NIST (28 su 28). Resta
   aperto il test IID (§5).
+- **2026-11-12 — riallineamento del piano.** Review di sola lettura di
+  `lib/security`, protezione SMEP/SMAP e confine user/kernel. Corrette le
+  voci superate (SMEP/SMAP, user mode, syscall e user copy risultavano
+  mancanti o futuri) e aggiunti i limiti noti. Nessun codice modificato,
+  nessun test eseguito. Ordine proposto: sorgente RDSEED/RDRAND, canary e
+  guard page, header di `bounds`, UMIP, divisione di `process.c`.
