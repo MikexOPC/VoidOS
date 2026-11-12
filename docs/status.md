@@ -39,6 +39,7 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   dell'intera immagine e overflow reale dello stack syscall sono non
   verificati. Il cancello «base solida» resta aperto. Hardware fisico non
   verificato per il percorso descritto qui.
+- Il riepilogo del runner QEMU etichetta `k6-ordinary` come `k5-privilege`.
 - Prossimo passo del consolidamento dopo il riordino della documentazione
   e il commit del lavoro GUI: dividere `process.c`, poi integrare a gruppi le
   suite host in `meson test` e collegare build, test e boot ordinario alla CI.
