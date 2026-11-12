@@ -48,6 +48,9 @@ fn process_boot(vm: &mut Vm) -> Result<Value, String> {
     if !log.before("KERNEL_BRIDGE_WAIT_RECOVERY_OK", "KERNEL_K6_PROCESS_OK") {
         return Err("Missing bridge wake after peer fault or budget expiry".to_string());
     }
+    if !log.before("KERNEL_BRIDGE_RESIDENT_OK", "KERNEL_K6_PROCESS_OK") {
+        return Err("Missing resident bridge requests and runtime restoration".to_string());
+    }
     if log.count("KERNEL_K6_EXTERNAL_IRQ_OK", Some("OK")) != 1 ||
         !log.before("KERNEL_K6_EXTERNAL_IRQ_OK", "KERNEL_K6_PROCESS_OK") {
         return Err("Missing CPL3 external interrupt delivery and return".to_string());

@@ -65,6 +65,13 @@ tramite `recv`. Il test esegue cinque richieste sulla stessa istanza
 del bridge e controlla anche il risveglio del client se il peer
 termina per fault o per scadenza del budget.
 
+Il runtime residente offre un endpoint kernel per richieste e risposte
+da due byte. Tra due turni conserva la root e il frame del servizio e
+restituisce al BSP l'IDT e il timer ordinari. Ogni richiesta riceve un
+nuovo budget. Un fault, una scadenza o una risposta fuori contratto
+chiudono il canale e fanno raccogliere il processo. Il diagnostico
+esercita l'endpoint kernel e controlla il bilancio delle pagine.
+
 ### Sequenza e collaudo
 
 1. Diagnostico IRQ a CPL3. Iniettare input durante una finestra utente

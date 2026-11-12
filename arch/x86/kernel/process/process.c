@@ -1,4 +1,5 @@
 #include "process.h"
+#include "slot.h"
 #include "arch/x86/kernel/cpu/percpu/clock/clock.h"
 #include "arch/x86/kernel/cpu/percpu/percpu.h"
 #include "arch/x86/kernel/descriptors/protection.h"
@@ -50,8 +51,6 @@
 #define SYS_SEND 3ULL
 #define SYS_RECV 4ULL
 #define SYS_WAIT_READABLE 5ULL
-#define IPC_WOULD_BLOCK (~5ULL)
-#define IPC_MESSAGE_BYTES 128U
 // Intel SDM 2B, SYSCALL and SYSRET; 3A §2.2, §2.3, §6.8.8: STAR, LSTAR, CSTAR, FMASK, EFER.SCE.
 #define MSR_EFER 0xc0000080U
 #define MSR_STAR 0xc0000081U
@@ -94,22 +93,14 @@ extern const unsigned char x86_process_copy_first[], x86_process_copy_last[], x8
 #define IRR_DEVICE_BIT (1U << (DEVICE_PROBE_VECTOR % 32U))
 _Static_assert(DEVICE_PROBE_VECTOR != TIMER_VECTOR, "K6 timer and input IRQ vectors must differ");
 _Static_assert(DEVICE_PROBE_VECTOR / 32U == TIMER_VECTOR / 32U, "K6 probe shares the timer IRR bank");
-typedef struct { BOOT_U64 Storage[142]; } IPC_CHANNEL;
-BOOT_U64 x86_ipc_open(IPC_CHANNEL *channel);
-void x86_ipc_close(IPC_CHANNEL *channel);
-void x86_ipc_finish(IPC_CHANNEL *channel);
-BOOT_U64 x86_ipc_send_check(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, BOOT_U64 len);
-BOOT_U64 x86_ipc_send(IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, const unsigned char *bytes, BOOT_U64 len);
-BOOT_U64 x86_ipc_peek(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, unsigned char *bytes, BOOT_U64 capacity);
-BOOT_U64 x86_ipc_consume(IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle);
-BOOT_U64 x86_ipc_receive_ready(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle);
-void x86_process_resume(const BOOT_U64 *frame);
 #define WINDOW_LABELS(number) \
     extern const unsigned char x86_process_window_##number##_first[], x86_process_window_##number##_last[]
 WINDOW_LABELS(1); WINDOW_LABELS(2); WINDOW_LABELS(3); WINDOW_LABELS(4); WINDOW_LABELS(5); WINDOW_LABELS(6);
 void x86_process_probe_read(BOOT_U64 address);
 BOOT_U32 x86_process_nmi_valid(BOOT_U64 window, BOOT_U32 user_root, BOOT_U32 kernel_gs, BOOT_U32 ac, BOOT_U64 cs);
 #endif
+BOOT_U64 x86_ipc_send_check(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, BOOT_U64 len);
+void x86_process_resume(const BOOT_U64 *frame);
 void x86_process_syscall(void);
 void x86_process_nmi(void);
 void x86_process_irq(void);
@@ -161,15 +152,15 @@ static const KERNEL_CLOCK *budget_clock;
 static KERNEL_DEADLINE budget_deadline;
 #ifdef KERNEL_TEST_K6_PROCESS
 static BOOT_U32 delay_next_syscall;
-static BOOT_U64 *yield_frame;
-static BOOT_U32 yielded;
-static BOOT_U32 waiting;
-static IPC_CHANNEL ipc_channel;
-static BOOT_U64 ipc_endpoint;
 static X86_IRQ_TOKEN device_probe_token;
 static BOOT_U32 device_probe_armed, device_probe_delivered;
 static int (*device_probe_inject)(void);
 #endif
+static BOOT_U64 *yield_frame;
+static BOOT_U32 yielded;
+static BOOT_U32 waiting;
+static IPC_CHANNEL *ipc_channel;
+static BOOT_U64 ipc_endpoint;
 static X86_PROCESS_RESULT *current;
 static BOOT_U32 input_irq_mask;
 static X86_IRQ_TOKEN input_irq_tokens[X86_IRQ_CAPACITY];
@@ -570,17 +561,16 @@ static BOOT_U64 sys_write(BOOT_U64 pointer, BOOT_U64 length)
     return length;
 }
 
-#ifdef KERNEL_TEST_K6_PROCESS
 // ====== sys_send ======
 
 static BOOT_U64 sys_send(BOOT_U64 handle, BOOT_U64 pointer, BOOT_U64 len)
 {
-    BOOT_U64 status = x86_ipc_send_check(&ipc_channel, ipc_endpoint, handle, len);
+    BOOT_U64 status = x86_ipc_send_check(ipc_channel, ipc_endpoint, handle, len);
     if (status) return status;
     unsigned char data[IPC_MESSAGE_BYTES] = {0};
     if (x86_process_copy_range(pointer, len) != 1 ||
         copy_checked(data, (const void *)pointer, pointer, len, 0)) return RESULT_RANGE;
-    return x86_ipc_send(&ipc_channel, ipc_endpoint, handle, data, len);
+    return x86_ipc_send(ipc_channel, ipc_endpoint, handle, data, len);
 }
 
 // ====== sys_recv ======
@@ -588,14 +578,13 @@ static BOOT_U64 sys_send(BOOT_U64 handle, BOOT_U64 pointer, BOOT_U64 len)
 static BOOT_U64 sys_recv(BOOT_U64 handle, BOOT_U64 pointer, BOOT_U64 capacity)
 {
     unsigned char data[IPC_MESSAGE_BYTES] = {0};
-    BOOT_U64 len = x86_ipc_peek(&ipc_channel, ipc_endpoint, handle, data, capacity);
+    BOOT_U64 len = x86_ipc_peek(ipc_channel, ipc_endpoint, handle, data, capacity);
     if (len > sizeof(data)) return len;
     if (!len || x86_process_copy_range(pointer, len) != 1 ||
         copy_checked((void *)pointer, data, pointer, len, 1)) return RESULT_RANGE;
-    if (x86_ipc_consume(&ipc_channel, ipc_endpoint, handle)) die("PROCESS_IPC_STATE");
+    if (x86_ipc_consume(ipc_channel, ipc_endpoint, handle)) die("PROCESS_IPC_STATE");
     return len;
 }
-#endif
 
 // ====== budget_expired ======
 
@@ -627,10 +616,9 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         current->Code = GPR(frame, GPR_RDI);
         return 2;
     }
-#ifdef KERNEL_TEST_K6_PROCESS
     if (yield_frame && (number == SYS_YIELD || (ipc_endpoint && number == SYS_WAIT_READABLE))) {
         BOOT_U64 result = number == SYS_YIELD ? 0 :
-            x86_ipc_receive_ready(&ipc_channel, ipc_endpoint, GPR(frame, GPR_RDI));
+            x86_ipc_receive_ready(ipc_channel, ipc_endpoint, GPR(frame, GPR_RDI));
         GPR(frame, GPR_RAX) = result;
         if (number == SYS_WAIT_READABLE && result != IPC_WOULD_BLOCK)
             return budget_expired(IRET(frame, 0)) ? 2 : 1;
@@ -644,7 +632,6 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         GPR(frame, GPR_RAX) = number == SYS_SEND ? sys_send(handle, pointer, length) : sys_recv(handle, pointer, length);
         return budget_expired(IRET(frame, 0)) ? 2 : 1;
     }
-#endif
     GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;
 #ifdef KERNEL_TEST_K6_PROCESS
     if (delay_next_syscall) {
@@ -812,18 +799,47 @@ void x86_process_kernel_fatal(const BOOT_U64 *frame, BOOT_U64 cr2)
     kernel_panic(reason);
 }
 
-#ifdef KERNEL_TEST_K6_PROCESS
-typedef struct {
-    _Alignas(16) BOOT_U64 Frame[USER_FRAME_WORDS];
-    KERNEL_PHYSICAL_LEASE Lease;
-    BOOT_U64 Entry, RemainingIrqs, Written;
-    BOOT_U32 RemainingTicks, Yields, Waiting;
-} PROCESS_SLOT;
+_Static_assert(X86_PROCESS_FRAME_WORDS == USER_FRAME_WORDS, "Saved process frame size");
 
-// ====== run_slot ======
+// ====== x86_process_slot_prepare ======
 
-static void run_slot(PROCESS_SLOT *slot, X86_PROCESS_RESULT *result, BOOT_U64 endpoint)
+int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *image)
 {
+    PROCESS_PLAN plan;
+    if (!opened || current || !slot || slot->Lease.Id || !image ||
+        x86_process_plan(image->Bytes, image->Length, &plan)) return 0;
+    BOOT_U32 ticks = kernel_clock_ms(budget_clock, PROCESS_BUDGET_MS);
+    if (ticks == UINT32_MAX || !map_image(image, &plan, &slot->Lease)) return 0;
+    slot->KernelRoot = k6_kernel_root;
+    slot->ImageEntry = expected_image;
+    slot->WindowEntry = expected_windows;
+    slot->Entry = plan.Entry;
+    slot->RemainingTicks = ticks;
+    slot->RemainingIrqs = x86_process_budget_initial();
+    return 1;
+}
+
+// ====== x86_process_slot_step ======
+
+int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
+    IPC_CHANNEL *channel, BOOT_U64 endpoint, int renew_budget)
+{
+    if (!opened || current || !slot || !slot->Lease.Id || !result || result->Kind ||
+        (!!channel != !!endpoint) || (slot->Waiting && !channel)) return 0;
+    if (slot->KernelRoot != k6_kernel_root || slot->ImageEntry != expected_image ||
+        slot->WindowEntry != expected_windows || !roots_stable()) return 0;
+    if (renew_budget) {
+        BOOT_U32 ticks = kernel_clock_ms(budget_clock, PROCESS_BUDGET_MS);
+        if (ticks == UINT32_MAX) return 0;
+        slot->RemainingTicks = ticks;
+        slot->RemainingIrqs = x86_process_budget_initial();
+    }
+    if (slot->Waiting) {
+        BOOT_U64 ready = x86_ipc_receive_ready(channel, endpoint, endpoint);
+        if (ready == IPC_WOULD_BLOCK) return 0;
+        GPR(slot->Frame, GPR_RAX) = ready;
+        slot->Waiting = 0;
+    }
     k6_user_root = slot->Lease.Base;
     current = result;
     written_bytes = slot->Written;
@@ -832,6 +848,7 @@ static void run_slot(PROCESS_SLOT *slot, X86_PROCESS_RESULT *result, BOOT_U64 en
     yielded = 0;
     waiting = 0;
     yield_frame = slot->Frame;
+    ipc_channel = channel;
     ipc_endpoint = endpoint;
     if (!kernel_deadline_start(budget_clock, slot->RemainingTicks, &budget_deadline)) die("PROCESS_CLOCK_FAILED");
     timer_arm();
@@ -839,8 +856,11 @@ static void run_slot(PROCESS_SLOT *slot, X86_PROCESS_RESULT *result, BOOT_U64 en
     else x86_process_enter(slot->Entry, STACK_TOP, endpoint);
     BOOT_U32 elapsed = kernel_clock_elapsed(budget_clock, budget_deadline.Start);
     yield_frame = 0;
+    ipc_channel = 0;
     ipc_endpoint = 0;
     turn_finish(result);
+    if (__readcr3() != k6_kernel_root || !roots_stable() || kernel_stack[0] != STACK_CANARY)
+        die("PROCESS_ROOT_CHANGED");
     slot->Written = written_bytes;
     slot->RemainingIrqs = budget_left;
     if (yielded) {
@@ -849,59 +869,19 @@ static void run_slot(PROCESS_SLOT *slot, X86_PROCESS_RESULT *result, BOOT_U64 en
         if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
         else slot->RemainingTicks -= elapsed;
     }
+    return 1;
 }
 
-// ====== x86_process_pair ======
+// ====== x86_process_slot_reap ======
 
-int x86_process_pair(const X86_PROCESS_IMAGE images[2], X86_PROCESS_RESULT results[2], BOOT_U32 yields[2], int use_ipc)
+int x86_process_slot_reap(X86_PROCESS_SLOT *slot)
 {
-    PROCESS_SLOT slots[2] = {0};
-    PROCESS_PLAN plan;
-    BOOT_U64 budget;
-    if (!opened || current || !images || !results || !yields ||
-        !kernel_physical_budget_read(owner_window->Pool, &budget)) return 0;
-    BOOT_U32 ticks = kernel_clock_ms(budget_clock, PROCESS_BUDGET_MS);
-    if (ticks == UINT32_MAX) return 0;
-    for (BOOT_U32 index = 0; index < 2; ++index) {
-        if (x86_process_plan(images[index].Bytes, images[index].Length, &plan) ||
-            !map_image(&images[index], &plan, &slots[index].Lease)) {
-            if (index && !reap(&slots[0].Lease)) die("PROCESS_REAP_FAILED");
-            if (!kernel_physical_budget_matches(owner_window->Pool, budget)) die("PROCESS_REAP_FAILED");
-            return 0;
-        }
-        slots[index].Entry = plan.Entry;
-        slots[index].RemainingTicks = ticks;
-        slots[index].RemainingIrqs = x86_process_budget_initial();
-        results[index] = (X86_PROCESS_RESULT){0};
-    }
-    BOOT_U64 channel = use_ipc ? x86_ipc_open(&ipc_channel) : 0;
-    for (BOOT_U32 turn = 0; turn < 32 && (!use_ipc || channel) && (!results[0].Kind || !results[1].Kind); ++turn) {
-        BOOT_U32 index = turn % 2;
-        if (results[index].Kind) continue;
-        BOOT_U64 endpoint = channel ? channel | index : 0;
-        if (slots[index].Waiting) {
-            BOOT_U64 ready = x86_ipc_receive_ready(&ipc_channel, endpoint, endpoint);
-            if (ready == IPC_WOULD_BLOCK) continue;
-            GPR(slots[index].Frame, GPR_RAX) = ready;
-            slots[index].Waiting = 0;
-        }
-        run_slot(&slots[index], &results[index], endpoint);
-        if (__readcr3() != k6_kernel_root || !roots_stable() || kernel_stack[0] != STACK_CANARY)
-            die("PROCESS_ROOT_CHANGED");
-        if (results[index].Kind) {
-            if (channel) x86_ipc_close(&ipc_channel);
-            if (!reap(&slots[index].Lease)) die("PROCESS_REAP_FAILED");
-        }
-    }
-    if (channel) x86_ipc_finish(&ipc_channel);
-    for (BOOT_U32 index = 0; index < 2; ++index) {
-        if (slots[index].Lease.Id && !reap(&slots[index].Lease)) die("PROCESS_REAP_FAILED");
-        yields[index] = slots[index].Yields;
-    }
-    if (!kernel_physical_budget_matches(owner_window->Pool, budget)) die("PROCESS_REAP_FAILED");
-    return results[0].Kind && results[1].Kind;
+    if (!opened || current || !slot || !slot->Lease.Id || !reap(&slot->Lease)) return 0;
+    *slot = (X86_PROCESS_SLOT){0};
+    return 1;
 }
 
+#ifdef KERNEL_TEST_K6_PROCESS
 // ====== x86_process_nmi_arm ======
 
 void x86_process_nmi_arm(BOOT_U64 window)
