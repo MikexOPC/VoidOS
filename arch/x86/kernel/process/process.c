@@ -31,7 +31,9 @@
 #define MAX_IMAGE_PAGES 10U
 #define MAX_COPY 256U
 #define TEXT_BLOCK 128U
-#define TIMER_VECTOR 0x41U
+// Intel SDM 325462-089, vol. 3A, Fig. 12-8: LVT Timer +320h, vector bits 7:0.
+// Reserve 44h for the process timer so the PS/2 keyboard can use 41h.
+#define TIMER_VECTOR 0x44U
 #define STRAY_TEST_VECTOR 0x50U
 #define SPURIOUS_VECTOR 0xffU
 // Intel SDM 3A §13.8.4: IRR 200h-270h, one 32-bit bank per 16-byte step, indexed by vector.
@@ -89,7 +91,9 @@ typedef struct { BOOT_U64 Entry, Count; struct { BOOT_U64 Virt, FileOffset, File
 extern const BOOT_U64 x86_process_fault_targets[32];
 extern const unsigned char x86_process_copy_first[], x86_process_copy_last[], x86_process_copy_fixup[];
 #ifdef KERNEL_TEST_K6_PROCESS
-#define DEVICE_PROBE_VECTOR 0x42U
+// Exercise the keyboard's registry slot with a self-IPI in the isolated K6 profile.
+#define DEVICE_PROBE_VECTOR 0x41U
+_Static_assert(DEVICE_PROBE_VECTOR != TIMER_VECTOR, "K6 timer and input IRQ vectors must differ");
 typedef struct { BOOT_U64 Storage[142]; } IPC_CHANNEL;
 BOOT_U64 x86_ipc_open(IPC_CHANNEL *channel);
 void x86_ipc_close(IPC_CHANNEL *channel);
