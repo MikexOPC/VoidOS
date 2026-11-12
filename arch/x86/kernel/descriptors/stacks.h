@@ -10,6 +10,12 @@
 #define X86_KERNEL_MAIN_BYTES 65536ULL
 #define X86_KERNEL_MAIN_TOP (X86_KERNEL_MAIN_BASE + X86_KERNEL_MAIN_BYTES)
 #define X86_KERNEL_MAIN_LEAF 96U
+// Stack delle syscall e di RSP0: una guardia, quattro pagine, una guardia.
+#define X86_KERNEL_SYSCALL_GUARD (X86_LAYOUT_WINDOWS_VIRTUAL + 0x74000ULL)
+#define X86_KERNEL_SYSCALL_BASE (X86_KERNEL_SYSCALL_GUARD + 4096)
+#define X86_KERNEL_SYSCALL_BYTES 16384ULL
+#define X86_KERNEL_SYSCALL_TOP (X86_KERNEL_SYSCALL_BASE + X86_KERNEL_SYSCALL_BYTES)
+#define X86_KERNEL_SYSCALL_LEAF 116U
 typedef struct {
     BOOT_U64 Self, Root;
     KERNEL_PHYSICAL_ALLOCATOR *Pool;
@@ -24,6 +30,9 @@ _Static_assert(X86_KERNEL_IST_GUARD > X86_KERNEL_PAGE_WINDOW + X86_KERNEL_WINDOW
 _Static_assert(((X86_KERNEL_IST_GUARD >> 12) & 511) == X86_KERNEL_IST_LEAF, "Geometria IST fissa");
 _Static_assert((X86_KERNEL_MAIN_GUARD >> 21) == (X86_KERNEL_IST_GUARD >> 21), "Stack principale nello stesso ramo PT");
 _Static_assert(((X86_KERNEL_MAIN_GUARD >> 12) & 511) == X86_KERNEL_MAIN_LEAF, "Geometria stack principale");
+_Static_assert((X86_KERNEL_SYSCALL_GUARD >> 21) == (X86_KERNEL_IST_GUARD >> 21), "Stack syscall nello stesso ramo PT");
+_Static_assert(((X86_KERNEL_SYSCALL_GUARD >> 12) & 511) == X86_KERNEL_SYSCALL_LEAF, "Geometria stack syscall");
+_Static_assert(X86_KERNEL_SYSCALL_LEAF >= X86_KERNEL_MAIN_LEAF + 18 && X86_KERNEL_SYSCALL_LEAF + 6 <= 128U, "Stack syscall fra stack principale e regioni");
 BOOT_U64 x86_ist_base(BOOT_U32 stack);
 BOOT_U64 x86_ist_top(BOOT_U32 stack);
 BOOT_U32 x86_ist_frame(BOOT_U64 physical, BOOT_U32 bits);
@@ -31,6 +40,7 @@ BOOT_U32 x86_ist_page(BOOT_U32 slot);
 BOOT_U32 x86_stack_page(BOOT_U32 profile, BOOT_U32 slot);
 BOOT_U32 x86_stack_frame(BOOT_U32 profile, BOOT_U64 physical, BOOT_U32 bits);
 BOOT_U32 x86_main_pointer(BOOT_U64 pointer);
+BOOT_U32 x86_syscall_pointer(BOOT_U64 pointer);
 int x86_kernel_stacks_acquire_for(X86_KERNEL_STACKS *owner, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root, BOOT_U32 profile);
 int x86_kernel_stack_branch(BOOT_U64 root, BOOT_U32 bits);
 int x86_kernel_stacks_acquire(X86_KERNEL_STACKS *owner, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root);

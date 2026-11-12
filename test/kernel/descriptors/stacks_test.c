@@ -3,7 +3,7 @@ static X86_KERNEL_STACKS stacks;
 static KERNEL_PHYSICAL_ALLOCATOR physical;
 static BOOT_U64 tables[4][512];
 static unsigned char data[3][16384], map[40];
-static unsigned char main_data[65536];
+static unsigned char main_data[65536], syscall_data[16384];
 static X86_KERNEL_STACKS *observed = &stacks;
 static BOOT_U32 invalidations, ordering, missing;
 
@@ -27,6 +27,7 @@ volatile BOOT_U64 *x86_stack_entries(BOOT_U32 level)
 volatile unsigned char *x86_stack_bytes(BOOT_U32 stack)
 {
     if (stack == 4) return missing == 4 ? 0 : main_data;
+    if (stack == 5) return missing == 5 ? 0 : syscall_data;
     return stack >= 1 && stack <= 3 && stack != missing ? data[stack - 1] : 0;
 }
 
@@ -35,8 +36,8 @@ volatile unsigned char *x86_stack_bytes(BOOT_U32 stack)
 void x86_stack_invalidate(BOOT_U64 address)
 {
     BOOT_U32 slot;
-    BOOT_U32 profile = observed->Profile, first = profile == 1 ? 64 : 96, count = profile == 1 ? 16 : 18;
-    BOOT_U64 guard = profile == 1 ? X86_KERNEL_IST_GUARD : X86_KERNEL_MAIN_GUARD;
+    BOOT_U32 profile = observed->Profile, first = profile == 1 ? 64 : profile == 2 ? 96 : 116, count = profile == 1 ? 16 : profile == 2 ? 18 : 6;
+    BOOT_U64 guard = profile == 1 ? X86_KERNEL_IST_GUARD : profile == 2 ? X86_KERNEL_MAIN_GUARD : X86_KERNEL_SYSCALL_GUARD;
     BOOT_U64 offset = address - guard;
     if (address >= X86_BOOT_STACK_VIRTUAL && address < X86_BOOT_STACK_TOP && observed->Committed) {
         for (slot = 1; slot <= 16; ++slot) if (tables[3][slot]) ordering = 1;
@@ -253,6 +254,38 @@ static int reuse_tests(void)
     return 0;
 }
 
+// ====== stack syscall: quattro pagine fra due guardie, rifiuto e riuso ===== //
+
+static int syscall_tests(void)
+{
+    BOOT_U32 cycle, slot, byte;
+    if (!fixture()) return 40;
+    tables[3][X86_KERNEL_SYSCALL_LEAF] = 0x9003;
+    if (x86_kernel_stacks_acquire_for(&stacks, &physical, 0x1000, 3) || physical.FreePages != 32 || invalidations) return 41;
+    tables[3][X86_KERNEL_SYSCALL_LEAF] = 0;
+    tables[3][X86_KERNEL_SYSCALL_LEAF + 5] = 0x9003;
+    if (x86_kernel_stacks_acquire_for(&stacks, &physical, 0x1000, 3) || physical.FreePages != 32 || invalidations) return 42;
+    tables[3][X86_KERNEL_SYSCALL_LEAF + 5] = 0;
+    if (x86_kernel_stacks_acquire_for(&stacks, &physical, 0x1000, 4)) return 43;
+    for (cycle = 0; cycle < 64; ++cycle) {
+        for (byte = 0; byte < 16384; ++byte) ((volatile unsigned char *)syscall_data)[byte] = 0xa5;
+        if (!x86_kernel_stacks_acquire_for(&stacks, &physical, 0x1000, 3) || stacks.Lease.Pages != 4 ||
+            physical.FreePages != 28 || !x86_kernel_stacks_validate(&stacks)) return 44;
+        if (tables[3][X86_KERNEL_SYSCALL_LEAF] || tables[3][X86_KERNEL_SYSCALL_LEAF + 5]) return 45;
+        for (slot = 1; slot <= 4; ++slot) {
+            if (tables[3][X86_KERNEL_SYSCALL_LEAF + slot] != ((stacks.Lease.Base + (slot - 1) * 4096ULL) | 3 | (1ULL << 63))) return 46;
+        }
+        for (byte = 0; byte < 16384; ++byte) if (syscall_data[byte]) return 47;
+        tables[3][X86_KERNEL_SYSCALL_LEAF] = 0x9003;
+        if (x86_kernel_stacks_validate(&stacks)) return 48;
+        tables[3][X86_KERNEL_SYSCALL_LEAF] = 0;
+        if (!x86_kernel_stacks_release(&stacks) || physical.FreePages != 32 ||
+            invalidations != (cycle + 1) * 8 || ordering || !kernel_physical_validate(&physical)) return 49;
+        for (slot = 0; slot < 6; ++slot) if (tables[3][X86_KERNEL_SYSCALL_LEAF + slot]) return 50;
+    }
+    return 0;
+}
+
 // ====== suite bounded con codici distinti per ogni gruppo di errori ===== //
 
 __declspec(dllexport) int run_stack_tests(void)
@@ -263,5 +296,6 @@ __declspec(dllexport) int run_stack_tests(void)
     if ((result = foreign_mapping_tests()) != 0) return result;
     if ((result = metadata_tests()) != 0) return result;
     if ((result = rollback_tests()) != 0) return result;
-    return reuse_tests();
+    if ((result = reuse_tests()) != 0) return result;
+    return syscall_tests();
 }
