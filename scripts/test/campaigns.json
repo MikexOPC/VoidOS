@@ -171,25 +171,25 @@
     },
     "k6-protection": {
       "summary": "Ordinary boot on 4 vCPUs: SMEP and SMAP in CR4 of every CPU, user mode allowed",
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4", "--cpu", "max"],
       "boots": 10, "smoke": 1, "heavy": true
     },
     "k6-protection-no-smap": {
       "summary": "CPU without SMAP: boot continues, user mode disabled",
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4", "--cpu", "max,-smap"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k6-protection-no-smep": {
       "summary": "CPU without SMEP: boot continues, user mode disabled",
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4", "--cpu", "max,-smep"],
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k6-protection-none": {
       "summary": "CPU without SMEP and SMAP: boot continues, user mode disabled",
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary", "--smp", "4", "--cpu", "max,-smep,-smap"],
       "boots": 3, "smoke": 1, "heavy": true
     },
@@ -207,7 +207,7 @@
     },
     "k6-ordinary": {
       "summary": "Ordinary kernel, one vCPU: the embedded program prints, exits and is reaped before KERNEL_READY",
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary"],
       "boots": 10, "smoke": 1, "heavy": true
     },
@@ -434,7 +434,7 @@
       "summary": "four independent NMI captures before election, one reporter, all acknowledgements"
     },
     "k3-broadcast": {
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/panic/integration/stress.py", "--image", "{image}", "--case", "broadcast", "--boots", "{boots}"],
       "boots": 10, "smoke": 1, "heavy": true,
       "summary": "external BSP NMI, remote AP stop and repeated NMI stability"
@@ -446,7 +446,7 @@
       "summary": "deliberately withheld follower ACK, bounded wait and immutable missing snapshot"
     },
     "k3-serial-dlab": {
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/panic/integration/stress.py", "--image", "{image}", "--case", "serial-dlab", "--boots", "{boots}"],
       "boots": 10, "smoke": 1, "heavy": true,
       "summary": "UART DLAB configuration failure, completed panic remains available in RAM"
@@ -464,14 +464,14 @@
       "summary": "300-second active-input soak, pixel checks, shell, cleanup and parked AP attestation"
     },
     "ap-runtime": {
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4"],
       "boots": 10,
       "smoke": 1,
       "summary": "ordinary BSP continuation with three real parked APs and physical accounting"
     },
     "ap-runtime-bsp": {
-      "build": [],
+      "build": [], "meson": "ordinary",
       "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "1"],
       "boots": 10,
       "smoke": 1,

@@ -160,7 +160,14 @@ Ninja e runner Rust. K6-A e la migrazione avanzano in parallelo.
 | M1 | Runner QEMU in Rust: VM posseduta, monitor, parser seriale, risultati | `k5-copy` e negativi con stesso esito di `qemu.py`, compresi timeout, cleanup della VM ed evidenze diagnostiche |
 | M2 | Meson per kernel ordinario e K6, freestanding MSVC, MASM, rustc | Stessi sorgenti, flag e ordine di link del planner, gate del profilo |
 | M3 | Campagne e suite host per gruppi, a partire da K5 | Stesso conteggio di casi e stesso esito |
-| M4 | Bootloader e profili rimanenti | Immagine validata e campagne verdi |
+| M4 | Bootloader; i profili diagnostici rimanenti si ritirano, non si portano | Immagine validata e campagne verdi |
+
+Decisione utente, 12 novembre 2026: i profili diagnostici costruiti solo da `build.ps1` non
+vengono migrati a Meson. `build.ps1` resta congelato per le loro campagne; ogni profilo si
+elimina quando la sua prova diventa un test host o un programma utente sull'immagine unica.
+Meson e l'unica build per l'immagine ordinaria: dal 12 novembre la usano anche le nove
+campagne che prima la compilavano con `build.ps1` (`k6-protection` e varianti, `k6-ordinary`,
+`k3-broadcast`, `k3-serial-dlab`, `ap-runtime`, `ap-runtime-bsp`). Campagne su Meson: 23 su 121.
 
 Da verificare in M2: `meson setup --vsenv` per l'ambiente MSVC senza script, regole per
 oggetti freestanding e `.asm`, invalidazione di header e asset, target Rust per gli ELF
