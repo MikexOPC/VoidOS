@@ -11,6 +11,12 @@ La shell PS/2 si prova con un profilo separato. Lo
 [stato del progetto](docs/status.md) riporta le capacità e i limiti di ogni
 profilo.
 
+## Cosa non funziona ancora
+
+L'immagine ordinaria si ferma dopo il boot. Mancano una shell nella stessa
+immagine e la preemption su tutte le CPU. Mancano anche driver a blocchi, VFS,
+esecuzione di ELF da file, entropia e stack canary. Vedi lo [stato del progetto](docs/status.md).
+
 ## Prerequisiti su Windows x64
 
 - PowerShell 7, Python, Meson 1.12.1 o successivo e Ninja. Meson, Ninja e
@@ -28,7 +34,7 @@ profilo.
   Per un'installazione altrove, il runner accetta `--qemu-dir`.
 - NASM 3.01 va nella cache `kernel/build/tools/nasm-3.01` del checkout.
   Il comando seguente scarica il pacchetto fissato da nasm.us e ne verifica
-gli hash.
+  gli hash.
 
 ## Compilazione e avvio
 
@@ -51,9 +57,7 @@ Meson produce `kernel/build/meson-kernel/kernel.elf` e controlla la parità
 con il piano di build. Lo script UEFI compila il loader `BOOTX64.EFI` e ne
 esegue i test host. Il runner prepara una ESP con il loader e l'ELF Meson,
 avvia una VM senza finestra grafica, controlla i marker seriali e scrive
-`results.json` e i log nella directory indicata da `Evidence`. Il JSON riporta
-lo scenario `k6-ordinary`. In questa revisione il riepilogo a terminale usa
-per errore il nome `k5-privilege`.
+`results.json` e i log nella directory indicata da `Evidence`.
 
 I sorgenti del kernel sono in [kernel/](kernel/) e [arch/x86/](arch/x86/).
 Per le altre prove vedi la [guida agli script](scripts/README.md).
