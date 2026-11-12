@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 pub const SHELL_CASE: u32 = 1;
 pub const SHELL_BRIDGE_FAULT_CASE: u32 = 2;
+const UMIP: u64 = 1 << 11;
 const SMEP: u64 = 1 << 20;
 const SMAP: u64 = 1 << 21;
 const CR4_DEADLINE: Duration = Duration::from_secs(5);
@@ -16,10 +17,10 @@ const INIT_LINE: &[u8] = b"USER: VoidOS init, ring3";
 
 fn expected_protection(cpu: &str) -> u64 {
     match cpu {
-        "max,-smap" => SMEP,
-        "max,-smep" => SMAP,
-        "max,-smep,-smap" => 0,
-        _ => SMEP | SMAP,
+        "max,-smap" => SMEP | UMIP,
+        "max,-smep" => SMAP | UMIP,
+        "max,-smep,-smap" => UMIP,
+        _ => SMEP | SMAP | UMIP,
     }
 }
 
@@ -73,7 +74,7 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     if log.number("KERNEL_USER_PROTECTION", 0)? != expected {
         return Err("Unexpected reported protection".to_string());
     }
-    let full = expected == SMEP | SMAP;
+    let full = expected & (SMEP | SMAP) == SMEP | SMAP;
     if log.has("KERNEL_USER_MODE_ALLOWED") != full || log.has("USER_MODE_DISABLED") == full {
         return Err("Unexpected user mode decision".to_string());
     }
@@ -86,7 +87,7 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
         return Err("A CPU without protections ran a process".to_string());
     }
     for cpu in 0..plan.smp {
-        if read_cr4(vm, cpu)? & (SMEP | SMAP) != expected {
+        if read_cr4(vm, cpu)? & (SMEP | SMAP | UMIP) != expected {
             return Err(format!("Unexpected CR4 on CPU {cpu}"));
         }
     }
@@ -106,7 +107,7 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
 
 fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     let log = vm.wait("KERNEL_PS2_ROUTE_ACQUIRED", 1, Some("INFO"))?;
-    let enabled = expected_protection(plan.cpu) == SMEP | SMAP;
+    let enabled = expected_protection(plan.cpu) & (SMEP | SMAP) == SMEP | SMAP;
     if !log.failures().is_empty() || log.terminal() ||
         (enabled && !log.before("KERNEL_PROCESS_OK", "KERNEL_PS2_ROUTE_ACQUIRED")) ||
         (!enabled && !log.before("PROCESS_DISABLED", "KERNEL_PS2_ROUTE_ACQUIRED")) {

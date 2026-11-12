@@ -5,9 +5,9 @@
 // Intel SDM 3A §2.3: EFLAGS.AC is bit 18.
 #define X86_EFLAGS_AC (1ULL << 18)
 
-void x86_user_cpu_features(BOOT_U32 *max_leaf, BOOT_U32 *leaf7_ebx);
+void x86_user_cpu_features(BOOT_U32 *max_leaf, BOOT_U32 *leaf7_ebx, BOOT_U32 *leaf7_ecx);
 BOOT_U32 x86_user_protection_apply(BOOT_U64 bits);
-BOOT_U64 x86_user_protection_bits(BOOT_U32 max_leaf, BOOT_U32 leaf7_ebx);
+BOOT_U64 x86_user_protection_bits(BOOT_U32 max_leaf, BOOT_U32 leaf7_ebx, BOOT_U32 leaf7_ecx);
 BOOT_U32 x86_user_mode_permitted(BOOT_U64 bits);
 
 static BOOT_U64 published;
@@ -17,9 +17,9 @@ static volatile BOOT_U32 allowed;
 
 static BOOT_U64 cpu_bits(void)
 {
-    BOOT_U32 max_leaf, leaf7_ebx;
-    x86_user_cpu_features(&max_leaf, &leaf7_ebx);
-    return x86_user_protection_bits(max_leaf, leaf7_ebx);
+    BOOT_U32 max_leaf, leaf7_ebx, leaf7_ecx;
+    x86_user_cpu_features(&max_leaf, &leaf7_ebx, &leaf7_ecx);
+    return x86_user_protection_bits(max_leaf, leaf7_ebx, leaf7_ecx);
 }
 
 // ====== x86_user_protection_boot ======
