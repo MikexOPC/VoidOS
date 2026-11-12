@@ -104,7 +104,6 @@ BOOT_U64 x86_ipc_peek(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handl
 BOOT_U64 x86_ipc_consume(IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle);
 BOOT_U64 x86_ipc_receive_ready(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle);
 void x86_process_resume(const BOOT_U64 *frame);
-void x86_process_device_irq(void);
 #define WINDOW_LABELS(number) \
     extern const unsigned char x86_process_window_##number##_first[], x86_process_window_##number##_last[]
 WINDOW_LABELS(1); WINDOW_LABELS(2); WINDOW_LABELS(3); WINDOW_LABELS(4); WINDOW_LABELS(5); WINDOW_LABELS(6);
@@ -114,6 +113,10 @@ BOOT_U32 x86_process_nmi_valid(BOOT_U64 window, BOOT_U32 user_root, BOOT_U32 ker
 void x86_process_syscall(void);
 void x86_process_nmi(void);
 void x86_process_irq(void);
+void x86_process_device_irq40(void);
+void x86_process_device_irq41(void);
+void x86_process_device_irq42(void);
+void x86_process_device_irq43(void);
 void x86_process_stray(void);
 void x86_process_spurious(void);
 __declspec(noreturn) void x86_process_stop(void);
@@ -168,6 +171,8 @@ static BOOT_U32 device_probe_armed, device_probe_delivered;
 static int (*device_probe_inject)(void);
 #endif
 static X86_PROCESS_RESULT *current;
+static BOOT_U32 input_irq_mask;
+static X86_IRQ_TOKEN input_irq_tokens[X86_IRQ_CAPACITY];
 static volatile BOOT_U64 window_pointer, window_length, window_write;
 static _Alignas(16) unsigned char buffer[MAX_COPY + 1];
 
@@ -312,9 +317,37 @@ int x86_process_close(void)
     __writemsr(MSR_KERNEL_GS, alternate_saved);
     if (rsp0_swap(rsp0_previous) != k6_stack_top) x86_process_stop();
     x86_exception_load_idt(&idt_previous);
+    input_irq_mask = 0;
     k6_owner = 0;
     opened = 0;
     return !(__readmsr(MSR_EFER) & EFER_SCE);
+}
+
+// ====== x86_process_input_irqs ======
+
+int x86_process_input_irqs(BOOT_U32 mask)
+{
+    static void (*const entries[X86_IRQ_CAPACITY])(void) = {
+        x86_process_device_irq40, x86_process_device_irq41,
+        x86_process_device_irq42, x86_process_device_irq43,
+    };
+    X86_IRQ_TOKEN tokens[X86_IRQ_CAPACITY] = {0};
+    X86_IRQ_REGISTRY *registry = x86_irq_registry();
+    if (!opened || current || !registry || registry->Busy ||
+        x86_percpu_current_local() != x86_percpu_bsp() || (mask & ~15U)) return 0;
+    for (BOOT_U32 index = 0; index < X86_IRQ_CAPACITY; ++index) {
+        if (!(mask & (1U << index))) continue;
+        const X86_IRQ_SUBSCRIPTION *source = &registry->Slots[index];
+        tokens[index] = (X86_IRQ_TOKEN){source->Id, 0x40U + index, 0};
+        if (!x86_irq_registry_token_live(registry, &tokens[index])) return 0;
+    }
+    for (BOOT_U32 index = 0; index < X86_IRQ_CAPACITY; ++index) {
+        int enabled = (mask & (1U << index)) != 0;
+        input_irq_tokens[index] = tokens[index];
+        gate(0x40U + index, (BOOT_U64)(enabled ? entries[index] : x86_process_stray), enabled ? 0 : 3);
+    }
+    input_irq_mask = mask;
+    return 1;
 }
 
 // ====== roots_stable ======
@@ -417,7 +450,7 @@ static void timer_quiesce(void)
         _disable();
         k6_drain = 0;
     }
-    if (!x86_lapic_idle(owner_timer->Mapping)) die("PROCESS_TIMER_RETAINED");
+    if (!x86_lapic_idle_except(owner_timer->Mapping, input_irq_mask)) die("PROCESS_TIMER_RETAINED");
 }
 
 // ====== turn_finish ======
@@ -659,17 +692,33 @@ static int device_probe_quiet(void)
 {
     return !device_probe_armed && x86_lapic_idle(owner_timer->Mapping);
 }
+#endif
+
+// ====== input_irq_deliver ======
+
+static int input_irq_deliver(BOOT_U32 vector)
+{
+    if (vector < 0x40U || vector >= 0x40U + X86_IRQ_CAPACITY) return 0;
+    BOOT_U32 index = vector - 0x40U;
+    X86_IRQ_REGISTRY *registry = x86_irq_registry();
+    return (input_irq_mask & (1U << index)) &&
+        x86_irq_registry_token_live(registry, &input_irq_tokens[index]) &&
+        x86_irq_registry_deliver(registry, vector);
+}
 
 // ====== x86_process_device_irq_service ======
 
-int x86_process_device_irq_service(BOOT_U64 *frame)
+int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
 {
-    if (!current || !device_probe_armed || device_probe_delivered ||
-        (BOOT_U64)&IRET(frame, 0) != k6_stack_top - 40)
+    if (!current || (BOOT_U64)&IRET(frame, 0) != k6_stack_top - 40 ||
+        !input_irq_deliver(vector))
         die("PROCESS_DEVICE_IRQ_INVALID");
-    if (!x86_irq_registry_deliver(x86_irq_registry(), DEVICE_PROBE_VECTOR))
-        die("PROCESS_DEVICE_IRQ_INVALID");
-    device_probe_delivered = 1;
+#ifdef KERNEL_TEST_K6_PROCESS
+    if (device_probe_armed) {
+        if (device_probe_delivered) die("PROCESS_DEVICE_IRQ_INVALID");
+        device_probe_delivered = 1;
+    }
+#endif
     if (!x86_process_irq_frame_valid(IRET(frame, 0), IRET(frame, 1), IRET(frame, 2), IRET(frame, 3), IRET(frame, 4))) {
         current->Kind = X86_PROCESS_BAD_FRAME;
         return 2;
@@ -679,14 +728,19 @@ int x86_process_device_irq_service(BOOT_U64 *frame)
 
 // ====== x86_process_device_irq_kernel ======
 
-void x86_process_device_irq_kernel(void)
+void x86_process_device_irq_kernel(BOOT_U32 vector)
 {
-    if (!k6_drain || !device_probe_armed || current || device_probe_delivered != 1 ||
-        !x86_irq_registry_deliver(x86_irq_registry(), DEVICE_PROBE_VECTOR))
+    if (!opened || !k6_drain || !input_irq_deliver(vector))
         die("PROCESS_DEVICE_IRQ_INVALID");
-    device_probe_delivered = 2;
+#ifdef KERNEL_TEST_K6_PROCESS
+    if (device_probe_armed) {
+        if (current || device_probe_delivered != 1) die("PROCESS_DEVICE_IRQ_INVALID");
+        device_probe_delivered = 2;
+    }
+#endif
 }
 
+#ifdef KERNEL_TEST_K6_PROCESS
 // ====== x86_process_device_irq_check ======
 
 int x86_process_device_irq_check(const X86_PROCESS_IMAGE *image, int (*inject)(void), int (*handle)(void))
@@ -694,9 +748,14 @@ int x86_process_device_irq_check(const X86_PROCESS_IMAGE *image, int (*inject)(v
     X86_PROCESS_RESULT result;
     X86_IRQ_REGISTRY *registry = x86_irq_registry();
     if (!opened || current || !registry || !inject || !handle ||
+        x86_process_input_irqs(16) ||
+        x86_process_input_irqs(1U << (DEVICE_PROBE_VECTOR - 0x40U)) ||
         !x86_irq_registry_bind(registry, DEVICE_PROBE_VECTOR, handle,
             device_probe_quiet, &device_probe_token)) return 0;
-    gate(DEVICE_PROBE_VECTOR, (BOOT_U64)x86_process_device_irq, 0);
+    if (x86_process_input_irqs(1U << (DEVICE_PROBE_VECTOR - 0x40U)) != 1) {
+        if (!x86_irq_registry_unbind(registry, &device_probe_token)) die("PROCESS_DEVICE_IRQ_RETAINED");
+        return 0;
+    }
     device_probe_delivered = 0;
     device_probe_armed = 1;
     device_probe_inject = inject;
@@ -707,8 +766,8 @@ int x86_process_device_irq_check(const X86_PROCESS_IMAGE *image, int (*inject)(v
     device_probe_armed = 0;
     device_probe_inject = 0;
     BOOT_U64 deliveries = x86_irq_registry_deliveries(registry, &device_probe_token);
-    if (!x86_irq_registry_unbind(registry, &device_probe_token)) die("PROCESS_DEVICE_IRQ_RETAINED");
-    gate(DEVICE_PROBE_VECTOR, (BOOT_U64)x86_process_stray, 3);
+    if (!x86_process_input_irqs(0) || !x86_irq_registry_unbind(registry, &device_probe_token))
+        die("PROCESS_DEVICE_IRQ_RETAINED");
     return drained_ok && device_probe_delivered == 2 && deliveries == 2;
 }
 #endif
