@@ -28,6 +28,14 @@ xv6 per RISC-V usa ingressi distinti per le trap da utente e da kernel
 e un dispatcher dispositivi comune. Il riferimento è la separazione
 tra ingresso e consegna dell'IRQ. [xv6-riscv, ramo riscv, trap.c](https://raw.githubusercontent.com/mit-pdos/xv6-riscv/riscv/kernel/trap.c)
 
+Il runtime può abilitare singolarmente i vettori `0x40`–`0x43`
+della sessione. L'abilitazione richiede una sottoscrizione attiva.
+Ogni consegna ricontrolla lo stesso token nel registro IRQ. Durante
+il drenaggio il runtime può consegnare gli IRQ abilitati a CPL0 e
+lasciare al dispatcher ordinario quelli ancora pendenti al rientro.
+Il diagnostico i8042 usa questo ingresso per `0x41`.
+[Intel SDM, vol. 3A, §7.14](https://cdrdv2-public.intel.com/874240/325462-090-sdm-vol-1-2abcd-3abcd-4.pdf)
+
 ### Richiesta e risposta
 
 1. La shell pubblica i due byte della richiesta nel canale. Il
@@ -79,6 +87,11 @@ termina per fault o per scadenza del budget.
    poi verificare che la shell resti utilizzabile quando il bridge
    termina. Dieci boot consecutivi per ciascun blocco che modifica
    transizioni di privilegio o IRQ.
+   La sessione deve contabilizzare le pagine del bridge nella verifica
+   del budget del watchdog e dello scheduler. Il dispatcher riprende
+   il bridge dopo che la task shell gli ha restituito il controllo.
+   Prima di riprendere i task kernel, il runtime ripristina l'IDT
+   ordinaria e restituisce il timer del BSP.
 
 L'alternativa è integrare subito più processi utente nel dispatcher,
 con code di attesa e IPC bloccante generico. Anticipa il supporto ai

@@ -20,6 +20,7 @@ typedef struct {
 
 int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer);
 int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result);
+int x86_process_input_irqs(BOOT_U32 mask);
 int x86_process_close(void);
 #ifdef KERNEL_TEST_K6_PROCESS
 int x86_process_pair(const X86_PROCESS_IMAGE images[2], X86_PROCESS_RESULT results[2], BOOT_U32 yields[2], int use_ipc);

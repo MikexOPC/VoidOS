@@ -26,10 +26,8 @@ EXTERN k6_fx_saved:BYTE
 EXTERN x86_process_syscall_dispatch:PROC
 EXTERN x86_process_irq_service:PROC
 EXTERN x86_process_irq_drained:PROC
-IFDEF K6_DIAGNOSTICS
 EXTERN x86_process_device_irq_service:PROC
 EXTERN x86_process_device_irq_kernel:PROC
-ENDIF
 EXTERN x86_process_copy_recover:PROC
 EXTERN x86_process_kernel_fatal:PROC
 
@@ -273,7 +271,7 @@ x86_process_leave ENDP
 
 ; Intel SDM 3A §§7.14.2-7.14.4: con IST=0 il frame CPL3 usa TSS.RSP0.
 ; IRETQ ripristina RIP, CS, RFLAGS, RSP e SS dal frame.
-K6_USER_IRQ MACRO service
+K6_USER_IRQ MACRO service, vector
     swapgs
     lfence
     K6_PUSH_GPR
@@ -289,6 +287,9 @@ K6_USER_IRQ MACRO service
     cld
     mov rbx, rsp
     mov rcx, rsp
+IFNB <vector>
+    mov edx, vector
+ENDIF
     sub rsp, 32
     call service
     mov rsp, rbx
@@ -343,15 +344,18 @@ irq_kernel_stray:
     jmp fault_fatal
 x86_process_irq ENDP
 
-IFDEF K6_DIAGNOSTICS
-; ====== IRQ diagnostico registrato da CPL3 o durante il drenaggio CPL0 ======
+; ====== IRQ registrato da CPL3 o durante il drenaggio CPL0 ======
 
-PUBLIC x86_process_device_irq
-x86_process_device_irq PROC
+; Intel SDM 3A §§7.14.2-7.14.4: CS in the second frame slot, RPL in bits 1:0.
+; CPL0 drain keeps the active GS and CR3. The ordinary ABI still requires saved GPRs and SIMD.
+K6_DEVICE_IRQ MACRO name, vector
+    LOCAL device_irq_kernel
+PUBLIC name
+name PROC
     clac
     test BYTE PTR [rsp+8], 3
     jz device_irq_kernel
-    K6_USER_IRQ x86_process_device_irq_service
+    K6_USER_IRQ x86_process_device_irq_service, vector
 device_irq_kernel:
     cmp QWORD PTR [k6_drain], 1
     jne x86_process_stray
@@ -361,13 +365,19 @@ device_irq_kernel:
     sub rsp, 544
     fxsave64 [rsp+32]
     cld
+    mov ecx, vector
     call x86_process_device_irq_kernel
     fxrstor64 [rsp+32]
     mov rsp, rbx
     K6_POP_GPR
     iretq
-x86_process_device_irq ENDP
-ENDIF
+name ENDP
+ENDM
+
+K6_DEVICE_IRQ x86_process_device_irq40, 40h
+K6_DEVICE_IRQ x86_process_device_irq41, 41h
+K6_DEVICE_IRQ x86_process_device_irq42, 42h
+K6_DEVICE_IRQ x86_process_device_irq43, 43h
 
 ; ====== vettori esterni inattesi ======
 
