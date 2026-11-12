@@ -7,3 +7,4 @@
 - [`lib/`](lib/) raccoglie il contratto previsto per le librerie utente.
 - [`services/`](services/) raccoglie il contratto previsto per i servizi
   utente. Il [bridge](../bridge/) ha una cartella propria alla radice.
+- [`gui/`](gui/) descrive il primo collaudo grafico in ring 3.
