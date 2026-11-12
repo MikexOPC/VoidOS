@@ -138,41 +138,46 @@ _Alignas(16) const unsigned char k6_fx_clean[512] = {
     [0] = 0x7f, [1] = 0x03, [24] = 0x80, [25] = 0x1f
 };
 
-static X86_KERNEL_STACKS syscall_stack;
-static X86_IRQ_IDT idt;
-static X86_KERNEL_IDTR idt_previous, idt_probe;
-static X86_PAGE_WINDOW *owner_window;
-static X86_LAPIC_TIMER *owner_timer;
-static volatile unsigned char *tss_field;
-static BOOT_U64 rsp0_previous, msr_saved[5], alternate_saved;
-static BOOT_U64 expected_image, expected_windows;
-static KERNEL_PHYSICAL_LEASE held;
-static BOOT_U32 state, opened, timer_lvt_saved, timer_divide_saved;
-static BOOT_U64 budget_left, drained, written_bytes;
-static const KERNEL_CLOCK *budget_clock;
-static KERNEL_DEADLINE budget_deadline;
+// ====== stato del runtime dei processi: una sola istanza sul BSP ======
+
+typedef struct {
+    X86_KERNEL_STACKS         SyscallStack;
+    X86_IRQ_IDT               Idt;
+    X86_KERNEL_IDTR           IdtPrevious, IdtProbe;
+    X86_PAGE_WINDOW          *Window;
+    X86_LAPIC_TIMER          *Timer;
+    volatile unsigned char   *TssField;
+    BOOT_U64                  Rsp0Previous, MsrSaved[5], AlternateSaved;
+    BOOT_U64                  ExpectedImage, ExpectedWindows;
+    KERNEL_PHYSICAL_LEASE     Held;
+    BOOT_U32                  State, Opened, TimerLvtSaved, TimerDivideSaved;
+    BOOT_U64                  BudgetLeft, Drained, WrittenBytes;
+    const KERNEL_CLOCK       *BudgetClock;
+    KERNEL_DEADLINE           BudgetDeadline;
+    BOOT_U64                 *YieldFrame;
+    BOOT_U32                  Yielded, Waiting;
+    IPC_CHANNEL              *IpcChannel;
+    BOOT_U64                  IpcEndpoint;
+    X86_PROCESS_RESULT       *Current;
+    BOOT_U32                  InputIrqMask;
+    X86_IRQ_TOKEN             InputIrqTokens[X86_IRQ_CAPACITY];
+    volatile BOOT_U64         CopyPointer, CopyLength, CopyWrite;
+    unsigned char             Buffer[MAX_COPY + 1];
+} X86_PROCESS_RUNTIME;
+
+static X86_PROCESS_RUNTIME rt;
 #ifdef KERNEL_TEST_K6_PROCESS
 static BOOT_U32 delay_next_syscall;
 static X86_IRQ_TOKEN device_probe_token;
 static BOOT_U32 device_probe_armed, device_probe_delivered;
 static int (*device_probe_inject)(void);
 #endif
-static BOOT_U64 *yield_frame;
-static BOOT_U32 yielded;
-static BOOT_U32 waiting;
-static IPC_CHANNEL *ipc_channel;
-static BOOT_U64 ipc_endpoint;
-static X86_PROCESS_RESULT *current;
-static BOOT_U32 input_irq_mask;
-static X86_IRQ_TOKEN input_irq_tokens[X86_IRQ_CAPACITY];
-static volatile BOOT_U64 window_pointer, window_length, window_write;
-static _Alignas(16) unsigned char buffer[MAX_COPY + 1];
 
 // ====== die ======
 
 static __declspec(noreturn) void die(const char *reason)
 {
-    x86_exception_load_idt(&idt_previous);
+    x86_exception_load_idt(&rt.IdtPrevious);
     (void)kernel_log(3, reason);
     kernel_panic(reason);
 }
@@ -181,8 +186,8 @@ static __declspec(noreturn) void die(const char *reason)
 
 static void advance(BOOT_U32 next)
 {
-    if (!x86_process_state_next(state, next)) die("PROCESS_STATE_INVALID");
-    state = next;
+    if (!x86_process_state_next(rt.State, next)) die("PROCESS_STATE_INVALID");
+    rt.State = next;
 }
 
 // ====== gate ======
@@ -190,7 +195,7 @@ static void advance(BOOT_U32 next)
 static void gate(BOOT_U32 vector, BOOT_U64 target, unsigned char ist)
 {
     // Intel SDM 3A §7.14.1: selector 8, IST in byte 4, present DPL0 interrupt gate 8eh.
-    unsigned char *entry = idt.Gates[vector];
+    unsigned char *entry = rt.Idt.Gates[vector];
     for (BOOT_U32 index = 0; index < 16; ++index) entry[index] = 0;
     entry[0] = (unsigned char)target;
     entry[1] = (unsigned char)(target >> 8);
@@ -204,7 +209,7 @@ static void gate(BOOT_U32 vector, BOOT_U64 target, unsigned char ist)
 
 static void idt_prepare(void)
 {
-    BOOT_U64 base = (BOOT_U64)&idt;
+    BOOT_U64 base = (BOOT_U64)&rt.Idt;
     for (BOOT_U32 vector = 0; vector < 32; ++vector) gate(vector, (BOOT_U64)x86_process_stop, 3);
     for (BOOT_U32 vector = 32; vector < 256; ++vector) gate(vector, (BOOT_U64)x86_process_stray, 3);
     for (BOOT_U32 vector = 0; vector < 32; ++vector) {
@@ -215,11 +220,11 @@ static void idt_prepare(void)
     gate(SPURIOUS_VECTOR, (BOOT_U64)x86_process_spurious, 0);
 #ifdef KERNEL_TEST_K6_PROCESS
     // Intel SDM 3A §7.14.1: DPL 3 in the type byte lets the diagnostic program reach this gate with INT.
-    idt.Gates[SPURIOUS_VECTOR][5] = 0xee;
+    rt.Idt.Gates[SPURIOUS_VECTOR][5] = 0xee;
 #endif
-    idt_probe.Bytes[0] = 255;
-    idt_probe.Bytes[1] = 15;
-    for (BOOT_U32 index = 0; index < 8; ++index) idt_probe.Bytes[index + 2] = (unsigned char)(base >> (index * 8));
+    rt.IdtProbe.Bytes[0] = 255;
+    rt.IdtProbe.Bytes[1] = 15;
+    for (BOOT_U32 index = 0; index < 8; ++index) rt.IdtProbe.Bytes[index + 2] = (unsigned char)(base >> (index * 8));
 }
 
 // ====== tss_rsp0 ======
@@ -243,8 +248,8 @@ static volatile unsigned char *tss_rsp0(void)
 static BOOT_U64 rsp0_swap(BOOT_U64 value)
 {
     BOOT_U64 previous = 0;
-    for (BOOT_U32 index = 0; index < 8; ++index) previous |= (BOOT_U64)tss_field[index] << (8 * index);
-    for (BOOT_U32 index = 0; index < 8; ++index) tss_field[index] = (unsigned char)(value >> (8 * index));
+    for (BOOT_U32 index = 0; index < 8; ++index) previous |= (BOOT_U64)rt.TssField[index] << (8 * index);
+    for (BOOT_U32 index = 0; index < 8; ++index) rt.TssField[index] = (unsigned char)(value >> (8 * index));
     return previous;
 }
 
@@ -253,44 +258,44 @@ static BOOT_U64 rsp0_swap(BOOT_U64 value)
 int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
 {
     const X86_CPU_LOCAL *owner = x86_percpu_bsp();
-    if (opened || !window || !timer || !owner || !x86_user_mode_allowed() ||
+    if (rt.Opened || !window || !timer || !owner || !x86_user_mode_allowed() ||
         !x86_exception_environment() || x86_percpu_current_local() != owner ||
         __readmsr(MSR_GS_BASE) != (BOOT_U64)owner || (__readmsr(MSR_EFER) & EFER_SCE)) return 0;
     const KERNEL_LOCK_WAIT *wait = x86_percpu_wait_current();
     if (!wait) return 0;
     const volatile BOOT_U64 *root = x86_window_entries(0);
     for (BOOT_U32 slot = 0; slot < 256; ++slot) if (root[slot]) return 0;
-    tss_field = tss_rsp0();
-    if (!tss_field || !x86_timer_read(timer->Mapping, 0x320, &timer_lvt_saved) ||
-        !x86_timer_read(timer->Mapping, 0x3e0, &timer_divide_saved) ||
-        !x86_kernel_stacks_acquire_for(&syscall_stack, window->Pool, __readcr3(), 3)) return 0;
-    owner_window = window;
-    owner_timer = timer;
-    budget_clock = &wait->Clock;
+    rt.TssField = tss_rsp0();
+    if (!rt.TssField || !x86_timer_read(timer->Mapping, 0x320, &rt.TimerLvtSaved) ||
+        !x86_timer_read(timer->Mapping, 0x3e0, &rt.TimerDivideSaved) ||
+        !x86_kernel_stacks_acquire_for(&rt.SyscallStack, window->Pool, __readcr3(), 3)) return 0;
+    rt.Window = window;
+    rt.Timer = timer;
+    rt.BudgetClock = &wait->Clock;
     k6_owner = (BOOT_U64)owner;
     k6_kernel_root = __readcr3();
     k6_stack_top = X86_KERNEL_SYSCALL_TOP;
     STACK_WORD = STACK_CANARY;
-    expected_image = root[SLOT_IMAGE];
-    expected_windows = root[X86_LAYOUT_WINDOWS_SLOT];
-    if (K6_NEGATIVE(33)) expected_windows ^= 0x1000;
+    rt.ExpectedImage = root[SLOT_IMAGE];
+    rt.ExpectedWindows = root[X86_LAYOUT_WINDOWS_SLOT];
+    if (K6_NEGATIVE(33)) rt.ExpectedWindows ^= 0x1000;
     idt_prepare();
-    x86_exception_read_idt(&idt_previous);
-    x86_exception_load_idt(&idt_probe);
-    rsp0_previous = rsp0_swap(k6_stack_top);
-    alternate_saved = __readmsr(MSR_KERNEL_GS);
+    x86_exception_read_idt(&rt.IdtPrevious);
+    x86_exception_load_idt(&rt.IdtProbe);
+    rt.Rsp0Previous = rsp0_swap(k6_stack_top);
+    rt.AlternateSaved = __readmsr(MSR_KERNEL_GS);
     __writemsr(MSR_KERNEL_GS, 0);
-    msr_saved[0] = __readmsr(MSR_STAR);
-    msr_saved[1] = __readmsr(MSR_LSTAR);
-    msr_saved[2] = __readmsr(MSR_CSTAR);
-    msr_saved[3] = __readmsr(MSR_FMASK);
-    msr_saved[4] = __readmsr(MSR_EFER);
+    rt.MsrSaved[0] = __readmsr(MSR_STAR);
+    rt.MsrSaved[1] = __readmsr(MSR_LSTAR);
+    rt.MsrSaved[2] = __readmsr(MSR_CSTAR);
+    rt.MsrSaved[3] = __readmsr(MSR_FMASK);
+    rt.MsrSaved[4] = __readmsr(MSR_EFER);
     __writemsr(MSR_STAR, STAR_VALUE);
     __writemsr(MSR_LSTAR, (BOOT_U64)x86_process_syscall);
     __writemsr(MSR_CSTAR, (BOOT_U64)x86_process_stop);
     __writemsr(MSR_FMASK, FLAGS_MASK);
-    __writemsr(MSR_EFER, msr_saved[4] | EFER_SCE);
-    opened = 1;
+    __writemsr(MSR_EFER, rt.MsrSaved[4] | EFER_SCE);
+    rt.Opened = 1;
     return 1;
 }
 
@@ -298,22 +303,22 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
 
 int x86_process_close(void)
 {
-    if (!opened) return 0;
-    if (!x86_timer_stop(owner_timer->Mapping) ||
-        !x86_timer_confirm_write(owner_timer->Mapping, 0x3e0, timer_divide_saved) ||
-        !x86_timer_confirm_write(owner_timer->Mapping, 0x320, timer_lvt_saved)) die("PROCESS_TIMER_RETAINED");
-    __writemsr(MSR_EFER, msr_saved[4]);
-    __writemsr(MSR_STAR, msr_saved[0]);
-    __writemsr(MSR_LSTAR, msr_saved[1]);
-    __writemsr(MSR_CSTAR, msr_saved[2]);
-    __writemsr(MSR_FMASK, msr_saved[3]);
-    __writemsr(MSR_KERNEL_GS, alternate_saved);
-    if (rsp0_swap(rsp0_previous) != k6_stack_top) die("PROCESS_RSP0_CHANGED");
-    if (!x86_kernel_stacks_release(&syscall_stack)) die("PROCESS_STACK_RETAINED");
-    x86_exception_load_idt(&idt_previous);
-    input_irq_mask = 0;
+    if (!rt.Opened) return 0;
+    if (!x86_timer_stop(rt.Timer->Mapping) ||
+        !x86_timer_confirm_write(rt.Timer->Mapping, 0x3e0, rt.TimerDivideSaved) ||
+        !x86_timer_confirm_write(rt.Timer->Mapping, 0x320, rt.TimerLvtSaved)) die("PROCESS_TIMER_RETAINED");
+    __writemsr(MSR_EFER, rt.MsrSaved[4]);
+    __writemsr(MSR_STAR, rt.MsrSaved[0]);
+    __writemsr(MSR_LSTAR, rt.MsrSaved[1]);
+    __writemsr(MSR_CSTAR, rt.MsrSaved[2]);
+    __writemsr(MSR_FMASK, rt.MsrSaved[3]);
+    __writemsr(MSR_KERNEL_GS, rt.AlternateSaved);
+    if (rsp0_swap(rt.Rsp0Previous) != k6_stack_top) die("PROCESS_RSP0_CHANGED");
+    if (!x86_kernel_stacks_release(&rt.SyscallStack)) die("PROCESS_STACK_RETAINED");
+    x86_exception_load_idt(&rt.IdtPrevious);
+    rt.InputIrqMask = 0;
     k6_owner = 0;
-    opened = 0;
+    rt.Opened = 0;
     return !(__readmsr(MSR_EFER) & EFER_SCE);
 }
 
@@ -327,7 +332,7 @@ int x86_process_input_irqs(BOOT_U32 mask)
     };
     X86_IRQ_TOKEN tokens[X86_IRQ_CAPACITY] = {0};
     X86_IRQ_REGISTRY *registry = x86_irq_registry();
-    if (!opened || current || !registry || registry->Busy ||
+    if (!rt.Opened || rt.Current || !registry || registry->Busy ||
         x86_percpu_current_local() != x86_percpu_bsp() || (mask & ~15U)) return 0;
     for (BOOT_U32 index = 0; index < X86_IRQ_CAPACITY; ++index) {
         if (!(mask & (1U << index))) continue;
@@ -337,10 +342,10 @@ int x86_process_input_irqs(BOOT_U32 mask)
     }
     for (BOOT_U32 index = 0; index < X86_IRQ_CAPACITY; ++index) {
         int enabled = (mask & (1U << index)) != 0;
-        input_irq_tokens[index] = tokens[index];
+        rt.InputIrqTokens[index] = tokens[index];
         gate(0x40U + index, (BOOT_U64)(enabled ? entries[index] : x86_process_stray), enabled ? 0 : 3);
     }
-    input_irq_mask = mask;
+    rt.InputIrqMask = mask;
     return 1;
 }
 
@@ -349,7 +354,7 @@ int x86_process_input_irqs(BOOT_U32 mask)
 static int roots_stable(void)
 {
     const volatile BOOT_U64 *root = x86_window_entries(0);
-    return root[SLOT_IMAGE] == expected_image && root[X86_LAYOUT_WINDOWS_SLOT] == expected_windows;
+    return root[SLOT_IMAGE] == rt.ExpectedImage && root[X86_LAYOUT_WINDOWS_SLOT] == rt.ExpectedWindows;
 }
 
 // ====== map_image ======
@@ -357,10 +362,10 @@ static int roots_stable(void)
 static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, KERNEL_PHYSICAL_LEASE *lease_out)
 {
     BOOT_U64 pages = TABLE_PAGES + plan->Count + STACK_PAGES;
-    if (!x86_page_window_idle_valid(owner_window) || !x86_page_window_acquire(owner_window, pages)) return 0;
+    if (!x86_page_window_idle_valid(rt.Window) || !x86_page_window_acquire(rt.Window, pages)) return 0;
     volatile unsigned char *alias = x86_window_bytes();
     volatile BOOT_U64 *tables = (volatile BOOT_U64 *)alias;
-    BOOT_U64 base = owner_window->Lease.Base;
+    BOOT_U64 base = rt.Window->Lease.Base;
     BOOT_U64 branch = PTE_PRESENT | PTE_WRITE | PTE_USER;
     for (BOOT_U64 index = 0; index < pages * PAGE_BYTES; ++index) alias[index] = 0;
     tables[0] = (base + PAGE_BYTES) | branch;
@@ -381,7 +386,7 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
         BOOT_U64 lease = TABLE_PAGES + plan->Count + index;
         tables[PT_OFFSET(STACK_BASE + index * PAGE_BYTES)] = (base + lease * PAGE_BYTES) | branch | PTE_NX;
     }
-    if (!x86_page_window_park(owner_window, lease_out)) die("PROCESS_PARK_FAILED");
+    if (!x86_page_window_park(rt.Window, lease_out)) die("PROCESS_PARK_FAILED");
     return 1;
 }
 
@@ -391,35 +396,35 @@ static int reap(KERNEL_PHYSICAL_LEASE *lease)
 {
     if (__readcr3() != k6_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY) return 0;
     BOOT_U64 pages = lease->Pages;
-    if (!x86_page_window_resume(owner_window, lease)) die("PROCESS_RESUME_FAILED");
+    if (!x86_page_window_resume(rt.Window, lease)) die("PROCESS_RESUME_FAILED");
     volatile unsigned char *alias = x86_window_bytes();
     for (BOOT_U64 index = 0; index < pages * PAGE_BYTES; ++index) alias[index] = 0;
-    if (!x86_page_window_release(owner_window)) die("PROCESS_RELEASE_FAILED");
+    if (!x86_page_window_release(rt.Window)) die("PROCESS_RELEASE_FAILED");
     k6_user_root = 0;
-    return x86_page_window_idle_valid(owner_window);
+    return x86_page_window_idle_valid(rt.Window);
 }
 
 // ====== timer_arm ======
 
 static void timer_arm(void)
 {
-    const X86_LAPIC_MAPPING *mapping = owner_timer->Mapping;
+    const X86_LAPIC_MAPPING *mapping = rt.Timer->Mapping;
     BOOT_U32 vector = K6_NEGATIVE(36) ? STRAY_TEST_VECTOR : TIMER_VECTOR;
     // Intel SDM 3A §13.5.4: divide 3E0h = 3 (by 16), LVT 320h one-shot unmasked, initial count 380h.
     if (!x86_timer_confirm_write(mapping, 0x3e0, 3) || !x86_timer_confirm_write(mapping, 0x320, vector) ||
-        !x86_timer_write(mapping, 0x380, owner_timer->Reload)) die("PROCESS_TIMER_FAILED");
+        !x86_timer_write(mapping, 0x380, rt.Timer->Reload)) die("PROCESS_TIMER_FAILED");
 }
 
 // ====== timer_start ======
 
 static void timer_start(void)
 {
-    budget_left = x86_process_budget_initial();
+    rt.BudgetLeft = x86_process_budget_initial();
     BOOT_U32 duration = PROCESS_BUDGET_MS;
 #ifdef KERNEL_TEST_K6_PROCESS
     if (delay_next_syscall) duration = 100;
 #endif
-    if (!kernel_deadline_start(budget_clock, kernel_clock_ms(budget_clock, duration), &budget_deadline))
+    if (!kernel_deadline_start(rt.BudgetClock, kernel_clock_ms(rt.BudgetClock, duration), &rt.BudgetDeadline))
         die("PROCESS_CLOCK_FAILED");
     timer_arm();
 }
@@ -433,7 +438,7 @@ static void timer_quiesce(void)
 #ifdef KERNEL_TEST_K6_PROCESS
     if (device_probe_armed) mask |= IRR_DEVICE_BIT;
 #endif
-    if (!x86_timer_stop(owner_timer->Mapping)) die("PROCESS_TIMER_RETAINED");
+    if (!x86_timer_stop(rt.Timer->Mapping)) die("PROCESS_TIMER_RETAINED");
     for (BOOT_U32 attempt = 0; attempt < DRAIN_ATTEMPTS; ++attempt) {
         if (!x86_lapic_native_read(IRR_TIMER_BANK, &pending)) die("PROCESS_TIMER_RETAINED");
         if (!(pending & mask)) break;
@@ -444,7 +449,7 @@ static void timer_quiesce(void)
         _disable();
         k6_drain = 0;
     }
-    if (!x86_lapic_idle_except(owner_timer->Mapping, input_irq_mask)) die("PROCESS_TIMER_RETAINED");
+    if (!x86_lapic_idle_except(rt.Timer->Mapping, rt.InputIrqMask)) die("PROCESS_TIMER_RETAINED");
 }
 
 // ====== turn_finish ======
@@ -461,7 +466,7 @@ static void turn_finish(X86_PROCESS_RESULT *result)
     }
     __writemsr(MSR_FS_BASE, 0);
     __writemsr(MSR_KERNEL_GS, 0);
-    current = 0;
+    rt.Current = 0;
 }
 
 #ifdef KERNEL_TEST_K6_PROCESS
@@ -488,23 +493,23 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
 {
     static PROCESS_PLAN plan;
     BOOT_U64 budget;
-    if (!opened || !image || !result) return 0;
+    if (!rt.Opened || !image || !result) return 0;
     for (BOOT_U32 index = 0; index < 8; ++index) ((BOOT_U64 *)result)[index] = 0;
-    state = 0;
+    rt.State = 0;
     advance(1);
-    if (!kernel_physical_budget_read(owner_window->Pool, &budget)) return 0;
+    if (!kernel_physical_budget_read(rt.Window->Pool, &budget)) return 0;
     BOOT_U32 rejected = x86_process_plan(image->Bytes, image->Length, &plan);
     if (rejected) {
         result->Kind = X86_PROCESS_REJECTED;
         result->Code = rejected;
         advance(5);
-        return kernel_physical_budget_matches(owner_window->Pool, budget);
+        return kernel_physical_budget_matches(rt.Window->Pool, budget);
     }
-    if (!map_image(image, &plan, &held)) return 0;
-    k6_user_root = held.Base;
+    if (!map_image(image, &plan, &rt.Held)) return 0;
+    k6_user_root = rt.Held.Base;
     advance(2);
-    current = result;
-    written_bytes = 0;
+    rt.Current = result;
+    rt.WrittenBytes = 0;
     k6_exit_kind = 0;
     advance(3);
     timer_start();
@@ -514,7 +519,7 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
     x86_process_enter(plan.Entry, STACK_TOP, 0);
     advance(4);
     turn_finish(result);
-    if (!reap(&held) || !kernel_physical_budget_matches(owner_window->Pool, budget)) {
+    if (!reap(&rt.Held) || !kernel_physical_budget_matches(rt.Window->Pool, budget)) {
         die(roots_stable() ? "PROCESS_REAP_FAILED" : "PROCESS_ROOT_CHANGED");
     }
     advance(5);
@@ -525,11 +530,11 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
 
 static BOOT_U64 copy_checked(void *target, const void *source, BOOT_U64 pointer, BOOT_U64 length, BOOT_U64 write)
 {
-    window_pointer = pointer;
-    window_length = length;
-    window_write = write;
+    rt.CopyPointer = pointer;
+    rt.CopyLength = length;
+    rt.CopyWrite = write;
     BOOT_U64 failed = x86_process_copy(target, source, length);
-    window_length = 0;
+    rt.CopyLength = 0;
     if (__readeflags() & FLAG_AC) die("PROCESS_AC_RETAINED");
     return failed;
 }
@@ -542,25 +547,25 @@ static BOOT_U64 sys_write(BOOT_U64 pointer, BOOT_U64 length)
     if (range == 3) return RESULT_LENGTH;
     if (range != 1) return RESULT_RANGE;
     if (!length) return 0;
-    if (!x86_process_write_allowed(written_bytes, length)) return RESULT_QUOTA;
-    if (copy_checked(buffer, (const void *)pointer, pointer, length, 0)) {
-        for (BOOT_U32 index = 0; index <= MAX_COPY; ++index) ((volatile unsigned char *)buffer)[index] = 0;
+    if (!x86_process_write_allowed(rt.WrittenBytes, length)) return RESULT_QUOTA;
+    if (copy_checked(rt.Buffer, (const void *)pointer, pointer, length, 0)) {
+        for (BOOT_U32 index = 0; index <= MAX_COPY; ++index) ((volatile unsigned char *)rt.Buffer)[index] = 0;
         return RESULT_RANGE;
     }
-    x86_process_console_filter(buffer, length);
+    x86_process_console_filter(rt.Buffer, length);
     if (!kernel_text("USER: ")) die("PROCESS_CONSOLE_FAILED");
     for (BOOT_U64 offset = 0; offset < length; offset += TEXT_BLOCK) {
         BOOT_U64 end = offset + TEXT_BLOCK < length ? offset + TEXT_BLOCK : length;
-        unsigned char saved = buffer[end];
-        buffer[end] = 0;
-        if (!kernel_text((const char *)buffer + offset)) die("PROCESS_CONSOLE_FAILED");
-        buffer[end] = saved;
+        unsigned char saved = rt.Buffer[end];
+        rt.Buffer[end] = 0;
+        if (!kernel_text((const char *)rt.Buffer + offset)) die("PROCESS_CONSOLE_FAILED");
+        rt.Buffer[end] = saved;
     }
-    if (buffer[length - 1] != '\n') {
+    if (rt.Buffer[length - 1] != '\n') {
         if (!kernel_text("\n")) die("PROCESS_CONSOLE_FAILED");
     }
-    written_bytes += length;
-    ++current->Writes;
+    rt.WrittenBytes += length;
+    ++rt.Current->Writes;
     return length;
 }
 
@@ -568,12 +573,12 @@ static BOOT_U64 sys_write(BOOT_U64 pointer, BOOT_U64 length)
 
 static BOOT_U64 sys_send(BOOT_U64 handle, BOOT_U64 pointer, BOOT_U64 len)
 {
-    BOOT_U64 status = x86_ipc_send_check(ipc_channel, ipc_endpoint, handle, len);
+    BOOT_U64 status = x86_ipc_send_check(rt.IpcChannel, rt.IpcEndpoint, handle, len);
     if (status) return status;
     unsigned char data[IPC_MESSAGE_BYTES] = {0};
     if (x86_process_copy_range(pointer, len) != 1 ||
         copy_checked(data, (const void *)pointer, pointer, len, 0)) return RESULT_RANGE;
-    return x86_ipc_send(ipc_channel, ipc_endpoint, handle, data, len);
+    return x86_ipc_send(rt.IpcChannel, rt.IpcEndpoint, handle, data, len);
 }
 
 // ====== sys_recv ======
@@ -581,11 +586,11 @@ static BOOT_U64 sys_send(BOOT_U64 handle, BOOT_U64 pointer, BOOT_U64 len)
 static BOOT_U64 sys_recv(BOOT_U64 handle, BOOT_U64 pointer, BOOT_U64 capacity)
 {
     unsigned char data[IPC_MESSAGE_BYTES] = {0};
-    BOOT_U64 len = x86_ipc_peek(ipc_channel, ipc_endpoint, handle, data, capacity);
+    BOOT_U64 len = x86_ipc_peek(rt.IpcChannel, rt.IpcEndpoint, handle, data, capacity);
     if (len > sizeof(data)) return len;
     if (!len || x86_process_copy_range(pointer, len) != 1 ||
         copy_checked((void *)pointer, data, pointer, len, 1)) return RESULT_RANGE;
-    if (x86_ipc_consume(ipc_channel, ipc_endpoint, handle)) die("PROCESS_IPC_STATE");
+    if (x86_ipc_consume(rt.IpcChannel, rt.IpcEndpoint, handle)) die("PROCESS_IPC_STATE");
     return len;
 }
 
@@ -593,9 +598,9 @@ static BOOT_U64 sys_recv(BOOT_U64 handle, BOOT_U64 pointer, BOOT_U64 capacity)
 
 static int budget_expired(BOOT_U64 rip)
 {
-    if (budget_left && !kernel_deadline_expired(budget_clock, &budget_deadline)) return 0;
-    current->Kind = X86_PROCESS_BUDGET;
-    current->Rip = rip;
+    if (rt.BudgetLeft && !kernel_deadline_expired(rt.BudgetClock, &rt.BudgetDeadline)) return 0;
+    rt.Current->Kind = X86_PROCESS_BUDGET;
+    rt.Current->Rip = rip;
     return 1;
 }
 
@@ -608,29 +613,29 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
     if (k6_negative == 32) x86_process_probe_read(X86_LAYOUT_SLOT_ADDRESS(X86_LAYOUT_HEAP_SLOT));
 #endif
     if (!x86_process_return_valid(IRET(frame, 0), IRET(frame, 1), IRET(frame, 2), IRET(frame, 3), IRET(frame, 4))) {
-        current->Kind = X86_PROCESS_BAD_FRAME;
-        current->Rip = IRET(frame, 0);
+        rt.Current->Kind = X86_PROCESS_BAD_FRAME;
+        rt.Current->Rip = IRET(frame, 0);
         return 2;
     }
     if (budget_expired(IRET(frame, 0))) return 2;
     BOOT_U64 number = GPR(frame, GPR_RAX);
     if (number == SYS_EXIT) {
-        current->Kind = X86_PROCESS_EXIT;
-        current->Code = GPR(frame, GPR_RDI);
+        rt.Current->Kind = X86_PROCESS_EXIT;
+        rt.Current->Code = GPR(frame, GPR_RDI);
         return 2;
     }
-    if (yield_frame && (number == SYS_YIELD || (ipc_endpoint && number == SYS_WAIT_READABLE))) {
+    if (rt.YieldFrame && (number == SYS_YIELD || (rt.IpcEndpoint && number == SYS_WAIT_READABLE))) {
         BOOT_U64 result = number == SYS_YIELD ? 0 :
-            x86_ipc_receive_ready(ipc_channel, ipc_endpoint, GPR(frame, GPR_RDI));
+            x86_ipc_receive_ready(rt.IpcChannel, rt.IpcEndpoint, GPR(frame, GPR_RDI));
         GPR(frame, GPR_RAX) = result;
         if (number == SYS_WAIT_READABLE && result != IPC_WOULD_BLOCK)
             return budget_expired(IRET(frame, 0)) ? 2 : 1;
-        waiting = number == SYS_WAIT_READABLE;
-        for (BOOT_U32 index = 0; index < USER_FRAME_WORDS; ++index) yield_frame[index] = frame[index];
-        yielded = 1;
+        rt.Waiting = number == SYS_WAIT_READABLE;
+        for (BOOT_U32 index = 0; index < USER_FRAME_WORDS; ++index) rt.YieldFrame[index] = frame[index];
+        rt.Yielded = 1;
         return 2;
     }
-    if (ipc_endpoint && (number == SYS_SEND || number == SYS_RECV)) {
+    if (rt.IpcEndpoint && (number == SYS_SEND || number == SYS_RECV)) {
         BOOT_U64 handle = GPR(frame, GPR_RDI), pointer = GPR(frame, GPR_RSI), length = GPR(frame, GPR_RDX);
         GPR(frame, GPR_RAX) = number == SYS_SEND ? sys_send(handle, pointer, length) : sys_recv(handle, pointer, length);
         return budget_expired(IRET(frame, 0)) ? 2 : 1;
@@ -640,7 +645,7 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
     if (delay_next_syscall) {
         delay_next_syscall = 0;
         BOOT_U32 attempt = 0;
-        while (!kernel_deadline_expired(budget_clock, &budget_deadline)) {
+        while (!kernel_deadline_expired(rt.BudgetClock, &rt.BudgetDeadline)) {
             if (++attempt == 0x1000000U) die("PROCESS_CLOCK_FAILED");
             _mm_pause();
         }
@@ -663,15 +668,15 @@ int x86_process_irq_service(BOOT_U64 *frame)
     }
     // Intel SDM 3A §13.8.5: writing zero to EOI (B0h) retires the highest ISR bit.
     if (!x86_lapic_native_eoi()) die("PROCESS_IRQ_INVALID");
-    ++current->Irqs;
-    current->Rip = IRET(frame, 0);
+    ++rt.Current->Irqs;
+    rt.Current->Rip = IRET(frame, 0);
     if (!x86_process_irq_frame_valid(IRET(frame, 0), IRET(frame, 1), IRET(frame, 2), IRET(frame, 3), IRET(frame, 4))) {
-        current->Kind = X86_PROCESS_BAD_FRAME;
+        rt.Current->Kind = X86_PROCESS_BAD_FRAME;
         return 2;
     }
-    budget_left = x86_process_budget_next(budget_left);
+    rt.BudgetLeft = x86_process_budget_next(rt.BudgetLeft);
     if (budget_expired(IRET(frame, 0))) return 2;
-    if (!x86_timer_write(owner_timer->Mapping, 0x380, owner_timer->Reload)) die("PROCESS_TIMER_FAILED");
+    if (!x86_timer_write(rt.Timer->Mapping, 0x380, rt.Timer->Reload)) die("PROCESS_TIMER_FAILED");
     return 1;
 }
 
@@ -680,7 +685,7 @@ int x86_process_irq_service(BOOT_U64 *frame)
 
 static int device_probe_quiet(void)
 {
-    return !device_probe_armed && x86_lapic_idle(owner_timer->Mapping);
+    return !device_probe_armed && x86_lapic_idle(rt.Timer->Mapping);
 }
 #endif
 
@@ -691,8 +696,8 @@ static int input_irq_deliver(BOOT_U32 vector)
     if (vector < 0x40U || vector >= 0x40U + X86_IRQ_CAPACITY) return 0;
     BOOT_U32 index = vector - 0x40U;
     X86_IRQ_REGISTRY *registry = x86_irq_registry();
-    return (input_irq_mask & (1U << index)) &&
-        x86_irq_registry_token_live(registry, &input_irq_tokens[index]) &&
+    return (rt.InputIrqMask & (1U << index)) &&
+        x86_irq_registry_token_live(registry, &rt.InputIrqTokens[index]) &&
         x86_irq_registry_deliver(registry, vector);
 }
 
@@ -700,7 +705,7 @@ static int input_irq_deliver(BOOT_U32 vector)
 
 int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
 {
-    if (!current || (BOOT_U64)&IRET(frame, 0) != k6_stack_top - 40 ||
+    if (!rt.Current || (BOOT_U64)&IRET(frame, 0) != k6_stack_top - 40 ||
         !input_irq_deliver(vector))
         die("PROCESS_DEVICE_IRQ_INVALID");
 #ifdef KERNEL_TEST_K6_PROCESS
@@ -710,7 +715,7 @@ int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
     }
 #endif
     if (!x86_process_irq_frame_valid(IRET(frame, 0), IRET(frame, 1), IRET(frame, 2), IRET(frame, 3), IRET(frame, 4))) {
-        current->Kind = X86_PROCESS_BAD_FRAME;
+        rt.Current->Kind = X86_PROCESS_BAD_FRAME;
         return 2;
     }
     return budget_expired(IRET(frame, 0)) ? 2 : 1;
@@ -720,11 +725,11 @@ int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
 
 void x86_process_device_irq_kernel(BOOT_U32 vector)
 {
-    if (!opened || !k6_drain || !input_irq_deliver(vector))
+    if (!rt.Opened || !k6_drain || !input_irq_deliver(vector))
         die("PROCESS_DEVICE_IRQ_INVALID");
 #ifdef KERNEL_TEST_K6_PROCESS
     if (device_probe_armed) {
-        if (current || device_probe_delivered != 1) die("PROCESS_DEVICE_IRQ_INVALID");
+        if (rt.Current || device_probe_delivered != 1) die("PROCESS_DEVICE_IRQ_INVALID");
         device_probe_delivered = 2;
     }
 #endif
@@ -737,7 +742,7 @@ int x86_process_device_irq_check(const X86_PROCESS_IMAGE *image, int (*inject)(v
 {
     X86_PROCESS_RESULT result;
     X86_IRQ_REGISTRY *registry = x86_irq_registry();
-    if (!opened || current || !registry || !inject || !handle ||
+    if (!rt.Opened || rt.Current || !registry || !inject || !handle ||
         x86_process_input_irqs(16) ||
         x86_process_input_irqs(1U << (DEVICE_PROBE_VECTOR - 0x40U)) ||
         !x86_irq_registry_bind(registry, DEVICE_PROBE_VECTOR, handle,
@@ -768,7 +773,7 @@ void x86_process_irq_drained(void)
 {
     // Intel SDM 3A §13.8.5: writing zero to EOI (B0h) retires the highest ISR bit.
     if (!x86_lapic_native_eoi()) die("PROCESS_TIMER_RETAINED");
-    ++drained;
+    ++rt.Drained;
 }
 
 // ====== x86_process_copy_recover ======
@@ -778,7 +783,7 @@ int x86_process_copy_recover(BOOT_U64 *frame, BOOT_U64 cr2)
     enum { VECTOR, ERROR_CODE, RIP, CS, FLAGS };
     if (!x86_process_fault_recoverable(frame[RIP], frame[CS], frame[FLAGS], frame[ERROR_CODE], cr2,
         (BOOT_U64)x86_process_copy_first, (BOOT_U64)x86_process_copy_last,
-        window_pointer, window_length, window_write)) return 0;
+        rt.CopyPointer, rt.CopyLength, rt.CopyWrite)) return 0;
     frame[RIP] = (BOOT_U64)x86_process_copy_fixup;
     frame[FLAGS] &= ~FLAG_AC;
     return 1;
@@ -788,7 +793,7 @@ int x86_process_copy_recover(BOOT_U64 *frame, BOOT_U64 cr2)
 
 void x86_process_kernel_fatal(const BOOT_U64 *frame, BOOT_U64 cr2)
 {
-    x86_exception_load_idt(&idt_previous);
+    x86_exception_load_idt(&rt.IdtPrevious);
     (void)kernel_text("PROCESS_FAULT_VECTOR: ");
     (void)kernel_number(frame[0]);
     (void)kernel_text("\nPROCESS_FAULT_RIP: ");
@@ -809,13 +814,13 @@ _Static_assert(X86_PROCESS_FRAME_WORDS == USER_FRAME_WORDS, "Saved process frame
 int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *image)
 {
     PROCESS_PLAN plan;
-    if (!opened || current || !slot || slot->Lease.Id || !image ||
+    if (!rt.Opened || rt.Current || !slot || slot->Lease.Id || !image ||
         x86_process_plan(image->Bytes, image->Length, &plan)) return 0;
-    BOOT_U32 ticks = kernel_clock_ms(budget_clock, PROCESS_BUDGET_MS);
+    BOOT_U32 ticks = kernel_clock_ms(rt.BudgetClock, PROCESS_BUDGET_MS);
     if (ticks == UINT32_MAX || !map_image(image, &plan, &slot->Lease)) return 0;
     slot->KernelRoot = k6_kernel_root;
-    slot->ImageEntry = expected_image;
-    slot->WindowEntry = expected_windows;
+    slot->ImageEntry = rt.ExpectedImage;
+    slot->WindowEntry = rt.ExpectedWindows;
     slot->Entry = plan.Entry;
     slot->RemainingTicks = ticks;
     slot->RemainingIrqs = x86_process_budget_initial();
@@ -827,12 +832,12 @@ int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *im
 int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     IPC_CHANNEL *channel, BOOT_U64 endpoint, int renew_budget)
 {
-    if (!opened || current || !slot || !slot->Lease.Id || !result || result->Kind ||
+    if (!rt.Opened || rt.Current || !slot || !slot->Lease.Id || !result || result->Kind ||
         (!!channel != !!endpoint) || (slot->Waiting && !channel)) return 0;
-    if (slot->KernelRoot != k6_kernel_root || slot->ImageEntry != expected_image ||
-        slot->WindowEntry != expected_windows || !roots_stable()) return 0;
+    if (slot->KernelRoot != k6_kernel_root || slot->ImageEntry != rt.ExpectedImage ||
+        slot->WindowEntry != rt.ExpectedWindows || !roots_stable()) return 0;
     if (renew_budget) {
-        BOOT_U32 ticks = kernel_clock_ms(budget_clock, PROCESS_BUDGET_MS);
+        BOOT_U32 ticks = kernel_clock_ms(rt.BudgetClock, PROCESS_BUDGET_MS);
         if (ticks == UINT32_MAX) return 0;
         slot->RemainingTicks = ticks;
         slot->RemainingIrqs = x86_process_budget_initial();
@@ -844,31 +849,31 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
         slot->Waiting = 0;
     }
     k6_user_root = slot->Lease.Base;
-    current = result;
-    written_bytes = slot->Written;
-    budget_left = slot->RemainingIrqs;
+    rt.Current = result;
+    rt.WrittenBytes = slot->Written;
+    rt.BudgetLeft = slot->RemainingIrqs;
     k6_exit_kind = 0;
-    yielded = 0;
-    waiting = 0;
-    yield_frame = slot->Frame;
-    ipc_channel = channel;
-    ipc_endpoint = endpoint;
-    if (!kernel_deadline_start(budget_clock, slot->RemainingTicks, &budget_deadline)) die("PROCESS_CLOCK_FAILED");
+    rt.Yielded = 0;
+    rt.Waiting = 0;
+    rt.YieldFrame = slot->Frame;
+    rt.IpcChannel = channel;
+    rt.IpcEndpoint = endpoint;
+    if (!kernel_deadline_start(rt.BudgetClock, slot->RemainingTicks, &rt.BudgetDeadline)) die("PROCESS_CLOCK_FAILED");
     timer_arm();
     if (slot->Yields) x86_process_resume(slot->Frame);
     else x86_process_enter(slot->Entry, STACK_TOP, endpoint);
-    BOOT_U32 elapsed = kernel_clock_elapsed(budget_clock, budget_deadline.Start);
-    yield_frame = 0;
-    ipc_channel = 0;
-    ipc_endpoint = 0;
+    BOOT_U32 elapsed = kernel_clock_elapsed(rt.BudgetClock, rt.BudgetDeadline.Start);
+    rt.YieldFrame = 0;
+    rt.IpcChannel = 0;
+    rt.IpcEndpoint = 0;
     turn_finish(result);
     if (__readcr3() != k6_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY)
         die("PROCESS_ROOT_CHANGED");
-    slot->Written = written_bytes;
-    slot->RemainingIrqs = budget_left;
-    if (yielded) {
+    slot->Written = rt.WrittenBytes;
+    slot->RemainingIrqs = rt.BudgetLeft;
+    if (rt.Yielded) {
         ++slot->Yields;
-        slot->Waiting = waiting;
+        slot->Waiting = rt.Waiting;
         if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
         else slot->RemainingTicks -= elapsed;
     }
@@ -879,7 +884,7 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
 
 int x86_process_slot_reap(X86_PROCESS_SLOT *slot)
 {
-    if (!opened || current || !slot || !slot->Lease.Id || !reap(&slot->Lease)) return 0;
+    if (!rt.Opened || rt.Current || !slot || !slot->Lease.Id || !reap(&slot->Lease)) return 0;
     *slot = (X86_PROCESS_SLOT){0};
     return 1;
 }
@@ -952,8 +957,8 @@ void x86_process_delay_next_syscall(void)
 
 int x86_process_drain_check(void)
 {
-    const X86_LAPIC_MAPPING *mapping = owner_timer->Mapping;
-    BOOT_U64 before = drained;
+    const X86_LAPIC_MAPPING *mapping = rt.Timer->Mapping;
+    BOOT_U64 before = rt.Drained;
     BOOT_U32 pending = 0;
     if (!x86_timer_confirm_write(mapping, 0x3e0, 3) || !x86_timer_confirm_write(mapping, 0x320, TIMER_VECTOR) ||
         !x86_timer_write(mapping, 0x380, 1)) return 0;
@@ -963,6 +968,6 @@ int x86_process_drain_check(void)
     if (!(pending & IRR_TIMER_BIT)) return 0;
     if (device_probe_armed) device_probe_send();
     timer_quiesce();
-    return drained == before + 1;
+    return rt.Drained == before + 1;
 }
 #endif
