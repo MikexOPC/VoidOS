@@ -2,7 +2,7 @@
 
 Stato: avviato. Primitive comuni pronte ma non ancora usate dal kernel;
 user mode, syscall e user copy esistono con SMEP/SMAP obbligatori; mancano
-sorgente di entropia, stack canary e UMIP. Stato riallineato al codice il
+sorgente di entropia e stack canary. Stato riallineato al codice il
 2026-11-12 (vedi "Classifica"). Questo file e il punto di partenza per chi
 lavora sulla sicurezza; va aggiornato a ogni passo.
 
@@ -101,7 +101,7 @@ copy limitata a 256 byte con `stac`/`clac` e recupero del page fault solo
 nella finestra di copia, budget di tempo per processo.
 
 **Mancante:** stack canary (tutto compila con `/GS-`), sorgente di entropia,
-W^X dell'immagine kernel verificato per sezione, UMIP, KASLR, mitigazioni
+W^X dell'immagine kernel verificato per sezione, KASLR, mitigazioni
 speculative oltre a `lfence` dopo `swapgs`.
 
 **Limiti noti del codice presente:**
@@ -124,7 +124,7 @@ speculative oltre a `lfence` dopo `swapgs`.
 | 3 | W^X dell'immagine kernel | Alto | Verificare e imporre `.text` RX, `.rdata` RO+NX, dati RW+NX; test negativo su scrittura in `.text` |
 | 4 | Primitive comuni `lib/security/bounds` | Medio-alto | **Fatto per primo** (2026-11-06): non tocca hardware ne kernel, utile a tutti i passi successivi |
 | 5 | Input non fidati: ACPI, VirtIO, PS/2, shell | Medio | Tabelle firmware e device sono input esterni: limiti, lunghezze, checksum |
-| 6 | UMIP | Medio, ora | **SMEP/SMAP fatti** con K5/K6. Resta UMIP: CR4 bit 11, da abilitare solo con verifica CPUID |
+| 6 | UMIP | Fatto | **SMEP, SMAP e UMIP fatti.** UMIP (CR4 bit 11) si abilita se CPUID lo offre; non e richiesto per lo user mode |
 | 7 | DMA: VT-d attivo per i device | Medio | Il DMA bypassa il paging della CPU; da collegare a VirtIO |
 | 8 | Consolidamento del confine user/kernel | Alto, ora | **Syscall e user copy fatti** con K5/K6. Restano: guard page sullo stack delle syscall, divisione di `process.c`, arresti con diagnostica, decisione su KPTI |
 | 9 | Collegare `lib/security/bounds` ai moduli | Medio | Header C e sostituzione dei controlli scritti a mano |
@@ -191,3 +191,10 @@ speculative oltre a `lfence` dopo `swapgs`.
   mancanti o futuri) e aggiunti i limiti noti. Nessun codice modificato,
   nessun test eseguito. Ordine proposto: sorgente RDSEED/RDRAND, canary e
   guard page, header di `bounds`, UMIP, divisione di `process.c`.
+- **2026-11-12 — UMIP.** CR4.UMIP (bit 11) abilitato su BSP e AP quando
+  CPUID.07H:ECX bit 2 lo dichiara; SMEP e SMAP restano gli unici requisiti
+  per lo user mode. Test host della policy: 2 su 2. QEMU `-cpu max`, 4 vCPU:
+  `k6-protection` 10/10 con UMIP letto nel CR4 di ogni CPU, le tre varianti
+  senza SMEP/SMAP 3/3 ciascuna; regressione `k6-process`, `k6-process-smp`,
+  `k6-ordinary` 3/3 ciascuna. Aperto: test negativo che esegua `sgdt` da
+  ring 3 e attenda il #GP; CPU senza UMIP non provata in QEMU.
