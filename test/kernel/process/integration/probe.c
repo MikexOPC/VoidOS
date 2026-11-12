@@ -115,18 +115,38 @@ static int ipc_pair(void)
 static int bridge_pair(void)
 {
     const X86_PROCESS_IMAGE images[2] = {
-        {k6_program_bridge_client, k6_program_bridge_client_length},
         {k6_program_bridge_server, k6_program_bridge_server_length},
+        {k6_program_bridge_client, k6_program_bridge_client_length},
     };
     X86_PROCESS_RESULT results[2];
     BOOT_U32 yields[2];
     return x86_process_pair(images, results, yields, 1) &&
-        field("BRIDGE_CLIENT_KIND: ", results[0].Kind) && field("BRIDGE_CLIENT_CODE: ", results[0].Code) &&
-        field("BRIDGE_SERVER_KIND: ", results[1].Kind) && field("BRIDGE_SERVER_CODE: ", results[1].Code) &&
-        yields[0] == 5 && yields[1] == 5 &&
+        field("BRIDGE_SERVER_KIND: ", results[0].Kind) && field("BRIDGE_SERVER_CODE: ", results[0].Code) &&
+        field("BRIDGE_CLIENT_KIND: ", results[1].Kind) && field("BRIDGE_CLIENT_CODE: ", results[1].Code) &&
+        yields[0] == 6 && yields[1] == 5 &&
         results[0].Kind == X86_PROCESS_EXIT && results[0].Code == 0 &&
         results[1].Kind == X86_PROCESS_EXIT && results[1].Code == 0 &&
         kernel_log(0, "KERNEL_BRIDGE_STATUS_OK");
+}
+
+// ====== bridge_wait_failure ======
+
+static int bridge_wait_failure(void)
+{
+    X86_PROCESS_IMAGE images[2] = {
+        {k6_program_bridge_client, k6_program_bridge_client_length},
+        {k6_program_null, k6_program_null_length},
+    };
+    X86_PROCESS_RESULT results[2];
+    BOOT_U32 yields[2];
+    if (!x86_process_pair(images, results, yields, 1) || yields[0] != 1 || yields[1] ||
+        results[0].Kind != X86_PROCESS_EXIT || results[0].Code != 77 ||
+        results[1].Kind != X86_PROCESS_FAULT || results[1].Vector != 14 ||
+        results[1].Error != 4 || results[1].Cr2) return 0;
+    images[1] = (X86_PROCESS_IMAGE){k6_program_spin, k6_program_spin_length};
+    return x86_process_pair(images, results, yields, 1) && yields[0] == 1 && !yields[1] &&
+        results[0].Kind == X86_PROCESS_EXIT && results[0].Code == 77 &&
+        results[1].Kind == X86_PROCESS_BUDGET && kernel_log(0, "KERNEL_BRIDGE_WAIT_RECOVERY_OK");
 }
 
 // ====== cases ======
@@ -177,7 +197,7 @@ static int cases(void)
     for (BOOT_U64 window = 1; window <= 6; ++window) {
         if (!nmi_case(window)) return 0;
     }
-    return yield_pair() && ipc_pair() && bridge_pair() &&
+    return yield_pair() && ipc_pair() && bridge_pair() && bridge_wait_failure() &&
         field("K6_COPY_INSTRUCTION: ", x86_process_copy_instruction());
 }
 

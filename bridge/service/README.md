@@ -7,7 +7,7 @@ il canale e le risorse dei processi.
 
 ## Servizio persistente
 
-Proposta da concordare. Un solo processo del bridge resta residente sul
+Un solo processo del bridge resta residente sul
 BSP e si sospende tra le richieste. La shell del kernel usa un endpoint
 privato con una richiesta in volo. L'API binaria di `status` resta
 quella già collaudata.
@@ -49,6 +49,13 @@ L'esito di `status` comunica la disponibilità del servizio.
 Il modello richiesta-risposta con un ricevente sospeso è documentato in
 seL4. VoidOS conserva il proprio formato e il proprio trasporto.
 [Manuale seL4 14.0.0, §4.2 e §4.2.4](https://sel4.systems/Info/Docs/seL4-manual-14.0.0.pdf)
+
+Nel diagnostico K6, `wait_readable` sospende il processo quando la
+coda è vuota. Il dispatcher BSP riprende il frame salvato quando
+arriva un messaggio o quando il peer si chiude. La lettura continua
+tramite `recv`. Il test esegue cinque richieste sulla stessa istanza
+del bridge e controlla anche il risveglio del client se il peer
+termina per fault o per scadenza del budget.
 
 ### Sequenza e collaudo
 

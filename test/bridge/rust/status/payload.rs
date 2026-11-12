@@ -1,8 +1,8 @@
-use crate::{exit, ipc, syscall};
+use crate::{exit, ipc};
 
 const RECEIVE: u64 = 4;
 const SEND: u64 = 3;
-const YIELD: u64 = 2;
+const WAIT_READABLE: u64 = 5;
 const PEER_CLOSED: i64 = -7;
 
 #[cfg(program_bridge_client)]
@@ -22,9 +22,13 @@ extern "C" fn program_main(handle: u64) -> ! {
     let mut response = [0u8; 2];
     for (request, expected) in CASES {
         let length = request.len() as u64;
-        if ipc(SEND, handle, request.as_ptr() as u64, length) != length as i64 ||
-            syscall(YIELD, 0, 0) != 0 {
+        if ipc(SEND, handle, request.as_ptr() as u64, length) != length as i64 {
             exit(1);
+        }
+        match ipc(WAIT_READABLE, handle, 0, 0) {
+            0 => {}
+            PEER_CLOSED => exit(77),
+            _ => exit(1),
         }
         if ipc(RECEIVE, handle, response.as_mut_ptr() as u64, 2) != 2 || response != expected {
             exit(2);
@@ -42,6 +46,9 @@ extern "C" fn program_main(handle: u64) -> ! {
     let capacity = request.len() as u64;
     let pointer = request.as_mut_ptr() as u64;
     for _ in 0..5 {
+        if ipc(WAIT_READABLE, handle, 0, 0) != 0 {
+            exit(3);
+        }
         let length = ipc(RECEIVE, handle, pointer, capacity);
         if length <= 0 {
             exit(3);
@@ -50,10 +57,9 @@ extern "C" fn program_main(handle: u64) -> ! {
             exit(3);
         };
         let response = crate::bridge_service::reply(frame).encode();
-        if ipc(SEND, handle, response.as_ptr() as u64, response.len() as u64) != response.len() as i64 ||
-            syscall(YIELD, 0, 0) != 0 {
+        if ipc(SEND, handle, response.as_ptr() as u64, response.len() as u64) != response.len() as i64 {
             exit(4);
         }
     }
-    exit(if ipc(RECEIVE, handle, pointer, capacity) == PEER_CLOSED { 0 } else { 5 });
+    exit(if ipc(WAIT_READABLE, handle, 0, 0) == PEER_CLOSED { 0 } else { 5 });
 }
