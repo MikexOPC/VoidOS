@@ -28,6 +28,7 @@ EXTERN x86_process_irq_service:PROC
 EXTERN x86_process_irq_drained:PROC
 IFDEF K6_DIAGNOSTICS
 EXTERN x86_process_device_irq_service:PROC
+EXTERN x86_process_device_irq_kernel:PROC
 ENDIF
 EXTERN x86_process_copy_recover:PROC
 EXTERN x86_process_kernel_fatal:PROC
@@ -343,14 +344,28 @@ irq_kernel_stray:
 x86_process_irq ENDP
 
 IFDEF K6_DIAGNOSTICS
-; ====== IRQ diagnostico registrato da CPL3 ======
+; ====== IRQ diagnostico registrato da CPL3 o durante il drenaggio CPL0 ======
 
 PUBLIC x86_process_device_irq
 x86_process_device_irq PROC
     clac
     test BYTE PTR [rsp+8], 3
-    jz x86_process_stray
+    jz device_irq_kernel
     K6_USER_IRQ x86_process_device_irq_service
+device_irq_kernel:
+    cmp QWORD PTR [k6_drain], 1
+    jne x86_process_stray
+    K6_PUSH_GPR
+    mov rbx, rsp
+    and rsp, -16
+    sub rsp, 544
+    fxsave64 [rsp+32]
+    cld
+    call x86_process_device_irq_kernel
+    fxrstor64 [rsp+32]
+    mov rsp, rbx
+    K6_POP_GPR
+    iretq
 x86_process_device_irq ENDP
 ENDIF
 

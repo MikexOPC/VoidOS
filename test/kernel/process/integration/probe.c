@@ -156,9 +156,6 @@ static int cases(void)
         !kernel_log(0, "KERNEL_K6_ISOLATION_OK")) return 0;
     if (!exits(k6_program_irq, k6_program_irq_length, 0, &result) || !result.Irqs ||
         !field("K6_IRQS: ", result.Irqs) || !kernel_log(0, "KERNEL_K6_IRQ_OK")) return 0;
-    const X86_PROCESS_IMAGE device_irq_image = {k6_program_hello, k6_program_hello_length};
-    if (!x86_process_device_irq_check(&device_irq_image) ||
-        !kernel_log(0, "KERNEL_K6_EXTERNAL_IRQ_OK")) return 0;
     if (!over_budget(k6_program_spin, k6_program_spin_length) ||
         !over_budget(k6_program_syscall_spin, k6_program_syscall_spin_length) ||
         !over_budget(k6_program_flags_spin, k6_program_flags_spin_length) ||
@@ -186,11 +183,12 @@ static int cases(void)
 
 // ====== x86_k6_process_probe ======
 
-int x86_k6_process_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
+int x86_k6_process_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer,
+    const X86_WATCHDOG_ENV *env, const KERNEL_ACPI_DIRECTORY *directory)
 {
     if (!x86_user_mode_allowed()) return kernel_log(2, "PROCESS_DISABLED");
     if (!x86_process_open(window, timer)) return 0;
-    int passed = cases();
+    int passed = cases() && x86_k6_keyboard_probe(env, directory, &timer->Clock);
     if (!x86_process_close()) return 0;
     return passed && kernel_log(0, "KERNEL_K6_PROCESS_OK");
 }

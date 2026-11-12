@@ -55,16 +55,15 @@ seL4. VoidOS conserva il proprio formato e il proprio trasporto.
 1. Diagnostico IRQ a CPL3. Iniettare input durante una finestra utente
    verificata, osservare consegna ed EOI e verificare la ripresa utente.
    Coprire anche timer, NMI, fault e ripristino dello stato del BSP.
-   Il timer del processo usa il vettore `0x44`. Il diagnostico accoda
-   sul BSP un IPI LAPIC sul vettore `0x41` della tastiera con IF=0.
-   Verifica il frame CPL3, una sola consegna nel registro ordinario,
-   un solo EOI, la ripresa del programma e la rimozione della
-   sottoscrizione. Il collaudo PS/2 deve ancora esercitare il controller
-   e la consegna a CPL0 durante il drenaggio del timer.
-   [Intel SDM 325462-089, vol. 3A, §§7.14 e 12.6–12.8, Fig. 12-8](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf)
-   QEMU ha confermato la nuova assegnazione in 13 boot K6. Sono passati
-   anche tre rifiuti attesi del vettore inatteso, dieci boot ordinari e
-   dieci boot con la shell.
+   Il timer del processo usa `0x44`. Il diagnostico scrive due byte nel
+   buffer del controller i8042 emulato. Il controller genera IRQ1 sul
+   vettore `0x41`. Il primo byte arriva a CPL3, il secondo a CPL0
+   durante il drenaggio del timer. La prova verifica i byte, la ripresa
+   del processo, due consegne e due EOI. Alla fine chiude il controller
+   e ripristina la rotta IOAPIC.
+   [QEMU i8042, comando D2](https://github.com/qemu/qemu/blob/v10.1.0/hw/input/pckbd.c#L425)
+   La prova è passata in 13 boot QEMU, di cui tre con quattro vCPU.
+   Anche i tre casi di IRQ inatteso sono stati respinti come previsto.
 2. Bridge residente. Verificare più richieste sullo stesso processo,
    nessun polling in attesa e risveglio anche quando pubblicazione e
    attesa si sovrappongono. Provare timeout, fault, chiusura e ripristino

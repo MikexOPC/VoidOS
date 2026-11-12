@@ -476,6 +476,18 @@ if ($TestK6Process) {
     Invoke-Compiler $tool.Nasm @('-f','win64','-Wall','-Werror',"-I$output/",'-o',"$output/k6-programs.obj","$programRoot/integration/programs.asm")
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$programRoot/integration/probe.c",("/Fo$output/k6-probe.obj")))
     $objects += @("$output/k6-programs.obj","$output/k6-probe.obj")
+    $keyboardSources = [ordered]@{
+        'k6-keyboard' = 'test/kernel/process/integration/keyboard.c'
+        'k6-keyboard-route' = 'arch/x86/kernel/drivers/input/ps2/runtime/route.c'
+        'k6-keyboard-controller' = 'kernel/drivers/input/ps2/controller/controller.c'
+        'k6-keyboard-discovery' = 'kernel/drivers/input/ps2/controller/discovery.c'
+        'k6-keyboard-transport' = 'kernel/drivers/input/ps2/controller/transport.c'
+    }
+    foreach ($entry in $keyboardSources.GetEnumerator()) {
+        $object = "$output/$($entry.Key).obj"
+        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $entry.Value),"/Fo$object"))
+        $objects += $object
+    }
 }
 if ($TestK5Copy) {
     $probeCopy = Join-Path $project 'test/arch/x86/kernel/interrupts/privilege'
