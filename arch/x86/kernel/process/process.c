@@ -180,7 +180,7 @@ static __declspec(noreturn) void die(const char *reason)
 
 static void advance(BOOT_U32 next)
 {
-    if (!x86_process_state_next(state, next)) x86_process_stop();
+    if (!x86_process_state_next(state, next)) die("PROCESS_STATE_INVALID");
     state = next;
 }
 
@@ -306,7 +306,7 @@ int x86_process_close(void)
     __writemsr(MSR_CSTAR, msr_saved[2]);
     __writemsr(MSR_FMASK, msr_saved[3]);
     __writemsr(MSR_KERNEL_GS, alternate_saved);
-    if (rsp0_swap(rsp0_previous) != k6_stack_top) x86_process_stop();
+    if (rsp0_swap(rsp0_previous) != k6_stack_top) die("PROCESS_RSP0_CHANGED");
     x86_exception_load_idt(&idt_previous);
     input_irq_mask = 0;
     k6_owner = 0;
@@ -378,7 +378,7 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
         BOOT_U64 lease = TABLE_PAGES + plan->Count + index;
         tables[PT_OFFSET(STACK_BASE + index * PAGE_BYTES)] = (base + lease * PAGE_BYTES) | branch | PTE_NX;
     }
-    if (!x86_page_window_park(owner_window, lease_out)) x86_process_stop();
+    if (!x86_page_window_park(owner_window, lease_out)) die("PROCESS_PARK_FAILED");
     return 1;
 }
 
@@ -388,10 +388,10 @@ static int reap(KERNEL_PHYSICAL_LEASE *lease)
 {
     if (__readcr3() != k6_kernel_root || !roots_stable() || kernel_stack[0] != STACK_CANARY) return 0;
     BOOT_U64 pages = lease->Pages;
-    if (!x86_page_window_resume(owner_window, lease)) x86_process_stop();
+    if (!x86_page_window_resume(owner_window, lease)) die("PROCESS_RESUME_FAILED");
     volatile unsigned char *alias = x86_window_bytes();
     for (BOOT_U64 index = 0; index < pages * PAGE_BYTES; ++index) alias[index] = 0;
-    if (!x86_page_window_release(owner_window)) x86_process_stop();
+    if (!x86_page_window_release(owner_window)) die("PROCESS_RELEASE_FAILED");
     k6_user_root = 0;
     return x86_page_window_idle_valid(owner_window);
 }
@@ -527,7 +527,7 @@ static BOOT_U64 copy_checked(void *target, const void *source, BOOT_U64 pointer,
     window_write = write;
     BOOT_U64 failed = x86_process_copy(target, source, length);
     window_length = 0;
-    if (__readeflags() & FLAG_AC) x86_process_stop();
+    if (__readeflags() & FLAG_AC) die("PROCESS_AC_RETAINED");
     return failed;
 }
 
@@ -545,16 +545,16 @@ static BOOT_U64 sys_write(BOOT_U64 pointer, BOOT_U64 length)
         return RESULT_RANGE;
     }
     x86_process_console_filter(buffer, length);
-    if (!kernel_text("USER: ")) x86_process_stop();
+    if (!kernel_text("USER: ")) die("PROCESS_CONSOLE_FAILED");
     for (BOOT_U64 offset = 0; offset < length; offset += TEXT_BLOCK) {
         BOOT_U64 end = offset + TEXT_BLOCK < length ? offset + TEXT_BLOCK : length;
         unsigned char saved = buffer[end];
         buffer[end] = 0;
-        if (!kernel_text((const char *)buffer + offset)) x86_process_stop();
+        if (!kernel_text((const char *)buffer + offset)) die("PROCESS_CONSOLE_FAILED");
         buffer[end] = saved;
     }
     if (buffer[length - 1] != '\n') {
-        if (!kernel_text("\n")) x86_process_stop();
+        if (!kernel_text("\n")) die("PROCESS_CONSOLE_FAILED");
     }
     written_bytes += length;
     ++current->Writes;
@@ -641,7 +641,7 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
             if (++attempt == 0x1000000U) die("PROCESS_CLOCK_FAILED");
             _mm_pause();
         }
-        if (!kernel_log(0, "KERNEL_K6_SYSCALL_DEADLINE_OK")) x86_process_stop();
+        if (!kernel_log(0, "KERNEL_K6_SYSCALL_DEADLINE_OK")) die("PROCESS_CONSOLE_FAILED");
     }
 #endif
     return budget_expired(IRET(frame, 0)) ? 2 : 1;
