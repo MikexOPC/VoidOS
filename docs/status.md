@@ -1,4 +1,4 @@
-# Stato corrente — 7 novembre 2026
+# Stato corrente — 12 novembre 2026
 
 Questo è il riferimento breve. I checkpoint storici conservano le prove
 relative alle proprie immagini; non certificano automaticamente la working tree.
@@ -13,8 +13,10 @@ console GOP e console VirtIO con dominio Intel VT-d dedicato alla GPU.
 Un diagnostico esegue otto task su AP1/AP2/AP3/AP4, sospesi dal timer senza yield
 durante la fase misurata, con IRQ PING/flush attivi;
 la shell ordinaria può inviare un job fidato alla volta ad AP1 con `ap <n>`.
-I driver restano sul BSP. Mancano processi utente,
-syscall, VFS e driver disco.
+I driver restano sul BSP. Il boot ordinario esegue un ELF Rust in
+ring 3. Sono disponibili syscall di base e IPC nel diagnostico K6.
+Nel profilo shell PS/2, `bridge status` interroga un servizio
+residente in ring 3. Mancano VFS e driver disco.
 La lettura dei file di boot usa UEFI nel loader, non un filesystem del kernel.
 
 ## K4-C5 completata — job AP1 dalla shell

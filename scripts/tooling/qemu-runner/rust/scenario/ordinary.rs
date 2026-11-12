@@ -5,6 +5,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 pub const SHELL_CASE: u32 = 1;
+pub const SHELL_BRIDGE_FAULT_CASE: u32 = 2;
 const SMEP: u64 = 1 << 20;
 const SMAP: u64 = 1 << 21;
 const CR4_DEADLINE: Duration = Duration::from_secs(5);
@@ -103,16 +104,51 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
 
 // ====== shell_boot ======
 
-fn shell_boot(vm: &mut Vm) -> Result<Value, String> {
+fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     let log = vm.wait("KERNEL_PS2_ROUTE_ACQUIRED", 1, Some("INFO"))?;
-    if !log.failures().is_empty() || log.terminal() || !log.before("KERNEL_PROCESS_OK", "KERNEL_PS2_ROUTE_ACQUIRED") {
-        return Err("The process did not finish before the input session".to_string());
+    let enabled = expected_protection(plan.cpu) == SMEP | SMAP;
+    if !log.failures().is_empty() || log.terminal() ||
+        (enabled && !log.before("KERNEL_PROCESS_OK", "KERNEL_PS2_ROUTE_ACQUIRED")) ||
+        (!enabled && !log.before("PROCESS_DISABLED", "KERNEL_PS2_ROUTE_ACQUIRED")) {
+        return Err("Unexpected user-mode initialization before the input session".to_string());
     }
     let serial = std::fs::read(&vm.serial).map_err(|error| format!("Serial: {error}"))?;
-    if !serial.windows(INIT_LINE.len()).any(|window| window == INIT_LINE) {
-        return Err("The first process did not print".to_string());
+    if serial.windows(INIT_LINE.len()).any(|window| window == INIT_LINE) != enabled {
+        return Err("Unexpected first-process output".to_string());
     }
-    Ok(object(vec![("Process", Value::Bool(true))]))
+    vm.wait("KERNEL_PS2_INPUT_READY", 1, Some("OK"))?;
+    let marker = if enabled && !fault { "SHELL_BRIDGE_STATUS_OK" } else { "SHELL_BRIDGE_UNAVAILABLE" };
+    for count in 1..=2 {
+        shell_type(vm, "bridge status");
+        vm.wait(marker, count, None)?;
+    }
+    shell_type(vm, "status");
+    shell_type(vm, "exit");
+    let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
+    if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 ||
+        !log.text.contains("SHELL_STATUS: BSP PS2, cooperative, kernel tasks") ||
+        !log.before("SHELL_EXIT_REQUEST", "KERNEL_PS2_INPUT_CLEANUP_OK") ||
+        !log.before("KERNEL_PS2_INPUT_CLEANUP_OK", "KERNEL_READY") {
+        return Err("The input session did not clean up".to_string());
+    }
+    let trace_bytes = vm.trace_bytes()?;
+    let expected = if fault { vec![("06".to_string(), "0000".to_string())] } else { Vec::new() };
+    if trace::user_faults(&trace_bytes) != expected || trace::triple_fault(&trace_bytes) {
+        return Err("Unexpected fault during the shell session".to_string());
+    }
+    Ok(object(vec![("Process", Value::Bool(enabled)), ("Bridge", Value::Bool(enabled && !fault))]))
+}
+
+// ====== shell_type ======
+
+fn shell_type(vm: &mut Vm, command: &str) {
+    for key in command.chars() {
+        let key = if key == ' ' { "spc".to_string() } else { key.to_string() };
+        vm.command(&format!("sendkey {key} 20"));
+        std::thread::sleep(Duration::from_millis(55));
+    }
+    vm.command("sendkey ret 20");
+    std::thread::sleep(Duration::from_millis(55));
 }
 
 // ====== run_ordinary ======
@@ -126,7 +162,11 @@ pub fn run_ordinary(
     negative: Option<u32>,
 ) -> Result<Value, String> {
     let mut vm = Vm::start(directory, image, paths, plan, limits)?;
-    let outcome = if negative == Some(SHELL_CASE) { shell_boot(&mut vm) } else { ordinary_boot(&mut vm, plan) };
+    let outcome = match negative {
+        Some(SHELL_CASE) => shell_boot(&mut vm, plan, false),
+        Some(SHELL_BRIDGE_FAULT_CASE) => shell_boot(&mut vm, plan, true),
+        _ => ordinary_boot(&mut vm, plan),
+    };
     let closed = vm.close();
     match (outcome, closed) {
         (Err(error), _) => Err(error),

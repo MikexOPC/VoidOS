@@ -7,6 +7,6 @@
 int x86_process_resident_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer,
     const X86_PROCESS_IMAGE *image);
 int x86_process_resident_request(const unsigned char request[2], unsigned char response[2],
-    BOOT_U32 input_mask, X86_PROCESS_RESULT *result);
+    BOOT_U32 input_mask, X86_PROCESS_RESULT *result, int retain_on_failure);
 int x86_process_resident_close(void);
 #endif

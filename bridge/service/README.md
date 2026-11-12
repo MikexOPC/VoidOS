@@ -38,19 +38,20 @@ Il diagnostico i8042 usa questo ingresso per `0x41`.
 
 ### Richiesta e risposta
 
-1. La shell pubblica i due byte della richiesta nel canale. Il
-   dispatcher rende eseguibile il bridge e la shell attende l'esito
-   usando un evento con generazione.
+1. La task shell pubblica una richiesta e cede il controllo al
+   dispatcher BSP. Il dispatcher invia i due byte al bridge e salva
+   l'esito prima che la shell riprenda.
 2. Il bridge riceve, valida e risponde in ring 3. La ricezione su
    canale vuoto lo sospende. Il dispatcher serializza pubblicazione,
    sospensione e risveglio per evitare notifiche perse.
-3. Il kernel abbina l'esito alla richiesta attiva e sveglia la shell.
+3. Il kernel abbina l'esito alla richiesta attiva.
    Il processo conserva il proprio spazio di indirizzi tra due
    richieste. Il kernel possiede endpoint, pagine e stato della richiesta.
 
 Il servizio ha un budget per richiesta. Se termina, va in fault o
-esaurisce il budget, il kernel chiude il canale, completa l'attesa
-della shell con un errore e raccoglie le pagine dopo la quiescenza.
+esaurisce il budget, il kernel chiude il canale e restituisce un errore
+alla shell. La sessione conserva il lease fino alla chiusura del
+watchdog, poi restituisce le pagine e verifica il budget iniziale.
 Una risposta tardiva non può completare una richiesta successiva.
 L'esito di `status` comunica la disponibilità del servizio.
 

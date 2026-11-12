@@ -7,6 +7,9 @@
 #include "lib/memory/address_ranges.h"
 #ifdef KERNEL_PS2_INPUT
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
+#ifdef KERNEL_USER_PROCESS
+#include "arch/x86/kernel/drivers/input/ps2/shell/bridge.h"
+#endif
 #endif
 #ifdef KERNEL_SCHEDULER_IRQ
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
@@ -271,6 +274,9 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     }
     kernel_log(1,"TIMER_CALIBRATED");
     if (!x86_timer_events_initialize(&timer)) { goto cleanup; }
+#if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
+    if (!x86_shell_bridge_open(window, &timer)) goto cleanup;
+#endif
     if (!watchdog || watchdog->Mapping != mapping || watchdog->Window != window ||
         watchdog->Context != context || watchdog->Inventory != inventory ||
         !x86_watchdog_open(watchdog)) { goto cleanup; }
@@ -307,6 +313,9 @@ cleanup:
     }
 #endif
     watchdog_closed = x86_watchdog_close();
+#if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
+    if (!x86_shell_bridge_close()) kernel_panic("SHELL_BRIDGE_CLEANUP_FAILED");
+#endif
     finished = 1;
     if (!result && x86_watchdog_result() == X86_WATCHDOG_TIMEOUT &&
         stopped && detached && restored && watchdog_closed && !timer.Error) {

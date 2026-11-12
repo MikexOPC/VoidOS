@@ -12,9 +12,10 @@ pub fn classify(word: u64, length: u32, arguments: u32) -> u32 {
         (6, 0x737574617473) => 3, // status
         (4, 0x74697865) => 4, // exit
         (2, 0x7061) => 7,
+        (6, 0x656764697262) => 8, // bridge
         _ => 5,
     };
-    if (arguments != 0 && matches!(command, 1 | 3 | 4)) || (arguments == 0 && command == 7) { 6 } else { command }
+    if (arguments != 0 && matches!(command, 1 | 3 | 4)) || (arguments == 0 && matches!(command, 7 | 8)) { 6 } else { command }
 }
 
 // ====== count ======

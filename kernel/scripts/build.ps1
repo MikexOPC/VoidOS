@@ -12,7 +12,7 @@ param([ValidateSet('none','ping','missing-ack','stale-ack','panic-idle','panic-h
     [ValidateSet('none','opcode','selector','divide','stack','nested','double')][string]$TestCpuFault = 'none',
     [ValidateSet('none','retired','guard-high','execute','return')][string]$TestMainFault = 'none',
     [ValidateSet('none','retired','guard-low','guard-high','execute')][string]$TestRegionFault = 'none',
-    [switch]$PlanOnly, [switch]$UseRustPlan, [switch]$TestK5Privilege, [switch]$TestK5Syscall, [switch]$TestK5Copy, [int]$TestK5IrqNegative = 0, [switch]$TestK6Process, [int]$TestK6Negative = 0)
+    [switch]$PlanOnly, [switch]$UseRustPlan, [switch]$TestK5Privilege, [switch]$TestK5Syscall, [switch]$TestK5Copy, [int]$TestK5IrqNegative = 0, [switch]$TestK6Process, [int]$TestK6Negative = 0, [switch]$TestShellBridgeFault)
 . (Join-Path $PSScriptRoot '../../scripts/lib/layout.ps1')
 if (!$PlanOnly) { Assert-LayoutCopies }
 $ErrorActionPreference = 'Stop'
@@ -454,6 +454,16 @@ if ($UserProcess) {
     Invoke-Compiler $tool.Nasm @('-f','win64','-Wall','-Werror',"-I$output/",'-o',"$output/user-init-image.obj","$project/kernel/process/programs/image.asm")
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'kernel/process/boot.c'),("/Fo$output/k6-boot.obj")))
     $objects += @("$output/user-init-image.obj","$output/k6-boot.obj")
+}
+if ($UserProcess -and $Ps2Input) {
+    $bridgeCfg = if ($TestShellBridgeFault) { @('--cfg','bridge_test_fault') } else { @() }
+    Invoke-Compiler $rustc (@('--edition=2024','-D','warnings','--crate-type=bin','--crate-name','user_bridge','--target','x86_64-unknown-none',
+        '-C','panic=abort','-C','opt-level=s','-C','relocation-model=static','-C',"link-arg=-T$userPrograms/link.ld",
+        '-C','link-arg=-zmax-page-size=4096','-C','link-arg=--build-id=none','-C','link-arg=--no-gc-sections',
+        "$project/bridge/service/rust/status/main.rs",'-o',"$output/user-bridge.elf") + $bridgeCfg)
+    Invoke-Compiler $tool.Nasm @('-f','win64','-Wall','-Werror',"-I$output/",'-o',"$output/user-bridge-image.obj","$project/kernel/process/programs/bridge.asm")
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$project/arch/x86/kernel/drivers/input/ps2/shell/bridge.c","/Fo$output/shell-bridge.obj"))
+    $objects += @("$output/user-bridge-image.obj","$output/shell-bridge.obj")
 }
 if ($UserProcess -or $TestK6Process) {
     Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--crate-name','k6_process','--emit=obj','--target','x86_64-pc-windows-msvc',

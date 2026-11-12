@@ -1,4 +1,7 @@
 #include "session.h"
+#ifdef KERNEL_USER_PROCESS
+#include "../shell/bridge.h"
+#endif
 #ifdef KERNEL_PS2_MOUSE
 #include "kernel/drivers/input/ps2/mouse/stream/control.h"
 #endif
@@ -82,6 +85,9 @@ int x86_ps2_activate(void)
 int x86_ps2_after_dispatch(void)
 {
     KERNEL_EVENT_REPLY reply;
+#ifdef KERNEL_USER_PROCESS
+    x86_shell_bridge_dispatch();
+#endif
 #ifdef KERNEL_AP_TASKS
     x86_remote_service();
 #endif
