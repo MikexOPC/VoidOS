@@ -115,7 +115,9 @@ speculative oltre a `lfence` dopo `swapgs`.
 - `arch/x86/kernel/process/process.c`: 993 righe, stato globale, un solo
   processo sul BSP, simboli `k6_*`, hook di test nel percorso reale sotto
   `#ifdef`. Da dividere.
-- `x86_process_stop` ferma la CPU senza messaggio (`cli; hlt`).
+- `x86_process_stop` (`cli; hlt` senza messaggio) resta solo nei percorsi
+  assembly dove GS o lo stack non sono affidabili; dal C si usa un panic
+  con nome.
 
 | # | Passo | Rischio | Motivo |
 |---|---|---|---|
@@ -198,3 +200,11 @@ speculative oltre a `lfence` dopo `swapgs`.
   senza SMEP/SMAP 3/3 ciascuna; regressione `k6-process`, `k6-process-smp`,
   `k6-ordinary` 3/3 ciascuna. Aperto: test negativo che esegua `sgdt` da
   ring 3 e attenda il #GP; CPU senza UMIP non provata in QEMU.
+- **2026-11-12 — arresti con diagnostica.** I dieci arresti muti chiamati
+  dal C in `process.c` sono ora panic con nome (`PROCESS_STATE_INVALID`,
+  `PROCESS_RSP0_CHANGED`, `PROCESS_PARK_FAILED`, `PROCESS_RESUME_FAILED`,
+  `PROCESS_RELEASE_FAILED`, `PROCESS_AC_RETAINED`, `PROCESS_CONSOLE_FAILED`).
+  QEMU: le 18 campagne `k6-*` passate con 3 boot ciascuna, negative
+  comprese; provate su un albero che contiene anche lavoro GUI non
+  committato. Aperto: guard page sotto lo stack delle syscall, che richiede
+  un progetto della geometria accanto agli stack IST.
