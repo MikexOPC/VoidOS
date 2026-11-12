@@ -1,5 +1,8 @@
 #include "shell.h"
 #include "kernel/diagnostics/log.h"
+#ifdef KERNEL_USER_PROCESS
+int kernel_shell_bridge_status(void);
+#endif
 static KERNEL_SHELL_OUTPUT output;
 static void *output_context;
 #define TEXT(literal) text_private(literal, (uint32_t)(sizeof(literal) - 1U))
@@ -117,7 +120,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     kind = kernel_ps2_shell_classify(word,end - start,argument != line->Length);
     if (kind == UINT32_MAX) return 0;
     if (!kind) return LOG(1,"SHELL_EMPTY");
-    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | ap <n> | exit");
+    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | ap <n> | exit");
     if (kind == 2) return TEXT("SHELL_ECHO: ") &&
         kernel_ps2_shell_write(line->Data + argument,line->Length - argument) && TEXT("\n");
     if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, cooperative, kernel tasks") &&
@@ -126,5 +129,17 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
         TEXT("\nSHELL_INPUT_LINES: ") && number_private(status->Lines) && TEXT("\n");
     if (kind == 4) return LOG(1,"SHELL_EXIT_REQUEST") ? 2 : 0;
     if (kind == 7) return remote_private(line->Data + argument,line->Length - argument);
+    if (kind == 8) {
+        uint64_t subcommand = 0;
+        for (uint32_t index = argument; index < line->Length && index - argument < 8; ++index)
+            subcommand |= (uint64_t)(uint8_t)line->Data[index] << ((index - argument) * 8);
+        if (kernel_ps2_shell_classify(subcommand,line->Length - argument,0) != 3)
+            return LOG(2,"SHELL_BAD_ARGUMENTS");
+#ifdef KERNEL_USER_PROCESS
+        return kernel_shell_bridge_status() ? LOG(0,"SHELL_BRIDGE_STATUS_OK") : LOG(2,"SHELL_BRIDGE_UNAVAILABLE");
+#else
+        return LOG(2,"SHELL_BRIDGE_UNAVAILABLE");
+#endif
+    }
     return kind == 6 ? LOG(2,"SHELL_BAD_ARGUMENTS") : LOG(2,"SHELL_UNKNOWN_COMMAND");
 }

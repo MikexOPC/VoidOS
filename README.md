@@ -23,8 +23,9 @@ La shell ordinaria può eseguire un task del kernel alla volta sul primo
 core secondario (AP1) con `ap <n>`. I driver restano sul BSP. I profili
 diagnostici verificano anche la preemption su più core. Al boot il kernel
 può eseguire un primo programma Rust in ring 3. Sono disponibili syscall
-di base e una prova IPC tra due processi utente. I servizi utente
-permanenti e il filesystem restano obiettivi futuri.
+di base e una prova IPC tra due processi utente. Nel profilo shell PS/2,
+`bridge status` interroga un servizio residente in ring 3. Il filesystem
+del kernel resta un obiettivo futuro.
 
 Per le prove e i limiti attuali, consulta lo [stato del progetto](docs/status.md).
 Le istruzioni per compilare ed eseguire i test sono nella [guida agli script](scripts/README.md).

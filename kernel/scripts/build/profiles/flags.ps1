@@ -94,7 +94,10 @@ if ($TestApResourceFault -ne 'none') {
 
 $ApRuntime = $TestApTransition -eq 'none' -and $TestSmpPanic -eq 'none' -and !$TestApCommit -and !$TestBootstrapMemory
 if ($ApRuntime) { $flags += '/DKERNEL_AP_RUNTIME=1' }
-$UserProcess = !@($boundBuildOptions | Where-Object { $_ -notin @('OutputDirectory','ToolchainBin','Install','ConsoleShell','Ps2Input','Ps2Mouse','InteractiveInput') -and ($_ -ne 'TestApService' -or $TestApService -ne 'none') }).Count
+$UserProcess = !@($boundBuildOptions | Where-Object { $_ -notin @('OutputDirectory','ToolchainBin','Install','ConsoleShell','Ps2Input','Ps2Mouse','InteractiveInput','TestShellBridgeFault') -and ($_ -ne 'TestApService' -or $TestApService -ne 'none') }).Count
+if ($TestShellBridgeFault -and (!$UserProcess -or !$Ps2Input -or !$ConsoleShell -or $Install)) {
+    throw 'The bridge fault fixture requires an isolated shell build.'
+}
 if ($UserProcess) { $flags += '/DKERNEL_USER_PROCESS=1' }
 $ApTasks = $ApRuntime -and $ConsoleShell -and $Ps2Input -and $TestApService -eq 'none'
 if ($ApTasks) { $flags += '/DKERNEL_AP_TASKS=1' }

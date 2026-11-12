@@ -217,6 +217,18 @@
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-shell", "--smp", "4"],
       "boots": 10, "smoke": 1, "heavy": true
     },
+    "k6-shell-bridge-disabled": {
+      "summary": "Product shell stays usable when the CPU cannot start the bridge",
+      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-shell", "--smp", "4", "--cpu", "max,-smap"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
+    "k6-shell-bridge-fault": {
+      "summary": "Product shell stays usable after the bridge faults in ring 3",
+      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput", "-TestShellBridgeFault"],
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-shell-bridge-fault", "--smp", "4"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
     "k6-process-disabled": {
       "summary": "CPU without SMAP: boot continues and no process runs",
       "build": [], "meson": "k6-process",

@@ -149,3 +149,17 @@ Build: `kernel/scripts/build.ps1 -Ps2Input`.
 Dieci boot: `arch/x86/kernel/drivers/input/ps2/scripts/firmware.ps1 -Boots 10`.
 Stress: firmware.py con `--image <kernel.elf> --boots 1 --text --line-stress --shell`.
 Nessun comando di questa shell modifica il PC host o spegne hardware reale.
+
+## Bridge
+
+Nel profilo PS/2 con userspace abilitato, `bridge status` interroga il
+servizio residente in ring 3. La shell mostra `SHELL_BRIDGE_UNAVAILABLE`
+se il servizio è indisponibile. `status` continua a mostrare lo stato
+della sessione di input.
+
+Il comando QEMU per provare due richieste, un fault del servizio e
+l'avvio senza SMAP è:
+
+```powershell
+./scripts/test/qemu.ps1 -Campaign 'k6-shell,k6-shell-bridge-fault,k6-shell-bridge-disabled' -Fresh
+```

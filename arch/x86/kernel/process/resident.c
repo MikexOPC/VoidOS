@@ -1,10 +1,13 @@
 #include "resident.h"
 #include "slot.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/mm/physical/holdings.h"
 
 static X86_PROCESS_SLOT slot;
 static IPC_CHANNEL channel;
+static KERNEL_HOLDING holding;
 static BOOT_U64 endpoint;
+static int failed;
 static X86_PAGE_WINDOW *owner_window;
 static X86_LAPIC_TIMER *owner_timer;
 
@@ -13,8 +16,11 @@ static X86_LAPIC_TIMER *owner_timer;
 static void release(void)
 {
     if (!x86_process_slot_reap(&slot)) kernel_panic("PROCESS_RESIDENT_REAP_FAILED");
+    if (holding.Self && !kernel_holdings_unregister(&holding))
+        kernel_panic("PROCESS_RESIDENT_ACCOUNTING_FAILED");
     if (endpoint) x86_ipc_finish(&channel);
     endpoint = 0;
+    failed = 0;
     owner_window = 0;
     owner_timer = 0;
 }
@@ -34,7 +40,7 @@ int x86_process_resident_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer,
     if (endpoint || !x86_process_open(window, timer)) return 0;
     if (x86_process_slot_prepare(&slot, image)) {
         endpoint = x86_ipc_open(&channel);
-        if (endpoint) {
+        if (endpoint && kernel_holdings_register(&holding, slot.Lease.Pages)) {
             owner_window = window;
             owner_timer = timer;
         } else release();
@@ -46,10 +52,10 @@ int x86_process_resident_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer,
 // ====== x86_process_resident_request ======
 
 int x86_process_resident_request(const unsigned char request[2], unsigned char response[2],
-    BOOT_U32 input_mask, X86_PROCESS_RESULT *result)
+    BOOT_U32 input_mask, X86_PROCESS_RESULT *result, int retain_on_failure)
 {
     unsigned char message[IPC_MESSAGE_BYTES] = {0};
-    if (!endpoint || !request || !response || !result ||
+    if (!endpoint || failed || !request || !response || !result ||
         !x86_process_open(owner_window, owner_timer)) return 0;
     if (!x86_process_input_irqs(input_mask)) {
         restore();
@@ -65,7 +71,10 @@ int x86_process_resident_request(const unsigned char request[2], unsigned char r
         !x86_ipc_consume(&channel, endpoint, endpoint) &&
         x86_ipc_receive_ready(&channel, endpoint, endpoint) == IPC_WOULD_BLOCK &&
         x86_ipc_receive_ready(&channel, endpoint | 1U, endpoint | 1U) == IPC_WOULD_BLOCK;
-    if (!passed) release();
+    if (!passed && retain_on_failure) {
+        x86_ipc_close(&channel);
+        failed = 1;
+    } else if (!passed) release();
     restore();
     if (passed) {
         response[0] = message[0];

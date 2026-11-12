@@ -247,14 +247,14 @@ static int resident_bridge(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     if (!kernel_physical_budget_read(window->Pool, &budget) ||
         !x86_process_resident_open(window, timer, &image) || !x86_irq_ready()) return 0;
     for (BOOT_U32 index = 0; index < 5; ++index) {
-        if (!x86_process_resident_request(request, response, 0, &result) ||
+        if (!x86_process_resident_request(request, response, 0, &result, 0) ||
             response[0] != 1 || response[1] != 0 || !x86_irq_ready()) return 0;
     }
     if (!x86_process_resident_close() || !x86_irq_ready() ||
         !kernel_physical_budget_matches(window->Pool, budget)) return 0;
     image = (X86_PROCESS_IMAGE){k6_program_spin, k6_program_spin_length};
     return x86_process_resident_open(window, timer, &image) &&
-        !x86_process_resident_request(request, response, 0, &result) &&
+        !x86_process_resident_request(request, response, 0, &result, 0) &&
         result.Kind == X86_PROCESS_BUDGET && x86_irq_ready() &&
         kernel_physical_budget_matches(window->Pool, budget) &&
         kernel_log(0, "KERNEL_BRIDGE_RESIDENT_OK");
