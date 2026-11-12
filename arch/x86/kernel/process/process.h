@@ -31,7 +31,7 @@ BOOT_U64 x86_process_copy_instruction(void);
 BOOT_U64 x86_process_budget_ticks(void);
 void x86_process_delay_next_syscall(void);
 int x86_process_drain_check(void);
-int x86_process_device_irq_check(const X86_PROCESS_IMAGE *image);
+int x86_process_device_irq_check(const X86_PROCESS_IMAGE *image, int (*inject)(void), int (*handle)(void));
 void x86_process_spurious_check(void);
 #endif
 #endif

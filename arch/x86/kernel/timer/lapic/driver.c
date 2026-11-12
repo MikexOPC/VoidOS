@@ -334,7 +334,7 @@ cleanup:
     if (!x86_k5_copy_probe(window)) return 0;
 #endif
 #ifdef KERNEL_TEST_K6_PROCESS
-    if (!x86_k6_process_probe(window,&timer)) return 0;
+    if (!x86_k6_process_probe(window,&timer,watchdog,directory)) return 0;
 #endif
     return (!loop_mode || x86_timer_loop_closed(&timer)) && report(delivered);
 }
