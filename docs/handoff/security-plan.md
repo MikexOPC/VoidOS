@@ -110,8 +110,8 @@ speculative oltre a `lfence` dopo `swapgs`.
   `os_bounds_*`, nessun header C, SHA-256/HMAC/DRBG senza sorgente.
 - La root del processo mappa tutta l'immagine kernel (serve a ingresso e
   user copy): non e KPTI e non va dichiarata come isolamento Meltdown.
-- Lo stack delle syscall e un array statico con un canary alla parola 0,
-  controllato a fine turno; guard page non trovata, da verificare.
+- Lo stack delle syscall ha guardie su entrambi i lati (vedi Progressi);
+  manca una prova con overflow reale.
 - `arch/x86/kernel/process/process.c`: 993 righe, stato globale, un solo
   processo sul BSP, simboli `k6_*`, hook di test nel percorso reale sotto
   `#ifdef`. Da dividere.
@@ -128,7 +128,7 @@ speculative oltre a `lfence` dopo `swapgs`.
 | 5 | Input non fidati: ACPI, VirtIO, PS/2, shell | Medio | Tabelle firmware e device sono input esterni: limiti, lunghezze, checksum |
 | 6 | UMIP | Fatto | **SMEP, SMAP e UMIP fatti.** UMIP (CR4 bit 11) si abilita se CPUID lo offre; non e richiesto per lo user mode |
 | 7 | DMA: VT-d attivo per i device | Medio | Il DMA bypassa il paging della CPU; da collegare a VirtIO |
-| 8 | Consolidamento del confine user/kernel | Alto, ora | **Syscall e user copy fatti** con K5/K6. Restano: guard page sullo stack delle syscall, divisione di `process.c`, arresti con diagnostica, decisione su KPTI |
+| 8 | Consolidamento del confine user/kernel | Alto, ora | **Syscall e user copy fatti** con K5/K6. Guard page e arresti con diagnostica fatti. Restano: divisione di `process.c`, decisione su KPTI |
 | 9 | Collegare `lib/security/bounds` ai moduli | Medio | Header C e sostituzione dei controlli scritti a mano |
 
 ## Progressi
@@ -208,3 +208,13 @@ speculative oltre a `lfence` dopo `swapgs`.
   comprese; provate su un albero che contiene anche lavoro GUI non
   committato. Aperto: guard page sotto lo stack delle syscall, che richiede
   un progetto della geometria accanto agli stack IST.
+- **2026-11-12 — stack delle syscall con guardie.** Lo stack di RSP0 e
+  delle syscall non e piu un array nell'immagine: e il profilo 3 di
+  `arch/x86/kernel/descriptors/stacks.c`, quattro pagine fra due guardie
+  non mappate (foglie 116-121 dello slot delle finestre), acquisito in
+  `x86_process_open` e rilasciato in `x86_process_close`. Il validatore
+  rifiuta una guardia mappata. Test host: regole Rust di layout e 64 cicli
+  C di acquisizione e rilascio con budget esatto, suite `kernel` passata.
+  QEMU: 18 campagne `k6-*` su 18 al numero pieno di boot (10 per
+  protezione e processi, 3 per le altre), su un albero con lavoro GUI non
+  committato. Aperto: nessuna prova con overflow reale dello stack.

@@ -50,7 +50,7 @@ fn main_layout() {
     for slot in 0..=18 {
         assert_eq!(x86_stack_page(2, slot), if (1..=16).contains(&slot) { slot } else { 0 });
     }
-    for profile in [0, 3, u32::MAX] {
+    for profile in [0, 4, u32::MAX] {
         assert_eq!(x86_stack_page(profile, 1), 0);
         assert_eq!(x86_stack_frame(profile, 4096, 52), 0);
     }
@@ -61,5 +61,24 @@ fn main_layout() {
     for pointer in [WINDOWS + 0x61000, WINDOWS + 0x70FF8] { assert_eq!(x86_main_pointer(pointer), 1); }
     for pointer in [0, WINDOWS + 0x60FF8, WINDOWS + 0x61001, WINDOWS + 0x71000, u64::MAX] {
         assert_eq!(x86_main_pointer(pointer), 0);
+    }
+}
+
+// ====== quattro pagine contigue e due guardie sul profilo syscall ===== //
+
+#[test]
+fn syscall_layout() {
+    for slot in 0..=8 {
+        assert_eq!(x86_stack_page(3, slot), if (1..=4).contains(&slot) { slot } else { 0 });
+    }
+    for bits in 32..=52 {
+        assert_eq!(x86_stack_frame(3, (1u64 << bits) - 16384, bits), 1);
+        assert_eq!(x86_stack_frame(3, (1u64 << bits) - 12288, bits), 0);
+    }
+    for pointer in [WINDOWS + 0x75000, WINDOWS + 0x78FF8, WINDOWS + 0x79000] {
+        assert_eq!(x86_syscall_pointer(pointer), 1);
+    }
+    for pointer in [0, WINDOWS + 0x74FF8, WINDOWS + 0x75001, WINDOWS + 0x79008, WINDOWS + 0x71000, u64::MAX] {
+        assert_eq!(x86_syscall_pointer(pointer), 0);
     }
 }

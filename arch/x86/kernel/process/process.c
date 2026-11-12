@@ -4,6 +4,7 @@
 #include "arch/x86/kernel/cpu/percpu/percpu.h"
 #include "arch/x86/kernel/descriptors/protection.h"
 #include "arch/x86/kernel/descriptors/segments.h"
+#include "arch/x86/kernel/descriptors/stacks.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/timer/lapic/runtime/runtime.h"
@@ -38,7 +39,7 @@
 #define IRR_TIMER_BIT (1U << (TIMER_VECTOR % 32U))
 #define DRAIN_ATTEMPTS 64U
 #define VECTOR_STRAY 0xffffULL
-#define STACK_BYTES 16384U
+#define STACK_WORD (*(volatile BOOT_U64 *)X86_KERNEL_SYSCALL_BASE)
 #define PROCESS_BUDGET_MS 2000U
 #define STACK_CANARY 0x4b36435441434bULL
 #define RESULT_RANGE (~0ULL - 1)
@@ -137,7 +138,7 @@ _Alignas(16) const unsigned char k6_fx_clean[512] = {
     [0] = 0x7f, [1] = 0x03, [24] = 0x80, [25] = 0x1f
 };
 
-static _Alignas(4096) BOOT_U64 kernel_stack[STACK_BYTES / 8];
+static X86_KERNEL_STACKS syscall_stack;
 static X86_IRQ_IDT idt;
 static X86_KERNEL_IDTR idt_previous, idt_probe;
 static X86_PAGE_WINDOW *owner_window;
@@ -261,14 +262,15 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     for (BOOT_U32 slot = 0; slot < 256; ++slot) if (root[slot]) return 0;
     tss_field = tss_rsp0();
     if (!tss_field || !x86_timer_read(timer->Mapping, 0x320, &timer_lvt_saved) ||
-        !x86_timer_read(timer->Mapping, 0x3e0, &timer_divide_saved)) return 0;
+        !x86_timer_read(timer->Mapping, 0x3e0, &timer_divide_saved) ||
+        !x86_kernel_stacks_acquire_for(&syscall_stack, window->Pool, __readcr3(), 3)) return 0;
     owner_window = window;
     owner_timer = timer;
     budget_clock = &wait->Clock;
     k6_owner = (BOOT_U64)owner;
     k6_kernel_root = __readcr3();
-    k6_stack_top = (BOOT_U64)kernel_stack + STACK_BYTES;
-    kernel_stack[0] = STACK_CANARY;
+    k6_stack_top = X86_KERNEL_SYSCALL_TOP;
+    STACK_WORD = STACK_CANARY;
     expected_image = root[SLOT_IMAGE];
     expected_windows = root[X86_LAYOUT_WINDOWS_SLOT];
     if (K6_NEGATIVE(33)) expected_windows ^= 0x1000;
@@ -307,6 +309,7 @@ int x86_process_close(void)
     __writemsr(MSR_FMASK, msr_saved[3]);
     __writemsr(MSR_KERNEL_GS, alternate_saved);
     if (rsp0_swap(rsp0_previous) != k6_stack_top) die("PROCESS_RSP0_CHANGED");
+    if (!x86_kernel_stacks_release(&syscall_stack)) die("PROCESS_STACK_RETAINED");
     x86_exception_load_idt(&idt_previous);
     input_irq_mask = 0;
     k6_owner = 0;
@@ -386,7 +389,7 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
 
 static int reap(KERNEL_PHYSICAL_LEASE *lease)
 {
-    if (__readcr3() != k6_kernel_root || !roots_stable() || kernel_stack[0] != STACK_CANARY) return 0;
+    if (__readcr3() != k6_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY) return 0;
     BOOT_U64 pages = lease->Pages;
     if (!x86_page_window_resume(owner_window, lease)) die("PROCESS_RESUME_FAILED");
     volatile unsigned char *alias = x86_window_bytes();
@@ -859,7 +862,7 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     ipc_channel = 0;
     ipc_endpoint = 0;
     turn_finish(result);
-    if (__readcr3() != k6_kernel_root || !roots_stable() || kernel_stack[0] != STACK_CANARY)
+    if (__readcr3() != k6_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY)
         die("PROCESS_ROOT_CHANGED");
     slot->Written = written_bytes;
     slot->RemainingIrqs = budget_left;

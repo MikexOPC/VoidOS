@@ -5,6 +5,28 @@
 #define IST_ADDRESS 0x000ffffffffff000ULL
 #define IST_AD 0x60ULL
 
+// ====== geometria per profilo: 1 IST, 2 stack principale, 3 stack syscall ===== //
+
+static BOOT_U32 leaf_count(BOOT_U32 profile)
+{
+    return profile == 1 ? 16 : profile == 2 ? 18 : 6;
+}
+
+static BOOT_U32 leaf_first(BOOT_U32 profile)
+{
+    return profile == 1 ? X86_KERNEL_IST_LEAF : profile == 2 ? X86_KERNEL_MAIN_LEAF : X86_KERNEL_SYSCALL_LEAF;
+}
+
+static BOOT_U64 lease_pages(BOOT_U32 profile)
+{
+    return profile == 1 ? 12 : profile == 2 ? 16 : 4;
+}
+
+static BOOT_U64 guard_address(BOOT_U32 profile)
+{
+    return profile == 1 ? X86_KERNEL_IST_GUARD : profile == 2 ? X86_KERNEL_MAIN_GUARD : X86_KERNEL_SYSCALL_GUARD;
+}
+
 // ====== intervalli completi e allineati prima di leggere gli owner ===== //
 
 static int metadata_range(const void *object, BOOT_U64 bytes, BOOT_U64 alignment)
@@ -17,7 +39,8 @@ static int metadata_range(const void *object, BOOT_U64 bytes, BOOT_U64 alignment
     }
     end = base + bytes;
     return (end <= X86_KERNEL_IST_GUARD || base >= X86_KERNEL_IST_GUARD + 16 * 4096) &&
-        (end <= X86_KERNEL_MAIN_GUARD || base >= X86_KERNEL_MAIN_TOP + 4096);
+        (end <= X86_KERNEL_MAIN_GUARD || base >= X86_KERNEL_MAIN_TOP + 4096) &&
+        (end <= X86_KERNEL_SYSCALL_GUARD || base >= X86_KERNEL_SYSCALL_TOP + 4096);
 }
 
 // ====== genitori verificati prima di raggiungere una vista successiva ===== //
@@ -55,8 +78,8 @@ int x86_kernel_stack_branch(BOOT_U64 root, BOOT_U32 bits)
 static int leaves(const X86_KERNEL_STACKS *owner, int present, BOOT_U32 profile)
 {
     BOOT_U32 slot;
-    BOOT_U32 first = profile == 1 ? X86_KERNEL_IST_LEAF : X86_KERNEL_MAIN_LEAF;
-    BOOT_U32 count = profile == 1 ? 16 : 18;
+    BOOT_U32 first = leaf_first(profile);
+    BOOT_U32 count = leaf_count(profile);
     volatile BOOT_U64 *entries = x86_stack_entries(3);
     if (!entries) {
         return 0;
@@ -77,8 +100,8 @@ static int leaves(const X86_KERNEL_STACKS *owner, int present, BOOT_U32 profile)
 static void invalidate(BOOT_U32 profile)
 {
     BOOT_U32 slot;
-    BOOT_U32 count = profile == 1 ? 16 : 18;
-    BOOT_U64 guard = profile == 1 ? X86_KERNEL_IST_GUARD : X86_KERNEL_MAIN_GUARD;
+    BOOT_U32 count = leaf_count(profile);
+    BOOT_U64 guard = guard_address(profile);
     for (slot = 0; slot < count; ++slot) {
         if (x86_stack_page(profile, slot)) {
             x86_stack_invalidate(guard + slot * 4096);
@@ -91,8 +114,8 @@ static void invalidate(BOOT_U32 profile)
 static int clear_stacks(BOOT_U32 profile)
 {
     BOOT_U32 stack, byte;
-    BOOT_U32 begin = profile == 1 ? 1 : 4, end = profile == 1 ? 3 : 4;
-    BOOT_U64 bytes = profile == 1 ? X86_KERNEL_IST_BYTES : X86_KERNEL_MAIN_BYTES;
+    BOOT_U32 begin = profile == 1 ? 1 : profile == 2 ? 4 : 5, end = profile == 1 ? 3 : profile == 2 ? 4 : 5;
+    BOOT_U64 bytes = profile == 1 ? X86_KERNEL_IST_BYTES : profile == 2 ? X86_KERNEL_MAIN_BYTES : X86_KERNEL_SYSCALL_BYTES;
     for (stack = begin; stack <= end; ++stack) {
         volatile unsigned char *data = x86_stack_bytes(stack);
         if (!data) return 0;
@@ -114,8 +137,8 @@ int x86_kernel_stacks_validate(const X86_KERNEL_STACKS *owner)
     if (!metadata_range(owner->Pool, sizeof(*owner->Pool), _Alignof(KERNEL_PHYSICAL_ALLOCATOR)) ||
         (a < b + sizeof(*owner->Pool) && b < a + sizeof(*owner)) ||
         owner->Self != a || owner->Ready != 1 || owner->Committed > 1 ||
-        owner->Profile < 1 || owner->Profile > 2 || owner->Reserved ||
-        !kernel_physical_validate(owner->Pool) || owner->Lease.Pages != (owner->Profile == 1 ? 12U : 16U) ||
+        owner->Profile < 1 || owner->Profile > 3 || owner->Reserved ||
+        !kernel_physical_validate(owner->Pool) || owner->Lease.Pages != lease_pages(owner->Profile) ||
         !x86_stack_frame(owner->Profile, owner->Lease.Base, owner->Pool->PhysicalBits) ||
         !kernel_physical_is_pinned(owner->Pool, &owner->Lease)) {
         return 0;
@@ -143,8 +166,8 @@ int x86_kernel_stacks_release(X86_KERNEL_STACKS *owner)
         return 0;
     }
     entries = x86_stack_entries(3);
-    count = owner->Profile == 1 ? 16 : 18;
-    first = owner->Profile == 1 ? X86_KERNEL_IST_LEAF : X86_KERNEL_MAIN_LEAF;
+    count = leaf_count(owner->Profile);
+    first = leaf_first(owner->Profile);
     for (slot = 0; slot < count; ++slot) {
         if (x86_stack_page(owner->Profile, slot)) {
             entries[first + slot] = 0;
@@ -176,11 +199,11 @@ static int fresh(X86_KERNEL_STACKS *owner, KERNEL_PHYSICAL_ALLOCATOR *pool)
 int x86_kernel_stacks_acquire_for(X86_KERNEL_STACKS *owner, KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root, BOOT_U32 profile)
 {
     BOOT_U32 slot;
-    BOOT_U32 count = profile == 1 ? 16 : 18;
-    BOOT_U32 first = profile == 1 ? X86_KERNEL_IST_LEAF : X86_KERNEL_MAIN_LEAF;
-    BOOT_U64 pages = profile == 1 ? 12 : 16;
+    BOOT_U32 count = leaf_count(profile);
+    BOOT_U32 first = leaf_first(profile);
+    BOOT_U64 pages = lease_pages(profile);
     volatile BOOT_U64 *entries;
-    if (profile < 1 || profile > 2 || !fresh(owner, pool) ||
+    if (profile < 1 || profile > 3 || !fresh(owner, pool) ||
         !x86_kernel_stack_branch(root, pool->PhysicalBits) || !leaves(owner, 0, profile)) return 0;
     if (!kernel_physical_allocate(pool, pages, &owner->Lease)) return 0;
     if (!x86_stack_frame(profile, owner->Lease.Base, pool->PhysicalBits) || !kernel_physical_pin(pool, &owner->Lease, 1)) {
