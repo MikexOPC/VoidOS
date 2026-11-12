@@ -468,13 +468,15 @@ if ($UserProcess -and $Ps2Input) {
 if ($UserProcess -or $TestK6Process) {
     Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--crate-name','k6_process','--emit=obj','--target','x86_64-pc-windows-msvc',
         '-D','warnings','-C','panic=abort','-C','opt-level=2','-C','codegen-units=1',(Join-Path $project 'kernel/process/rust/lib.rs'),'-o',"$output/k6-policy.obj")
-    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'arch/x86/kernel/process/process.c'),("/Fo$output/k6-process.obj")))
+    foreach ($unit in @(@('runtime','k6-process'),@('image','k6-image'),@('syscall','k6-syscall'),@('irq','k6-irq'),@('hooks','k6-hooks'))) {
+        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project "arch/x86/kernel/process/$($unit[0]).c"),("/Fo$output/$($unit[1]).obj")))
+    }
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'arch/x86/kernel/process/resident.c'),("/Fo$output/k6-resident.obj")))
     $k6Assembly = @('/nologo','/W3','/WX','/c')
     if ($TestK6Process) { $k6Assembly += '/DK6_DIAGNOSTICS=1' }
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') ($k6Assembly + @(("/Fo$output/k6-transition.obj"),
         (Join-Path $project 'arch/x86/kernel/process/assembly/entry/transition.asm')))
-    $objects += @("$output/k6-policy.obj","$output/k6-process.obj","$output/k6-resident.obj","$output/k6-transition.obj")
+    $objects += @("$output/k6-policy.obj","$output/k6-process.obj","$output/k6-image.obj","$output/k6-syscall.obj","$output/k6-irq.obj","$output/k6-hooks.obj","$output/k6-resident.obj","$output/k6-transition.obj")
 }
 if ($TestK6Process) {
     $programRoot = Join-Path $project 'test/kernel/process'
