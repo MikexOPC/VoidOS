@@ -1,6 +1,9 @@
 #include "probe.h"
 #include "arch/x86/kernel/descriptors/protection.h"
 #include "arch/x86/kernel/process/process.h"
+#include "arch/x86/kernel/process/resident.h"
+#include "arch/x86/kernel/process/slot.h"
+#include "arch/x86/kernel/interrupts/return/table.h"
 #include "kernel/diagnostics/log.h"
 
 #define PROGRAM(name) extern const unsigned char k6_program_##name[]; extern const BOOT_U64 k6_program_##name##_length
@@ -72,9 +75,40 @@ static int nmi_case(BOOT_U64 window)
         x86_process_nmi_report(window) && kernel_log(0, "KERNEL_K6_NMI_RESUMED");
 }
 
+// ====== x86_process_pair ======
+
+static int x86_process_pair(KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_PROCESS_IMAGE images[2],
+    X86_PROCESS_RESULT results[2], BOOT_U32 yields[2], int use_ipc)
+{
+    static IPC_CHANNEL channel;
+    X86_PROCESS_SLOT slots[2] = {0};
+    BOOT_U64 budget;
+    if (!kernel_physical_budget_read(pool, &budget)) return 0;
+    int prepared = x86_process_slot_prepare(&slots[0], &images[0]) &&
+        x86_process_slot_prepare(&slots[1], &images[1]);
+    BOOT_U64 endpoint = prepared && use_ipc ? x86_ipc_open(&channel) : 0;
+    results[0] = results[1] = (X86_PROCESS_RESULT){0};
+    for (BOOT_U32 turn = 0; prepared && turn < 32 && (!use_ipc || endpoint) &&
+        (!results[0].Kind || !results[1].Kind); ++turn) {
+        BOOT_U32 index = turn % 2;
+        if (results[index].Kind) continue;
+        if (x86_process_slot_step(&slots[index], &results[index], endpoint ? &channel : 0,
+            endpoint ? endpoint | index : 0, 0) && results[index].Kind && endpoint)
+            x86_ipc_close(&channel);
+    }
+    if (endpoint) x86_ipc_finish(&channel);
+    for (BOOT_U32 index = 0; index < 2; ++index) {
+        yields[index] = slots[index].Yields;
+        if (slots[index].Lease.Id && !x86_process_slot_reap(&slots[index]))
+            kernel_panic("PROCESS_REAP_FAILED");
+    }
+    if (!kernel_physical_budget_matches(pool, budget)) kernel_panic("PROCESS_REAP_FAILED");
+    return results[0].Kind && results[1].Kind;
+}
+
 // ====== yield_pair ======
 
-static int yield_pair(void)
+static int yield_pair(KERNEL_PHYSICAL_ALLOCATOR *pool)
 {
     X86_PROCESS_IMAGE images[2] = {
         {k6_program_yield_a, k6_program_yield_a_length},
@@ -82,9 +116,9 @@ static int yield_pair(void)
     };
     X86_PROCESS_RESULT results[2];
     BOOT_U32 yields[2];
-    if (x86_process_pair(images, results, yields, 0)) return 0;
+    if (x86_process_pair(pool, images, results, yields, 0)) return 0;
     images[1] = (X86_PROCESS_IMAGE){k6_program_yield_b, k6_program_yield_b_length};
-    return x86_process_pair(images, results, yields, 0) && yields[0] == 2 && yields[1] == 2 &&
+    return x86_process_pair(pool, images, results, yields, 0) && yields[0] == 2 && yields[1] == 2 &&
         results[0].Kind == X86_PROCESS_EXIT && results[1].Kind == X86_PROCESS_EXIT &&
         results[0].Code == 0x1122334455667788ULL && results[1].Code == 0x8877665544332211ULL &&
         kernel_log(0, "KERNEL_K6_YIELD_PAIR_OK");
@@ -92,7 +126,7 @@ static int yield_pair(void)
 
 // ====== ipc_pair ======
 
-static int ipc_pair(void)
+static int ipc_pair(KERNEL_PHYSICAL_ALLOCATOR *pool)
 {
     X86_PROCESS_IMAGE images[2] = {
         {k6_program_ipc_client, k6_program_ipc_client_length},
@@ -100,11 +134,11 @@ static int ipc_pair(void)
     };
     X86_PROCESS_RESULT results[2];
     BOOT_U32 yields[2];
-    if (!x86_process_pair(images, results, yields, 1) || yields[0] != 1 || yields[1] != 1 ||
+    if (!x86_process_pair(pool, images, results, yields, 1) || yields[0] != 1 || yields[1] != 1 ||
         results[0].Kind != X86_PROCESS_EXIT || results[0].Code ||
         results[1].Kind != X86_PROCESS_EXIT || results[1].Code) return 0;
     images[1] = (X86_PROCESS_IMAGE){k6_program_null, k6_program_null_length};
-    return x86_process_pair(images, results, yields, 1) && yields[0] == 1 && yields[1] == 0 &&
+    return x86_process_pair(pool, images, results, yields, 1) && yields[0] == 1 && yields[1] == 0 &&
         results[0].Kind == X86_PROCESS_EXIT && results[0].Code == 77 &&
         results[1].Kind == X86_PROCESS_FAULT && results[1].Vector == 14 &&
         results[1].Error == 4 && results[1].Cr2 == 0 && kernel_log(0, "KERNEL_K6_IPC_OK");
@@ -112,7 +146,7 @@ static int ipc_pair(void)
 
 // ====== bridge_pair ======
 
-static int bridge_pair(void)
+static int bridge_pair(KERNEL_PHYSICAL_ALLOCATOR *pool)
 {
     const X86_PROCESS_IMAGE images[2] = {
         {k6_program_bridge_server, k6_program_bridge_server_length},
@@ -120,7 +154,7 @@ static int bridge_pair(void)
     };
     X86_PROCESS_RESULT results[2];
     BOOT_U32 yields[2];
-    return x86_process_pair(images, results, yields, 1) &&
+    return x86_process_pair(pool, images, results, yields, 1) &&
         field("BRIDGE_SERVER_KIND: ", results[0].Kind) && field("BRIDGE_SERVER_CODE: ", results[0].Code) &&
         field("BRIDGE_CLIENT_KIND: ", results[1].Kind) && field("BRIDGE_CLIENT_CODE: ", results[1].Code) &&
         yields[0] == 6 && yields[1] == 5 &&
@@ -131,7 +165,7 @@ static int bridge_pair(void)
 
 // ====== bridge_wait_failure ======
 
-static int bridge_wait_failure(void)
+static int bridge_wait_failure(KERNEL_PHYSICAL_ALLOCATOR *pool)
 {
     X86_PROCESS_IMAGE images[2] = {
         {k6_program_bridge_client, k6_program_bridge_client_length},
@@ -139,19 +173,19 @@ static int bridge_wait_failure(void)
     };
     X86_PROCESS_RESULT results[2];
     BOOT_U32 yields[2];
-    if (!x86_process_pair(images, results, yields, 1) || yields[0] != 1 || yields[1] ||
+    if (!x86_process_pair(pool, images, results, yields, 1) || yields[0] != 1 || yields[1] ||
         results[0].Kind != X86_PROCESS_EXIT || results[0].Code != 77 ||
         results[1].Kind != X86_PROCESS_FAULT || results[1].Vector != 14 ||
         results[1].Error != 4 || results[1].Cr2) return 0;
     images[1] = (X86_PROCESS_IMAGE){k6_program_spin, k6_program_spin_length};
-    return x86_process_pair(images, results, yields, 1) && yields[0] == 1 && !yields[1] &&
+    return x86_process_pair(pool, images, results, yields, 1) && yields[0] == 1 && !yields[1] &&
         results[0].Kind == X86_PROCESS_EXIT && results[0].Code == 77 &&
         results[1].Kind == X86_PROCESS_BUDGET && kernel_log(0, "KERNEL_BRIDGE_WAIT_RECOVERY_OK");
 }
 
 // ====== cases ======
 
-static int cases(void)
+static int cases(KERNEL_PHYSICAL_ALLOCATOR *pool)
 {
     X86_PROCESS_RESULT result;
     if (k6_negative == 37) {
@@ -197,8 +231,33 @@ static int cases(void)
     for (BOOT_U64 window = 1; window <= 6; ++window) {
         if (!nmi_case(window)) return 0;
     }
-    return yield_pair() && ipc_pair() && bridge_pair() && bridge_wait_failure() &&
+    return yield_pair(pool) && ipc_pair(pool) && bridge_pair(pool) && bridge_wait_failure(pool) &&
         field("K6_COPY_INSTRUCTION: ", x86_process_copy_instruction());
+}
+
+// ====== resident_bridge ======
+
+static int resident_bridge(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
+{
+    X86_PROCESS_IMAGE image = {k6_program_bridge_server, k6_program_bridge_server_length};
+    const unsigned char request[2] = {1, 1};
+    unsigned char response[2];
+    X86_PROCESS_RESULT result;
+    BOOT_U64 budget;
+    if (!kernel_physical_budget_read(window->Pool, &budget) ||
+        !x86_process_resident_open(window, timer, &image) || !x86_irq_ready()) return 0;
+    for (BOOT_U32 index = 0; index < 5; ++index) {
+        if (!x86_process_resident_request(request, response, 0, &result) ||
+            response[0] != 1 || response[1] != 0 || !x86_irq_ready()) return 0;
+    }
+    if (!x86_process_resident_close() || !x86_irq_ready() ||
+        !kernel_physical_budget_matches(window->Pool, budget)) return 0;
+    image = (X86_PROCESS_IMAGE){k6_program_spin, k6_program_spin_length};
+    return x86_process_resident_open(window, timer, &image) &&
+        !x86_process_resident_request(request, response, 0, &result) &&
+        result.Kind == X86_PROCESS_BUDGET && x86_irq_ready() &&
+        kernel_physical_budget_matches(window->Pool, budget) &&
+        kernel_log(0, "KERNEL_BRIDGE_RESIDENT_OK");
 }
 
 // ====== x86_k6_process_probe ======
@@ -208,7 +267,7 @@ int x86_k6_process_probe(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer,
 {
     if (!x86_user_mode_allowed()) return kernel_log(2, "PROCESS_DISABLED");
     if (!x86_process_open(window, timer)) return 0;
-    int passed = cases() && x86_k6_keyboard_probe(env, directory, &timer->Clock);
+    int passed = cases(window->Pool) && x86_k6_keyboard_probe(env, directory, &timer->Clock);
     if (!x86_process_close()) return 0;
-    return passed && kernel_log(0, "KERNEL_K6_PROCESS_OK");
+    return passed && resident_bridge(window, timer) && kernel_log(0, "KERNEL_K6_PROCESS_OK");
 }

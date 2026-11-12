@@ -210,7 +210,6 @@ x86_process_enter PROC
     iretq
 x86_process_enter ENDP
 
-IFDEF K6_DIAGNOSTICS
 ; ====== x86_process_resume ======
 
 ; Intel SDM 3A §7.14.3: frame IRETQ a cinque slot. Vol. 2 FXRSTOR64: area da 512 byte allineata.
@@ -239,7 +238,6 @@ x86_process_resume PROC
     K6_POP_GPR
     iretq
 x86_process_resume ENDP
-ENDIF
 
 ; ====== x86_process_leave ======
 
