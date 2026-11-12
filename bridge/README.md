@@ -18,7 +18,7 @@ verifica le risposte a `status`, a due lunghezze errate, a una versione
 sconosciuta e a un'operazione sconosciuta. Dopo l'uscita del client, il
 servizio verifica la chiusura del canale. Il kernel raccoglie i processi
 e confronta il budget di pagine con quello iniziale.
-Il trasporto è descritto nel [contratto IPC v0](../docs/design/ipc.md).
+Il trasporto è descritto nel [contratto IPC v0](../docs/design/processi.md#ipc-v0).
 
 Validazione iniziale: quattro test host Rust, dieci boot con una vCPU e
 tre boot con quattro vCPU. In entrambe le campagne il bridge gira sul BSP.

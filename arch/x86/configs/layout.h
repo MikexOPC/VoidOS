@@ -7,7 +7,7 @@
 // PML4 entries (one slot = 512 GiB); bits 63:48 must equal bit 47 (canonical form, 3A 3.3.7.1),
 // so slots 256-511 are the upper half 0xFFFF8000_00000000 and above.
 // K1 stage 5b: kernel regions are high; the loader identity branch is retired at startup
-// (docs/design/k1-higher-half.md).
+// (docs/design/consolidamento.md).
 
 #define X86_LAYOUT_SLOT_SHIFT 39U
 #define X86_LAYOUT_SLOT_BYTES (1ULL << X86_LAYOUT_SLOT_SHIFT)

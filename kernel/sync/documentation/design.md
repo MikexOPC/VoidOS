@@ -1,7 +1,7 @@
 # K2-A: primitive di sincronizzazione
 
 27 ottobre 2026. Contratto del primo modulo K2. Opzione A scelta dall'utente:
-attesa sorvegliata e arresto diagnostico. La decisione D4 in [g7-smp-user.md](../../../docs/design/g7-smp-user.md)
+attesa sorvegliata e arresto diagnostico. La decisione D4 in [registro delle decisioni](../../../docs/decisions.md)
 ha già scelto ticket lock, irqsave, atomiche e ordine dei lock.
 
 ## Perimetro e sequenza

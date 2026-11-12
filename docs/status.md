@@ -55,5 +55,5 @@ le vCPU. Stress e profili separati non sono stati rieseguiti in questa prova.
 Risultati precedenti con immagini e limiti propri nelle validazioni
 [AP nel boot ordinario](../arch/x86/kernel/cpu/percpu/documentation/k4a-validation.md),
 [scheduler e shell](../kernel/scheduler/documentation/k4c-validation.md),
-[processi e build Meson](design/k6-design.md) e [protezioni](handoff/security-plan.md).
+[consolidamento e build Meson](validation/consolidamento.md), [processi](validation/processi.md) e [protezioni](validation/sicurezza.md).
 L'elenco storico dei checkpoint è nella versione di questa pagina a `efecb8b`.

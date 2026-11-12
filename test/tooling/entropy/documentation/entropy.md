@@ -2,7 +2,7 @@
 
 Stato: pronto, strumento host. Serve per decidere se il jitter RDTSC e i
 tempi degli interrupt possono essere accreditati come entropia
-(`docs/design/security-entropy.md`). Oggi non e usato dal kernel.
+([design della sicurezza](../../../../docs/design/sicurezza.md#entropia-e-canary)). Oggi non e usato dal kernel.
 
 ## Scopo
 
