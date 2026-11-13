@@ -1,7 +1,24 @@
 # Design: immagine unica
 
-Stato: proposta, 13 novembre 2026. Da accorpare in `docs/design/consolidamento.md`
-dopo il riordino della documentazione. Nessun codice scritto.
+Stato: scelta l'alternativa C (prima A, poi B), 13 novembre 2026. Parte A
+fatta, parte B da progettare. Da accorpare in `docs/design/consolidamento.md`
+dopo il riordino della documentazione.
+
+## Risultato della parte A
+
+L'immagine Meson `ordinary` contiene shell, tastiera e mouse PS/2, console,
+job su AP1, processo utente e servizio residente `bridge`. È la stessa
+immagine delle campagne `k6-shell` e `k6-shell-bridge-disabled`.
+
+- Piano di build: 310 comandi, identici a `build.ps1` con
+  `-Ps2Input -Ps2Mouse -ConsoleShell -InteractiveInput`.
+- Il runner Rust considera riuscito l'avvio quando la shell è pronta
+  (`KERNEL_PS2_INPUT_READY`); i runner Python che controllano il BSP fermo
+  scrivono prima `exit`.
+- Senza controller PS/2 (`k6-no-ps2`, QEMU `i8042=off`) l'immagine segnala
+  `KERNEL_PS2_INPUT_ABSENT`, esegue il processo e arriva a `KERNEL_READY`.
+- Restano: runtime dentro l'avvio del timer, arresto dopo `exit` o senza
+  PS/2, GPU VirtIO fuori dall'immagine. Sono la parte B.
 
 ## Obiettivo
 
