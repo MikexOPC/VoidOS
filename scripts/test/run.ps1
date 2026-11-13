@@ -1,7 +1,10 @@
 param(
     [string]$Suite = 'all',
-    [switch]$List
+    [switch]$List,
+    [switch]$Check
 )
+# -Suite takes one name, a comma-separated list or all. -Check also builds the loader first and,
+# when every suite passes, boots the ordinary Meson image once in QEMU (campaign k6-ordinary).
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $suites = [ordered]@{
@@ -115,7 +118,9 @@ $missing = $roots | ForEach-Object {
     ForEach-Object { $_.FullName.Substring($project.Length + 1).Replace([string][char]92, '/') } |
     Where-Object { $listed -notcontains $_ }
 if ($missing) { throw ('[ FAIL ] Suites not listed in run.ps1: ' + ($missing -join ', ')) }
-if ($Suite -ne 'all' -and !$suites.Contains($Suite)) { throw "Unknown suite: $Suite (use -List)" }
+$requested = if ($Suite -eq 'all') { @($suites.Keys) } else { @($Suite -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+foreach ($name in $requested) { if (!$suites.Contains($name)) { throw "Unknown suite: $name (use -List)" } }
+if ($Check -and $requested -notcontains 'boot') { $requested = @('boot') + $requested }
 if ($List) {
     $suites.GetEnumerator() | ForEach-Object { '{0}: {1}' -f $_.Key, $_.Value }
     return
@@ -123,7 +128,7 @@ if ($List) {
 $output = Join-Path $project ('kernel/build/test-run-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $output | Out-Null
 $shell = Resolve-SuiteShell
-$selected = if ($Suite -eq 'all') { @($suites.Keys) } else { @($Suite) }
+$selected = $requested
 $results = @()
 
 # ============ isolated supported toolchain runners ============
@@ -153,3 +158,12 @@ $failed = @($results | Where-Object { $_.ExitCode -ne 0 })
 Write-Output ('Host suites: {0} passed, {1} failed; evidence {2}. QEMU campaigns are separate.' -f
     ($results.Count - $failed.Count), $failed.Count, $output)
 if ($failed) { throw ('[ FAIL ] ' + (($failed | ForEach-Object Suite) -join ', ')) }
+
+# ============ ordinary boot ============
+
+if ($Check) {
+    Write-Output '[ INFO ] Boot of the ordinary Meson image (k6-ordinary, 1 boot)'
+    & $shell -NoProfile -File (Join-Path $project 'scripts/test/qemu.ps1') -Campaign k6-ordinary -Boots 1 -Fresh
+    if ($LASTEXITCODE -ne 0) { throw '[ FAIL ] Ordinary boot' }
+    Write-Output '[ OK ] Check passed: host suites and ordinary boot.'
+}
