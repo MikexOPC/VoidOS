@@ -1,7 +1,5 @@
 #include "internal.h"
 
-#ifdef KERNEL_TEST_K6_PROCESS
-
 BOOT_U32 process_delay_next_syscall, process_probe_armed, process_probe_delivered;
 static X86_IRQ_TOKEN device_probe_token;
 static int (*device_probe_inject)(void);
@@ -140,4 +138,3 @@ int x86_process_drain_check(void)
     return process_rt.Drained == before + 1;
 }
 
-#endif
