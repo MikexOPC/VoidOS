@@ -19,7 +19,7 @@ def main():
     files.extend(ROOT/name for name in ('kernel/scripts/build.ps1','kernel/scripts/build/profiles.ps1',
         'kernel/scripts/build/iommu-discovery.ps1','test/arch/x86/kernel/drivers/bus/pci/ecam/integration/probe.c',
         'arch/x86/kernel/drivers/bus/pci/ecam/scripts/firmware.py',
-        'arch/x86/kernel/drivers/memory/iommu/intel/routing/documentation/expanded-design.md','docs/status.md','docs/future-work.md'))
+        'docs/design/consolidamento.md','docs/status.md','docs/future-work.md'))
     for path in files:
         raw=path.read_bytes(); text=raw.decode('utf-8')
         if b'\r' in raw or any(line.rstrip()!=line for line in text.splitlines()): errors.append(f'Format {path}')

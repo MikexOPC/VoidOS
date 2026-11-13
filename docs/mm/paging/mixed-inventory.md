@@ -61,7 +61,7 @@ Il contratto e UP e riguarda una sola pagina LAPIC. Nessun supporto SMP,
 shootdown TLB, dispositivi generici o hardware fisico e attestato.
 
 Il percorso separato per framebuffer e tabelle kernel e descritto in
-[inventario video](../../../arch/x86/mm/paging/documentation/video-resources.md).
+[inventario video](../../design/consolidamento.md#scheduler-lapic-e-paging).
 La sua validazione host non equivale ancora a mapping video live.
 
 [Intel SDM Vol. 3A: paging, PAT e alias di memoria](https://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-software-developer-vol-3a-part-1-manual.pdf).

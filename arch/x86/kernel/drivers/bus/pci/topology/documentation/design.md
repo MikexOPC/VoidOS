@@ -1,6 +1,6 @@
 # Snapshot PCI: contratto del blocco topologia
 
-22 ottobre2026. Attua la parte topologica della [scelta B gia approvata](../../../../memory/iommu/intel/routing/documentation/expanded-design.md).
+22 ottobre2026. Attua la parte topologica della [scelta B gia approvata](../../../../../../../../docs/design/consolidamento.md#video-vt-d-e-ps2).
 Prerequisito: [lettore nativo ECAM verificato](../../ecam/documentation/validation.md).
 Il resolver multi-DRHD e l'attivazione DMA restano blocchi distinti.
 

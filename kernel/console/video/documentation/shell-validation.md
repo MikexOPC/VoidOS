@@ -298,7 +298,7 @@ Il blocco successivo aggiunge il cursore e corregge la chiusura PS/2:
 [prove correnti e immagini finali](caret-validation.md).
 Il rollover HPET riprodotto e corretto con regressioni deterministiche,
 32 boot finali, verifica video e attraversamento reale del contatore.
-[Report corrente, immagini e limiti](../../../../arch/x86/kernel/timer/hpet/watchdog/documentation/idle/rollover.md).
+[Report corrente, immagini e limiti](../../../../docs/validation/consolidamento.md#validazione-dei-backend-x86).
 Le immagini e campagne descritte sotto sono il checkpoint della prima
 integrazione console; non sostituiscono le prove successive del fix HPET.
 

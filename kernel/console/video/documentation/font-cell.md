@@ -19,7 +19,7 @@ stress da 200 tasti, 3 boot senza video, diagnostici framebuffer/console x10, or
 Scelte utente (16 ottobre): font della shell piu grande, cella 10x20 invece di 8x16
 (a 1024x768: 102 colonne x 38 righe invece di 128 x 48), insieme al puntatore 18x18
 ([pointer-sharp.md](pointer-sharp.md)). Fonte invariata: Cascadia Mono v2407.24 (OFL), vedi
-[font.md](../../../../arch/x86/kernel/drivers/video/framebuffer/documentation/font.md).
+[font.md](../../../../docs/design/consolidamento.md#video-vt-d-e-ps2).
 
 ## Font
 

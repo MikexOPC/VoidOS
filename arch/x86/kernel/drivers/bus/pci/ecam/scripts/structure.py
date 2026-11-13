@@ -18,8 +18,7 @@ def main():
         files.extend(p for p in folder.rglob('*') if p.is_file() and p.suffix in CODE|{'.md'})
     files.extend(ROOT/name for name in ('kernel/main.c','kernel/scripts/build.ps1','kernel/scripts/build/profiles.ps1',
         'kernel/scripts/build/iommu-discovery.ps1',
-        'arch/x86/kernel/drivers/memory/iommu/intel/routing/documentation/design.md',
-        'arch/x86/kernel/drivers/memory/iommu/intel/routing/documentation/expanded-design.md'))
+        'docs/design/consolidamento.md'))
     for path in files:
         raw=path.read_bytes(); text=raw.decode('utf-8')
         if b'\r' in raw or any(line.rstrip()!=line for line in text.splitlines()): errors.append(f'Format {path}')

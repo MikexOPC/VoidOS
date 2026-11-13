@@ -134,7 +134,7 @@ Nessuna prova su hardware fisico. Le scelte di user mode, syscall, TLB
 shootdown e preemption non sono implementate da questa verifica.
 Il difetto della misura LAPIC corretto e la causa non catturata del vecchio
 panic rimangono distinti nel
-[report timer](../../../arch/x86/kernel/timer/lapic/documentation/wait/k2-failure.md).
+[report timer](../../../docs/validation/consolidamento.md#validazione-dei-backend-x86).
 Un smoke verde non è una prova retroattiva della causa di quel singolo log.
 
 

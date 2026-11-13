@@ -52,7 +52,7 @@ di adottarlo servono limite temporale, carico definito e contatori perdite.
 Alternativamente occorre progettare e validare un contesto C interrompibile.
 Il primo gate non autorizza quest'ultima modifica automaticamente.
 
-Fonti del contratto: [inventario video](../../../../arch/x86/mm/paging/documentation/video-resources.md),
+Fonti del contratto: [inventario video](../../../../docs/design/consolidamento.md#scheduler-lapic-e-paging),
 [watchdog](../../../../arch/x86/kernel/timer/hpet/watchdog/documentation/design.md),
 [sessione PS/2](../../../../arch/x86/kernel/drivers/input/ps2/documentation/runtime.md),
 [gateway](rendering.md). Nessun nuovo accesso MMIO/I/O/CR/MSR in questo blocco.

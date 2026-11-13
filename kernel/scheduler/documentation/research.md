@@ -72,5 +72,5 @@ Scelta cooperativa gia autorizzata dall'utente; dettagli v0 nel [design](design.
 Contratto x86 nel [context switch](context.md), casi e gate nella
 [validazione](validation.md). Esito del blocco originale: progetto documentato.
 Questo e l'esito storico del progetto documentale. Il successivo [core Rust/FFI](core.md),
-il [backend e le prove native](../../../arch/x86/kernel/scheduler/documentation/integration.md)
+il [backend e le prove native](../../../docs/validation/consolidamento.md#validazione-dei-backend-x86)
 e l'[estensione eventi/attese](../wait/documentation/validation.md) hanno report distinti.

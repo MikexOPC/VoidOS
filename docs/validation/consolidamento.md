@@ -33,12 +33,12 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   30 boot ordinari/console e 50 panic intenzionali, più una sessione
   continua di circa 301 s. [K3-F](#checkpoint-per-cpu),
   [K3-H](#checkpoint-per-cpu),
-  [chiusura K3-I](../../arch/x86/kernel/cpu/percpu/documentation/k3i-runtime-validation.md).
+  [chiusura K3-I](consolidamento.md#validazione-dei-backend-x86).
 - **K4-A/B.** PING agli AP nel boot ordinario, 40 boot su 1/2/4/8
   CPU. Shootdown prima del riuso dei frame, 40/40 a quattro CPU;
   ACK mancante con risorsa trattenuta nel caso diagnostico.
-  [K4-A](../../arch/x86/kernel/cpu/percpu/documentation/k4a-validation.md),
-  [K4-B](../../arch/x86/kernel/cpu/percpu/documentation/k4b-validation.md).
+  [K4-A](consolidamento.md#validazione-dei-backend-x86),
+  [K4-B](consolidamento.md#validazione-dei-backend-x86).
 - **K4-C.** Il core Rust fu verificato in host e la preemption timer
   nei profili BSP/AP. `ap-task-four` provò otto task su quattro AP
   con BSP supervisore, 50 boot positivi e 20 arresti attesi per
@@ -70,7 +70,7 @@ minuti dell'immagine unica restano fuori dalle prove citate.
   rollover del timer, con 32 boot/sessioni finali e budget ripristinato.
   Per la console PS/2 riporta dieci boot shell, dieci ordinari e 612
   pressioni di stress. I dettagli e gli hash restano nei report dei
-  moduli. [Rollover](../../arch/x86/kernel/timer/hpet/watchdog/documentation/idle/rollover.md),
+  moduli. [Rollover](consolidamento.md#validazione-dei-backend-x86),
   [verifica input](../../kernel/drivers/input/ps2/documentation/structure.md).
 - Nei checkpoint K3-A–H, i casi host di GS, clock, identità, risorse e
   lock non provavano l'avvio di un AP. Il test di riserva bassa K3-G
@@ -145,5 +145,271 @@ I nomi delle campagne storiche restano sotto per consentire a
 - k3i-remote-panic `first-ap-firmware-471f31f863264bf9b1ef4c261e952f14`, `first-ap-firmware-8ee8990917714751bbee910d66d65546`, `first-ap-firmware-d178ff203d1f4aab92c0d44a6f63fda1`, `first-ap-firmware-ee0714b54c53436786da304991fc08c7`, `percpu-firmware-6504f73f792e4a46877a719345f8831c`, `test-run-6d25a0e85d984aae9b3b0ec1de7674d2`
 - k3i-sequential `first-ap-firmware-3587d31d5a04452698b3b9ff6c829623`, `first-ap-firmware-395f31bd4ea342969b05cd91192b0d8a`, `first-ap-firmware-636b446023964cc893651d3b23db5d24`, `percpu-firmware-046b5ac0b6954bf3aa89221a1d8662d0`, `percpu-firmware-a193a7be97ee45e3b99da44a810ebbed`, `percpu-firmware-da0835a5e0944f1ab60f29ce99a401a3`, `sequence-failure-35b8e7292a6c4755945d8e24ee89ab45`
 - k3i-group-panic `first-ap-firmware-ef39759b5dc144d79dfa99ef1658b953`, `group-panic-804e51d110b64ae591e86840e26916cd`, `group-panic-a45b3079d2864c6f8e6356c9409b8c7f`
+
+</details>
+
+## Validazione dei backend x86
+
+Versioni complete dei report accorpati nelle cartelle dei moduli
+x86, al commit `8bad38a`. Questi risultati appartengono alle
+immagini dei rispettivi checkpoint.
+
+| Area | Risultati e perimetro |
+| --- | --- |
+| K3-I, installazione inattiva | Host con 26 guasti di installazione, 22 di cancellazione e 8192 corruzioni di byte. QEMU 10/10 installazione, 10/10 cancellazione, 10/10 ordinari del checkpoint. AP fermi. |
+| Chiusura K3 | QEMU/OVMF xAPIC. 10/10 ordinari a quattro CPU, 10/10 a una e 10/10 console GOP. Cinque profili di panic dedicati 10/10 ciascuno, con origini concorrenti, ACK omesso, DLAB e NMI ricorsivo. Soak separato di 300,953 s, 808 pacchetti e budget verificato. Sette suite host. |
+| K4-A/B | PING ordinario 10/10 ciascuno su 1, 2, 4 e 8 CPU. Shootdown a quattro CPU, 10/10 per ordinario, rimappatura diagnostica, ACK omesso e console VirtIO/VT-d. Il negativo conserva il frame in lease, pinned, con i dati intatti. Tre shootdown nel teardown console per boot. |
+| Staging ELF e paging | Staging R-014: cinque test Rust, C/ASan 100 ripetizioni, 10/10 boot QEMU sul BSP e quattro scenari di handoff, con fault attesi distinti. Inventario video 10/10 ordinari con metadati e 10/10 senza display, distinto dal mapping live. In K3-H, 19.478 confronti C/ASan e console finale 10/10 con timeout invariato. |
+| Scheduler | B6 riporta 12 suite host e 10 boot ciascuno per ordinario, preservazione e sessione mouse/shell. Le mappe distinguono il probe diagnostico dallo switch ordinario. |
+| HPET | Decoder C/ASan 100 ripetizioni, dieci fixture UEFI senza kernel. Discovery integrata in 11 boot, compreso il caso assente. Probe reale e comparatori verificati in dieci boot positivi. |
+| Watchdog | R-001, 20 boot positivi tra finito e loop, 20 timeout attesi per IRQ LAPIC perso, due prove senza HPET. Fix ARM, 10/10 ordinari, 10/10 negativi e 20/20 stress video e senza video. Fix rollover, 32 boot/sessioni finali, compreso l'attraversamento reale del contatore. Il checkpoint recovery include 2.300 verifiche C/ASan e otto test Rust. |
+| LAPIC | Il checkpoint K2 finale registra 10/10 con probe e 10/10 ordinari dopo il fix delle misure. La causa del vecchio panic resta indeterminata. |
+| Framebuffer | Mapping live 10/10 ordinari, 10/10 senza display e 10/10 diagnostici con unbind, rebind e accounting. Le prove di pixel, disegno e font distinguono lettura della memoria video e verifica PPM nei profili diagnostici. |
+| VirtIO/VT-d | Present asincrona 10/10 con host carico e 10/10 senza carico. Geometria 1280×800 10/10. Nel checkpoint H1-A, mediana su cinque boot di profilo, V2c 8.662 tick PM per flush contro 2.517 per GOP. Misure in QEMU TCG. |
+| Routing e DMA | Routing 60 boot su sei serie, con root, nested e assenza tra i casi. Ottanta fixture guest sintetiche, una sola unità VT-d emulata. Il diagnostico separato `edu` verifica trasferimento, scrittura negata, pagina assente e revoca con QI. |
+| PS/2 | Recovery B2 nella sessione PS/2 separata. Test host di decodifica e ordine degli eventi distinti dai boot e dalle prove di errore. [Report IRQ1→task](../../arch/x86/kernel/drivers/input/ps2/documentation/validation.md). |
+
+Per ripetere i casi registrati usare
+`./scripts/test/qemu.ps1 -Campaign <nome> -Fresh` dalla radice.
+Il registro include `ap-runtime`, `ipi-service`,
+`ipi-release-missing-ack`, `k3-soak`, `framebuffer-draw` e `v2c`.
+Per HPET e paging i report storici riportano anche i comandi diretti
+dei runner. Il watchdog riceve un ELF ordinario con `-Mode normal`
+o un ELF diagnostico con `-Mode lost`.
+
+### Identificativi delle prove x86
+
+I nomi delle campagne sono conservati per il riconoscimento degli
+artefatti storici da parte di `scripts/clean.ps1`.
+
+<details>
+<summary>Directory delle campagne storiche</summary>
+
+```text
+ap-assembler-5e05bbc296974dcfa08424b1a95c235c
+ap-blob-cpu-312d6cad02c7493d908bb7b22ad9ff37
+ap-blob-host-d00c56fd566541c89ca707f327d4f20c
+ap-low-host-8bb26edfd9194b17b54199343a253430
+ap-panic-stress-035cbe67c820486182ea2fb0b56884f9
+ap-panic-stress-122bb1c97cbe4650a071959ae17a5fe4
+ap-panic-stress-5d8312da66bc462cb1cdce7beca2c8dc
+ap-panic-stress-6c16c142abe0455ba47e9da77f0f1fee
+ap-panic-stress-849e150481204c8d91786a024974fd0e
+ap-panic-stress-ccdc0ae534054cba8adb47ffa6b87289
+ap-private-cpu-040ce4cc58f74511b066b310406d0013
+ap-runtime-08b9981f6101447f929d086ef0bc37de
+ap-runtime-0b4a05aaacea41659c1c1eede97f3957
+ap-runtime-19afeafbd0394f9b93acab3131d2529d
+ap-runtime-1c065124d2954d40a30bb99cfb8b8d27
+ap-runtime-28e9fa38ab634e648131a25f27b9563a
+ap-runtime-29bfa67c01b64d1f9a66b933af176db4
+ap-runtime-2cbda29563254e7094c28e900c43a2fe
+ap-runtime-5e3b418713cb412cba82d24bac61b55b
+ap-runtime-60333af0b11b460689353b61760c0eff
+ap-runtime-65af2dd68d744f2f9d5892704d76c4f8
+ap-runtime-86bd7832e0424b778ce6840ce144669e
+ap-runtime-8794f9bc64a24779a47a21fc0028f364
+ap-runtime-c36b70ed949a4be7b30abacd1da321e7
+ap-runtime-c49e762f6e4d4834812e0fbc2725d4ca
+ap-runtime-d3151a2e131b41518e63acf3345d9a0b
+ap-runtime-d52044afba554831814e10a493eee6a2
+ap-runtime-d68e78b60c404b4cbb43f6d7c9209c23
+ap-runtime-f44796cf425a4cc880d68ca48a0e2132
+ap-runtime-fd3c0cd9433645ddb2206b0d61606dde
+ap-runtime-ff4e8485ea6a40888acb5ed55aec116e
+ap-runtime-host-46a6678105fd404988f16f32ed4dddb9
+ap-startup-host-86a2c7cd725e42e99c0fad55e060fef0
+ap-startup-host-ecee5552b904415b96591ccfd2a6ead8
+ap-transition-firmware-1c455e37fc3a4223add02e82f3eefa6c
+ap-transition-firmware-ad4dac22a3f64a97a2ace3751f8ca917
+ap-transition-firmware-eea47a2fc182432987bf1d05a3e9e431
+ap-transition-host-4302ba0b801e4191a31867bac6386cbd
+ap-wake-host-3337a3b774104bf0b32b133f0df4289c
+ecam-firmware-4b7b130ea4514fd78c092d8c18634a2a
+ecam-firmware-d2455576721e4f74830351535327aae4
+elf-validation-1beb54afb0b943008c550a1dda6002a2
+elf-validation-90bba785a3b7492399beed27cf4dc64e
+first-ap-firmware-4381b159da544e758150ff59edf2c893
+framebuffer-drawing-previous-e956fefd5ee34d7e83760785db79f4cc
+framebuffer-firmware-2896194a96cf49a99e6b57a09c306c4e
+framebuffer-firmware-2cf78f29c1314636adade266a3b9cd7c
+framebuffer-live-192ead97e3534f0f9c00d393e5840da7
+framebuffer-live-29ce703f006640378d1c7259e0d792ec
+framebuffer-live-32b6ca0d2e8042a49efaa016c4a8cf98
+framebuffer-live-3bd11e6947444d11a8f828203cc644d4
+framebuffer-live-6cbcb496240c493192c3c14bdc90798a
+framebuffer-live-7a605f9a2b0b43529b7b605738e30cfa
+framebuffer-live-8dca5f4c48564e409a041c2a73336144
+framebuffer-live-9d1cf95cb0d2400b9473aec3f916645a
+framebuffer-live-abb6b9c5c55b43f38869d472e008db8e
+framebuffer-live-b52fc41b4ce44420affe7b72822fe989
+framebuffer-live-b5d26ad255b5426d8cef014a9a8a5653
+framebuffer-live-c03c81bc1d6e4bd5a65c4fd3abd88774
+framebuffer-live-d51755e6ca0d472fa1d015c8266200e7
+framebuffer-live-f4baedc6ecf34c47b0f3b89a7f34cb80
+framebuffer-live-previous-8db96ba2de4f49fab7f6fdda24c90526
+framebuffer-pixels-previous-fd1c0da2fb854f44b6990c0f50b27180
+hpet-description-130b4e22f628419bb7ccfec1586b6dd2
+hpet-description-1aefb7f79618452a9326645afd7b61d9
+hpet-description-316c187527c24a36b75b340f86cb9def
+hpet-description-3bef06369df74dce8aafd5762ede0d2a
+hpet-description-a68a4c9e7cca4c36bd877e2a88a0f89f
+hpet-description-beaebe055f4b4c32aa69d5756de017ed
+hpet-kernel-3396b04c005740d4b37f574fe636dde8
+hpet-kernel-34157dc9a0644075a3ae21e7c92ac3d6
+hpet-kernel-3feaec0f5712459da236d6c529cdea2c
+hpet-kernel-4e55ec307f6e4f3ba82d0b12c25506c1
+hpet-kernel-5c780594266b45a58d640baa8ef8320d
+hpet-kernel-d40d9eeddfda44619aa3304a5ca884fe
+hpet-kernel-e539991fb5cd4a6cbc5a05eafa2c7495
+iommu-discovery-firmware-9ef9b778be0e405f9e39a11f3a67bd99
+ipi-service-0aea57d0a60e40bdb09800a1a3320bc1
+ipi-service-0c6c75f30dfc4bd29842c1571c64d103
+ipi-service-125d0d2673e4410b89344918a1d70e6b
+ipi-service-1aa85b633daf4d4eb6b28d46ac12e89c
+ipi-service-260d1ddc928748c38c9c16f580e696d8
+ipi-service-4701a9223941449899e2569d13039312
+ipi-service-480462505f0b4792abc946e016c891d6
+ipi-service-4bd8ad49de5e478bbf7b668af4ae7c86
+ipi-service-5a753968147048d3a2c420439a318247
+ipi-service-5f2b7ba867114dd78ae331a99783d04f
+ipi-service-7819008bec0a4cd0bc337b12ebccd40c
+ipi-service-88fb0f6bc2f343f19f1dd77b8f300f06
+ipi-service-8b44d81387e84b34af0f233b266bffb5
+ipi-service-95a618ad414a49b1ba85bae0f660097e
+ipi-service-996483a1576f4c30b8bf6ae730956347
+ipi-service-bb279c97a26a40a0b3c7a015a4ebee15
+ipi-service-dc52577db8aa430bae3854d7f26b6a57
+ipi-service-dd2035d54354456c8d0254055e35ce4e
+ipi-service-e1eb5debac4c4ff1973fe37541813f85
+ipi-service-e3a567f071d44d958403e9e0be6cd44c
+ipi-service-e6e32cfa0e9f4048a1f2a3c33c490422
+k4b-vgpu-resources-7fbb1ed9de3949b383b347556a02f7f2
+k4b-vtd-registers-e6a3043142ef4c3b87a3cf82774dcbd2
+k4b-vtd-startup-sample-c10ace20f57e4a92adbda9c3a047d1cb
+kernel-test-673c0771f3544f2088112efeb9f10203
+lapic-asan-7636953c24fa433da01729c63eada60d
+lapic-asan-d4205d5ed81a4c48896f32e37bfbb8f2
+lapic-asan-e8e804e8518d4d879582aeb7f2bda0d6
+lapic-asan-ec23ae7e439d468ea415c3b3f7fa6add
+lapic-calibration-2abb4b77f07d47e5ba56204730f3a12a
+lapic-calibration-firmware-70d92ae1709048a28c74a9e66a266340
+loop-firmware-ad829196cdaa419381a5c7719d17e1b4
+percpu-firmware-14e760e444be492a96c551a2239e30cd
+percpu-firmware-5b5514158a724d1cb66edb45184dcd0a
+percpu-firmware-f2d17be598924d9ea0dec1a4f3b337c7
+pointer-interactive-check-3487753778c7468e991226dd204828c2
+pointer-interactive-check-3c9a28203a89410c956e5f05dbb78cbe
+pointer-interactive-check-4c9eb54eddb3432fbaa14b5a73cf7092
+pointer-interactive-check-5f30e611e0104454a545eb67cb4318d9
+pointer-interactive-check-694bbfb4ad764c248ee8ad5606391652
+pointer-interactive-check-75d6d633c3614cb2a1a1759d7e9a2f58
+pointer-interactive-check-8060f506f06540cf8ee50df52a3e290e
+pointer-interactive-check-8bc6df44815740859ed44079593ac28c
+pointer-interactive-check-9df8d0ddcfc946978009d30c89cb3607
+pointer-interactive-check-a77e2c6c015943298a18d4d537b75631
+pointer-interactive-check-ae9adeaa4dd84b96947671580ad045e3
+pointer-interactive-check-af96829a495e4c399039e1db4adbc1cc
+pointer-interactive-check-b08ff43e062e4e148b153b04b0608de6
+pointer-interactive-check-d23896c81544492ea43a30bf8c5b6565
+pointer-interactive-check-deccf73f98664f2896cf5512b0add9d2
+pointer-interactive-check-e63db3a956ca40a7b378f89f47f1e67f
+pointer-interactive-check-efe51c2da094418ba066d06fbed1fcf3
+ps2-decoder-2c6352880d45484b807cba144a3dd263
+ps2-input-firmware-0b510fe6d4f948e9adbe4195a8f02f9d
+ps2-input-firmware-16e0c900a3344407b8872ef700740e0e
+ps2-input-firmware-1d6c149a82c947f188150759ba1b9435
+ps2-input-firmware-2e8704c72a9a4de9b5023437a98b3eca
+ps2-input-firmware-3b321d3ddd48478b9b269fba12d0e3af
+ps2-input-firmware-4bf7d3be7c7b4b8b8fe73340263bc221
+ps2-input-firmware-5d64d3b2c1cb49f9810f3adf3ebd99dd
+ps2-input-firmware-64cf23a7c12d4587ab6225fc293e8159
+ps2-input-firmware-7ad26c2fe8e04790b13366debd6b6d50
+ps2-input-firmware-85fce2062fdb4ef5a490c3100cd6e7e3
+ps2-input-firmware-8732dad7475b41c4a12ffd612c06bb1d
+ps2-input-firmware-88a4a950a6094dbca455886d7f153137
+ps2-input-firmware-94d1eafcff4b4c029422718b413879bf
+ps2-input-firmware-a2b5b8658d5246038052edb68a2a384e
+ps2-input-firmware-d6ec35b7215b4e639c5303e27a0541a4
+ps2-input-firmware-d7e69479bbba496eb752d65d7e2770fd
+ps2-input-firmware-ef12b928799c45eba8bb573aa06d060b
+ps2-input-firmware-f367093b81d84028b3e8593cadb04e5b
+qemu-run-ac9ec387641c411db12be32354a2e7ad
+scheduler-context-650e9ab43cfc45c1ac9b8b97ecd0c18e
+scheduler-context-851bcf5263a942bb841dd2828017140e
+scheduler-context-c63b049db80242fe8556f93ad5c6a6d7
+scheduler-context-cb8fdad2f96d48cabe056ea25662c976
+scheduler-firmware-192dc41896e14c558f1caaa26c6094eb
+scheduler-firmware-1e5af66443ec4b4485fecc811bbe0988
+scheduler-firmware-3988eb4148e549678b83c03210f9496f
+scheduler-firmware-542d9df75d40483baa4f1389700d1679
+scheduler-firmware-c6776a75efb04428b7fd5712e8b11949
+scheduler-firmware-d27f2a31466b44e38bd0de4023b961ce
+scheduler-host-cea26f0ab8bd4dd5ab015a8fffa05f1f
+sync-firmware-08b09deaae29459ca2ec81beba1a9b51
+sync-firmware-0e64e7ef8e2f4a2c846bf2e7610da199
+sync-firmware-1527d6936e0b4e12b3707029de0ad48b
+sync-firmware-43a26d629ad44d1498c1e4442db879d7
+sync-firmware-a83ba4576c6645bc9ec4ddbe181c8dc6
+sync-firmware-c4778d3492f74fc882c50c9ddf398efd
+test-run-05cf54e0a9eb4720b535d5f6070293b6
+test-run-07d2b92e1edd469d820c71b95d4a1bc1
+test-run-13c38bbc85814c958b2c53bd266f2c6b
+test-run-19bc7aa7423f4830b5054221b5e0bb44
+test-run-2d645386f6b048df8c2c8b42652cc417
+test-run-34ba894ba9a54013a1805f0e7f360c4f
+test-run-3af6ec2f0497450ea0ce7626a0333633
+test-run-3d1167f4a4cf4d918f5307f003d37c06
+test-run-3d5966fb1635490b9f0e2cfa4a7db584
+test-run-52ac4958ff014c0f90a669f1ea5690f5
+test-run-5c616c8e82424dcbae68fe6284289db4
+test-run-679c9554be4e488e988ede1300f3a6b6
+test-run-6d37d33b37e6424280cebb07bcaf0cf7
+test-run-770fab1d24bc4a30b76dbeda8950b956
+test-run-7a4aaa40cdc64565bfeb6a5b9d7ad92c
+test-run-8e5bfe52361a44c282bf7328c1ba4186
+test-run-90a1b98d9ae34b6081648576b613dca2
+test-run-9aa863b2c7fb4e85914b1ec00d5c47b6
+test-run-a84b1a5dc5844cf69ce02cb4db6627ae
+test-run-ad94eaa10167405d913067f88b9aa496
+test-run-b4232534ac684bb0be0dc43943236230
+test-run-b6a9c6054eac4c528f8039a8894ee1d8
+test-run-c2c44248543047198a0fdafd7fc6b329
+test-run-d2db16b216c4417eb84a0c32beb71812
+test-run-d32032b258934e528583b73e24ee25f1
+test-run-d6f50802c94d412588b6a7b9d47343de
+test-run-e63338558d50401bb4c7a9ae9da1c919
+test-run-eaf4a4eb95554eb1adb08676f4428abb
+test-run-edc65259aa06492aa2f01450c7cc71d7
+test-run-f30bcdadb732416b873b5af320c3bc36
+test-run-f73f2190f0834d3dbf11e4edba2ff90a
+test-run-f90480fe646d4154a5bdcb8bbfe5e7f2
+watchdog-absent-739dd922ff594bccbb20a4528f9115f8
+watchdog-arm-install-4c42929ed04342a2aa3c4a3674e0262b
+watchdog-arm-stress-614ba8c00edc49fda181d1f8e817b507
+watchdog-arm-stress-aa31b46a923f468db9fcc8db337ea5bd
+watchdog-compatibility-82e43a8f2650407cbbcd517e0f87200c
+watchdog-compatibility-9e55c64dce3c49a986098d29c052382a
+watchdog-compatibility-cd5fac9434fa47b99ed109662189ee8a
+watchdog-host-753b8da4bc0147b68ea7ac3010a4e8e3
+watchdog-host-76f7b1eaced94d88809eeb5e9e895ef5
+watchdog-host-a5be41cd6acf4ca1bd8fe186b5434597
+watchdog-host-c0cfa2e873c94fe99aa39f126acee48d
+watchdog-host-c261c47426d542a0aeaedb576054afb2
+watchdog-host-d4c3110684874e5bb51c4b335e04922c
+watchdog-host-f92e14c8799a4e11b4609bc1afe705ab
+watchdog-lost-b7781d457a754173bff8675a5e46e1d5
+watchdog-lost-bb8810c1de4443a3a7ec377bb72a2255
+watchdog-lost-c741e4feaa0a4f93abc4236f7f78df6b
+watchdog-lost-cb5496dabc0e4bc8b471b90d5ea0e777
+watchdog-lost-d8a31cdf6d70415b8284af2d702fd6c0
+watchdog-matrix-0768c029034349888a4bfc5ffbf05d25
+watchdog-matrix-1cb6b1359eb0470983fc82c951e05915
+watchdog-matrix-1cc292a7d3b345b5957ed719f90d6dcc
+watchdog-matrix-40673f41ec5240a3b47513c8a31cad25
+watchdog-normal-3adcd1c7389c4c2a9d099b932360838c
+watchdog-normal-49406f403d3440c89e637408614272c5
+watchdog-normal-7d4dcae4672d4bef9294bd91489d4750
+```
 
 </details>

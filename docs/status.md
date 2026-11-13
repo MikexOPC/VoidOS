@@ -53,7 +53,7 @@ Il log mostra tre AP parcheggiati e tre ACK, l'uscita di init e
 le vCPU. Stress e profili separati non sono stati rieseguiti in questa prova.
 
 Risultati precedenti con immagini e limiti propri nelle validazioni
-[AP nel boot ordinario](../arch/x86/kernel/cpu/percpu/documentation/k4a-validation.md),
+[AP nel boot ordinario](validation/consolidamento.md#validazione-dei-backend-x86),
 [scheduler e shell](../kernel/scheduler/documentation/k4c-validation.md),
 [consolidamento e build Meson](validation/consolidamento.md), [processi](validation/processi.md) e [protezioni](validation/sicurezza.md).
 L'elenco storico dei checkpoint è nella versione di questa pagina a `efecb8b`.

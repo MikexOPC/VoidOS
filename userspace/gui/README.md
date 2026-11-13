@@ -27,7 +27,7 @@ console secondo il percorso di recupero.
 
 La console VirtIO già trasferisce e presenta rettangoli modificati
 da una superficie kernel. Il diagnostico può riusare quel percorso.
-[Design della presentazione VirtIO](../../arch/x86/kernel/drivers/video/virtio/iommu/documentation/present.md)
+[Design della presentazione VirtIO](../../arch/x86/kernel/drivers/video/virtio/iommu/documentation/design.md)
 
 ## Memoria condivisa
 

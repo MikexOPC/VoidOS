@@ -1,4 +1,4 @@
-; Primary sources: Intel SDM revision093, official PDFs in documentation/backend.md.
+; Primary sources: Intel SDM revision093, hardware references in docs/design/consolidamento.md and the backend report at 8bad38a.
 ; Vol.2A CPUID/FXSAVE64/FXRSTOR64/FNINIT/LDMXCSR; Vol.1 ch.21 and §§3.4.3,11.6.6.
 ; Vol.3A §2.5 CR reads, §13.4.4/Fig13-5 IA32_APIC_BASE 1Bh, BSP bit8.
 ; Read-only CPU capture: CPL checked BEFORE privileged reads. No CR/MSR writes.
