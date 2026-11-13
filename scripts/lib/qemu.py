@@ -112,6 +112,19 @@ class Vm:
         """Prefix evidence such as 'PS2_KEY: ' that is not a marker line."""
         return self._wait(lambda log: log.text.count(text) >= occurrences, text, timeout)
 
+    def wait_ready(self, timeout=90):
+        """Waits for KERNEL_READY. The ordinary image ends in the shell: there it types exit first,
+        so the BSP reaches the same halted state that the checks inspect."""
+        log = self._wait(lambda log: log.count("KERNEL_READY", "OK") >= 1 or
+            log.count("KERNEL_PS2_INPUT_READY", "OK") >= 1, "KERNEL_READY or shell", timeout)
+        if log.count("KERNEL_READY", "OK") >= 1:
+            return log
+        for key in "exit":
+            self.command("sendkey " + key + " 20")
+            time.sleep(0.055)
+        self.command("sendkey ret 20")
+        return self.wait("KERNEL_READY", timeout)
+
     def _wait(self, ready, label, timeout):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:

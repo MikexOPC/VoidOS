@@ -152,7 +152,23 @@ ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-irq-compute.obj	{repo}/a
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-switch-context.obj	{repo}/arch/x86/kernel/scheduler/assembly/switch/context.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-profile-capture.obj	{repo}/arch/x86/kernel/scheduler/assembly/profile/capture.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-profile-permissions.obj	{repo}/arch/x86/kernel/scheduler/assembly/profile/permissions.asm
+ordinary	c	kernel/console/video/console.c
+ordinary	c	kernel/console/video/render.c
+ordinary	c	kernel/console/video/service/console.c
+ordinary	c	kernel/console/video/measurement/budget.c
+ordinary	c	kernel/console/video/batch/render.c
+ordinary	c	arch/x86/kernel/drivers/video/framebuffer/live/group.c
+ordinary	c	arch/x86/kernel/drivers/video/framebuffer/console/runtime.c
+ordinary	c	arch/x86/kernel/drivers/video/framebuffer/console/requests.c
+ordinary	c	kernel/console/video/requests/queue.c
+ordinary	c	kernel/console/video/requests/consumer.c
+ordinary	c	kernel/console/video/pointer/state.c
+ordinary	rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	-D	warnings	{repo}/kernel/console/video/rust/cursor/plan.rs	-o	{out}/console-grid.obj
+ordinary	rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	-D	warnings	{repo}/kernel/console/video/rust/text/utf8.rs	-o	{out}/console-text.obj
+ordinary	rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	-D	warnings	{repo}/kernel/console/video/rust/ffi/timing.rs	-o	{out}/console-timing.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/drivers/video/framebuffer/rust/ffi/mode.rs	-o	{out}/framebuffer-fields.obj
+ordinary	rustc.exe	--edition=2024	--crate-type=staticlib	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	lto=fat	-C	codegen-units=1	-C	overflow-checks=yes	-D	warnings	{repo}/kernel/console/video/rust/ffi/requests.rs	-o	{out}/console-requests.lib	--cfg	console_ap_notify
+ordinary	rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	-D	warnings	{repo}/kernel/console/video/pointer/rust/ffi/movement.rs	-o	{out}/pointer-plan.obj
 rustc.exe	--edition=2024	--crate-type=staticlib	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-C	lto=fat	-C	codegen-units=1	-C	overflow-checks=yes	-D	warnings	--cfg	scheduler_core_lock	{repo}/kernel/scheduler/rust/ffi/gateway.rs	-o	{out}/scheduler.lib
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/devices/rust/encoding/validation.rs	-o	{out}/lapic-encoding.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/lib/firmware/acpi/rust/rsdp/validation.rs	-o	{out}/acpi-rsdp-fields.obj
@@ -184,6 +200,26 @@ rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/mm/rust/regions/validation.rs	-o	{out}/validation.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/window/rust/layout/validation.rs	-o	{out}/window-layout.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/mm/objects/rust/validation/bounds.rs	-o	{out}/object-bounds.obj
+ordinary	c	kernel/drivers/input/ps2/controller/controller.c
+ordinary	c	kernel/drivers/input/ps2/controller/transport.c
+ordinary	c	kernel/drivers/input/ps2/controller/discovery.c
+ordinary	c	kernel/drivers/input/ps2/mouse/protocol.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/runtime/route.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/runtime/interrupt.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/runtime/session.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/runtime/task.c
+ordinary	c	kernel/console/line/line.c
+ordinary	c	kernel/shell/shell.c
+ordinary	c	kernel/shell/queue.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/shell/task.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/runtime/consumer/stream.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/runtime/consumer/recovery.c
+ordinary	c	kernel/drivers/input/ps2/mouse/decoder.c
+ordinary	c	kernel/drivers/input/ps2/mouse/stream/control.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/mouse/session.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/mouse/task.c
+ordinary	rustc	--edition=2024	--crate-type=lib	--emit=obj	--target=x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/drivers/input/ps2/mouse/rust/ffi/gateway.rs	-o	{out}/ps2-mouse-rust.obj
+ordinary	rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/input/integration/rust/ffi/ps2.rs	-o	{out}/ps2-decoder.obj
 c	kernel/sync/lock.c
 c	kernel/sync/acquire.c
 c	arch/x86/kernel/cpu/percpu/startup/commit/retention.c
@@ -246,6 +282,11 @@ c	arch/x86/kernel/cpu/percpu/service/wait.c
 c	arch/x86/kernel/cpu/percpu/service/native/runtime.c
 c	arch/x86/kernel/cpu/percpu/service/native/transport.c
 c	arch/x86/kernel/scheduler/remote/scope.c
+ordinary	c	arch/x86/kernel/scheduler/admission/native.c
+ordinary	c	arch/x86/kernel/scheduler/remote/remote.c
+ordinary	c	arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.c
+ordinary	c	arch/x86/kernel/drivers/video/framebuffer/console/wake/hardware.c
+ordinary	c	arch/x86/kernel/drivers/input/ps2/shell/remote.c
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	no-vectorize-loops	-C	no-vectorize-slp	{repo}/arch/x86/kernel/cpu/percpu/service/rust/mailbox/api.rs	-o	{out}/ipi-mailbox.obj
 nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/ipi-entry-interrupt.obj	{repo}/arch/x86/kernel/cpu/percpu/service/assembly/entry/interrupt.asm
 nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/ipi-runtime-idle.obj	{repo}/arch/x86/kernel/cpu/percpu/service/assembly/runtime/idle.asm
@@ -258,6 +299,9 @@ c	arch/x86/kernel/cpu/percpu/startup/commit/native.c
 ordinary	rustc.exe	--edition=2024	-D	warnings	--crate-type=bin	--crate-name	user_init	--target	x86_64-unknown-none	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	-C	link-arg=-T{repo}/userspace/init/link.ld	-C	link-arg=-zmax-page-size=4096	-C	link-arg=--build-id=none	-C	link-arg=--no-gc-sections	{repo}/userspace/init/init.rs	-o	{out}/user-init.elf
 ordinary	nasm.exe	-f	win64	-Wall	-Werror	-I{out}/	-o	{out}/user-init-image.obj	{repo}/kernel/process/programs/image.asm
 ordinary	c	kernel/process/boot.c	k6-boot.obj
+ordinary	rustc.exe	--edition=2024	-D	warnings	--crate-type=bin	--crate-name	user_bridge	--target	x86_64-unknown-none	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	-C	link-arg=-T{repo}/userspace/init/link.ld	-C	link-arg=-zmax-page-size=4096	-C	link-arg=--build-id=none	-C	link-arg=--no-gc-sections	{repo}/bridge/service/rust/status/main.rs	-o	{out}/user-bridge.elf
+ordinary	nasm.exe	-f	win64	-Wall	-Werror	-I{out}/	-o	{out}/user-bridge-image.obj	{repo}/kernel/process/programs/bridge.asm
+ordinary	c	arch/x86/kernel/drivers/input/ps2/shell/bridge.c	shell-bridge.obj
 user	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	k6_process	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	codegen-units=1	{repo}/kernel/process/rust/lib.rs	-o	{out}/k6-policy.obj
 user	c	arch/x86/kernel/process/runtime.c	k6-process.obj
 user	c	arch/x86/kernel/process/image.c	k6-image.obj

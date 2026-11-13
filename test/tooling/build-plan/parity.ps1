@@ -46,8 +46,10 @@ function Assert-PlanRejected([string]$Name, [hashtable]$Options, [string[]]$Argu
     Write-Host "[ Pass ] $Name (rejected without emitting commands)"
 }
 
-Assert-PlanParity 'ordinary' @{} @()
-Assert-PlanParity 'ordinary-explicit' @{TestApService = 'none'} @('-TestApService', 'none')
+# The ordinary image is the shell image (docs/design/immagine-unica.md, part A).
+$shell = @{Ps2Input = $true; Ps2Mouse = $true; ConsoleShell = $true; InteractiveInput = $true}
+Assert-PlanParity 'ordinary' $shell @()
+Assert-PlanParity 'ordinary-explicit' ($shell + @{TestApService = 'none'}) @('-TestApService', 'none')
 Assert-PlanParity 'bsp-periodic' @{TestSchedulerPeriodic = $true} @('-TestSchedulerPeriodic')
 Assert-PlanParity 'ap-timer' @{TestApService = 'ap-timer'} @('-TestApService', 'ap-timer')
 Assert-PlanParity 'k6-process' @{TestK6Process = $true} @('-TestK6Process')

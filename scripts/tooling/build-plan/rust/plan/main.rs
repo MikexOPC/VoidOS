@@ -90,6 +90,17 @@ fn c_command(profile: Profile, source: &str, object: Option<&str>, optimize: boo
     ])
     .map(String::from)
     .collect();
+    if profile == Profile::Ordinary {
+        command.extend(
+            [
+                "/DKERNEL_CONSOLE_SHELL=1",
+                "/DKERNEL_INPUT_INTERACTIVE=1",
+                "/DKERNEL_PS2_INPUT=1",
+                "/DKERNEL_PS2_MOUSE=1",
+            ]
+            .map(String::from),
+        );
+    }
     if profile == Profile::Periodic {
         command.extend([
             "/DKERNEL_TEST_SCHEDULER_PREEMPTION=1".into(),
@@ -99,6 +110,7 @@ fn c_command(profile: Profile, source: &str, object: Option<&str>, optimize: boo
     command.push("/DKERNEL_AP_RUNTIME=1".into());
     if profile == Profile::Ordinary {
         command.push("/DKERNEL_USER_PROCESS=1".into());
+        command.push("/DKERNEL_AP_TASKS=1".into());
     }
     if profile == Profile::ApTimer {
         command.push("/DKERNEL_TEST_AP_SERVICE=7".into());
@@ -152,7 +164,7 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
             ["c", source] => c_command(profile, source, None, true),
             ["c", source, object] => c_command(profile, source, Some(object), true),
             ["c-od", source] => c_command(profile, source, None, false),
-            ["ml64.exe" | "nasm.exe" | "rustc.exe", _, ..] => {
+            ["ml64.exe" | "nasm.exe" | "rustc.exe" | "rustc", _, ..] => {
                 fields.iter().map(|field| (*field).into()).collect()
             }
             _ => return Err("Invalid build catalog row."),
@@ -162,6 +174,16 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
                 command.len() - 1,
                 "/DKERNEL_TEST_SCHEDULER_PREEMPTION=1".into(),
             );
+        }
+        if profile == Profile::Ordinary
+            && (fields.contains(&"{out}/ipi-entry-interrupt.obj")
+                || fields.contains(&"{out}/ipi-runtime-idle.obj"))
+        {
+            let output = command
+                .iter()
+                .position(|arg| arg == "-o")
+                .ok_or("Missing NASM output.")?;
+            command.insert(output, "-DKERNEL_AP_ADMISSION=1".into());
         }
         if matches!(profile, Profile::Process(_)) && fields.contains(&"/Fo{out}/k6-transition.obj") {
             command.insert(command.len() - 2, "/DK6_DIAGNOSTICS=1".into());
