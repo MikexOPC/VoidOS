@@ -1,6 +1,6 @@
 # K3-A: contesto per CPU sul BSP tramite GS
 
-29 ottobre 2026. Scelta A approvata dall’utente; implementazione K3-A verificata sul BSP; prove e limiti in [k3-validation.md](k3-validation.md).
+29 ottobre 2026. Scelta A approvata dall’utente; implementazione K3-A verificata sul BSP; prove e limiti in [validazione del checkpoint](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu).
 GS/per-CPU è già la direzione D2 approvata; qui si sceglie il passaggio
 concreto dal contesto di bootstrap al contesto runtime, prima degli AP.
 

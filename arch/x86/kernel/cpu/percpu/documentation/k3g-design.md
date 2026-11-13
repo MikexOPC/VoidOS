@@ -2,7 +2,7 @@
 
 30 ottobre 2026. Scelta A confermata dall'utente: riserva precoce nel kernel.
 Dipendenza necessaria per
-completare il gate SMP di [K3-F](k3f-validation.md). In questo blocco nessun
+completare il gate SMP di [K3-F](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu). In questo blocco nessun
 INIT/SIPI, nessun AP attivo e nessuna nuova istruzione privilegiata.
 
 ## Fonti verificate
@@ -97,4 +97,4 @@ Fonti primarie Intel e Linux lette online; UEFI AllocatePages riscontrato
 nel risultato indicizzato ufficiale, pagina diretta non leggibile (HTTP 403).
 La ricerca iniziale era solo documentale. L'implementazione aggiunta dopo
 la scelta dell'utente e le relative prove sono registrate separatamente
-in [k3g-validation.md](k3g-validation.md). Non chiudono il gate SMP K3-F.
+in [validazione del checkpoint](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu). Non chiudono il gate SMP K3-F.

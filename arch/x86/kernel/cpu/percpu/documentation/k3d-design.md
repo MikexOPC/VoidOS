@@ -1,6 +1,6 @@
 # K3-D — risorse private degli AP, prima dell’avvio
 
-29 ottobre 2026. Scelta A approvata: arena completa con rollback; implementazione verificata sul BSP/QEMU; [prove e limiti](k3d-validation.md).
+29 ottobre 2026. Scelta A approvata: arena completa con rollback; implementazione verificata sul BSP/QEMU; [prove e limiti](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu).
 K3-C associa indici e identità; questo blocco prepara risorse per gli AP
 abilitati dal firmware, senza INIT/SIPI, LTR su AP o nuovo core operativo.
 

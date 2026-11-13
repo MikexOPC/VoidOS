@@ -1,7 +1,7 @@
 # K3-E — contesti AP e vincolo di durata delle risorse
 
 29 ottobre 2026. Scelta A approvata: rollback fino al tentativo di avvio AP.
-Implementazione verificata nel profilo BSP; [prove e limiti](k3e-validation.md).
+Implementazione verificata nel profilo BSP; [prove e limiti](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu).
 
 ## Stato verificato e scopo
 
@@ -9,7 +9,7 @@ K3-D ha predisposto arena, stack, guardie e GDT/TSS degli AP, senza
 avviarli. `percpu.c` inizializza soltanto `areas[0]`; `clock/binding.c`
 associa il timer PM soltanto al BSP. `resources/resources.h` non espone
 ancora uno stato committed che impedisca il rilascio prima dell'avvio.
-Le prove K3-D sono riportate in [k3d-validation.md](k3d-validation.md).
+Le prove K3-D sono riportate in [validazione del checkpoint](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu).
 
 Questo blocco prepara i contesti software degli AP e il vincolo di durata.
 Non invia INIT/SIPI, non installa GS sugli AP e non li ammette ai lock.
@@ -99,4 +99,4 @@ Nessuna dichiarazione SMP finche gli AP non eseguono codice verificato.
 
 La stesura iniziale era solo documentale: build, ASan e QEMU erano N/A.
 Per l'implementazione valgono i gate eseguibili; le prove sono separate in
-[k3e-validation.md](k3e-validation.md).
+[validazione del checkpoint](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu).

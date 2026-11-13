@@ -6,8 +6,8 @@ non e completata; il gate di input operativo resta da eseguire.
 
 ## Test host
 
-[Log finale](../../../../build/ps2-decoder-host-final.log), evidenze
-[cartella host](../../../../build/ps2-decoder-1e53b635f8974c1186f32310d51db0c9/tools.log).
+Log finale (`kernel/build/ps2-decoder-host-final.log`), evidenze
+cartella host (`kernel/build/ps2-decoder-1e53b635f8974c1186f32310d51db0c9/tools.log`).
 Undici casi Rust passano sia debug sia release, con overflow checks e
 warning come errori. Ogni modalita include tutte le 65.536 coppie di byte,
 un milione di byte pseudocasuali, mutazioni di ogni posizione della coda
@@ -33,8 +33,8 @@ Rust dentro il kernel dopo il ritiro dello stack loader. Produce
 normale `KERNEL_READY`. Il profilo non puo essere installato nella ESP
 ordinaria o combinato con altri fault/loop diagnostici.
 
-[Log diagnostico](../../../../build/ps2-decoder-firmware-final.log),
-[risultato](../../../../build/ps2-decoder-firmware-5fbe62cdbcc84a47a2b2e1412311f53c/results.json):
+Log diagnostico (`kernel/build/ps2-decoder-firmware-final.log`),
+risultato (`kernel/build/ps2-decoder-firmware-5fbe62cdbcc84a47a2b2e1412311f53c/results.json`):
 dieci boot consecutivi, QEMU q35/TCG/OVMF, verifiche CPU/memoria del
 harness scheduler e marker del parser in ogni boot. SHA256 immagine:
 `B15F67FE53E31369FD11DA488D832F635B101DB94021AA9143A1E4EA68D4D54D`.
@@ -43,8 +43,8 @@ correttamente o che una tastiera reale funzioni.
 
 Profilo ordinario: altri dieci boot consecutivi, stesso harness, marker
 e stringhe delle prove decoder assenti dall'immagine e dai log.
-[Log ordinario](../../../../build/ps2-decoder-ordinary-final.log),
-[risultato](../../../../build/ps2-decoder-firmware-902011b99fb74cbe9565652c9e3bef84/results.json).
+Log ordinario (`kernel/build/ps2-decoder-ordinary-final.log`),
+risultato (`kernel/build/ps2-decoder-firmware-902011b99fb74cbe9565652c9e3bef84/results.json`).
 SHA256: `9B3B97DE9CDF5167310A3A09578F9E101B18B2500E3305E419D51B1FA5AF85CC`.
 Le due immagini sono intenzionalmente distinte: nessuna prova sul parser
 ordinario viene dedotta dal profilo diagnostico.
@@ -63,7 +63,7 @@ I soli hook esterni sono condizionali in main/build; nessuna modifica a
 reuse/. Collegamento del controller e della task consumer rinviato al
 successivo blocco dello stesso driver, con fonti/profilo e deadline.
 Main resta a 201 righe e build a 293; stile, limite cartelle e link
-verificati. [Hash sorgenti finali](../../../../build/ps2-decoder-source-final.json).
+verificati. Hash sorgenti finali (`kernel/build/ps2-decoder-source-final.json`).
 
 Riproduzione dalla root del progetto:
 

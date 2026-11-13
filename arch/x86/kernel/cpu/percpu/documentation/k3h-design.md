@@ -1,9 +1,9 @@
 # K3-H — root inattiva per l'ingresso AP
 
 30 ottobre 2026. Scelta A approvata: root condivisa, avvio sequenziale.
-Implementazione e limiti in [k3h-validation.md](k3h-validation.md). Segue la
-[riserva K3-G](k3g-validation.md); serve a completare in seguito il
-[gate SMP K3-F](k3f-validation.md). Nessun AP viene avviato in questo blocco.
+Implementazione e limiti in [validazione del checkpoint](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu). Segue la
+[riserva K3-G](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu); serve a completare in seguito il
+[gate SMP K3-F](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu). Nessun AP viene avviato in questo blocco.
 
 ## Fonti e vincoli verificati
 

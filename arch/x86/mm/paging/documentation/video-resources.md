@@ -82,22 +82,23 @@ Accounting mock:125 pagine libere con tre tabelle pinned,128 dopo cleanup.
 ASan strumenta C host; non Rust, firmware o RAM fisica. Valgrind e
 coverage linee/branch non misurati. Nessuna allocazione runtime aggiunta.
 
-[Log host finale](../../../../../kernel/build/paging-owned-final.log),
-[cppcheck](../../../../../kernel/build/paging-owned-final/cppcheck.xml),
-[manifest sorgenti](../../../../../kernel/build/paging-owned-review.json).
+Log host finale (`kernel/build/paging-owned-final.log`),
+cppcheck (`kernel/build/paging-owned-final/cppcheck.xml`),
+manifest sorgenti (`kernel/build/paging-owned-review.json`).
 Cppcheck: nessun error/warning/performance/portability; le informazioni
 sugli include di sistema e lo scope di una variabile sono distinte dai
 warning del compilatore. Non attestano una review hardware live.
 
-Il comando `scripts/firmware.ps1` ricompila se non riceve una directory
+Dalla radice, `./arch/x86/mm/paging/scripts/firmware.ps1 -Boots 10`
+ricompila se non riceve una directory
 e prova dieci boot ordinari con video metadata, poi dieci senza display.
 Campagna finale:10/10 con video e10/10 senza, nessun fault inatteso.
 Kernel SHA256:2D5C645F11D7FD8F543B287331E0DC6BDA839F1678804312AEBE31FA8F696FA9.
 Manifest delle due campagne:
-[video](../../../../../kernel/build/framebuffer-firmware-2cf78f29c1314636adade266a3b9cd7c/results.json),
-[assente](../../../../../kernel/build/framebuffer-firmware-2896194a96cf49a99e6b57a09c306c4e/results.json).
+video (`kernel/build/framebuffer-firmware-2cf78f29c1314636adade266a3b9cd7c/results.json`),
+assente (`kernel/build/framebuffer-firmware-2896194a96cf49a99e6b57a09c306c4e/results.json`).
 La suite host kernel completa passa anche sullo stato finale:
-[log](../../../../../kernel/build/paging-owned-kernel-host.log).
+log (`kernel/build/paging-owned-kernel-host.log`).
 OVMF/ESP e immagine identificata, KERNEL_READY, CPU capture e assenza di
 fault inattesi sono verificati dal provider posseduto esistente.
 Questa e regressione del percorso RAM/LAPIC sulla nuova struttura:

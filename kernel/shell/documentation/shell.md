@@ -69,7 +69,7 @@ regressione ordinaria e stress definiti. Risultati eseguiti sotto.
 Input ELF SHA256:
 `566B0C31D5B498EAC56B540D6EE8D0D1372537D79BEA0C013DC3B2AB3DD99F0A`.
 
-- [Host input/shell](../../build/ps2-decoder-a5aca9c631fd43b58900eb44dde5a155/tools.log):
+- Host input/shell (`kernel/build/ps2-decoder-a5aca9c631fd43b58900eb44dde5a155/tools.log`):
   24 test Rust sia debug sia release (20 precedenti +2 command +2 queue).
   Stati della FIFO e operazioni esplorati esaustivamente,10000 cicli di wrap,
   full/empty/close, token mutati e argomenti dei builtin. Rust/Clippy con
@@ -81,12 +81,12 @@ Input ELF SHA256:
   Suite decoder/testo/editor/controller/discovery/runtime ancora verdi.
   Cppcheck20 file senza error/warning/performance/portability; note
   style/information non sono dichiarate assenti.
-- [Backend e accounting](../../build/scheduler-context-0ff34f7c44e14b6aa91f2e206aa3639b/tools.log):
+- Backend e accounting (`kernel/build/scheduler-context-0ff34f7c44e14b6aa91f2e206aa3639b/tools.log`):
   suite backend completa passata. Test prestiti:290002 CHECK per esecuzione,
   ripetuto10 volte,10000 cicli sia a due sia a tre lease; allocator/CPU mock.
   Copia di identita, pin terzo mancante, budget alterato, rollback e fine
   prestito. ASan C; cppcheck24 file. Nessuna modifica a registri o Assembly.
-- [Dieci boot shell](../../build/ps2-input-firmware-a2847258df784308a8a193f6ae6db181/results.json):
+- Dieci boot shell (`kernel/build/ps2-input-firmware-a2847258df784308a8a193f6ae6db181/results.json`):
   10/10 consecutivi q35/TCG/OVMF/BSP, immagine ESP verificata. Per boot98
   press,66 caratteri e10 righe gestite dalla task2. Help/status, argomenti
   errati, comando ignoto, echo vuoto, `echo ciao è €` e `echo exit` letterale.
@@ -94,18 +94,18 @@ Input ELF SHA256:
   Tre task completate dal profilo, FIFO closed-empty, tutti gli stack
   raccolti, budget20467 pagine prima/dopo, KERNEL_READY. Trace controllato
   per IRQ in task e fault/triple fault inattesi: nessuno rilevato.
-- [Stress](../../build/ps2-input-firmware-2ac704c00bb74be78409ea74df0a9746/results.json):
+- Stress (`kernel/build/ps2-input-firmware-2ac704c00bb74be78409ea74df0a9746/results.json`):
   stessa immagine,612 press/611 release,578 caratteri,12 righe/12 consegne,
   un overflow editor rifiutato dalla shell,1628 IRQ in task e52 idle.
   Due righe da256 byte, incluso accento attraverso il confine dei blocchi
   di output; UTF-8 e righe confrontati esattamente. Cleanup/budget ripristinati.
   Il test FULL della FIFO e il relativo wait sono host/mock: il firmware
   stress non e dichiarato prova di saturazione della FIFO fra task.
-- [Regressione ordinaria](../../build/ps2-decoder-firmware-a88e432c4cb642f99ad20b4d0a9bcecc/results.json):
+- Regressione ordinaria (`kernel/build/ps2-decoder-firmware-a88e432c4cb642f99ad20b4d0a9bcecc/results.json`):
   10/10 boot dell'immagine distinta
   `A0C87C2863BB19428A1C263E71BDD25319BA7512876843ED117E78D34E467B0D`,
   compresi i profili a due stack con accounting32 pagine.
-- [Manifest sorgenti](../../build/ps2-shell-source-final.json): input,
+- Manifest sorgenti (`kernel/build/ps2-shell-source-final.json`): input,
   script di build e adapter scheduler/accounting. Massimo397 righe
   nell'integrazione scheduler; cartelle funzionali input massimo5 file.
   Nessun trailing whitespace/CR isolato, diff e link locali verificati.

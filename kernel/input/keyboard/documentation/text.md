@@ -61,7 +61,7 @@ route e entry IRQ valgono le fonti del [runtime](../../../../arch/x86/kernel/dri
 Input ELF SHA256:
 `BCDD93107AAEEFA4958FCA10F6E33F72B4CFE894E6F5742E4E2A08915DBC85F6`.
 
-- [Host](../../../build/ps2-decoder-cd0326b9d7b6466fb53da92bf10bcdaa/tools.log):
+- Host (`kernel/build/ps2-decoder-cd0326b9d7b6466fb53da92bf10bcdaa/tools.log`):
   11 decoder + 5 layout + 1 UTF-8, tutti passati sia debug sia release.
   Layout: 657920 combinazioni stato/codice/azione, Shift indipendenti,
   Caps ripetuto, accenti, AltGr e invalidi. UTF-8: tutti i valori da zero
@@ -72,21 +72,21 @@ Input ELF SHA256:
   Clippy con warning come errori; cppcheck su 13 file senza diagnostiche
   error/warning/performance/portability. Restano note style/information.
   Corretto l'incremento dentro assert trovato dall'analisi del nuovo test.
-- [Dieci boot italiani](../../../build/ps2-input-firmware-ec40fb097d4846b1aede69044c66039a/results.json):
+- Dieci boot italiani (`kernel/build/ps2-input-firmware-ec40fb097d4846b1aede69044c66039a/results.json`):
   10/10 consecutivi, q35/TCG/OVMF/BSP. Sequenza Unicode e byte UTF-8
   confrontati esattamente, Shift su entrambi i lati, Caps, accenti, AltGr,
   Ctrl senza testo e tre eventi editing. Per boot 35 press, 33–34 release,
   14 caratteri, 9–22 IRQ durante task e 24–35 idle supervisionati.
   Budget fisico 20468 pagine prima/dopo, cleanup confermato e KERNEL_READY;
   nessun fault inatteso o triple fault rilevato dal controllo del trace.
-- [Stress](../../../build/ps2-input-firmware-a48438900e26440e9fa280479f1c63ce/results.json):
+- Stress (`kernel/build/ps2-input-firmware-a48438900e26440e9fa280479f1c63ce/results.json`):
   stessa immagine, 100 tasti A aggiuntivi, 135 press/134 release,
   114 caratteri confrontati, 294 IRQ in task, 50 idle, stesso budget.
-- [Dieci boot ordinari](../../../build/ps2-decoder-firmware-09808837553b464e89d3b52b9a2f9091/results.json):
+- Dieci boot ordinari (`kernel/build/ps2-decoder-firmware-09808837553b464e89d3b52b9a2f9091/results.json`):
   10/10, immagine distinta SHA256
   `AD2025910A867DDD939A14B8EB863B57C7544CC71F85F70EE1D7B1C88920B7CA`.
   Regressione dei marker, stato CPU/memoria e cleanup del profilo ordinario.
-- [Manifest sorgenti](../../../build/ps2-text-source-final.json): dimensioni
+- Manifest sorgenti (`kernel/build/ps2-text-source-final.json`): dimensioni
   e hash. Massimo 230 righe nei sorgenti del modulo, cinque file diretti;
   nessun trailing whitespace/CR isolato. Diff verificato.
 

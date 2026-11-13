@@ -83,7 +83,7 @@ Il protocollo release/acquire deriva dal contratto Rust delle atomiche
 ([Ordering](https://doc.rust-lang.org/core/sync/atomic/enum.Ordering.html))
 e dal design locale approvato. IF=0 non sostituisce la sincronizzazione.
 Per IDTR, TSS, GS e NMI restano le sezioni hardware e le prove documentate
-in [ritorno](k3i-return-validation.md) e [ingresso](k3i-private-entry.md).
+in [ritorno](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu) e [ingresso](k3i-private-entry.md).
 Prima di nuovi accessi privilegiati verificarne nuovamente prerequisiti,
 offset e fonte primaria. Nessun nuovo accesso hardware in questo documento.
 

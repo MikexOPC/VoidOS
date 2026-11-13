@@ -7,7 +7,7 @@ correnti sono in [k3i-runtime-validation.md](k3i-runtime-validation.md).
 29 ottobre 2026. L'utente ha scelto il sistema completo, opzione B di
 [k3f-design.md](k3f-design.md). Questo documento ne definisce il contratto
 concreto. Aggiornamento 30 ottobre: scelta confermata per NMI diretti;
-backend implementato e verificato sul BSP. Le [prove K3-F](k3f-validation.md)
+backend implementato e verificato sul BSP. Le [prove K3-F](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu)
 distinguono questo risultato dal gate SMP ancora aperto.
 
 ## Obiettivo e riscontri
@@ -185,5 +185,5 @@ descrittori, ammissione CPU, accesso LAPIC permanente, clock PM, seriale,
 bootstrap, build e test. Nessuna riscrittura generale di IRQ, scheduler,
 allocator o driver. Riutilizzo di `reuse/` escluso. Fonti e diff per questa
 stesura iniziale sono storici; build e prove finali del backend BSP sono
-registrate nel [rapporto di validazione](k3f-validation.md). Il punto 3
+registrate nel [rapporto di validazione](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu). Il punto 3
 resta da eseguire dopo l'avvio effettivo degli AP.

@@ -344,7 +344,7 @@ accettano buffer kernel fidati vivi; non validano puntatori utenti.
 
 ## Prove host eseguite
 
-[Suite console](../../../build/console-shell-host.log), artefatti in
+Suite console (`kernel/build/console-shell-host.log`), artefatti in
 `kernel/build/console-shell-host/`:
 
 - Rust debug/release e Clippy con warning come errori: UTF-8 valido,
@@ -362,7 +362,7 @@ accettano buffer kernel fidati vivi; non validano puntatori utenti.
 - MSVC warning come errori e ASan sul C; cppcheck generale, diagnostico
   e profilo operativo, senza diagnostiche bloccanti.
 
-[Suite input/shell](../../../build/console-shell-input-host.log):
+Suite input/shell (`kernel/build/console-shell-input-host.log`):
 C/Rust shell 220066 CHECK, incluse bind/unbind originali, sink fallito,
 echo italiano e exit; bridge con backpressure, cancel e conferma video
 prima del risveglio, fallimento della conferma senza segnale;
@@ -382,35 +382,35 @@ Shell finale: `kernel/build/console-shell-final-image/kernel.elf`, SHA256
 Ordinaria: `kernel/build/console-shell-ordinary/kernel.elf`, SHA256
 `30A68B1C1CF48DDCDA820CD0E7589EB56ABC5A11A5394FB0FAA490426A3721A3`.
 
-- Campagna video intermedia: [manifest](../../../build/ps2-input-firmware-fe0e77facc4c49f88ffa01bb3df9865b/results.json),
+- Campagna video intermedia: manifest (`kernel/build/ps2-input-firmware-fe0e77facc4c49f88ffa01bb3df9865b/results.json`),
   dieci boot consecutivi, 70627 celle e 10044 gruppi. Per boot: dieci righe/
   comandi, 640 pixel fisici selezionati e 786432 pixel visibili verificati.
   Budget iniziale/finale 20420 pagine in tutti i boot; nessuna perdita input
   o fault inatteso osservato, cleanup input/watchdog e KERNEL_READY.
   Immagine `81C8CC696930DA745505A1C7F7FF80CE2DFFB0E696F85E280C1EB58C3676A5CC`,
   precedente alle sole diagnostiche aggiunte al ramo di errore idle.
-- Fallback seriale intermedio: [dieci boot con diagnostiche](../../../build/ps2-input-firmware-8b1eb8d59e1642f0a0d3d706440c3c0e/results.json)
-  e [venti consecutivi aggiuntivi](../../../build/ps2-input-firmware-07f83bfb8d1048178b60fd9091ff77b7/results.json)
+- Fallback seriale intermedio: dieci boot con diagnostiche (`kernel/build/ps2-input-firmware-8b1eb8d59e1642f0a0d3d706440c3c0e/results.json`)
+  e venti consecutivi aggiuntivi (`kernel/build/ps2-input-firmware-07f83bfb8d1048178b60fd9091ff77b7/results.json`)
   passati sull'immagine `55F18BC2F7C168F92E5D5187394478FA863F0724EFC3D0D3A79B38BD45E38A98`.
-- Stress sull'immagine finale: [manifest](../../../build/ps2-input-firmware-b195fd9a860440c5aaf064c1c7ac5f8c/results.json),
+- Stress sull'immagine finale: manifest (`kernel/build/ps2-input-firmware-b195fd9a860440c5aaf064c1c7ac5f8c/results.json`),
   un boot senza video, 612 pressioni, 1860 byte, 12 righe/comandi, overflow
   rifiutato e Backspace. Budget 20465 pagine ripristinato, cleanup e KERNEL_READY.
-- Fallback finale: [manifest](../../../build/ps2-input-firmware-c60dc5b95da945cdb98611d3434d6a6a/results.json),
+- Fallback finale: manifest (`kernel/build/ps2-input-firmware-c60dc5b95da945cdb98611d3434d6a6a/results.json`),
   dieci boot consecutivi della stessa immagine finale, input/shell seriali,
   marker SERIAL_CLEAN e assenza del sink video; cleanup e budget 20465
   ripristinato.
-- Ordinaria finale: [report](../../../build/framebuffer-live-e0a60f2c2c204a4994ffc1ac3cbd965a/console-grid-results.json),
+- Ordinaria finale: report (`kernel/build/framebuffer-live-e0a60f2c2c204a4994ffc1ac3cbd965a/console-grid-results.json`),
   dieci boot consecutivi dell'immagine 30A68B...; nessun probe console RAM
   diagnostico, loader invariato e KERNEL_READY. Trenta boot finali complessivi.
 
-Video sull'immagine finale: [manifest](../../../build/ps2-input-firmware-8f777c9f936147829dd9779654a9845b/results.json),
+Video sull'immagine finale: manifest (`kernel/build/ps2-input-firmware-8f777c9f936147829dd9779654a9845b/results.json`),
 dieci boot consecutivi, 70374 celle e 9987 gruppi, 640 pixel fisici e
 786432 visibili verificati per boot, budget 20420 ripristinato. Massimo
 276192 tick PM, circa 77,16 ms; sei boot con massimo sopra 10 ms.
 Il gate 100 ms passa, l'obiettivo 10 ms non e stabile. Non confondere queste
 misure TCG con una garanzia hardware o end-to-end.
 
-Review di struttura e link: [manifest](../../../build/console-render-review.json),
+Review di struttura e link: manifest (`kernel/build/console-render-review.json`),
 massimo sorgente C/Rust/header nel perimetro 397 righe, nessuna cartella
 funzionale verificata oltre cinque sorgenti. Layout dei test centralizzato
 e diff senza errori di whitespace. `reuse/` non modificato; nessun commit,
