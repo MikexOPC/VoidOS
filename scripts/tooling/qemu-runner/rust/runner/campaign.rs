@@ -89,8 +89,9 @@ pub fn run(campaign: &Campaign) -> Result<bool, String> {
     let total = u64::from(campaign.boots);
     let image = hash_file(campaign.image).map_err(|error| format!("Image hash: {error}"))?;
     let loader = hash_file(&campaign.paths.loader).map_err(|error| format!("Loader hash: {error}"))?;
+    let name = if campaign.ordinary { "k6-ordinary" } else if campaign.process { "k6-process" } else { RUNNER };
     let report = object(vec![
-        ("Runner", Value::Text(if campaign.ordinary { "k6-ordinary" } else if campaign.process { "k6-process" } else { RUNNER }.to_string())),
+        ("Runner", Value::Text(name.to_string())),
         ("Image", Value::Text(image)),
         ("Loader", Value::Text(loader)),
         ("Passed", Value::Number(passed)),
@@ -100,7 +101,7 @@ pub fn run(campaign: &Campaign) -> Result<bool, String> {
     std::fs::write(campaign.out.join("results.json"), render(&report)).map_err(|error| format!("Results: {error}"))?;
     report_boots(&results, campaign.boots);
     let success = passed == total;
-    println!("RESULT {} {RUNNER} {passed}/{total}", if success { "PASS" } else { "FAIL" });
+    println!("RESULT {} {name} {passed}/{total}", if success { "PASS" } else { "FAIL" });
     println!("Evidence: {}", campaign.out.display());
     Ok(success)
 }
