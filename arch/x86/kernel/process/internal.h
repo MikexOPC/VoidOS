@@ -81,7 +81,7 @@
 #endif
 
 #ifdef KERNEL_TEST_K6_PROCESS
-#define K6_NEGATIVE(number) (k6_negative == (number))
+#define K6_NEGATIVE(number) (process_negative == (number))
 #else
 #define K6_NEGATIVE(number) 0
 #endif
@@ -160,13 +160,13 @@ _Static_assert(X86_PROCESS_FRAME_WORDS == USER_FRAME_WORDS, "Saved process frame
 // ====== stato condiviso con l'ingresso Assembly ======
 
 extern X86_PROCESS_RUNTIME process_rt;
-extern volatile BOOT_U64 k6_owner, k6_kernel_root, k6_user_root, k6_stack_top, k6_user_rsp, k6_saved_rsp;
-extern volatile BOOT_U64 k6_fault[7], k6_fault_cr2, k6_exit_kind, k6_drain;
-extern unsigned char k6_fx_saved[512];
-extern const unsigned char k6_fx_clean[512];
+extern volatile BOOT_U64 process_owner, process_kernel_root, process_user_root, process_stack_top, process_user_rsp, process_saved_rsp;
+extern volatile BOOT_U64 process_fault[7], process_fault_cr2, process_exit_kind, process_drain;
+extern unsigned char process_fx_saved[512];
+extern const unsigned char process_fx_clean[512];
 #ifdef KERNEL_TEST_K6_PROCESS
-extern volatile BOOT_U64 k6_window, k6_window_budget, k6_negative;
-extern volatile BOOT_U64 k6_nmi_armed, k6_nmi_count, k6_nmi_rip, k6_nmi_cs, k6_nmi_cr3, k6_nmi_gs, k6_nmi_flags;
+extern volatile BOOT_U64 process_window, process_window_budget, process_negative;
+extern volatile BOOT_U64 process_nmi_armed, process_nmi_count, process_nmi_rip, process_nmi_cs, process_nmi_cr3, process_nmi_gs, process_nmi_flags;
 extern BOOT_U32 process_delay_next_syscall, process_probe_armed, process_probe_delivered;
 void process_probe_send(void);
 #endif

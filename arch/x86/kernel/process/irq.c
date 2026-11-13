@@ -38,12 +38,12 @@ void process_timer_quiesce(void)
     for (BOOT_U32 attempt = 0; attempt < DRAIN_ATTEMPTS; ++attempt) {
         if (!x86_lapic_native_read(IRR_TIMER_BANK, &pending)) process_die("PROCESS_TIMER_RETAINED");
         if (!(pending & mask)) break;
-        k6_drain = 1;
+        process_drain = 1;
         _enable();
         __nop();
         __nop();
         _disable();
-        k6_drain = 0;
+        process_drain = 0;
     }
     if (!x86_lapic_idle_except(process_rt.Timer->Mapping, process_rt.InputIrqMask)) process_die("PROCESS_TIMER_RETAINED");
 }
@@ -53,7 +53,7 @@ void process_timer_quiesce(void)
 int x86_process_irq_service(BOOT_U64 *frame)
 {
     BOOT_U32 value, index;
-    if ((BOOT_U64)&IRET(frame, 0) != k6_stack_top - 40) process_die("PROCESS_IRQ_INVALID");
+    if ((BOOT_U64)&IRET(frame, 0) != process_stack_top - 40) process_die("PROCESS_IRQ_INVALID");
     // Intel SDM 3A §13.8.4: ISR 100h-170h, one 32-bit bank per 16-byte step, indexed by vector.
     for (index = 0; index < 8; ++index) {
         if (!x86_lapic_native_read(0x100 + index * 16, &value) ||
@@ -89,7 +89,7 @@ static int input_irq_deliver(BOOT_U32 vector)
 
 int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
 {
-    if (!process_rt.Current || (BOOT_U64)&IRET(frame, 0) != k6_stack_top - 40 ||
+    if (!process_rt.Current || (BOOT_U64)&IRET(frame, 0) != process_stack_top - 40 ||
         !input_irq_deliver(vector))
         process_die("PROCESS_DEVICE_IRQ_INVALID");
 #ifdef KERNEL_TEST_K6_PROCESS
@@ -109,7 +109,7 @@ int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
 
 void x86_process_device_irq_kernel(BOOT_U32 vector)
 {
-    if (!process_rt.Opened || !k6_drain || !input_irq_deliver(vector))
+    if (!process_rt.Opened || !process_drain || !input_irq_deliver(vector))
         process_die("PROCESS_DEVICE_IRQ_INVALID");
 #ifdef KERNEL_TEST_K6_PROCESS
     if (process_probe_armed) {

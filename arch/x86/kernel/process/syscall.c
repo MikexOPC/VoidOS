@@ -83,8 +83,8 @@ int process_budget_expired(BOOT_U64 rip)
 int x86_process_syscall_dispatch(BOOT_U64 *frame)
 {
 #ifdef KERNEL_TEST_K6_PROCESS
-    if (k6_negative == 31) (void)*(const volatile unsigned char *)0x10ULL;
-    if (k6_negative == 32) x86_process_probe_read(X86_LAYOUT_SLOT_ADDRESS(X86_LAYOUT_HEAP_SLOT));
+    if (process_negative == 31) (void)*(const volatile unsigned char *)0x10ULL;
+    if (process_negative == 32) x86_process_probe_read(X86_LAYOUT_SLOT_ADDRESS(X86_LAYOUT_HEAP_SLOT));
 #endif
     if (!x86_process_return_valid(IRET(frame, 0), IRET(frame, 1), IRET(frame, 2), IRET(frame, 3), IRET(frame, 4))) {
         process_rt.Current->Kind = X86_PROCESS_BAD_FRAME;

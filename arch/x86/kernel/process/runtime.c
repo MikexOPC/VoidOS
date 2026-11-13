@@ -1,14 +1,14 @@
 #include "internal.h"
 
-volatile BOOT_U64 k6_owner, k6_kernel_root, k6_user_root, k6_stack_top, k6_user_rsp, k6_saved_rsp;
+volatile BOOT_U64 process_owner, process_kernel_root, process_user_root, process_stack_top, process_user_rsp, process_saved_rsp;
 #ifdef KERNEL_TEST_K6_PROCESS
-volatile BOOT_U64 k6_window, k6_window_budget, k6_negative = KERNEL_K6_NEGATIVE;
-volatile BOOT_U64 k6_nmi_armed, k6_nmi_count, k6_nmi_rip, k6_nmi_cs, k6_nmi_cr3, k6_nmi_gs, k6_nmi_flags;
+volatile BOOT_U64 process_window, process_window_budget, process_negative = KERNEL_K6_NEGATIVE;
+volatile BOOT_U64 process_nmi_armed, process_nmi_count, process_nmi_rip, process_nmi_cs, process_nmi_cr3, process_nmi_gs, process_nmi_flags;
 #endif
-volatile BOOT_U64 k6_fault[7], k6_fault_cr2, k6_exit_kind, k6_drain;
-_Alignas(16) unsigned char k6_fx_saved[512];
+volatile BOOT_U64 process_fault[7], process_fault_cr2, process_exit_kind, process_drain;
+_Alignas(16) unsigned char process_fx_saved[512];
 // Intel SDM vol. 2, FXSAVE64 image: FCW 037fh and MXCSR 1f80h, clean x87/SSE data.
-_Alignas(16) const unsigned char k6_fx_clean[512] = {
+_Alignas(16) const unsigned char process_fx_clean[512] = {
     [0] = 0x7f, [1] = 0x03, [24] = 0x80, [25] = 0x1f
 };
 
@@ -105,9 +105,9 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     process_rt.Window = window;
     process_rt.Timer = timer;
     process_rt.BudgetClock = &wait->Clock;
-    k6_owner = (BOOT_U64)owner;
-    k6_kernel_root = __readcr3();
-    k6_stack_top = X86_KERNEL_SYSCALL_TOP;
+    process_owner = (BOOT_U64)owner;
+    process_kernel_root = __readcr3();
+    process_stack_top = X86_KERNEL_SYSCALL_TOP;
     STACK_WORD = STACK_CANARY;
     process_rt.ExpectedImage = root[SLOT_IMAGE];
     process_rt.ExpectedWindows = root[X86_LAYOUT_WINDOWS_SLOT];
@@ -115,7 +115,7 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     idt_prepare();
     x86_exception_read_idt(&process_rt.IdtPrevious);
     x86_exception_load_idt(&process_rt.IdtProbe);
-    process_rt.Rsp0Previous = rsp0_swap(k6_stack_top);
+    process_rt.Rsp0Previous = rsp0_swap(process_stack_top);
     process_rt.AlternateSaved = __readmsr(MSR_KERNEL_GS);
     __writemsr(MSR_KERNEL_GS, 0);
     process_rt.MsrSaved[0] = __readmsr(MSR_STAR);
@@ -146,11 +146,11 @@ int x86_process_close(void)
     __writemsr(MSR_CSTAR, process_rt.MsrSaved[2]);
     __writemsr(MSR_FMASK, process_rt.MsrSaved[3]);
     __writemsr(MSR_KERNEL_GS, process_rt.AlternateSaved);
-    if (rsp0_swap(process_rt.Rsp0Previous) != k6_stack_top) process_die("PROCESS_RSP0_CHANGED");
+    if (rsp0_swap(process_rt.Rsp0Previous) != process_stack_top) process_die("PROCESS_RSP0_CHANGED");
     if (!x86_kernel_stacks_release(&process_rt.SyscallStack)) process_die("PROCESS_STACK_RETAINED");
     x86_exception_load_idt(&process_rt.IdtPrevious);
     process_rt.InputIrqMask = 0;
-    k6_owner = 0;
+    process_owner = 0;
     process_rt.Opened = 0;
     return !(__readmsr(MSR_EFER) & EFER_SCE);
 }
