@@ -73,16 +73,10 @@ $excluded = @('test/arch/x86/kernel/drivers/memory/iommu/intel/dma/scripts/test.
 
 # ============ resolve supported suite shell ============
 
+. (Join-Path $project 'scripts/lib/common.ps1')
+
 function Resolve-SuiteShell {
-    $runtime = Get-Command pwsh.exe -ErrorAction SilentlyContinue
-    if ($runtime) { return $runtime.Source }
-    foreach ($candidate in @(
-        (Join-Path $env:ProgramFiles 'PowerShell/7/pwsh.exe'),
-        (Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe')
-    )) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
-    }
-    throw 'PowerShell 7 (pwsh.exe) required for host suites. Add it to PATH before running tests.'
+    Resolve-OsPwsh
 }
 
 # ============ isolated child process ============

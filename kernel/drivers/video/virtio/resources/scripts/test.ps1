@@ -40,7 +40,7 @@ try {
         "$project/lib/memory/address_ranges.c","$project/test/kernel/drivers/video/virtio/resources/presentation.c")
     Invoke-Checked "$bin/cl.exe" ($flags+$presentation+@("/Fo$out/","/Fd$out/presentation.pdb","/Fe$out/presentation.exe",'/link','/incremental:no',"$out/policy.obj"))
     Invoke-Checked "$out/presentation.exe" @()
-    $python=Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+    $python=Resolve-OsPython
     if (!(Test-Path $python)) { $python=(Get-Command python.exe -ErrorAction Stop).Source }
     Invoke-Checked $python @('-B',"$project/test/arch/x86/kernel/drivers/video/virtio/resources/presentation/screenshot_test.py")
     foreach ($entry in @(@('kernel/mm/rust/regions/validation.rs','regions'),@('kernel/mm/physical/rust/alignment/placement.rs','placement'))) {

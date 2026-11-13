@@ -91,3 +91,36 @@ function Read-Hex([string]$Text, [string]$Pattern) {
     if (!$match.Success) { throw "Campo assente: $Pattern" }
     return [Convert]::ToUInt64($match.Groups[1].Value, 16)
 }
+
+# ============ tool discovery ============
+
+# Python 3 and PowerShell 7 without paths tied to one machine. Order: the VOIDOS_PYTHON or
+# VOIDOS_PWSH variable, then PATH, then the standard install location. The WindowsApps alias that
+# opens the Store is skipped.
+function Resolve-OsPython {
+    if ($env:VOIDOS_PYTHON) {
+        if (Test-Path -LiteralPath $env:VOIDOS_PYTHON -PathType Leaf) { return $env:VOIDOS_PYTHON }
+        throw "VOIDOS_PYTHON points to a missing file: $env:VOIDOS_PYTHON"
+    }
+    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($launcher) {
+        $found = & $launcher.Source -3 -c 'import sys; print(sys.executable)' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $found -and (Test-Path -LiteralPath $found -PathType Leaf)) { return [string]$found }
+    }
+    foreach ($command in @(Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
+        if ($command.Source -notlike '*\WindowsApps\*') { return $command.Source }
+    }
+    throw 'Python 3 not found. Install it, add it to PATH or set VOIDOS_PYTHON.'
+}
+
+function Resolve-OsPwsh {
+    if ($env:VOIDOS_PWSH) {
+        if (Test-Path -LiteralPath $env:VOIDOS_PWSH -PathType Leaf) { return $env:VOIDOS_PWSH }
+        throw "VOIDOS_PWSH points to a missing file: $env:VOIDOS_PWSH"
+    }
+    $command = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    $standard = Join-Path $env:ProgramFiles 'PowerShell/7/pwsh.exe'
+    if (Test-Path -LiteralPath $standard -PathType Leaf) { return $standard }
+    throw 'PowerShell 7 not found. Install it, add it to PATH or set VOIDOS_PWSH.'
+}

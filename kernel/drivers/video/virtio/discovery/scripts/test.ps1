@@ -1,14 +1,14 @@
 param([string]$OutputDirectory = 'D:/OS/kernel/build/virtio-pci-host')
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path "$PSScriptRoot/../../../../../..").Path
+. (Join-Path $project 'scripts/lib/common.ps1')
 $out = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force $out | Out-Null
 $rust = "$project/kernel/drivers/video/virtio/discovery/rust"
-$python = "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+$python = (Resolve-OsPython)
 
 # ============ checked execution ============
 
-. (Join-Path $PSScriptRoot '../../../../../../scripts/lib/common.ps1')
 
 Invoke-Checked $python @('-B',"$PSScriptRoot/structure.py")
 foreach ($mode in @('debug','release')) {

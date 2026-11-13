@@ -11,7 +11,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 # ============ firmware harness regression tests ============
 
 if (!$Python) {
-    $Python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+    $Python = Resolve-OsPython
 }
 foreach ($name in @('firmware_test.py', 'active_test.py', 'shell_pixels_test.py')) {
     Invoke-Checked $Python @('-B', "$project/test/kernel/console/video/scripts/$name")
