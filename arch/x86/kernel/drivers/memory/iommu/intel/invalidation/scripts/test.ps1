@@ -59,7 +59,7 @@ try {
     Invoke-Checked "$out/host.exe" @()
     Invoke-Checked "$bin/cl.exe" ($flags+@("$project/$module/backend/cpu.c","$project/$test/cpu_test.c","/Fo$out/","/Fd$out/cpu.pdb","/Fe$out/cpu.exe",'/link','/incremental:no','/DEBUG','/WX',"$out/policy.obj"))
     Invoke-Checked "$out/cpu.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $paths+=@("$project/$module/backend/cpu.c","$project/$module/backend/mmio.c")
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',
         ('"-I'+$project+'"'))+@($paths | ForEach-Object {'"'+$_+'"'})

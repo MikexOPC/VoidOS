@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
+. (Join-Path $project 'scripts/lib/common.ps1')
 $out = Join-Path $project ('kernel/build/bootstrap-host-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $out | Out-Null
 $vc = Get-ChildItem 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC' -Directory |
@@ -23,7 +24,7 @@ try {
     if ($LASTEXITCODE) { throw 'Host compilation failed' }
     & "$out/test.exe"
     if ($LASTEXITCODE) { throw 'Host bootstrap test failed' }
-    $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $cppcheck=(Resolve-OsCppcheck)
     & $cppcheck --enable=all --check-level=exhaustive --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/test/kernel/mm/physical/synchronization/reader_model.c" /DPHYSICAL_MODEL_EXTERNAL_READ=1 "$project/kernel/bootstrap/memory.c" "$project/test/kernel/bootstrap/probes.c" `
         "$project/test/kernel/bootstrap/ordinary_test.c" "$project/kernel/main.c" "$project/kernel/startup/early.c" "$project/kernel/startup/platform.c" "$project/kernel/startup/devices.c" "$project/kernel/startup/profile.c" 2> "$out/cppcheck.xml"

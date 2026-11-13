@@ -50,7 +50,7 @@ function Restore-Msvc($Saved) {
 
 # cppcheck with the project profile; error, warning, performance and portability findings block.
 function Invoke-Cppcheck([string]$Project, [string]$Out, [string[]]$Sources, [string[]]$Defines = @()) {
-    $checker = "$Project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker = Resolve-OsCppcheck
     # Test tiers: normal level by default (fast tier); OS_CPPCHECK_LEVEL=exhaustive for the full tier.
     # -j spreads the files over the cores (unusedFunction is skipped with -j; the full tier reports it).
     $arguments = @('--enable=all', "--check-level=$OsCppcheckLevel", "-j$OsCppcheckJobs","--quiet", '--platform=win64', '--std=c11', '--xml', ('"-I' + $Project + '"')) +
@@ -77,7 +77,7 @@ $OsCppcheckJobs = [Math]::Max(1, [Environment]::ProcessorCount)
 # left cppcheck blocked on its output pipe. Sets LASTEXITCODE like a native call.
 function Invoke-CppcheckRaw {
     $xml = $args[0]
-    $checker = "$PSScriptRoot/../../kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker = Resolve-OsCppcheck
     $arguments = @($args | Select-Object -Skip 1 | ForEach-Object { $_ } | ForEach-Object { if ("$_" -match '\s') { '"' + $_ + '"' } else { "$_" } })
     $checked = Start-Process $checker -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
         -RedirectStandardError $xml -RedirectStandardOutput ($xml + '.log')
@@ -123,4 +123,21 @@ function Resolve-OsPwsh {
     $standard = Join-Path $env:ProgramFiles 'PowerShell/7/pwsh.exe'
     if (Test-Path -LiteralPath $standard -PathType Leaf) { return $standard }
     throw 'PowerShell 7 not found. Install it, add it to PATH or set VOIDOS_PWSH.'
+}
+
+# cppcheck: VOIDOS_CPPCHECK, then the copy built under kernel/build, then PATH, then the standard
+# install location. Findings can change between versions: CI installs the version recorded in its
+# workflow.
+function Resolve-OsCppcheck {
+    if ($env:VOIDOS_CPPCHECK) {
+        if (Test-Path -LiteralPath $env:VOIDOS_CPPCHECK -PathType Leaf) { return $env:VOIDOS_CPPCHECK }
+        throw "VOIDOS_CPPCHECK points to a missing file: $env:VOIDOS_CPPCHECK"
+    }
+    $built = Join-Path $PSScriptRoot '../../kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe'
+    if (Test-Path -LiteralPath $built -PathType Leaf) { return (Resolve-Path -LiteralPath $built).Path }
+    $command = Get-Command cppcheck.exe -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    $standard = Join-Path $env:ProgramFiles 'Cppcheck/cppcheck.exe'
+    if (Test-Path -LiteralPath $standard -PathType Leaf) { return $standard }
+    throw 'cppcheck not found. Install it, add it to PATH or set VOIDOS_CPPCHECK.'
 }

@@ -58,7 +58,7 @@ try {
     Invoke-Checked "$bin/cl.exe" (@('/nologo','/MD')+$compiled+@("/Fe$out/host.exe",'/link','/incremental:no','/DEBUG','/WX',
         "$out/activation-policy.obj","$out/qi-policy.obj","$out/regions.obj","$out/placement.obj","$out/register-policy.obj","$out/domain-policy.obj"))
     Invoke-Checked "$out/host.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $paths=@("$module/sequence.c","$module/faults.c","$module/backend/mmio.c","$test/model.c","$test/cases.c",
         "test/$intel/activation/integration/probe.c") | ForEach-Object {"$project/$_"}
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',

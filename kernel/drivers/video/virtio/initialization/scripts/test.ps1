@@ -43,7 +43,7 @@ try {
         '/MD','/O2',"/I$project")+@($native | ForEach-Object {"$project/$_"})+
         @("/Fo$out/","/Fd$out/native.pdb","/Fe$out/native.exe",'/link','/incremental:no',"$out/policy.obj"))
     Invoke-Checked "$out/native.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $paths+=@($native | ForEach-Object {"$project/$_"})+
         @("$project/arch/x86/kernel/drivers/video/virtio/initialization/access.c")
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',

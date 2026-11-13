@@ -98,7 +98,7 @@ try {
         Copy-Item "$out/native.stdout" "$out/native-$repetition.stdout"
         Copy-Item "$out/native.stderr" "$out/native-$repetition.stderr"
     }
-    $cppcheck = Join-Path $project 'kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe'
+    $cppcheck = Resolve-OsCppcheck
     Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/MD','/O2',
         '/fsanitize=address',('/I' + $project),(Join-Path $module 'irq/bridge.c'),
         (Join-Path $module '../../../../test/arch/x86/kernel/scheduler/irq/bridge_test.c'),("/Fo$out/"),("/Fd$out/irq.pdb"),

@@ -41,7 +41,7 @@ try {
     Invoke-Checked "$bin/cl.exe" ($flags+$paths+@("/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no','/DEBUG','/WX',
         "$out/policy.obj","$out/ecam.obj","$out/graph.obj"))
     Invoke-Checked "$out/host.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',
         ('"-I'+$project+'"'))+@(($paths+@("$project/$test/integration/probe.c","$project/$test/integration/matrix.c")) | ForEach-Object {'"'+$_+'"'})
     $checked=Start-Process $checker -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
