@@ -213,13 +213,13 @@
     },
     "k6-shell": {
       "summary": "Product shell profile: the embedded program runs and is reaped before the input session opens",
-      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput"],
+      "build": [], "meson": "ordinary",
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-shell", "--smp", "4"],
       "boots": 10, "smoke": 1, "heavy": true
     },
     "k6-shell-bridge-disabled": {
       "summary": "Product shell stays usable when the CPU cannot start the bridge",
-      "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput"],
+      "build": [], "meson": "ordinary",
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-shell", "--smp", "4", "--cpu", "max,-smap"],
       "boots": 3, "smoke": 1, "heavy": true
     },
