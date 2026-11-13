@@ -263,12 +263,12 @@ user	c	arch/x86/kernel/process/runtime.c	k6-process.obj
 user	c	arch/x86/kernel/process/image.c	k6-image.obj
 user	c	arch/x86/kernel/process/syscall.c	k6-syscall.obj
 user	c	arch/x86/kernel/process/irq.c	k6-irq.obj
-user	c	arch/x86/kernel/process/hooks.c	k6-hooks.obj
 user	c	arch/x86/kernel/process/resident.c	k6-resident.obj
 user	ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/k6-transition.obj	{repo}/arch/x86/kernel/process/assembly/entry/transition.asm
 each-program	rustc.exe	--edition=2024	-D	warnings	--crate-type=bin	--crate-name	k6_{program}	--target	x86_64-unknown-none	--cfg	program_{program}	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	-C	link-arg=-T{repo}/userspace/init/link.ld	-C	link-arg=-zmax-page-size=4096	-C	link-arg=--build-id=none	-C	link-arg=--no-gc-sections	{repo}/test/kernel/process/programs/program.rs	-o	{out}/k6-{program}.elf
 process	nasm.exe	-f	win64	-Wall	-Werror	-I{out}/	-o	{out}/k6-programs.obj	{repo}/test/kernel/process/integration/programs.asm
 process	c	test/kernel/process/integration/probe.c	k6-probe.obj
+process	c	arch/x86/kernel/process/hooks.c	k6-hooks.obj
 process	c	test/kernel/process/integration/keyboard.c	k6-keyboard.obj
 process	c	arch/x86/kernel/drivers/input/ps2/runtime/route.c	k6-keyboard-route.obj
 process	c	kernel/drivers/input/ps2/controller/controller.c	k6-keyboard-controller.obj
