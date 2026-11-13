@@ -41,7 +41,7 @@ if ($UseRustPlan) {
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if ($PlanOnly) {
     foreach ($key in $boundBuildOptions) {
-        if ($key -notin @('TestSchedulerPeriodic','TestApService','TestK6Process','TestK6Negative')) { throw 'Unsupported plan-only options.' }
+        if ($key -notin @('TestSchedulerPeriodic','TestApService','TestK6Process','TestK6Negative','Ps2Input','Ps2Mouse','ConsoleShell','InteractiveInput')) { throw 'Unsupported plan-only options.' }
     }
     if ($TestApService -notin @('none','ap-timer')) { throw 'Unsupported plan-only options.' }
     . (Join-Path $PSScriptRoot 'build/plan-only.ps1')

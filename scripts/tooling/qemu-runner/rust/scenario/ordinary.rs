@@ -12,6 +12,8 @@ const SMAP: u64 = 1 << 21;
 const CR4_DEADLINE: Duration = Duration::from_secs(5);
 const CR4_POLL: Duration = Duration::from_millis(10);
 const INIT_LINE: &[u8] = b"USER: VoidOS init, ring3";
+// The ordinary image ends in the shell: success is the shell waiting for input.
+const SHELL_READY: &str = "KERNEL_PS2_INPUT_READY";
 
 // ====== expected_protection ======
 
@@ -66,7 +68,7 @@ fn read_cr4(vm: &mut Vm, cpu: u32) -> Result<u64, String> {
 // ====== ordinary_boot ======
 
 fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
-    let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
+    let log = vm.wait(SHELL_READY, 1, Some("OK"))?;
     if !log.failures().is_empty() || log.terminal() {
         return Err(format!("Unexpected kernel failure {:?}", log.failures()));
     }
@@ -80,7 +82,7 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     let serial = std::fs::read(&vm.serial).map_err(|error| format!("Serial: {error}"))?;
     let printed = serial.windows(INIT_LINE.len()).any(|window| window == INIT_LINE);
-    if full && (!printed || !log.before("KERNEL_PROCESS_OK", "KERNEL_READY")) {
+    if full && (!printed || !log.before("KERNEL_PROCESS_OK", SHELL_READY)) {
         return Err("The first process did not run".to_string());
     }
     if !full && (printed || log.has("KERNEL_PROCESS_OK") || !log.has("PROCESS_DISABLED")) {

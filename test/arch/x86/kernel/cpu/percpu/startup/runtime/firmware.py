@@ -209,7 +209,7 @@ def main():
                         group_spec.loader.exec_module(group)
                         log = group.wait(vm, 0)
                     else:
-                        log = vm.wait("KERNEL_READY", 90)
+                        log = vm.wait_ready(90)
                     deadline = time.monotonic() + 2
                     while "HLT=1" not in launch.registers(vm, 0):
                         if time.monotonic() >= deadline:

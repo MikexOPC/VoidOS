@@ -156,7 +156,7 @@ def verify(vm, initial, owner, case, before, frames, budget):
 def boot(image, out, index, case):
     with qemu.Vm(out / f"boot-{index}", image, "std", smp=4, memory=128 if index % 2 else 256) as vm:
         try:
-            log = vm.wait("KERNEL_READY", 90)
+            log = vm.wait_ready(90)
             vm.command("stop")
             proof = runtime.verify(vm, log, 4)
             before = [launch.registers(vm, i) for i in range(4)]
