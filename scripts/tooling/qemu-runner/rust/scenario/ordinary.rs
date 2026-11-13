@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 pub const SHELL_CASE: u32 = 1;
 pub const SHELL_BRIDGE_FAULT_CASE: u32 = 2;
+pub const NO_PS2_CASE: u32 = 3;
 const UMIP: u64 = 1 << 11;
 const SMEP: u64 = 1 << 20;
 const SMAP: u64 = 1 << 21;
@@ -142,6 +143,28 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     Ok(object(vec![("Process", Value::Bool(enabled)), ("Bridge", Value::Bool(enabled && !fault))]))
 }
 
+// ====== no_ps2_boot ======
+
+// Machine without a PS/2 controller: no shell, the image completes and the process still ran.
+fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
+    let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
+    let enabled = expected_protection(plan.cpu) & (SMEP | SMAP) == SMEP | SMAP;
+    if !log.failures().is_empty() || log.terminal() {
+        return Err(format!("Unexpected kernel failure {:?}", log.failures()));
+    }
+    if !log.before("KERNEL_PS2_INPUT_ABSENT", "KERNEL_READY") || log.has(SHELL_READY) {
+        return Err("The image did not report the missing PS/2 controller".to_string());
+    }
+    if enabled && !log.before("KERNEL_PROCESS_OK", "KERNEL_READY") {
+        return Err("The first process did not run".to_string());
+    }
+    let bytes = vm.trace_bytes()?;
+    if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {
+        return Err("Unexpected fault without a PS/2 controller".to_string());
+    }
+    Ok(object(vec![("Ps2", Value::Bool(false)), ("Process", Value::Bool(enabled))]))
+}
+
 // ====== shell_type ======
 
 fn shell_type(vm: &mut Vm, command: &str) {
@@ -168,6 +191,7 @@ pub fn run_ordinary(
     let outcome = match negative {
         Some(SHELL_CASE) => shell_boot(&mut vm, plan, false),
         Some(SHELL_BRIDGE_FAULT_CASE) => shell_boot(&mut vm, plan, true),
+        Some(NO_PS2_CASE) => no_ps2_boot(&mut vm, plan),
         _ => ordinary_boot(&mut vm, plan),
     };
     let closed = vm.close();

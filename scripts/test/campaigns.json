@@ -223,6 +223,12 @@
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-shell", "--smp", "4", "--cpu", "max,-smap"],
       "boots": 3, "smoke": 1, "heavy": true
     },
+    "k6-no-ps2": {
+      "summary": "Ordinary image on a machine without a PS/2 controller: no shell, the process runs and the boot completes",
+      "build": [], "meson": "ordinary",
+      "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-no-ps2", "--smp", "4"],
+      "boots": 3, "smoke": 1, "heavy": true
+    },
     "k6-shell-bridge-fault": {
       "summary": "Product shell stays usable after the bridge faults in ring 3",
       "build": ["-Ps2Input", "-Ps2Mouse", "-ConsoleShell", "-InteractiveInput", "-TestShellBridgeFault"],
