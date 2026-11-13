@@ -140,7 +140,7 @@ Dal 28 ottobre il bootstrap ordinario inizializza il contesto prima
 dell'allocatore; il probe usa quel contesto senza reinizializzarlo. Il
 clock nel checkpoint K2 restava non collegato: prima del clock il contratto
 ammetteva soltanto il percorso non conteso. Dal blocco K3-B il runtime BSP
-usa la sorgente ACPI PM: [contratto](../../../arch/x86/kernel/cpu/percpu/documentation/k3b-design.md). Nessun AP avviato. Il successivo blocco pool
+usa la sorgente ACPI PM: [contratto](../../../arch/x86/kernel/cpu/percpu/documentation/design.md). Nessun AP avviato. Il successivo blocco pool
 adotta ora i lock e query piccole: vedere
 [contratto](../../mm/physical/documentation/k2-design.md) e
 [prove](../../mm/physical/documentation/k2-pool-validation.md).

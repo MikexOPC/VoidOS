@@ -3,7 +3,7 @@
 Snapshot storico del primo blocco host (stati, coda, gateway FFI).
 Stato corrente: [docs/status.md](../../../docs/status.md). Stack, mailbox
 e switch nativo appartengono ai report successivi, a partire da
-[integrazione v0](../../../arch/x86/kernel/scheduler/documentation/integration.md).
+[integrazione v0](../../../docs/validation/consolidamento.md#validazione-dei-backend-x86).
 
 Blocco dell'8 ottobre 2026, successivo al [progetto](design.md).
 Perimetro di questo file: core stati/coda, gateway FFI e suite host.

@@ -134,7 +134,7 @@ Seguono 10/10 boot (`sync-firmware-0e64e7ef8e2f4a2c846bf2e7610da199/`)
 e 20/20 della stessa immagine (`sync-firmware-08b09deaae29459ca2ec81beba1a9b51/`).
 Il panic non ricompare; questi successi non costituiscono un fix né
 dimostrano assenza di flakiness. L'indagine resta aperta, senza avanzare
-all'allocatore. [Dettagli timer](../../../arch/x86/kernel/timer/lapic/documentation/wait/k2-failure.md).
+all'allocatore. [Dettagli timer](../../../docs/validation/consolidamento.md#validazione-dei-backend-x86).
 
 Negativi finali ricompilati dopo il fix deadline e la diagnostica timer:
 `qemu-run-add5c6237ada4811bef77de77e128591/results.json`, 2/2. Osservati
@@ -158,7 +158,7 @@ Aggiornamento successivo, scelta utente: implementata e verificata la
 separazione arm→IRQ/ritorno watchdog, senza cambiare soglie. Regressione
 mock del falso positivo riprodotta; IRQ tardivo resta rifiutato. Passano
 dieci boot probe, dieci ordinari, ciclo continuo e negativo IRQ perso.
-Il [report timer](../../../arch/x86/kernel/timer/lapic/documentation/wait/k2-failure.md)
+Il [report timer](../../../docs/validation/consolidamento.md#validazione-dei-backend-x86)
 distingue questo fix dalla causa non catturata del panic originale.
 
 

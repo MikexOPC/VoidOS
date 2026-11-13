@@ -59,7 +59,7 @@ compilatore, non un lock SMP o una barriera hardware. Disassembly MSVC
 verificato in kernel/build/console-render-native-disassembly.txt: CPUID/
 RDTSC/CPUID, PUSHFQ/CLI, branch STI o CLI e controllo bit0x200. Nessun
 registro CR/MSR/PAT cambiato da questo gateway. Store UC resta quello del
-[renderer verificato](../../../../arch/x86/kernel/drivers/video/framebuffer/documentation/drawing.md).
+[renderer verificato](../../../../docs/design/consolidamento.md#video-vt-d-e-ps2).
 
 Tick misurati circondano suspend/draw/resume e includono overhead di misura
 e possibili IRQ prima/dopo CLI/STI; non sono la durata esatta di IF0.

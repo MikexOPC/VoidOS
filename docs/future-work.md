@@ -27,10 +27,10 @@ perche inseriti qui. Nessuna scadenza di calendario e ancora concordata.
 
 **Stato (24 ottobre 2026):** isolamento DMA verificato su QEMU con una unita
 Intel VT-d. Blocco 3: DMA reali di `edu` permessi, vietati, non mappati e revocati
-([prove](../arch/x86/kernel/drivers/memory/iommu/intel/activation/documentation/dma.md)).
+([prove](validation/consolidamento.md#validazione-dei-backend-x86)).
 V1: GPU VirtIO sotto traduzione con ACCESS_PLATFORM. V2b: traduzione persistente per
 tutta la sessione interattiva con `-VgpuIommu`
-([sessione](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/session.md)).
+([sessione](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/design.md)).
 Restano aperti i punti elencati in FW-011 (RMRR, invalidazione per pagina, interrupt
 di fault, hardware reale). Il testo sotto descrive l'avvio della voce.
 **Priorita:** requisito prima di dichiarare isolamento da DMA ostile o
@@ -86,7 +86,7 @@ Riferimento: [progetto code e DMA VirtIO](../kernel/drivers/video/virtio/queues/
 
 **Stato (24 ottobre 2026):** console ordinaria presentata dalla GPU VirtIO tradotta,
 con ritorno al GOP a ogni errore (V2c,
-[report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/present.md)).
+[report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/design.md)).
 Restano: recupero delle righe dopo il clip, cursore VirtIO, backing oltre
 16 MiB; elenco completo in FW-011. Il testo sotto descrive lo stato precedente.
 **Priorita:** percorso attuale verso video e cursore gestiti dal driver.
@@ -113,9 +113,9 @@ di accelerazione3D, Vulkan o compatibilita con GPU fisiche.
 ## FW-003 — Prestazioni e presentazione video
 
 **Stato (24 ottobre 2026):** misure V2d e profilo dei flush eseguiti
-([latenze](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/measurements/latency.md),
-[profilo](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/measurements/profile.md),
-[verifica condizionata](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/measurements/verification.md)).
+([latenze](validation/consolidamento.md#validazione-dei-backend-x86),
+[profilo](validation/consolidamento.md#validazione-dei-backend-x86),
+[verifica condizionata](validation/consolidamento.md#validazione-dei-backend-x86)).
 Il flush V2c e sceso da circa 43.600 a circa 8.700 tick PM, ma costa ancora circa 3,4
 volte il GOP; fluidita e atomicita restano non certificate.
 **Quando:** durante l'integrazione VirtIO, prima di dichiarare fluida la GUI.
@@ -241,11 +241,11 @@ o per hardware reale, nell'ordine che le misure e la GUI renderanno necessario.
 
 Geometria e presentazione:
 - **Geometria della GPU**: prima versione fatta (politica A, griglia 142x44 a 1280x800, clip a
-  113x42 al fallback; [report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/geometry.md)).
+  113x42 al fallback; [report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/design.md)).
   Restano: recupero delle righe perse nel clip, cambio di risoluzione a sessione avviata.
 - **Timeout della present sotto carico dell'host**: fatto. Present asincrona, `SLOW` a 100 ms,
   fallback a 1 s, recupero dopo un timeout, 10/10 boot con host carico
-  ([report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/asynchronous.md)).
+  ([report](../arch/x86/kernel/drivers/video/virtio/iommu/documentation/design.md)).
   Restano l'harness host di `iommu/present/`, la taratura dei due limiti e il ritorno della griglia
   a 142x44 dopo un recupero.
 - **Present con piu rettangoli**: oggi un solo inviluppo unisce celle e riquadri del puntatore

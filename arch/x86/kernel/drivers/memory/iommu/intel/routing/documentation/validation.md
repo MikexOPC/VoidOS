@@ -1,6 +1,6 @@
 # Validazione del resolver GPU–DRHD
 
-22 ottobre 2026. Blocco routing verificato nel profilo descritto nel [contratto implementato](resolver.md).
+22 ottobre 2026. Blocco routing verificato nel profilo descritto nel [contratto implementato](../../../../../../../../../docs/design/consolidamento.md#video-vt-d-e-ps2).
 
 C valida topologia/output e pubblica la scelta; Rust puro controlla DMAR, path e precedenze. Nessuna nuova istruzione Assembly o scrittura hardware.
 

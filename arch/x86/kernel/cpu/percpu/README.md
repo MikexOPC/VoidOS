@@ -9,7 +9,7 @@ delle risorse. Il panic coordinato dispone di un trasporto NMI.
 **Interfaccia.** I lettori ottengono il contesto corrente con
 `x86_percpu_current_local` o `x86_percpu_current_context`. Le operazioni
 di startup e servizio possiedono le lease fino ai relativi punti di
-rilascio. [Design](../../../../../docs/design/consolidamento.md#lock-cpu-e-scheduler).
+rilascio. [Design del modulo](documentation/design.md).
 
 **Immagine ordinaria.** Nel boot QEMU a quattro vCPU il BSP avvia tre
 AP, riceve tre ACK e lascia gli AP parcheggiati. **Profili separati.**

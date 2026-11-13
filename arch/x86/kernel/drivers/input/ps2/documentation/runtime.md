@@ -45,7 +45,7 @@ stop exit -> mask -> F5/close -> ack IRR/HPET -> unbind handler/restore route
 Il consumer cede la CPU fra eventi. DATA/LOSS/EMPTY e generazioni sono
 gestiti dalla coda gia verificata; ISR senza decoder, log o allocazioni.
 Guasti isolati e LOSS azzerano parser, modificatori e riga secondo il
-[contratto di recupero B2](keyboard-recovery.md); un guasto ISR scarta prima i byte
+[contratto di recupero B2](../../../../../../../docs/validation/consolidamento.md#validazione-dei-backend-x86); un guasto ISR scarta prima i byte
 incerti. Superare il limite di guasti consecutivi resta terminale. Cleanup non
 confermato, ownership o contesto invalido conservano gli owner, senza liberare
 mapping o stack ancora potenzialmente usati. La v0 non riavvia una sessione chiusa.

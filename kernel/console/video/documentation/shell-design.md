@@ -526,5 +526,5 @@ dal valore diagnostico fisso 48.
 
 Nessuna sequenza hardware nuova: restano mapping UC/RW/NX, clock PM e
 finestra Assembly gia documentati nei contratti
-[framebuffer](../../../../arch/x86/kernel/drivers/video/framebuffer/documentation/mapping.md)
+[framebuffer](../../../../docs/design/consolidamento.md#video-vt-d-e-ps2)
 e [runtime input](../../../../arch/x86/kernel/drivers/input/ps2/documentation/runtime.md).

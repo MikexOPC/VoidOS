@@ -14,7 +14,7 @@ il collegamento agli output della shell e un blocco successivo, dopo i gate.
 sezione Attaching, Detaching and Unloading: la console e un livello distinto
 dal driver framebuffer e ne rispetta il lifetime. Qui non si copia codice
 Linux: BSP, scheduler cooperativo, font fisso, niente VT, processi o DRM.
-Il [font esistente](../../../../arch/x86/kernel/drivers/video/framebuffer/documentation/font.md)
+Il [font esistente](../../../../docs/design/consolidamento.md#video-vt-d-e-ps2)
 offre celle8x16, UTF-8 italiano e fallback visibile.
 
 ## Contratto del nucleo

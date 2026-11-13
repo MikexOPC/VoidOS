@@ -2,7 +2,7 @@
 
 22 ottobre2026. Contratto scelto: lettore nativo kernel, mapping temporaneo
 posseduto, bounds e rollback. Prerequisito del [routing con bridge e piu
-unita](../../../../memory/iommu/intel/routing/documentation/expanded-design.md).
+unita](../../../../../../../../docs/design/consolidamento.md#video-vt-d-e-ps2).
 Questo blocco non enumera l'intera topologia e non abilita DMA.
 
 ## Fonti verificate prima degli accessi

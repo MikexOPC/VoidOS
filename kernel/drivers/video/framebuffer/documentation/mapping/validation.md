@@ -1,7 +1,7 @@
 # Preflight del mapping — risultati del 9 ottobre 2026
 
 Snapshot del blocco preflight. Il panic ARM e stato successivamente
-corretto e verificato: [report watchdog](../../../../../../arch/x86/kernel/timer/hpet/watchdog/documentation/arm-race.md).
+corretto e verificato: [report watchdog](../../../../../../docs/validation/consolidamento.md#validazione-dei-backend-x86).
 Lo stato di installazione/gate descritto sotto e quello precedente al fix.
 
 ## Risultato concreto

@@ -8,7 +8,7 @@ il progetto: non aggiunge codice eseguibile e non dichiara uno scheduler pronto.
 Questa introduzione descrive il blocco documentale originale. Il successivo
 [core Rust/FFI](core.md), il backend nativo e il dispatcher sono ora implementati.
 Le prove e i limiti del profilo v0 sono nel
-[rapporto finale](../../../arch/x86/kernel/scheduler/documentation/integration.md).
+[rapporto finale](../../../docs/validation/consolidamento.md#validazione-dei-backend-x86).
 
 ## Traguardo
 

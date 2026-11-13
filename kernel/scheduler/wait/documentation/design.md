@@ -6,7 +6,7 @@ wake-all autorizzata dall'utente. Questo documento descrive il contratto e il
 piano di prove; i risultati vengono registrati separatamente nel report finale.
 [Implementazione ed evidenze](validation.md).
 Baseline verificata:
-[scheduler cooperativo v0](../../../../arch/x86/kernel/scheduler/documentation/integration.md).
+[scheduler cooperativo v0](../../../../docs/validation/consolidamento.md#validazione-dei-backend-x86).
 
 ## Ricerca e compromessi
 
