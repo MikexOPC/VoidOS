@@ -2,7 +2,7 @@
 
 30 ottobre 2026. L'utente ha approvato A: passaggio dentro handler NMI,
 con prova dedicata. Il diagnostico AP dedicato resta la destinazione.
-Primo esperimento CPU in [k3i-nmi-validation.md](k3i-nmi-validation.md);
+Primo esperimento CPU in [validazione del checkpoint](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu);
 nessun trampolino del kernel attivato e nessun AP avviato.
 
 ## Fonti primarie verificate

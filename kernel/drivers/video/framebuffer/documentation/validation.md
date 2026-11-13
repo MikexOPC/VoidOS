@@ -35,7 +35,7 @@ CPU reali, cache policy, esclusione dall'allocatore e verifica degli alias.
 
 ## Prove eseguite
 
-- [Host](../../../../../kernel/build/framebuffer-gop-host.log): 4 test Rust
+- Host (`kernel/build/framebuffer-gop-host.log`): 4 test Rust
   sia debug sia release con overflow checks, warning come errori e Clippy.
   C MSVC /W4 /WX e ASan:190.186 controlli,10.000 sessioni,30.000
   allocazioni bilanciate nella fase ripetuta. Callback hardware simulate.
@@ -43,20 +43,20 @@ CPU reali, cache policy, esclusione dall'allocatore e verifica degli alias.
   buffer null/alias/corto, nessun formato supportato, FreePool fallita
   con retry, SetMode/readback/capacita/base errati, rollback fallito,
   limite modi e parita. Ogni caso termina con accounting esplicito.
-- [Cppcheck](../../../../../kernel/build/framebuffer-gop-final/cppcheck.xml):
+- Cppcheck (`kernel/build/framebuffer-gop-final/cppcheck.xml`):
   3 file C; zero error/warning/performance/portability. Style/information
   restano: callback const suggeriti incompatibili con la firma ABI,
   entry EFI vista come unused nell'analisi parziale, header standard
   non espansi. Le include locali sono risolte con le directory di build.
-- [QEMU positivo 10/10](../../../../../kernel/build/framebuffer-firmware-e09fbdf3b69a48e9946ac8ed1902da1e/results.json):
+- QEMU positivo 10/10 (`kernel/build/framebuffer-firmware-e09fbdf3b69a48e9946ac8ed1902da1e/results.json`):
   q35/TCG/max,128MiB,BSP,OVMF. Modalita1024x768,BGR32,stride1024,
   capacita/usato3.145.728 byte,30 query e30 rilasci in ogni boot.
   Hash immagine/ESP, firmware e binario QEMU registrati. Screenshot PPM
   completo e geometria coerente; marker GOP_SELECTION_READY, cattura
   CPU, nessun triple fault. Non e una prova del rendering del kernel.
-- [QEMU senza video](../../../../../kernel/build/framebuffer-firmware-f1da6ac7ffaa4b0180a92060dad455c4/results.json):
+- QEMU senza video (`kernel/build/framebuffer-firmware-f1da6ac7ffaa4b0180a92060dad455c4/results.json`):
   `-vga none`, marker GOP_UNAVAILABLE sulla console seriale,1/1.
-- [Manifest sorgenti corrente](../../../../../kernel/build/framebuffer-handoff-final/source-review.json):
+- Manifest sorgenti corrente (`kernel/build/framebuffer-handoff-final/source-review.json`):
   limiti righe/cartelle, UTF-8/LF e whitespace della fase corrente.
   Non certifica la corrispondenza dei sorgenti attuali con l'immagine
   storica del probe descritta in questo snapshot.

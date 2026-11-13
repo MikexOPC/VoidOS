@@ -21,7 +21,7 @@ diretti e attesa limitata. Non si riaprono queste scelte.
   separazione dei percorsi real/protected/64 bit e salto al kernel alto.
   GPL-2.0, riferimento concettuale; nessun codice copiato. Le scelte Linux
   su IDT e arresto non sostituiscono il contratto locale.
-- [K3-H](k3h-validation.md): root sorgente da ricontrollare/ricostruire
+- [K3-H](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu): root sorgente da ricontrollare/ricostruire
   al punto d'uso; nessun CR3 AP già verificato in esecuzione.
 - [K3-F](k3f-smp-design.md): ammissione al panic soltanto con record,
   TSS/IST e ingresso NMI validi. Un AP in transizione non è ancora ammesso.

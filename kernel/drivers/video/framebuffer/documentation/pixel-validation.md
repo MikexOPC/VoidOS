@@ -26,7 +26,7 @@ Nessun nuovo registro, accesso MMIO o disegno nella memoria video.
 
 ## Prove host
 
-[Log tool](../../../../../kernel/build/framebuffer-pixel-final/tools.log):
+Log tool (`kernel/build/framebuffer-pixel-final/tools.log`):
 8 casi Rust distinti, debug e release con overflow checks e warning
 come errori. La suite mode ha4 casi; la suite pixel ha4 nuovi casi e
 riesegue i4 mode:12 esecuzioni per profilo, non12 casi distinti.
@@ -36,7 +36,7 @@ coordinate interne/esterne, buffer corti, valori massimi e canali0..255.
 C MSVC /W4 /WX e ASan:190.193 controlli,10.000 sessioni e30.000
 allocazioni host bilanciate; sette nuovi controlli verificano anche
 il confine ABI C/Rust. Nessuna allocazione nelle nuove primitive.
-[Cppcheck](../../../../../kernel/build/framebuffer-pixel-final/cppcheck.xml):
+Cppcheck (`kernel/build/framebuffer-pixel-final/cppcheck.xml`):
 zero error/warning/performance/portability, con i limiti gia descritti
 nel [report GOP](validation.md). Rust non e strumentato da ASan;
 Valgrind, coverage e leak globali del firmware restano N/D.
@@ -47,7 +47,7 @@ rieseguita con successo. Il log conserva anche il tentativo fallito.
 
 ## Prove firmware
 
-[Dieci boot consecutivi](../../../../../kernel/build/framebuffer-firmware-dd5fa09675694c5abd6f9a622d285f43/results.json),
+Dieci boot consecutivi (`kernel/build/framebuffer-firmware-dd5fa09675694c5abd6f9a622d285f43/results.json`),
 immagine SHA256:
 5A15107B41332AAF00E830A840759C85160B02FC497885B38F4B4EF04387C739.
 Probe EFI q35/TCG/max/BSP: selezione GOP e controlli numeric-first/last,
@@ -56,9 +56,17 @@ prima di GOP_SELECTION_READY. Screenshot conferma solo la geometria del
 modo firmware: non dimostra rendering del kernel. Nessun triple fault;
 loader ordinario invariato secondo hash prima/dopo.
 
-[Caso senza video](../../../../../kernel/build/framebuffer-firmware-f08080329b4848af81634becdf216720/results.json):
+Caso senza video (`kernel/build/framebuffer-firmware-f08080329b4848af81634becdf216720/results.json`):
 1/1 sulla stessa immagine, marker GOP_UNAVAILABLE e nessuna adozione
 di un framebuffer assente.
 
 Il contratto di boot ordinario rimane v3. Handoff v4 opzionale e mapping
 video dedicato sono il prossimo blocco; queste primitive non li sostituiscono.
+
+## Riproduzione delle prove
+
+Da PowerShell 7 nella radice, compilare il probe GOP e lanciare i test host
+con `./kernel/drivers/video/framebuffer/scripts/test.ps1 -OutputDirectory kernel/build/framebuffer-pixel`.
+Avviare il probe con
+`python kernel/drivers/video/framebuffer/scripts/firmware.py --image kernel/build/framebuffer-pixel/BOOTX64.EFI --boots 10`.
+Per il caso senza video, usare lo stesso probe con `--boots 1 --absent`.

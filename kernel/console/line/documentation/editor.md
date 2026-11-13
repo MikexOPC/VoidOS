@@ -78,7 +78,7 @@ idle/IRQ/cleanup/budget. Prove effettivamente eseguite riportate sotto.
 Immagine input ELF SHA256:
 `738B6D481886C1581418410CA37F2B927FF73F2C8A9CEAFA7415F303F09DFD86`.
 
-- [Host finale](../../../build/ps2-decoder-b6ee3fe38fac408eaf83f5f878072318/tools.log):
+- Host finale (`kernel/build/ps2-decoder-b6ee3fe38fac408eaf83f5f878072318/tools.log`):
   20 casi Rust sia debug sia release (11 decoder,5 layout,1 UTF-8,3 editor).
   L'editor verifica tutti gli scalar da1 a110000, confini e cancellazione
   del carattere finale anche dopo un prefisso. Clippy e rustc con warning
@@ -90,25 +90,25 @@ Immagine input ELF SHA256:
   discovery7989, runtime4559 controlli (hardware host mock).
   Cppcheck15 file: zero error/warning/performance/portability;
   note style/information distinte dai diagnostici bloccanti.
-- [Dieci boot finali](../../../build/ps2-input-firmware-25d83275bf2a42458fafe134eaaf55c1/results.json):
+- Dieci boot finali (`kernel/build/ps2-input-firmware-25d83275bf2a42458fafe134eaaf55c1/results.json`):
   10/10 consecutivi q35/TCG/OVMF/BSP, immagine finale verificata nell'ESP.
   Confronto esatto delle tre righe `abAAAaèéà@#€[`, vuota e `ciao`,
   con lunghezze18/0/4 byte. Backspace cancella anche l'accento completo.
   Ogni boot verifica IF=1 durante IRQ task, idle HPET, Esc, raccolta stack,
   chiusura route/coda/token e KERNEL_READY. Budget20468 pagine prima/dopo.
   Nessun fault inatteso o triple fault rilevato dal controllo del trace.
-- [Stress esteso](../../../build/ps2-input-firmware-ba04e53e851c44b6a1aea4ae31329f04/results.json):
+- Stress esteso (`kernel/build/ps2-input-firmware-ba04e53e851c44b6a1aea4ae31329f04/results.json`):
   stessa immagine,559 press/558 release,532 caratteri ricevuti,5 righe,
   un FULL,1518 IRQ durante task e38 idle. Dopo256 A viene rifiutato B:
   la riga consegnata contiene ancora256 A. Seconda riga da256 byte:
   127 A + è +127 A; l'accento attraversa il confine128 dei blocchi di log,
   verificato come UTF-8 esatto. Budget e cleanup ripristinati.
-- [Regressione ordinaria](../../../build/ps2-decoder-firmware-77a29cc228bc4a9d8e2ea47fd2781557/results.json):
+- Regressione ordinaria (`kernel/build/ps2-decoder-firmware-77a29cc228bc4a9d8e2ea47fd2781557/results.json`):
   10/10 boot, immagine distinta SHA256
   `15A08DF99A2748F994D9FE7060E8067B4668D388F3EE937941AB1E0F0421623C`.
   L'editor e collegato solo con Ps2Input; nessuna modifica al codice ordinario
   tra questa regressione e la correzione finale del consumer input.
-- [Manifest finale](../../../build/ps2-line-source-final.json): hash e righe
+- Manifest finale (`kernel/build/ps2-line-source-final.json`): hash e righe
   del componente e del suo script di build. Sorgenti massimo230 righe,
   script massimo320, cartelle funzionali massimo5 file diretti.
   Nessun trailing whitespace o CR isolato; diff e link locali verificati.
@@ -120,7 +120,7 @@ Immagine input ELF SHA256:
    esaustivamente. Non sono stati introdotti runtime Windows o dipendenze.
 2. Il test di byte invalidi provocava un warning MSVC sui cast di costanti
    char; fixture corretta, W4/WX senza esclusioni.
-3. [Stress iniziale fallito](../../../build/ps2-input-firmware-d734bc4dc87e44309436fcacc2b15eef/boot-1/serial.log):
+3. Stress iniziale fallito (`kernel/build/ps2-input-firmware-d734bc4dc87e44309436fcacc2b15eef/boot-1/serial.log`):
    kernel_text emetteva256 byte, poi rifiutava la stringa perche non aveva
    incontrato NUL nel proprio limite. Il consumer restava in fail-stop e
    non confermava la consegna ne svuotava la riga. Corretto con blocchi limitati nello stesso

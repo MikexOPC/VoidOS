@@ -4,7 +4,7 @@
 La proposta A resta come confronto, non e il contratto da implementare.
 Il progetto ampliato e in [k3f-smp-design.md](k3f-smp-design.md).
 Snapshot della proposta iniziale. Dal 30 ottobre il backend scelto è
-implementato e verificato sul BSP: [prove e limiti](k3f-validation.md).
+implementato e verificato sul BSP: [prove e limiti](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu).
 Il gate SMP richiede ancora l'avvio e il collaudo degli AP.
 
 ## Riscontri nel codice e confine del blocco

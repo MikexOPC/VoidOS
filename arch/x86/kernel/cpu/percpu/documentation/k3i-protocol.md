@@ -289,7 +289,7 @@ Prove finali: 53 scenari host, 48 failure point I/O, regressioni per-CPU,
 risorse, identità, clock, installazione e transizione. QEMU: 10/10 sigilli
 completi, due arresti intenzionali prima/dopo il seal privato e 10/10
 ordinari. Nessun AP avviato. Dettagli, modelli e limiti nel
-[report finale](k3i-joint-validation.md); manifest kernel/build/k3i-joint-manifest.json.
+[report finale](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu); manifest kernel/build/k3i-joint-manifest.json.
 
 ## Ritorno IRETQ e panic dopo il sigillo — 1 novembre
 
@@ -303,7 +303,7 @@ Risolto il doppio commit nella preparazione del panic: il percorso riconosce
 il gruppo già sigillato prima di inizializzare i record. Profilo joint-panic
 10/10 UEFI, panic precedente 10/10 e ordinario 10/10. Restano promozione C
 AP, provider del contesto/clock e collegamento xs_private_arrive al piano
-e al protocollo. [Prove e limiti](k3i-return-validation.md); manifest
+e al protocollo. [Prove e limiti](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu); manifest
 kernel/build/k3i-return-manifest.json. Nessun AP avviato.
 
 ## Gate aperti
@@ -377,7 +377,7 @@ tre tratti. Evidenza: kernel/build/ap-assembler-5e05bbc296974dcfa08424b1a95c235c
 
 Scelta NMI A approvata: prima prova CPU isolata passata con dieci avvii
 consecutivi e tre controlli, fuori dal kernel e senza AP. Fonti e limiti
-in [k3i-nmi-validation.md](k3i-nmi-validation.md). L'integrazione nel
+in [validazione del checkpoint](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu). L'integrazione nel
 trampolino rimane aperta, insieme al vincolo prima dell'IVT iniziale.
 
 Nessun gate QEMU chiuso da questa tappa. Prima di dichiarare K3-I pronto

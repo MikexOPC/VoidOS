@@ -4,9 +4,11 @@ Data: 5 ottobre 2026. Stato: corretto nei documenti operativi, senza modifiche a
 
 ## File interessati
 
-- [direttive-locali](../../../direttive-locali), versione 2.1: conservati i sette constraint, corretti il perimetro e gli esempi di sicurezza/test/driver/design.
-- [SKILL.md](../../../SKILL.md), versione 1.1: prerequisiti CPU, applicabilita delle protezioni, limiti, build e template datasheet coerenti.
-- [REVIEW_INSTRUCTION.md](../../../REVIEW_INSTRUCTION.md), versione 1.1: classificazione dei rischi basata su prove, esempi distinti da risultati e analisi CPU/ring/KPTI/DMA corrette.
+I primi tre nomi indicano istruzioni locali del checkpoint.
+
+- `direttive-locali`, versione 2.1: conservati i sette constraint, corretti il perimetro e gli esempi di sicurezza/test/driver/design.
+- `SKILL.md`, versione 1.1: prerequisiti CPU, applicabilita delle protezioni, limiti, build e template datasheet coerenti.
+- `REVIEW_INSTRUCTION.md`, versione 1.1: classificazione dei rischi basata su prove, esempi distinti da risultati e analisi CPU/ring/KPTI/DMA corrette.
 - [Riferimento verificato](security.md): registri/CPUID, semantica delle protezioni e fonti primarie.
 
 ## Controlli completati

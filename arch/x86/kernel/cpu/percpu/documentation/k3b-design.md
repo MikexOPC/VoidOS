@@ -1,6 +1,6 @@
 # K3-B — clock sorvegliato per il contesto dei lock
 
-29 ottobre 2026. Scelta ACPI PM approvata dall’utente; implementazione verificata sul BSP; [prove e limiti](k3b-validation.md).
+29 ottobre 2026. Scelta ACPI PM approvata dall’utente; implementazione verificata sul BSP; [prove e limiti](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu).
 K3-A è chiuso sul BSP; questo blocco mantiene gli AP fermi.
 
 ## Problema verificato

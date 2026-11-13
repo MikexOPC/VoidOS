@@ -10,8 +10,8 @@ Contratto e fonti: [controller.md](controller.md).
 
 ## Prove host finali
 
-[Log](../../../../build/ps2-controller-host-final.log),
-[evidenze](../../../../build/ps2-decoder-9f014de0775a460eb70a47d3cb812860/tools.log).
+Log (`kernel/build/ps2-controller-host-final.log`),
+evidenze (`kernel/build/ps2-decoder-9f014de0775a460eb70a47d3cb812860/tools.log`).
 
 - Decoder Rust: 11/11 casi in debug e 11/11 in release, un milione di
   byte pseudocasuali e tutte le coppie di byte per modalita. Clippy pulito.
@@ -39,8 +39,8 @@ inesistente sono stati corretti; non sono riportati come PASS.
 
 ## Prova QEMU dell'immagine finale
 
-[Log controller](../../../../build/ps2-controller-firmware-final.log),
-[risultati](../../../../build/ps2-decoder-firmware-86509b5e7fb74db6a445e975dc056b95/results.json).
+Log controller (`kernel/build/ps2-controller-firmware-final.log`),
+risultati (`kernel/build/ps2-decoder-firmware-86509b5e7fb74db6a445e975dc056b95/results.json`).
 Dieci boot consecutivi q35/TCG/OVMF con `-TestPs2Controller`, ciascuno con
 `KERNEL_PS2_DECODER_OK`, `KERNEL_PS2_CONTROLLER_SET2_OK`, `KERNEL_READY`
 e verifiche CPU/memoria del harness scheduler. SHA256:
@@ -58,8 +58,8 @@ restano evidenze intermedie; il risultato sopra e della modifica finale.
 
 Profilo ordinario: altri dieci boot consecutivi, probe decoder/controller
 esclusi dall'immagine e marker decoder assente dai log.
-[Log ordinario](../../../../build/ps2-controller-ordinary-final.log),
-[risultati](../../../../build/ps2-decoder-firmware-b18b7aa95aa547cb9906e314ae9e047b/results.json).
+Log ordinario (`kernel/build/ps2-controller-ordinary-final.log`),
+risultati (`kernel/build/ps2-decoder-firmware-b18b7aa95aa547cb9906e314ae9e047b/results.json`).
 SHA256: `6640480DD7CEE066E1DDAE2D67C135F5CB602544C78C3E9A8EEB964B867CBBEA`.
 
 ## Review e limiti
@@ -73,9 +73,17 @@ Cleanup non confermato conserva DIRTY e segnala errore, senza finto close.
 Massimo sorgente del componente194 righe, massimo quattro file diretti
 nel controller; main209 e build303 dopo i soli hook del profilo isolato.
 Zero trailing whitespace/tab di indentazione/CR isolati; nessun TODO.
-[Hash sorgenti finali](../../../../build/ps2-controller-source-final.json).
+Hash sorgenti finali (`kernel/build/ps2-controller-source-final.json`).
 
 Restano IRQ1/route MADT, source binding, attivazione scanning, payload,
 mapping dei tasti e task consumer permanente. I negativi del controller
 sono test host; fault fisici, hotplug, clock assente sulla macchina e
 controller disabilitato nella configurazione QEMU non sono ancora provati.
+
+## Riproduzione delle prove
+
+Da PowerShell 7 nella radice, con il loader compilato in modalità
+`-BootKernel`, usare `./kernel/drivers/input/ps2/scripts/test.ps1` per
+la suite host e `./kernel/drivers/input/ps2/scripts/firmware.ps1 -Controller -Boots 10`
+per il diagnostico. Per la regressione usare
+`./kernel/drivers/input/ps2/scripts/firmware.ps1 -Ordinary -Boots 10`.

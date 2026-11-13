@@ -52,43 +52,43 @@ kernel usa il tetto52 come quello ACPI, senza autorizzare un mapping.
 
 ## Prove finali
 
-- [Suite dedicata](../../../../../kernel/build/framebuffer-handoff-host-final.log):
+- Suite dedicata (`kernel/build/framebuffer-handoff-host-final.log`):
   8 casi Rust distinti debug/release, Clippy e warning come errori.
   C MSVC /W4 /WX e ASan:230.214 controlli GOP,10.000 sessioni,
   30.000 allocazioni mock bilanciate nella fase ripetuta;30.079 controlli handoff,
   10.000 pubblicazioni senza allocazioni. Buffer corti, assenza parziale,
   tipi0..15, confini di pagina, mappa corta, overflow, rollback e alias.
-- [Build/test loader](../../../../../kernel/build/framebuffer-handoff-boot-build-final.log):
+- Build/test loader (`kernel/build/framebuffer-handoff-boot-build-final.log`):
   suite C e Rust completa dello script supportato. Test ExitBootServices
   verificano il framebuffer attraverso uno, due e tre tentativi e i
   percorsi di errore esistenti. Questi retry sono mock host, non errori
   ExitBootServices indotti nel firmware QEMU.
-- [Suite host kernel](../../../../../kernel/build/framebuffer-handoff-kernel-host.log):
+- Suite host kernel (`kernel/build/framebuffer-handoff-kernel-host.log`):
   contratto, copie senza alias, ownership/rollback e regressioni memoria.
   Nuovi casi:40 alterazioni singole del descrittore assente rifiutate,
   v3 rifiutata e copia di un descrittore valido.
-- [Build kernel finale](../../../../../kernel/build/framebuffer-handoff-kernel-build-final.log):
+- Build kernel finale (`kernel/build/framebuffer-handoff-kernel-build-final.log`):
   ELF ordinario verificato dalla toolchain supportata.
-- [Cppcheck modulo](../../../../../kernel/build/framebuffer-handoff-final/cppcheck.xml)
-  e [interfacce](../../../../../kernel/build/framebuffer-handoff-final/integration-cppcheck.xml):
+- Cppcheck modulo (`kernel/build/framebuffer-handoff-final/cppcheck.xml`)
+  e interfacce (`kernel/build/framebuffer-handoff-final/integration-cppcheck.xml`):
   rispettivamente6 e4 file C, zero error/warning/performance/portability.
   Analisi parziale: restano suggerimenti style/information e header standard
   non espansi; non equivale a una prova formale o a un audit globale.
-- [QEMU con video 10/10](../../../../../kernel/build/framebuffer-firmware-316947b1070b4274aee28e86b7463c86/results.json):
+- QEMU con video 10/10 (`kernel/build/framebuffer-firmware-316947b1070b4274aee28e86b7463c86/results.json`):
   loader e kernel reali, ExitBootServices e paging proprio; v4/208,
   framebuffer1024x768 BGR32, stride1024,3.145.728 byte. Dati letti dal
   kernel, presenza concorde al loader, KERNEL_READY, CPU e screenshot
   completi, nessun triple fault. Screenshot valida la geometria firmware,
   non un rendering del kernel.
-- [QEMU senza video 10/10](../../../../../kernel/build/framebuffer-firmware-39bdd311e4f542ceaaf6b8ec56a9ae14/results.json):
+- QEMU senza video 10/10 (`kernel/build/framebuffer-firmware-39bdd311e4f542ceaaf6b8ec56a9ae14/results.json`):
   stessa coppia di immagini, -vga none, tutti i campi video zero,
   KERNEL_READY raggiunto tramite seriale.
-- [Regressione PS/2 10/10](../../../../../kernel/build/ps2-input-firmware-eee37fb51c80479283e67c01c6d4b0ce/results.json):
+- Regressione PS/2 10/10 (`kernel/build/ps2-input-firmware-eee37fb51c80479283e67c01c6d4b0ce/results.json`):
   stesso loader finale, kernel input ricompilato; testo italiano/editor,
   task shell separata, IRQ/idle/cleanup verificati dal relativo harness.
   Hash ELF input:
   CE7B0058F19134822AA6CDF07AD2221CA18DACD4A05E3D078E9A0A470C99A99E.
-- [Manifest finale](../../../../../kernel/build/framebuffer-handoff-final/source-review.json):
+- Manifest finale (`kernel/build/framebuffer-handoff-final/source-review.json`):
   29 sorgenti/script/interfacce, massimo373 righe, nessun errore di
   whitespace/LF o limite. Le cartelle funzionali nuove rispettano5 file.
   I file nuovi contengono soltanto commenti separatori; reuse/ intatto.
@@ -100,7 +100,7 @@ Hash ELF ordinario finale:
 Le campagne precedenti al fix di cleanup restano evidenza storica,
 non vengono sommate ai dieci boot finali.
 
-[Coppia installata nell'ESP](../../../../../kernel/build/framebuffer-handoff-final/esp-install.json):
+Coppia installata nell'ESP (`kernel/build/framebuffer-handoff-final/esp-install.json`):
 copiato il kernel ordinario verificato, hash confrontati prima/dopo;
 conservato il probe precedente negli artefatti. Nessun commit/push in questo blocco.
 

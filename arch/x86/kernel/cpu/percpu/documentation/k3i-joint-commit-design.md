@@ -1,7 +1,7 @@
 # K3-I — commit congiunto: progetto approvato, 1 novembre 2026
 
 Scelta A acquisita: arresto diagnostico dopo errore irreversibile, con risorse
-trattenute. Implementazione e prove in [k3i-joint-validation.md](k3i-joint-validation.md).
+trattenute. Implementazione e prove in [validazione del checkpoint](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu).
 Il [design K3-I approvato](k3i-design.md) richiede che tutte le risorse siano
 sigillate prima di COMMITTED. Il [blocco installazione](k3i-installation.md)
 ha verificato soltanto il contenuto inattivo e il rollback.

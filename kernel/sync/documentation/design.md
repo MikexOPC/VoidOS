@@ -120,7 +120,7 @@ volta il contesto statico, soltanto sulla CPU BSP verificata. L'accessor
 restituisce NULL prima dell'init e sugli AP: non legge lo stato C del BSP
 da un AP. Questo descrive il binding early K2: dal blocco K3-A il provider
 passa a GS dopo GDT e ritiro dello stack iniziale, mantenendo gli AP fermi.
-[Prove K3-A](../../../arch/x86/kernel/cpu/percpu/documentation/k3-validation.md).
+[Prove K3-A](../../../docs/validation/consolidamento.md#checkpoint-per-cpu).
 
 Intel SDM 090US Vol. 2A, istruzione CPUID: leaf 1 EDX bit 5 (MSR) e bit 9
 (APIC), dopo la verifica del massimo basic leaf. Vol. 3A §§13.4.2–13.4.4,

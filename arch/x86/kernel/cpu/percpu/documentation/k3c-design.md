@@ -1,6 +1,6 @@
 # K3-C — registro delle identità CPU prima delle risorse AP
 
-29 ottobre 2026. Scelta A approvata: registro di boot stabile, hotplug successivo; implementazione verificata sul BSP; [prove e limiti](k3c-validation.md). K3-A/B
+29 ottobre 2026. Scelta A approvata: registro di boot stabile, hotplug successivo; implementazione verificata sul BSP; [prove e limiti](../../../../../../docs/validation/consolidamento.md#checkpoint-per-cpu). K3-A/B
 verificano GS e clock del BSP; gli AP restano fermi.
 
 ## Riscontri e perimetro

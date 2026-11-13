@@ -42,11 +42,11 @@ successivo, non proprieta gia dimostrate dal calcolo numerico.
 
 Evidenze:
 
-- [Host del modulo](../../../../../build/framebuffer-mapping-host.log)
-- [Host kernel](../../../../../build/framebuffer-mapping-kernel-host.log)
-- [Build kernel](../../../../../build/framebuffer-mapping-build.log)
-- [Analisi statica](../../../../../build/framebuffer-mapping-host/cppcheck.xml)
-- [Manifest sorgenti finale](../../../../../build/framebuffer-mapping-host/final-source-review.json)
+- Host del modulo (`kernel/build/framebuffer-mapping-host.log`)
+- Host kernel (`kernel/build/framebuffer-mapping-kernel-host.log`)
+- Build kernel (`kernel/build/framebuffer-mapping-build.log`)
+- Analisi statica (`kernel/build/framebuffer-mapping-host/cppcheck.xml`)
+- Manifest sorgenti finale (`kernel/build/framebuffer-mapping-host/final-source-review.json`)
 
 Nessuna allocazione nel preflight; ASan strumenta il C host, non Rust,
 firmware o RAM fisica. Valgrind e coverage linee/branch N/D. Non si
@@ -67,16 +67,16 @@ EB2398C1D09EDF333AD13BDDBFA915D591C5DA236D3900AE5E336685B34B67D7.
 
 Campagne finali in serie con il test aggiornato:
 
-- [Video10/10](../../../../../build/framebuffer-firmware-fdcfc3adfc254fff8f29547e27fa888b/results.json):
+- Video10/10 (`kernel/build/framebuffer-firmware-fdcfc3adfc254fff8f29547e27fa888b/results.json`):
   1024x768 BGR,768 pagine video e4 pagine di tabelle previste.
-- [Assenza10/10](../../../../../build/framebuffer-firmware-0f0b06e3f77d4acfaff703a356bc8aaf/results.json):
+- Assenza10/10 (`kernel/build/framebuffer-firmware-0f0b06e3f77d4acfaff703a356bc8aaf/results.json`):
   metadati e piano zero, fallback seriale fino a KERNEL_READY.
 
 ## Fallimento osservato e gate ancora aperto
 
 Una prima coppia di campagne eseguite contemporaneamente ha dato:
 video10/10, assenza3 boot passati e quarto boot in panic del timer.
-[Log del fallimento](../../../../../build/framebuffer-firmware-f8c0c66a16e0419e90cb4ae264d0bd5b/boot-4/serial.log).
+Log del fallimento (`kernel/build/framebuffer-firmware-f8c0c66a16e0419e90cb4ae264d0bd5b/boot-4/serial.log`).
 Il preflight framebuffer aveva gia raggiunto KERNEL_FRAMEBUFFER_PLAN_OK.
 Successivamente: TIMER_DEADLINES_FAILED, failure0x0c, fase ARM,
 cleanup riuscito, poi LAPIC_TIMER_INVALID. Nessun triple fault osservato.
@@ -107,3 +107,11 @@ La segnalazione CRLF preesistente di test/kernel/firmware.ps1 e distinta
 da un errore di diff. Nuovo codice con soli separatori; reuse/ intatto.
 Il repository include lavoro precedente non committato: i totali del
 diff Git non rappresentano esclusivamente questa implementazione.
+
+## Riproduzione delle prove
+
+La suite host si avvia con `./kernel/drivers/video/framebuffer/scripts/test.ps1`.
+Per il piano di mapping, compilare il loader in modalità `-BootKernel`
+e il kernel ordinario. Avviare
+`python kernel/drivers/video/framebuffer/scripts/firmware.py --image <BOOTX64.EFI> --kernel <kernel.elf> --mapping-plan --boots 10`.
+Aggiungere `--absent` per il caso senza display.

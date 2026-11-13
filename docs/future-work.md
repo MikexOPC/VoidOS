@@ -41,8 +41,8 @@ La [discovery Intel](../arch/x86/kernel/drivers/memory/iommu/intel/discovery/doc
 passa host e QEMU ma non abilita la traduzione. Console persistente sospesa;
 nessuna estensione dell'eccezione alla sessione interattiva.
 Per ora il lavoro VirtIO resta nel solo diagnostico QEMU fidato,
-senza passthrough. L'eccezione al gate IOMMU e limitata a questo profilo:
-non modifica la regola generale di [SKILL.md](../SKILL.md).
+senza passthrough. L'eccezione al gate IOMMU è limitata a questo profilo.
+La regola generale per dispositivi non fidati resta descritta nel [riferimento sulla sicurezza](review/instructions/security.md).
 Un ID PCI corretto non dimostra che un dispositivo sia fidato.
 
 Scelto Intel VT-d; discovery DMAR completata nel profilo documentato.

@@ -75,27 +75,27 @@ Nessuna prova SMP o ring 3. C++ non introdotto senza un caso concreto.
 
 ## Snapshot delle prove prima del raggruppamento sotto kernel/drivers
 
-- [Suite host finale](../../../../build/ps2-structure-host-final.log):
+- Suite host finale (`kernel/build/ps2-structure-host-final.log`):
   24 test Rust sia debug sia release, warning come errori e Clippy;
   C/ASan, 526.725 controlli controller, 1.114.132 testo, 2.680.276 editor,
   220.038 shell, 7.989 discovery e 4.559 runtime. Bridge FIFO full/wait/retry,
   cancellazione e EOF passano con scheduler mock.
-- [Analisi statica](../../../../build/ps2-decoder-bf6569b9e0764d8cae9232ff8e330096/cppcheck.xml):
+- Analisi statica (`kernel/build/ps2-decoder-bf6569b9e0764d8cae9232ff8e330096/cppcheck.xml`):
   20 file, zero error/warning/performance/portability; diagnostiche style
   e information restano, incluso unusedFunction nell'analisi parziale.
-- [Build](../../../../build/ps2-structure-build.log): immagine ELF
+- Build (`kernel/build/ps2-structure-build.log`): immagine ELF
   verificata; MSVC /W4 /WX. I messaggi di canonicalizzazione percorsi Rust
   della build sandbox non sono warning C o test falliti.
-- [Input QEMU 10/10](../../../../build/ps2-input-firmware-60936e58bf12496fabc54767f52a4c74/results.json):
+- Input QEMU 10/10 (`kernel/build/ps2-input-firmware-60936e58bf12496fabc54767f52a4c74/results.json`):
   tasti, modificatori, righe, shell, IRQ durante task, idle e cleanup;
   marker KERNEL_READY, nessun fault inatteso, budget invariato.
-- [Stress](../../../../build/ps2-input-firmware-61af231647bc4c979c37f3fd86abdbfd/results.json):
+- Stress (`kernel/build/ps2-input-firmware-61af231647bc4c979c37f3fd86abdbfd/results.json`):
   stessa immagine, 612 pressioni, 610 release, 578 caratteri, 12 righe,
   12 comandi gestiti, un overflow rifiutato, 1.617 IRQ durante task e
   59 idle; budget 20.467 -> 20.467. Il rilascio finale puo arrivare dopo
   lo stop; Pause non emette break. Il gate usa il minimo motivato dal protocollo.
-- [Regressione ordinaria 10/10](../../../../build/ps2-decoder-firmware-577ea4f924304c4594bd3a98f4e1da9a/results.json).
-- [Controllo struttura e hash](../../../../build/ps2-structure-check.json):
+- Regressione ordinaria 10/10 (`kernel/build/ps2-decoder-firmware-577ea4f924304c4594bd3a98f4e1da9a/results.json`).
+- Controllo struttura e hash (`kernel/build/ps2-structure-check.json`):
   47 sorgenti/script, massimo 272 righe, massimo cinque file sorgente
   diretti, zero link/include mancanti o include circolari locali.
   UTF-8, LF e whitespace verificati anche sui file non tracciati.
@@ -130,16 +130,16 @@ I report storici sopra conservano gli hash delle immagini gia verificate.
 
 Verifica finale del raggruppamento:
 
-- [Host](../../../../../kernel/build/ps2-grouping-host.log): 24 test Rust
+- Host (`kernel/build/ps2-grouping-host.log`): 24 test Rust
   debug/release, C/ASan, Clippy, controller 526.725 controlli e bridge/runtime.
-- [Cppcheck](../../../../../kernel/build/ps2-decoder-81b584690cc24e9e855eda24a7b2d5c3/cppcheck.xml):
+- Cppcheck (`kernel/build/ps2-decoder-81b584690cc24e9e855eda24a7b2d5c3/cppcheck.xml`):
   20 file, zero diagnostiche bloccanti; style/information restano.
-- [Build](../../../../../kernel/build/ps2-grouping-build.log), immagine input
+- Build (`kernel/build/ps2-grouping-build.log`), immagine input
   `78461FB475344A18D5C796AACBDE96C9538DA3CECE4FE0CFEDF60BA76AA821B1`.
-- [Input QEMU 10/10](../../../../../kernel/build/ps2-input-firmware-d604f35ac99b47e791e7359e4ba8dc27/results.json):
+- Input QEMU 10/10 (`kernel/build/ps2-input-firmware-d604f35ac99b47e791e7359e4ba8dc27/results.json`):
   tasti, testo, editor, shell, IRQ/idle e cleanup, senza fault inattesi.
-- [Ordinario QEMU 10/10](../../../../../kernel/build/ps2-decoder-firmware-c39639d14ea740b496e4eb7b46081f2d/results.json).
-- [Struttura/hash](../../../../../kernel/build/ps2-structure-check.json):
+- Ordinario QEMU 10/10 (`kernel/build/ps2-decoder-firmware-c39639d14ea740b496e4eb7b46081f2d/results.json`).
+- Struttura/hash (`kernel/build/ps2-structure-check.json`):
   47 sorgenti/script, massimo 272 righe, include/link locali validi,
   nessun ciclo locale, UTF-8/LF e whitespace verificati.
 
