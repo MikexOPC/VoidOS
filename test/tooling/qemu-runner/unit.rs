@@ -198,7 +198,7 @@ fn results_match_python_json() {
 #[test]
 fn vm_arguments_match_python() {
     let paths = Paths { qemu_dir: PathBuf::from("C:/Program Files/qemu"), loader: PathBuf::from("x") };
-    let plan = Plan { memory: 128, smp: 1, inject: Inject::None, cpu: "max" };
+    let plan = Plan { memory: 128, smp: 1, inject: Inject::None, cpu: "max", machine: "q35" };
     let list = arguments(Path::new("D:\\out\\boot-1"), &paths, &plan);
     assert_eq!(
         list,
