@@ -61,24 +61,24 @@ int x86_process_device_irq_check(const X86_PROCESS_IMAGE *image, int (*inject)(v
 
 void x86_process_nmi_arm(BOOT_U64 window)
 {
-    k6_nmi_count = 0;
-    k6_nmi_rip = 0;
-    k6_window_budget = 0x4000000ULL;
-    k6_nmi_armed = 1;
-    k6_window = window;
+    process_nmi_count = 0;
+    process_nmi_rip = 0;
+    process_window_budget = 0x4000000ULL;
+    process_nmi_armed = 1;
+    process_window = window;
 }
 
 // ====== x86_process_nmi_report ======
 
 int x86_process_nmi_report(BOOT_U64 window)
 {
-    BOOT_U32 user_root = k6_nmi_cr3 != k6_kernel_root;
-    BOOT_U32 kernel_gs = k6_nmi_gs == k6_owner;
-    BOOT_U32 ac = (k6_nmi_flags & FLAG_AC) != 0;
-    k6_nmi_armed = 0;
-    return k6_nmi_count == 1 && k6_window == 0 &&
-        k6_nmi_rip >= x86_process_window_first(window) && k6_nmi_rip < x86_process_window_last(window) &&
-        x86_process_nmi_valid(window, user_root, kernel_gs, ac, k6_nmi_cs);
+    BOOT_U32 user_root = process_nmi_cr3 != process_kernel_root;
+    BOOT_U32 kernel_gs = process_nmi_gs == process_owner;
+    BOOT_U32 ac = (process_nmi_flags & FLAG_AC) != 0;
+    process_nmi_armed = 0;
+    return process_nmi_count == 1 && process_window == 0 &&
+        process_nmi_rip >= x86_process_window_first(window) && process_nmi_rip < x86_process_window_last(window) &&
+        x86_process_nmi_valid(window, user_root, kernel_gs, ac, process_nmi_cs);
 }
 
 // ====== x86_process_window_first ======

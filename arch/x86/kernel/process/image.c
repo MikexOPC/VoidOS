@@ -53,13 +53,13 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
 
 static int reap(KERNEL_PHYSICAL_LEASE *lease)
 {
-    if (__readcr3() != k6_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY) return 0;
+    if (__readcr3() != process_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY) return 0;
     BOOT_U64 pages = lease->Pages;
     if (!x86_page_window_resume(process_rt.Window, lease)) process_die("PROCESS_RESUME_FAILED");
     volatile unsigned char *alias = x86_window_bytes();
     for (BOOT_U64 index = 0; index < pages * PAGE_BYTES; ++index) alias[index] = 0;
     if (!x86_page_window_release(process_rt.Window)) process_die("PROCESS_RELEASE_FAILED");
-    k6_user_root = 0;
+    process_user_root = 0;
     return x86_page_window_idle_valid(process_rt.Window);
 }
 
@@ -68,12 +68,12 @@ static int reap(KERNEL_PHYSICAL_LEASE *lease)
 static void turn_finish(X86_PROCESS_RESULT *result)
 {
     process_timer_quiesce();
-    if (k6_exit_kind == X86_PROCESS_FAULT) {
+    if (process_exit_kind == X86_PROCESS_FAULT) {
         result->Kind = X86_PROCESS_FAULT;
-        result->Vector = k6_fault[0];
-        result->Error = k6_fault[1];
-        result->Rip = k6_fault[2];
-        result->Cr2 = k6_fault_cr2;
+        result->Vector = process_fault[0];
+        result->Error = process_fault[1];
+        result->Rip = process_fault[2];
+        result->Cr2 = process_fault_cr2;
     }
     __writemsr(MSR_FS_BASE, 0);
     __writemsr(MSR_KERNEL_GS, 0);
@@ -99,11 +99,11 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
         return kernel_physical_budget_matches(process_rt.Window->Pool, budget);
     }
     if (!map_image(image, &plan, &process_rt.Held)) return 0;
-    k6_user_root = process_rt.Held.Base;
+    process_user_root = process_rt.Held.Base;
     advance(2);
     process_rt.Current = result;
     process_rt.WrittenBytes = 0;
-    k6_exit_kind = 0;
+    process_exit_kind = 0;
     advance(3);
     process_timer_start();
 #ifdef KERNEL_TEST_K6_PROCESS
@@ -128,7 +128,7 @@ int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *im
         x86_process_plan(image->Bytes, image->Length, &plan)) return 0;
     BOOT_U32 ticks = kernel_clock_ms(process_rt.BudgetClock, PROCESS_BUDGET_MS);
     if (ticks == UINT32_MAX || !map_image(image, &plan, &slot->Lease)) return 0;
-    slot->KernelRoot = k6_kernel_root;
+    slot->KernelRoot = process_kernel_root;
     slot->ImageEntry = process_rt.ExpectedImage;
     slot->WindowEntry = process_rt.ExpectedWindows;
     slot->Entry = plan.Entry;
@@ -144,7 +144,7 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
 {
     if (!process_rt.Opened || process_rt.Current || !slot || !slot->Lease.Id || !result || result->Kind ||
         (!!channel != !!endpoint) || (slot->Waiting && !channel)) return 0;
-    if (slot->KernelRoot != k6_kernel_root || slot->ImageEntry != process_rt.ExpectedImage ||
+    if (slot->KernelRoot != process_kernel_root || slot->ImageEntry != process_rt.ExpectedImage ||
         slot->WindowEntry != process_rt.ExpectedWindows || !roots_stable()) return 0;
     if (renew_budget) {
         BOOT_U32 ticks = kernel_clock_ms(process_rt.BudgetClock, PROCESS_BUDGET_MS);
@@ -158,11 +158,11 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
         GPR(slot->Frame, GPR_RAX) = ready;
         slot->Waiting = 0;
     }
-    k6_user_root = slot->Lease.Base;
+    process_user_root = slot->Lease.Base;
     process_rt.Current = result;
     process_rt.WrittenBytes = slot->Written;
     process_rt.BudgetLeft = slot->RemainingIrqs;
-    k6_exit_kind = 0;
+    process_exit_kind = 0;
     process_rt.Yielded = 0;
     process_rt.Waiting = 0;
     process_rt.YieldFrame = slot->Frame;
@@ -177,7 +177,7 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     process_rt.IpcChannel = 0;
     process_rt.IpcEndpoint = 0;
     turn_finish(result);
-    if (__readcr3() != k6_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY)
+    if (__readcr3() != process_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY)
         process_die("PROCESS_ROOT_CHANGED");
     slot->Written = process_rt.WrittenBytes;
     slot->RemainingIrqs = process_rt.BudgetLeft;
