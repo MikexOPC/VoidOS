@@ -37,7 +37,7 @@ try {
     $flags=@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',"/I$project")
     Invoke-Checked "$bin/cl.exe" ($flags+$paths+@("/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no',"$out/policy.obj"))
     Invoke-Checked "$out/host.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $paths+=@("$project/test/arch/x86/kernel/drivers/memory/iommu/intel/discovery/probe.c")
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',
         ('"-I'+$project+'"'))+@($paths | ForEach-Object {'"'+$_+'"'})

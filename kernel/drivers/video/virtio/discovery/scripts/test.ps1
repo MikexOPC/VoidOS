@@ -43,7 +43,7 @@ try {
         "$project/lib/memory/address_ranges.c","$project/test/kernel/drivers/video/virtio/discovery/abi_test.c",
         "/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no',"$out/gateway.obj")
     Invoke-Checked "$out/host.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $checkerArguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11',
         '--xml','--xml-version=2',('"-I'+$project+'"'),
         ('"'+$project+'/kernel/drivers/video/virtio/discovery/pci.c"'),

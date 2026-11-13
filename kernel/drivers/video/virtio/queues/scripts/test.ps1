@@ -47,7 +47,7 @@ try {
     Invoke-Checked "$bin/cl.exe" (@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
         '/MD','/O2',"/I$project")+$lifecycle+@("/Fo$out/","/Fd$out/lifecycle.pdb","/Fe$out/lifecycle.exe",'/link','/incremental:no'))
     Invoke-Checked "$out/lifecycle.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $paths+=$native+$lifecycle+@("$project/arch/x86/kernel/drivers/video/virtio/queues/pci.c","$project/arch/x86/kernel/drivers/video/virtio/queues/access.c")
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',
         ('"-I'+$project+'"'))+@($paths | ForEach-Object {'"'+$_+'"'})

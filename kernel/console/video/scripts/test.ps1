@@ -174,7 +174,7 @@ try {
         "$project/arch/x86/kernel/timer/hpet/description/probe/policy.c",
         ("/Fo$out/"),("/Fd$out/host.pdb"),("/Fe$out/hpet-policy.exe"),'/link','/incremental:no','/DEBUG','/WX')
     Invoke-Checked "$out/hpet-policy.exe" @()
-    $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $cppcheck = (Resolve-OsCppcheck)
     Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") "$project/kernel/console/video/console.c" `
         "$project/kernel/console/video/pointer/state.c" "$project/kernel/console/video/pointer/shape.c" `

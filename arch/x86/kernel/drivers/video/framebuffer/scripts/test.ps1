@@ -89,7 +89,7 @@ try {
     Invoke-Checked "$bin/cl.exe" (@('/nologo','/fsanitize=address','/MD',("/Fe$out/host.exe")) +
         $objects + @('/link','/incremental:no','/DEBUG','/WX'))
     Invoke-Checked "$out/host.exe" @()
-    $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $cppcheck = (Resolve-OsCppcheck)
     $arguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml','--xml-version=2',
         ('"-I'+$project+'"')) + @(
         'arch/x86/kernel/drivers/video/framebuffer/lifecycle.c',

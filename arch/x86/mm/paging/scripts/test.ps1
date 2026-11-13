@@ -84,7 +84,7 @@ try {
     Invoke-Checked "$bin/cl.exe" (@('/nologo','/fsanitize=address','/MD',("/Fe$out/differential.exe")) +
         $differentialObjects + @($regions,"$out/kernel-mm-physical-rust-alignment-placement.rs.obj",'/link','/incremental:no','/DEBUG','/WX'))
     Invoke-Checked "$out/differential.exe" @()
-    $cppcheck = "$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $cppcheck = (Resolve-OsCppcheck)
     $arguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml','--xml-version=2',
         ('"-I'+$project+'"')) + @('arch/x86/mm/paging/inventory.c',
         'arch/x86/mm/paging/authorization/validation.c','test/kernel/mm/paging/inventory_test.c','test/kernel/mm/paging/fixture.c','test/kernel/mm/paging/device_test.c',

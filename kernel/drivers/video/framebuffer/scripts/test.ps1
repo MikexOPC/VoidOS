@@ -90,7 +90,7 @@ try {
     Invoke-Checked "$bin/link.exe" (@('/nologo','/machine:x64','/subsystem:efi_application',
         '/entry:efi_main','/nodefaultlib','/incremental:no','/dynamicbase:no','/fixed:no',
         ("/out:$out/BOOTX64.EFI")) + $objects)
-    $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $cppcheck=(Resolve-OsCppcheck)
     Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") ("-I$boot") "$boot/graphics/gop.c" "$boot/../../../../test/arch/x86/boot/uefi/graphics/selection_test.c" `
         "$boot/../../../../test/arch/x86/boot/uefi/graphics/probe.c" "$boot/graphics/handoff.c" "$module/handoff.c" `
