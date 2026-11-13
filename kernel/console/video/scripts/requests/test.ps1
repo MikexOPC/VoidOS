@@ -6,9 +6,9 @@ $out = if ($OutputDirectory) { $OutputDirectory } else {
     "$project/kernel/build/console-requests-" + [guid]::NewGuid().ToString('N')
 }
 New-Item -ItemType Directory -Force $out | Out-Null
-Invoke-Checked "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe" @(
+Invoke-Checked (Resolve-OsPython) @(
     '-B',"$project/test/kernel/console/video/ap/firmware_test.py")
-Invoke-Checked "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe" @(
+Invoke-Checked (Resolve-OsPython) @(
     '-B',"$project/test/kernel/scripts/audit_symbols_test.py")
 
 # ============ Rust FFI and fixed ABI ============

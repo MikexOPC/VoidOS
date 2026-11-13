@@ -17,19 +17,13 @@ param(
 # sources are unchanged. A campaign is skipped when the same image, runner, loader, OVMF, QEMU and
 # entry already passed with the same boots; -Fresh runs everything again.
 $ErrorActionPreference = 'Stop'
-$campaignShell = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
-if (!$campaignShell) {
-    foreach ($candidate in @("$env:ProgramFiles/PowerShell/7/pwsh.exe",
-        "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe")) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $campaignShell = $candidate; break }
-    }
-}
-if (!$campaignShell) { throw 'PowerShell 7 required for QEMU campaigns, as for host suites.' }
+. (Join-Path $PSScriptRoot "../lib/common.ps1")
+$campaignShell = Resolve-OsPwsh
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw "Run with PowerShell 7: & '$campaignShell' -File '$PSCommandPath'" }
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $registry = (Get-Content -Raw (Join-Path $PSScriptRoot 'campaigns.json') | ConvertFrom-Json).campaigns
 $names = @($registry.PSObject.Properties.Name)
-$python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+$python = Resolve-OsPython
 
 # ============ inventory ============
 

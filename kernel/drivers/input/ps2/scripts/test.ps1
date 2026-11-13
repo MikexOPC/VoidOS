@@ -14,7 +14,7 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) { Invoke-OsCheck
 # ============ decoder validation ============
 
 if (!$Python) {
-    $Python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+    $Python = Resolve-OsPython
 }
 Invoke-Checked $Python @("$PSScriptRoot/structure.py")
 & "$PSScriptRoot/mouse/test.ps1" -OutputDirectory "$out/mouse"

@@ -13,8 +13,9 @@ $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'Use qemu.ps1: campaign builds require PowerShell 7.' }
 $campaignShell = (Get-Process -Id $PID).Path
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+. (Join-Path $project 'scripts/lib/common.ps1')
 $entry = (Get-Content -Raw (Join-Path $PSScriptRoot 'campaigns.json') | ConvertFrom-Json).campaigns.$Name
-$python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+$python = Resolve-OsPython
 $log = Join-Path $Output ($Name + '.log')
 $image = $Image
 $code = 0

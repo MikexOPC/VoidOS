@@ -37,7 +37,7 @@ try {
         $objects + @('/link','/incremental:no','/DEBUG','/WX'))
     Invoke-Checked "$out/host.exe" @()
     foreach ($threads in @(2, 4, 8)) { Invoke-Checked "$out/host.exe" @('threads', [string]$threads) }
-    $python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+    $python = Resolve-OsPython
     Invoke-Checked $python @('-B',"$project/test/kernel/sync/scripts/fatal.py","$out/host.exe")
     $inputs = @('kernel/sync/lock.c','kernel/sync/acquire.c','arch/x86/lib/synchronization/context.c',
         'test/kernel/sync/context/provider.c','test/kernel/sync/cases.c','test/kernel/sync/threads.c') |
