@@ -1,5 +1,5 @@
 param(
-    [string]$Suite = 'all',
+    [string[]]$Suite = @('all'),
     [switch]$List,
     [switch]$Check
 )
@@ -118,7 +118,8 @@ $missing = $roots | ForEach-Object {
     ForEach-Object { $_.FullName.Substring($project.Length + 1).Replace([string][char]92, '/') } |
     Where-Object { $listed -notcontains $_ }
 if ($missing) { throw ('[ FAIL ] Suites not listed in run.ps1: ' + ($missing -join ', ')) }
-$requested = if ($Suite -eq 'all') { @($suites.Keys) } else { @($Suite -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+$requested = @($Suite | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+if ($requested -contains 'all') { $requested = @($suites.Keys) }
 foreach ($name in $requested) { if (!$suites.Contains($name)) { throw "Unknown suite: $name (use -List)" } }
 if ($Check -and $requested -notcontains 'boot') { $requested = @('boot') + $requested }
 if ($List) {

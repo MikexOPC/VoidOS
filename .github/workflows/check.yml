@@ -17,7 +17,7 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # ============ toolchain ============
 
@@ -30,7 +30,7 @@ jobs:
           if (!(Test-Path $target)) { New-Item -ItemType Junction -Path $target -Target $vs | Out-Null }
           Get-ChildItem "$target\VC\Tools\MSVC" | Select-Object -ExpandProperty Name
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -62,7 +62,7 @@ jobs:
 
       - name: Evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: evidence
           path: |
