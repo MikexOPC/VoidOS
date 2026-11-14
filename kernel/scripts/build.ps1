@@ -190,7 +190,9 @@ foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sc
     'arch/x86/kernel/timer/hpet/watchdog/integration/kernel.c',
     'arch/x86/mm/devices/access.c','arch/x86/mm/devices/lapic.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c','arch/x86/kernel/descriptors/protection.c',
-    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c','lib/geometry/rect.c','lib/geometry/damage.c') + $diagnosticSources)) {
+    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c','lib/geometry/rect.c','lib/geometry/damage.c') + $diagnosticSources |
+    Where-Object { !$Ps2Input -or $_ -notin @('arch/x86/kernel/scheduler/integration/workload.c',
+        'arch/x86/kernel/scheduler/idle/idle.c','arch/x86/kernel/scheduler/persistent/workload.c') })) {
     $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
     $objects += $object

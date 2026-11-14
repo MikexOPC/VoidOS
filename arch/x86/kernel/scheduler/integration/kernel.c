@@ -475,6 +475,7 @@ static int next_session_private(uint32_t previous)
 int x86_scheduler_run_input(void) { return next_session_private(4); }
 #endif
 
+#ifndef KERNEL_PS2_INPUT
 // ====== x86_scheduler_run_irq ======
 
 int x86_scheduler_run_irq(void)
@@ -496,12 +497,15 @@ int x86_scheduler_run_persistent(void)
     return next_session_private(2);
 }
 
+#endif
+
 #ifdef KERNEL_TEST_SCHEDULER_PERIODIC
 // ====== x86_scheduler_run_periodic ======
 
 int x86_scheduler_run_periodic(void) { return next_session_private(4); }
 #endif
 
+#ifndef KERNEL_PS2_INPUT
 // ====== x86_scheduler_idle_retained_valid ======
 
 int x86_scheduler_idle_retained_valid(void)
@@ -509,6 +513,8 @@ int x86_scheduler_idle_retained_valid(void)
     X86_SCHEDULER_LOCAL *local = local_private();
     return (irq_profile == 2 || irq_profile == 4) && local->stats.waiting_count == 2 && x86_scheduler_retained_valid();
 }
+
+#endif
 
 // ====== x86_scheduler_retained_valid ======
 
@@ -537,12 +543,15 @@ const X86_DISPATCH_STATS *x86_scheduler_session_stats(void)
     return local ? &local->stats : NULL;
 }
 
+#ifndef KERNEL_PS2_INPUT
 // ====== x86_scheduler_run_idle_repeat ======
 
 int x86_scheduler_run_idle_repeat(void)
 {
     return next_session_private(3);
 }
+
+#endif
 
 // ====== x86_scheduler_irq_timeout_valid ======
 

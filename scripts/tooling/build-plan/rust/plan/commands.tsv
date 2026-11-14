@@ -9,11 +9,11 @@ c	arch/x86/kernel/scheduler/mapping/access.c
 c	arch/x86/kernel/scheduler/integration/kernel.c
 c	arch/x86/kernel/scheduler/integration/local.c
 c	arch/x86/kernel/scheduler/integration/lock.c
-c	arch/x86/kernel/scheduler/integration/workload.c
+diagnostic	c	arch/x86/kernel/scheduler/integration/workload.c
 c	arch/x86/kernel/scheduler/integration/report.c
 c	arch/x86/kernel/scheduler/integration/validation.c
-c	arch/x86/kernel/scheduler/idle/idle.c
-c	arch/x86/kernel/scheduler/persistent/workload.c
+diagnostic	c	arch/x86/kernel/scheduler/idle/idle.c
+diagnostic	c	arch/x86/kernel/scheduler/persistent/workload.c
 c	arch/x86/kernel/scheduler/dispatcher/engine.c
 c	arch/x86/kernel/scheduler/diagnostic/profiles.c
 c	arch/x86/kernel/scheduler/irq/bridge.c

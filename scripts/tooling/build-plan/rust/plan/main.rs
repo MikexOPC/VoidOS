@@ -144,6 +144,7 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
         let mut fields: Vec<_> = line.split('\t').collect();
         let wanted = match fields[0] {
             "ordinary" => Some(profile == Profile::Ordinary),
+            "diagnostic" => Some(profile != Profile::Ordinary),
             "user" => Some(matches!(profile, Profile::Ordinary | Profile::Process(_))),
             "process" | "each-program" => Some(matches!(profile, Profile::Process(_))),
             _ => None,
