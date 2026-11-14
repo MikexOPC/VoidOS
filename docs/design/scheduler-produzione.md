@@ -135,3 +135,14 @@ livello (oggi 1 coda richieste della console, 200 heap, 300 pagine fisiche,
 un lock non viene sospeso. La coda delle richieste della console ha già il
 livello minimo: il lock dell'oggetto console non può avvolgere chiamate a
 quella coda senza rivedere i livelli.
+
+### Sotto-task 2c, scelta realizzata (14 novembre 2026)
+
+Le righe composte non sono rese atomiche con un lock né spegnendo gli
+interrupt: un lock tenuto per tutta la riga violerebbe l'ordine dei livelli
+quando il codice fra un pezzo e l'altro prende altri lock, e gli interrupt
+spenti resterebbero spenti su una riga mai chiusa. Il modulo di log tiene
+invece traccia della riga aperta (`kernel_log_line_open`); la politica di
+preemption della task 3 tratterà una riga aperta come un lock tenuto,
+rinviando la sospensione per un numero limitato di tick. Protegge le righe
+dalla preemption sul BSP, non da scritture contemporanee di CPU diverse.

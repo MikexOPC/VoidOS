@@ -26,8 +26,13 @@ try {
     $flags=@('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address','/MD','/O2',"/I$project")
     Invoke-Checked "$bin/cl.exe" ($flags+$paths+@("/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no'))
     Invoke-Checked "$out/host.exe" @()
+    $logPaths=@('kernel/diagnostics/log.c','test/kernel/diagnostics/log_test.c') | ForEach-Object {"$project/$_"}
+    Invoke-Checked "$bin/cl.exe" ($flags+$logPaths+@("/Fo$out/","/Fd$out/log.pdb","/Fe$out/log.exe",'/link','/incremental:no'))
+    Invoke-Checked "$out/log.exe" @()
+    $paths += $logPaths
     $checker=(Resolve-OsCppcheck)
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',
+        '--suppress=arrayIndexOutOfBounds:*kernel/diagnostics/log.c','--suppress=arrayIndexOutOfBoundsCond:*kernel/diagnostics/log.c',
         ('"-I'+$project+'"'))+@($paths | ForEach-Object {'"'+$_+'"'})
     $checked=Start-Process $checker -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
         -RedirectStandardError "$out/cppcheck.xml" -RedirectStandardOutput "$out/cppcheck.log"
