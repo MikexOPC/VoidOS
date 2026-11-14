@@ -92,3 +92,46 @@ Scelte dell'utente: S1, nell'ordine 1 (dispatcher persistente sul BSP),
 2 (dispatcher sugli AP), 3 (capacità). Proposte accettate: driver legati al
 BSP in questo obiettivo, capacità 256 legata alla regione degli stack,
 timeslice 10 ms da misurare.
+
+## Obiettivo 1, task 1: dati condivisi dai task della shell (analisi, 14 novembre 2026)
+
+I quattro task della sessione PS/2 sono 0 tastiera (`x86_ps2_consume`),
+1 console e audit (`worker_private`), 2 shell (`x86_ps2_shell_task`),
+3 mouse (`x86_ps2_mouse_task`). Condividono `X86_PS2_SESSION` e l'oggetto
+console. Oggi si alternano solo quando cedono la CPU; l'unico lock è quello
+della coda delle richieste alla console (`kernel/console/video/requests`).
+
+| # | Dato | Chi lo usa | Corsa con la preemption |
+|---|---|---|---|
+| 1 | Coda dei comandi (`kernel/shell/queue.c`) | tastiera scrive, shell legge | Sì. Push e pop leggono lo stato, copiano lo slot e riscrivono lo stato: una sospensione nel mezzo perde o duplica un comando. Il commento in `shell.h` lo dichiara: "no IRQ/SMP access" |
+| 2 | Puntatore e stato di disegno della console (`console/runtime.c`) | mouse scrive, console disegna | Sì. `x86_console_mouse` controlla `Service.Busy` e poi aggiorna `Pointer` e `Render.Next`: controllo e azione non sono atomici |
+| 3 | Uscita seriale (`kernel_text`, `x86_serial_character`) | tutti i task | Sì per il contenuto: carattere per carattere senza lock, le righe di task diversi si mescolano e i runner, che leggono i marker per riga, fallirebbero a caso. Nessuna corruzione di stato |
+| 4 | Contatori (`Keys`, `Bytes`, `Lines`) | tastiera scrive, shell legge | No: una sola scrittura per volta, letture di parole allineate |
+| 5 | `Ready`, `Stop`, `Quiet` | IRQ, tastiera, dispatcher | Già gestiti dal protocollo a epoche degli eventi o scritti dal dispatcher, che non viene sospeso |
+
+Le richieste alla console e le operazioni dello scheduler passano già da
+lock (`requests/queue.c`, lock del core Rust).
+
+### Proposta
+
+**A. Rendere sicuri subito i task dei driver**: lock sulla coda dei
+comandi, lock sull'oggetto console, lock dell'uscita per messaggio e
+riscrittura dei messaggi composti da più pezzi. Tocca tastiera, console,
+shell e log.
+
+**B. Preemption solo per i task che la ammettono (consigliata).** Ogni task
+ha un attributo "sospendibile"; i quattro task della sessione PS/2 non lo
+sono e restano cooperativi come oggi. Il timer sospende solo i task
+sospendibili (per esempio il calcolo della task 5). È coerente con la
+decisione di tenere i driver legati al BSP: un driver diventa sospendibile
+quando le corse 1-3 sono risolte per lui.
+
+Decisione dell'utente (14 novembre 2026): **A**, rendere sicuri i task dei
+driver prima di attivare la preemption.
+
+Vincoli per A: i lock di `kernel/sync` si prendono in ordine crescente di
+livello (oggi 1 coda richieste della console, 200 heap, 300 pagine fisiche,
+900 scheduler) e tengono IF=0 per tutta la durata, quindi un task che tiene
+un lock non viene sospeso. La coda delle richieste della console ha già il
+livello minimo: il lock dell'oggetto console non può avvolgere chiamate a
+quella coda senza rivedere i livelli.
