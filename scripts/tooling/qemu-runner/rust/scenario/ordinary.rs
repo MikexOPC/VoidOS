@@ -12,6 +12,8 @@ const SMEP: u64 = 1 << 20;
 const SMAP: u64 = 1 << 21;
 const CR4_DEADLINE: Duration = Duration::from_secs(5);
 const CR4_POLL: Duration = Duration::from_millis(10);
+const IDLE_SETTLE: Duration = Duration::from_secs(3);
+const IF: u64 = 1 << 9;
 const INIT_LINE: &[u8] = b"USER: VoidOS init, ring3";
 // The ordinary image ends in the shell: success is the shell waiting for input.
 const SHELL_READY: &str = "KERNEL_PS2_INPUT_READY";
@@ -30,6 +32,12 @@ fn expected_protection(cpu: &str) -> u64 {
 // ====== parse_cr4 ======
 
 pub fn parse_cr4(bytes: &[u8], cpu: u32) -> Option<u64> {
+    parse_register(bytes, cpu, b"CR4=")
+}
+
+// ====== parse_register ======
+
+pub fn parse_register(bytes: &[u8], cpu: u32, name: &[u8]) -> Option<u64> {
     let mut matching_cpu = false;
     for line in bytes.split_inclusive(|byte| *byte == b'\n') {
         let Some(line) = line.strip_suffix(b"\n") else {
@@ -40,7 +48,7 @@ pub fn parse_cr4(bytes: &[u8], cpu: u32) -> Option<u64> {
             matching_cpu = std::str::from_utf8(index).ok().and_then(|index| index.parse::<u32>().ok()) == Some(cpu);
         } else if matching_cpu {
             for field in line.split(|byte| byte.is_ascii_whitespace()) {
-                if let Some(value) = field.strip_prefix(b"CR4=") {
+                if let Some(value) = field.strip_prefix(name) {
                     return u64::from_str_radix(std::str::from_utf8(value).ok()?, 16).ok();
                 }
             }
@@ -52,18 +60,24 @@ pub fn parse_cr4(bytes: &[u8], cpu: u32) -> Option<u64> {
 // ====== read_cr4 ======
 
 fn read_cr4(vm: &mut Vm, cpu: u32) -> Result<u64, String> {
+    read_register(vm, cpu, b"CR4=")
+}
+
+// ====== read_register ======
+
+fn read_register(vm: &mut Vm, cpu: u32, name: &[u8]) -> Result<u64, String> {
     vm.command(&format!("cpu {cpu}"));
     let offset = vm.monitor_size()? as usize;
     vm.command("info registers");
     let deadline = Instant::now() + CR4_DEADLINE;
     while Instant::now() < deadline {
         let bytes = vm.monitor_bytes()?;
-        if let Some(value) = bytes.get(offset..).and_then(|bytes| parse_cr4(bytes, cpu)) {
+        if let Some(value) = bytes.get(offset..).and_then(|bytes| parse_register(bytes, cpu, name)) {
             return Ok(value);
         }
         std::thread::sleep(CR4_POLL);
     }
-    Err(format!("Missing CR4 of CPU {cpu}"))
+    Err(format!("Missing {} of CPU {cpu}", String::from_utf8_lossy(name)))
 }
 
 // ====== ordinary_boot ======
@@ -145,9 +159,10 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
 
 // ====== no_ps2_boot ======
 
-// Machine without a PS/2 controller: no shell, the image completes and the process still ran.
+// Machine without a PS/2 controller: no shell, the process still ran and the BSP stays idle
+// with interrupts enabled instead of stopping.
 fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
-    let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
+    let log = vm.wait("KERNEL_IDLE", 1, Some("OK"))?;
     let enabled = expected_protection(plan.cpu) & (SMEP | SMAP) == SMEP | SMAP;
     if !log.failures().is_empty() || log.terminal() {
         return Err(format!("Unexpected kernel failure {:?}", log.failures()));
@@ -157,6 +172,19 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     if enabled && !log.before("KERNEL_PROCESS_OK", "KERNEL_READY") {
         return Err("The first process did not run".to_string());
+    }
+    if !log.before("KERNEL_READY", "KERNEL_IDLE") {
+        return Err("The idle loop started before the boot completed".to_string());
+    }
+    std::thread::sleep(IDLE_SETTLE);
+    let flags = read_register(vm, 0, b"RFL=")?;
+    let halted = read_register(vm, 0, b"HLT=")?;
+    if flags & IF == 0 || halted != 1 {
+        return Err(format!("BSP not idle with interrupts enabled: RFL={flags:x} HLT={halted}"));
+    }
+    let after = vm.wait("KERNEL_IDLE", 1, Some("OK"))?;
+    if !after.failures().is_empty() || after.terminal() {
+        return Err(format!("Kernel failure while idle {:?}", after.failures()));
     }
     let bytes = vm.trace_bytes()?;
     if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {

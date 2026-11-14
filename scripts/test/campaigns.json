@@ -224,10 +224,10 @@
       "boots": 3, "smoke": 1, "heavy": true
     },
     "k6-no-ps2": {
-      "summary": "Ordinary image on a machine without a PS/2 controller: no shell, the process runs and the boot completes",
+      "summary": "Ordinary image on a machine without a PS/2 controller: no shell, the process runs and the BSP stays idle with interrupts enabled",
       "build": [], "meson": "ordinary",
       "runner": ["qemu-runner", "--image", "{image}", "--boots", "{boots}", "--ordinary-no-ps2", "--smp", "4"],
-      "boots": 3, "smoke": 1, "heavy": true
+      "boots": 10, "smoke": 1, "heavy": true
     },
     "k6-shell-bridge-fault": {
       "summary": "Product shell stays usable after the bridge faults in ring 3",
