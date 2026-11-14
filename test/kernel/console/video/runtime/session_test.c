@@ -13,7 +13,10 @@ static X86_PS2_SESSION session;
 static X86_CONSOLE console;
 static uint32_t checks, signals, reject, task_index, task_live, submits;
 #ifdef KERNEL_PS2_MOUSE
-static uint32_t pointer_calls, pointer_reject, pointer_still;
+static uint32_t pointer_calls, pointer_reject, pointer_still, lock_held, lock_pairs, irq_saved;
+static int32_t expect_dx = -7, expect_dy = 11;
+static uint32_t expect_buttons = 2;
+static KERNEL_LOCK_CONTEXT lock_context;
 #endif
 #define CHECK(expression) do { ++checks; assert(expression); } while (0)
 
@@ -81,12 +84,31 @@ int kernel_pointer_init(KERNEL_CONSOLE_POINTER *owner, KERNEL_VIDEO_CONSOLE *vie
 { (void)owner; (void)view; CHECK(0); return 0; }
 int kernel_pointer_request(KERNEL_CONSOLE_POINTER *owner, int32_t dx, int32_t dy, uint32_t buttons)
 {
-    CHECK(owner == &console.Pointer && dx == -7 && dy == 11 && buttons == 2);
+    CHECK(owner == &console.Pointer && dx == expect_dx && dy == expect_dy && buttons == expect_buttons && lock_held);
     ++pointer_calls;
     if (!pointer_reject) { if (!pointer_still) ++owner->Moves; owner->Buttons = buttons; }
     return !pointer_reject;
 }
 int kernel_pointer_hide(KERNEL_CONSOLE_POINTER *owner) { (void)owner; CHECK(0); return 0; }
+
+// ====== pointer_lock_mocks ======
+
+uint64_t ks_irq_save(void) { CHECK(!irq_saved); irq_saved = 1; return 512; }
+void ks_irq_restore(uint64_t saved_if) { CHECK(irq_saved && saved_if == 512 && !lock_held); irq_saved = 0; }
+KERNEL_LOCK_CONTEXT *kernel_lock_current_context(void) { CHECK(irq_saved); return &lock_context; }
+int kernel_lock_initialize(KERNEL_LOCK *lock, uint32_t rank) { (void)lock; (void)rank; CHECK(0); return 0; }
+int kernel_lock_acquire(KERNEL_LOCK *lock, KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard)
+{
+    CHECK(lock == &console.PointerLock && context == &lock_context && guard && irq_saved && !lock_held);
+    lock_held = 1;
+    return 1;
+}
+int kernel_lock_release(KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard)
+{
+    CHECK(context == &lock_context && guard && irq_saved && lock_held);
+    lock_held = 0; ++lock_pairs;
+    return 1;
+}
 int kernel_pointer_clamp(KERNEL_CONSOLE_POINTER *owner) { (void)owner; CHECK(0); return 0; }
 int kernel_pointer_close(KERNEL_CONSOLE_POINTER *owner) { (void)owner; CHECK(0); return 0; }
 int x86_fb_kernel_group_pointer(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
@@ -162,7 +184,24 @@ static void mouse_adapter_cases(void)
     session.Active = 0; CHECK(!x86_console_mouse(&session,-7,11,2)); session.Active = 1;
     session.Error = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); session.Error = 0;
     session.Losses = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); session.Losses = 0;
-    console.Service.Busy = 2; CHECK(!x86_console_mouse(&session,-7,11,2)); console.Service.Busy = 0;
+    {
+        uint32_t calls = pointer_calls, saved = signals, pairs = lock_pairs;
+        console.Service.Busy = 2;
+        CHECK(x86_console_mouse(&session,-7,11,2) && x86_console_mouse(&session,-7,11,1));
+        CHECK(pointer_calls == calls && signals == saved && console.Deferred && lock_pairs == pairs + 2);
+        CHECK(console.DeferredX == -14 && console.DeferredY == 22 && console.DeferredButtons == 1);
+        CHECK(x86_console_pointer_deferred(&console) && pointer_calls == calls && console.Deferred);
+        console.Service.Busy = 0;
+        expect_dx = -14; expect_dy = 22; expect_buttons = 1; console.PointerPending = 0;
+        CHECK(x86_console_pointer_deferred(&console) && pointer_calls == calls + 1);
+        CHECK(!console.Deferred && !console.DeferredX && !console.DeferredY && console.PointerPending);
+        CHECK(x86_console_pointer_deferred(&console) && pointer_calls == calls + 1);
+        console.DeferredX = INT32_MAX - 1; console.Service.Busy = 2;
+        CHECK(x86_console_mouse(&session,5,0,0) && console.DeferredX == INT32_MAX);
+        console.Service.Busy = 0; console.Deferred = 0; console.DeferredX = console.DeferredY = 0;
+        console.PointerPending = 0;
+        expect_dx = -7; expect_dy = 11; expect_buttons = 2;
+    }
     console.Service.Closed = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); console.Service.Closed = 0;
     console.Service.Failed = 1; CHECK(!x86_console_mouse(&session,-7,11,2)); console.Service.Failed = 0;
     CHECK(!x86_console_mouse(NULL,-7,11,2));
@@ -170,14 +209,14 @@ static void mouse_adapter_cases(void)
         X86_PS2_SESSION copy = session;
         CHECK(!x86_console_mouse(&copy,-7,11,2));
     }
-    CHECK(pointer_calls == 1 && signals == saved_signals + 1);
-    pointer_reject = 1; CHECK(!x86_console_mouse(&session,-7,11,2) && pointer_calls == 2);
+    CHECK(pointer_calls == 2 && signals == saved_signals + 1);
+    pointer_reject = 1; CHECK(!x86_console_mouse(&session,-7,11,2) && pointer_calls == 3);
     CHECK(signals == saved_signals + 1);
     pointer_reject = 0; session.Stop = 1; CHECK(x86_console_mouse(&session,-7,11,2));
     session.Stop = 0; console.Absent = 1; CHECK(x86_console_mouse(&session,-7,11,2));
-    CHECK(pointer_calls == 2 && signals == saved_signals + 1);
+    CHECK(pointer_calls == 3 && signals == saved_signals + 1);
     console.Absent = 0; pointer_still = 1; console.PointerPending = 0;
-    CHECK(x86_console_mouse(&session,-7,11,2) && pointer_calls == 3);
+    CHECK(x86_console_mouse(&session,-7,11,2) && pointer_calls == 4);
     CHECK(!console.PointerPending && signals == saved_signals + 1);
     pointer_still = 0;
 }
