@@ -7,6 +7,9 @@ use std::time::{Duration, Instant};
 pub const SHELL_CASE: u32 = 1;
 pub const SHELL_BRIDGE_FAULT_CASE: u32 = 2;
 pub const NO_PS2_CASE: u32 = 3;
+// --ordinary-soak N is encoded as SOAK_CASE_BASE + N minutes.
+pub const SOAK_CASE_BASE: u32 = 1000;
+const SOAK_PAUSE: Duration = Duration::from_secs(5);
 const UMIP: u64 = 1 << 11;
 const SMEP: u64 = 1 << 20;
 const SMAP: u64 = 1 << 21;
@@ -193,6 +196,41 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     Ok(object(vec![("Ps2", Value::Bool(false)), ("Process", Value::Bool(enabled))]))
 }
 
+// ====== soak_boot ======
+
+// Long shell session: bridge status round trips until the deadline, then exit. The kernel checks
+// at session close that the physical page budget is unchanged.
+fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
+    let log = vm.wait("KERNEL_PS2_INPUT_READY", 1, Some("OK"))?;
+    if expected_protection(plan.cpu) & (SMEP | SMAP) != SMEP | SMAP || !log.has("KERNEL_PROCESS_OK") {
+        return Err("The soak needs the bridge service: SMEP, SMAP and the first process".to_string());
+    }
+    let deadline = Instant::now() + Duration::from_secs(u64::from(minutes) * 60);
+    let mut rounds = 0usize;
+    while Instant::now() < deadline {
+        shell_type(vm, "bridge status");
+        rounds += 1;
+        let log = vm.wait("SHELL_BRIDGE_STATUS_OK", rounds, None)?;
+        if !log.failures().is_empty() || log.terminal() {
+            return Err(format!("Kernel failure after {rounds} rounds {:?}", log.failures()));
+        }
+        std::thread::sleep(SOAK_PAUSE);
+    }
+    shell_type(vm, "exit");
+    let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
+    let commands = log.number("SHELL_COMMAND_COUNT", 0)?;
+    if !log.failures().is_empty() || commands != rounds as u64 + 1 ||
+        !log.before("SHELL_EXIT_REQUEST", "KERNEL_PS2_INPUT_CLEANUP_OK") ||
+        !log.before("KERNEL_PS2_INPUT_CLEANUP_OK", "KERNEL_READY") || log.has("KERNEL_IDLE") {
+        return Err(format!("The long session did not close cleanly: {commands} commands, {rounds} rounds"));
+    }
+    let bytes = vm.trace_bytes()?;
+    if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {
+        return Err("Unexpected fault during the long session".to_string());
+    }
+    Ok(object(vec![("Minutes", Value::Number(u64::from(minutes))), ("Rounds", Value::Number(rounds as u64))]))
+}
+
 // ====== shell_type ======
 
 fn shell_type(vm: &mut Vm, command: &str) {
@@ -220,6 +258,7 @@ pub fn run_ordinary(
         Some(SHELL_CASE) => shell_boot(&mut vm, plan, false),
         Some(SHELL_BRIDGE_FAULT_CASE) => shell_boot(&mut vm, plan, true),
         Some(NO_PS2_CASE) => no_ps2_boot(&mut vm, plan),
+        Some(case) if case > SOAK_CASE_BASE => soak_boot(&mut vm, plan, case - SOAK_CASE_BASE),
         _ => ordinary_boot(&mut vm, plan),
     };
     let closed = vm.close();
