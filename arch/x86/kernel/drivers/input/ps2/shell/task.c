@@ -2,6 +2,7 @@
 #include "../runtime/session.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/sync/internal.h"
 #ifdef KERNEL_CONSOLE_SHELL
 #include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
 #endif
@@ -13,6 +14,23 @@ static KERNEL_EVENT_REPLY event_private(uint32_t reason, uint32_t id, uint64_t t
     KERNEL_EVENT_REPLY reply = x86_scheduler_event_request(reason,id,token);
     if (reply.reply.status != KERNEL_SCHEDULER_OK) kernel_scheduler_fail_stop();
     return reply;
+}
+
+// ====== commands_locked ======
+
+static uint32_t commands_locked(X86_PS2_SESSION *owner, uint32_t operation, KERNEL_PS2_COMMAND *command)
+{
+    KERNEL_LOCK_GUARD guard = {0};
+    uint64_t saved_if = ks_irq_save();
+    KERNEL_LOCK_CONTEXT *context = kernel_lock_current_context();
+    uint32_t result;
+    if (!context || !kernel_lock_acquire(&owner->CommandsLock, context, &guard)) kernel_scheduler_fail_stop();
+    if (operation == 1) result = kernel_ps2_command_push(&owner->Commands, command);
+    else if (operation == 2) result = kernel_ps2_command_pop(&owner->Commands, command);
+    else result = kernel_ps2_command_close(&owner->Commands) ? KERNEL_PS2_QUEUE_OK : KERNEL_PS2_QUEUE_INVALID;
+    if (!kernel_lock_release(context, &guard)) kernel_scheduler_fail_stop();
+    ks_irq_restore(saved_if);
+    return result;
 }
 
 // ====== x86_ps2_shell_submit ======
@@ -28,7 +46,7 @@ int x86_ps2_shell_submit(void)
 #endif
     while (!owner->Stop) {
         KERNEL_EVENT_REPLY observed = event_private(X86_TASK_OBSERVE,6,0);
-        uint32_t result = kernel_ps2_command_push(&owner->Commands,&command);
+        uint32_t result = commands_locked(owner,1,&command);
         if (result == KERNEL_PS2_QUEUE_OK) {
             (void)event_private(X86_TASK_SIGNAL,5,0);
             kernel_ps2_command_clear(&command); return 1;
@@ -44,7 +62,7 @@ int x86_ps2_shell_submit(void)
 void x86_ps2_shell_close(void)
 {
     if (x86_scheduler_index() != 0 || !x86_scheduler_driver_task_valid() ||
-        !kernel_ps2_command_close(&x86_ps2_session()->Commands)) kernel_scheduler_fail_stop();
+        commands_locked(x86_ps2_session(),3,NULL) != KERNEL_PS2_QUEUE_OK) kernel_scheduler_fail_stop();
     (void)event_private(X86_TASK_SIGNAL,5,0);
 }
 
@@ -58,7 +76,7 @@ void x86_ps2_shell_task(void)
         !kernel_log(1,"SHELL_TASK2_READY")) kernel_scheduler_fail_stop();
     for (;;) {
         KERNEL_EVENT_REPLY observed = event_private(X86_TASK_OBSERVE,5,0);
-        uint32_t result = kernel_ps2_command_pop(&owner->Commands,&command);
+        uint32_t result = commands_locked(owner,2,&command);
         if (result == KERNEL_PS2_QUEUE_CLOSED) break;
         if (result == KERNEL_PS2_QUEUE_EMPTY) {
             (void)event_private(X86_TASK_WAIT,5,observed.epoch); continue;
