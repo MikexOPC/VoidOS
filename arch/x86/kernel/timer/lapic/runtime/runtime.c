@@ -152,7 +152,7 @@ static int step(X86_LAPIC_TIMER *state)
     if (!x86_irq_ready() || !x86_timer_owner_valid(state) || !control_valid(state) ||
         state->Phase != X86_TIMER_READY || state->Count == ~0U || control.Sleeps == ~0U) return 0;
     goal = state->Count+1;
-#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC) && !defined(KERNEL_PS2_INPUT)
     if (goal == 1) {
         if (!x86_scheduler_timer_tasks(state)) return 0;
     } else if (goal == 2) {
@@ -165,14 +165,14 @@ static int step(X86_LAPIC_TIMER *state)
 #ifdef KERNEL_TEST_WATCHDOG_LOST_LAPIC
     if (!x86_timer_confirm_write(state->Mapping,0x320,0x10041)) { return 0; }
 #endif
-#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC) && !defined(KERNEL_PS2_INPUT)
     if (goal == 1) start = x86_pm_read((unsigned short)state->Clock.Port) & state->Clock.Mask;
     waited = (goal == 2 || goal == 3) ? x86_scheduler_idle_slept() : x86_watchdog_wait(&state->Count,goal,&control.StopRequest);
 #else
     if (goal <= 3) start = x86_pm_read((unsigned short)state->Clock.Port) & state->Clock.Mask;
     waited = x86_watchdog_wait(&state->Count,goal,&control.StopRequest);
 #endif
-#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC)
+#if defined(KERNEL_SCHEDULER_IRQ) && !defined(KERNEL_TEST_WATCHDOG_LOST_LAPIC) && !defined(KERNEL_PS2_INPUT)
     if (goal == 1)
 #else
     if (goal <= 3)

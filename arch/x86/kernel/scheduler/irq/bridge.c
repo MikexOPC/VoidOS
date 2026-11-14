@@ -54,7 +54,11 @@ int x86_scheduler_irq_record(uint64_t vector, uint64_t rip, uint64_t rsp, uint64
 
 int x86_scheduler_timer_notify(const X86_LAPIC_TIMER *source)
 {
+#ifdef KERNEL_PS2_INPUT
+    if (!timer_source) return 0;
+#else
     if (!timer_source) return x86_scheduler_idle_notify(source);
+#endif
     if (source != timer_source || posted || x86_scheduler_index() != 1 ||
         !x86_scheduler_task_valid() || source->Count != 1 || source->Error ||
         source->Phase != X86_TIMER_PENDING ||
@@ -93,6 +97,7 @@ void x86_scheduler_irq_after(const X86_IRQ_FRAME *frame)
 }
 #endif
 
+#ifndef KERNEL_PS2_INPUT
 // ====== x86_scheduler_irq_task ======
 
 void x86_scheduler_irq_task(uint32_t index)
@@ -192,6 +197,8 @@ int x86_scheduler_timer_tasks(X86_LAPIC_TIMER *source)
         kernel_text("\nSCHEDULER_IRQ_TASK: ") && kernel_number(1) && kernel_text("\n") &&
         kernel_log(0,"KERNEL_SCHEDULER_TASK_IRQ_OK");
 }
+
+#endif
 
 #ifdef KERNEL_TEST_SCHEDULER_PERIODIC
 // ====== periodic_quiet ======
