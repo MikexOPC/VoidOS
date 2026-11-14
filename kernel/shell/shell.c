@@ -5,8 +5,16 @@ int kernel_shell_bridge_status(void);
 #endif
 static KERNEL_SHELL_OUTPUT output;
 static void *output_context;
+static int exit_requested;
 #define TEXT(literal) text_private(literal, (uint32_t)(sizeof(literal) - 1U))
 #define LOG(level, literal) log_private(level, literal, (uint32_t)(sizeof(literal) - 1U))
+
+// ====== kernel_shell_exit_requested ======
+
+int kernel_shell_exit_requested(void)
+{
+    return exit_requested;
+}
 
 // ====== kernel_ps2_shell_output_bind ======
 
@@ -127,7 +135,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
         TEXT("SHELL_INPUT_BYTES: ") && number_private(status->Bytes) &&
         TEXT("\nSHELL_INPUT_KEYS: ") && number_private(status->Keys) &&
         TEXT("\nSHELL_INPUT_LINES: ") && number_private(status->Lines) && TEXT("\n");
-    if (kind == 4) return LOG(1,"SHELL_EXIT_REQUEST") ? 2 : 0;
+    if (kind == 4) { exit_requested = 1; return LOG(1,"SHELL_EXIT_REQUEST") ? 2 : 0; }
     if (kind == 7) return remote_private(line->Data + argument,line->Length - argument);
     if (kind == 8) {
         uint64_t subcommand = 0;
