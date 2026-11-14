@@ -1,14 +1,14 @@
 param([string]$OutputDirectory = 'D:/OS/kernel/build/virtio-pci-host')
 $ErrorActionPreference = 'Stop'
 $project = (Resolve-Path "$PSScriptRoot/../../../../../..").Path
+. (Join-Path $project 'scripts/lib/common.ps1')
 $out = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force $out | Out-Null
 $rust = "$project/kernel/drivers/video/virtio/discovery/rust"
-$python = "$env:USERPROFILE/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe"
+$python = (Resolve-OsPython)
 
 # ============ checked execution ============
 
-. (Join-Path $PSScriptRoot '../../../../../../scripts/lib/common.ps1')
 
 Invoke-Checked $python @('-B',"$PSScriptRoot/structure.py")
 foreach ($mode in @('debug','release')) {
@@ -43,7 +43,7 @@ try {
         "$project/lib/memory/address_ranges.c","$project/test/kernel/drivers/video/virtio/discovery/abi_test.c",
         "/Fo$out/","/Fd$out/host.pdb","/Fe$out/host.exe",'/link','/incremental:no',"$out/gateway.obj")
     Invoke-Checked "$out/host.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $checkerArguments = @('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11',
         '--xml','--xml-version=2',('"-I'+$project+'"'),
         ('"'+$project+'/kernel/drivers/video/virtio/discovery/pci.c"'),

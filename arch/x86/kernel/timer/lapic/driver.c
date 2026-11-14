@@ -5,11 +5,8 @@
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
-#ifdef KERNEL_PS2_INPUT
-#include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
-#ifdef KERNEL_USER_PROCESS
+#if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
 #include "arch/x86/kernel/drivers/input/ps2/shell/bridge.h"
-#endif
 #endif
 #ifdef KERNEL_SCHEDULER_IRQ
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
@@ -21,11 +18,24 @@
 #ifdef KERNEL_TEST_K6_PROCESS
 #include "test/kernel/process/integration/probe.h"
 #endif
-#ifdef KERNEL_USER_PROCESS
-#include "kernel/process/boot.h"
-#endif
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 finished;
+
+static struct {
+    const KERNEL_BOOT_CONTEXT    *Context;
+    X86_PAGE_WINDOW              *Window;
+    const KERNEL_ACPI_DIRECTORY  *Directory;
+    const X86_LAPIC_MAPPING      *Mapping;
+    const X86_PAGING_INVENTORY   *Inventory;
+    const X86_WATCHDOG_ENV       *Watchdog;
+    BOOT_U64                      Delivered;
+    int                           Result, Stopped, Detached, Restored, Open;
+} pending;
+#ifdef KERNEL_PS2_INPUT
+static const BOOT_U32 startup_checks = 0;
+#else
+static const BOOT_U32 startup_checks = 1;
+#endif
 #ifdef KERNEL_EVENT_LOOP
 static const BOOT_U32 loop_mode = 1;
 #else
@@ -100,7 +110,7 @@ static int read_firmware(void *context, BOOT_U64 physical, BOOT_U32 bytes, unsig
 
 static int report(BOOT_U64 deliveries)
 {
-    for (BOOT_U32 index = 0; index < 3; ++index) {
+    for (BOOT_U32 index = 0; startup_checks && index < 3; ++index) {
         if (!kernel_text("KERNEL_TIMER_TIMING_GOAL: ") || !kernel_number(index + 1) ||
             !kernel_text("\nKERNEL_TIMER_IRQ_PM: ") || !kernel_number(timer.DeadlinePm[index]) ||
             !kernel_text("\nKERNEL_TIMER_WAIT_PM: ") || !kernel_number(timer.WaitPm[index]) ||
@@ -120,10 +130,12 @@ static int report(BOOT_U64 deliveries)
         kernel_text("\nKERNEL_TIMER_CONSUMED: ") && kernel_number(timer.Consumed) &&
         kernel_text("\nKERNEL_TIMER_PHASE: ") && kernel_number(timer.Phase) &&
         kernel_text("\nKERNEL_TIMER_LOOP_MODE: ") && kernel_number(loop_mode) &&
-        kernel_text("\n") && kernel_log(0,"KERNEL_IRQ_SLEEP_REJECT_OK") &&
-        kernel_log(0,"KERNEL_TIMER_EVENTS_OK") && kernel_log(0,"KERNEL_TIMER_OK");
+        kernel_text("\n") &&
+        (!startup_checks || (kernel_log(0,"KERNEL_IRQ_SLEEP_REJECT_OK") && kernel_log(0,"KERNEL_TIMER_EVENTS_OK"))) &&
+        kernel_log(0,"KERNEL_TIMER_OK");
 }
 
+#ifndef KERNEL_PS2_INPUT
 // ====== elapsed PM della singola scadenza senza confonderlo con un timestamp globale ===== //
 
 static int deadline_failure(BOOT_U32 goal, BOOT_U32 step, BOOT_U32 observed)
@@ -217,6 +229,8 @@ static int deadlines(void)
     return 1;
 }
 
+#endif
+
 // ====== configurazione acquisita solo se il timer precedente e inattivo e mascherato ===== //
 
 static int acquire(void)
@@ -232,6 +246,7 @@ static int acquire(void)
         x86_timer_previous_valid(timer.OriginalLvt,timer.OriginalDivide,value);
 }
 
+#ifndef KERNEL_PS2_INPUT
 // ====== prove ring zero di precondizioni rifiutate senza HLT o accessi invalidi ===== //
 
 static int sleep_rejections(void)
@@ -246,6 +261,8 @@ static int sleep_rejections(void)
     return x86_exception_environment() != 0;
 }
 
+#endif
+
 // ====== calibrazione masked poi handler poi attesa e cleanup senza perdere owner live ===== //
 
 int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
@@ -254,8 +271,8 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
 {
     READER reader = {context,window};
     BOOT_U64 delivered = 0;
-    int result = 0, stopped, detached = 1, restored = 0, watchdog_closed;
-    if (finished || !context || !window || !window->Pool || !mapping || !inventory || !x86_irq_ready() ||
+    int result = 0, stopped, detached = 1, restored = 0;
+    if (finished || pending.Open || !context || !window || !window->Pool || !mapping || !inventory || !x86_irq_ready() ||
         !x86_device_inventory_verify(context,window->Pool,mapping,inventory) ||
         !x86_pm_clock_capture(directory,window->Pool->PhysicalBits,read_firmware,&reader,&timer.Clock)) {
         return 0;
@@ -280,7 +297,11 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     if (!watchdog || watchdog->Mapping != mapping || watchdog->Window != window ||
         watchdog->Context != context || watchdog->Inventory != inventory ||
         !x86_watchdog_open(watchdog)) { goto cleanup; }
+#ifdef KERNEL_PS2_INPUT
+    if (!(loop_mode ? x86_timer_loop_run(&timer,handle,quiet) : 1)) {
+#else
     if (!(loop_mode ? x86_timer_loop_run(&timer,handle,quiet) : deadlines()) || !sleep_rejections()) {
+#endif
         kernel_log(3,"TIMER_DEADLINES_FAILED");
         goto cleanup;
     }
@@ -301,17 +322,43 @@ cleanup:
         int lvt = x86_timer_confirm_write(mapping,0x320,timer.OriginalLvt);
         restored = divider && lvt;
     }
-#ifdef KERNEL_USER_PROCESS
-    if (result && stopped && detached && restored &&
-        !kernel_process_boot(window,&timer)) kernel_panic("PROCESS_BOOT_FAILED");
-#endif
-#ifdef KERNEL_PS2_INPUT
-    if (result && stopped && detached && restored &&
-        !x86_ps2_session_run(watchdog,&timer.Clock,directory)) {
-        // A live or unconfirmed source retains its owners; never free its mapping.
-        kernel_panic("PS2_INPUT_FAILED");
-    }
-#endif
+    pending.Context = context; pending.Window = window; pending.Directory = directory;
+    pending.Mapping = mapping; pending.Inventory = inventory; pending.Watchdog = watchdog;
+    pending.Delivered = delivered; pending.Result = result; pending.Stopped = stopped;
+    pending.Detached = detached; pending.Restored = restored; pending.Open = 1;
+    return 1;
+}
+
+// ====== x86_timer_ready ======
+
+int x86_timer_ready(void)
+{
+    return pending.Open && pending.Result && pending.Stopped && pending.Detached && pending.Restored;
+}
+
+// ====== x86_timer_owner ======
+
+X86_LAPIC_TIMER *x86_timer_owner(void)
+{
+    return x86_timer_ready() ? &timer : 0;
+}
+
+// ====== x86_timer_finish ======
+
+int x86_timer_finish(void)
+{
+    const KERNEL_BOOT_CONTEXT *context = pending.Context;
+    X86_PAGE_WINDOW *window = pending.Window;
+    const KERNEL_ACPI_DIRECTORY *directory = pending.Directory;
+    const X86_LAPIC_MAPPING *mapping = pending.Mapping;
+    const X86_PAGING_INVENTORY *inventory = pending.Inventory;
+    const X86_WATCHDOG_ENV *watchdog = pending.Watchdog;
+    BOOT_U64 delivered = pending.Delivered;
+    int result = pending.Result, stopped = pending.Stopped, detached = pending.Detached;
+    int restored = pending.Restored, watchdog_closed;
+    if (!pending.Open) return 0;
+    pending.Open = 0;
+    (void)directory; (void)watchdog;
     watchdog_closed = x86_watchdog_close();
 #if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
     if (!x86_shell_bridge_close()) kernel_panic("SHELL_BRIDGE_CLEANUP_FAILED");
@@ -325,7 +372,7 @@ cleanup:
         kernel_log(2,"TIMER_WATCHDOG_TIMEOUT_CLEAN");
     }
     if (!result || !stopped || !detached || !restored || delivered != timer.Count ||
-        (!loop_mode && timer.Count != 3) || timer.Error || !watchdog_closed ||
+        (!loop_mode && timer.Count != 3 * startup_checks) || timer.Error || !watchdog_closed ||
         !x86_irq_ready() || !x86_lapic_idle(mapping) || !x86_page_window_idle_valid(window) ||
         !x86_device_inventory_verify(context,window->Pool,mapping,inventory)) {
         return 0;

@@ -1,10 +1,12 @@
+import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-SHELL = Path.home() / '.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe'
+SHELL = os.environ.get('VOIDOS_PWSH') or shutil.which('pwsh') or 'pwsh'
 
 # ====== map_audit ======
 

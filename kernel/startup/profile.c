@@ -3,6 +3,9 @@
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/stack/main.h"
 #include "arch/x86/kernel/serial/interrupts/route.h"
+#ifdef KERNEL_PS2_INPUT
+#include "kernel/shell/shell.h"
+#endif
 #ifdef KERNEL_TEST_AP_SERVICE
 #include "test/arch/x86/kernel/cpu/percpu/service/integration/probe.h"
 #endif
@@ -190,6 +193,12 @@ __declspec(noreturn) void kernel_profile_finish(const KERNEL_STARTUP *startup)
         kernel_panic("INTENTIONAL_TEST_PANIC");
     #else
         if (!kernel_log(0, "KERNEL_READY")) kernel_panic("SERIAL_UNAVAILABLE");
+    #ifdef KERNEL_PS2_INPUT
+        if (!kernel_shell_exit_requested()) {
+            if (!kernel_log(0, "KERNEL_IDLE")) kernel_panic("SERIAL_UNAVAILABLE");
+            x86_kernel_idle();
+        }
+    #endif
         x86_kernel_stop(0x4b52454144590001ULL);
     #endif
 }

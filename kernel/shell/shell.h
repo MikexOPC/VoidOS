@@ -39,4 +39,5 @@ int kernel_ps2_shell_output_bind(KERNEL_SHELL_OUTPUT output, void *context);
 int kernel_ps2_shell_output_unbind(KERNEL_SHELL_OUTPUT output, void *context);
 /* Return0 output/state failure,1 continue,2 request session stop. */
 int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2_SHELL_STATUS *status);
+int kernel_shell_exit_requested(void);
 #endif

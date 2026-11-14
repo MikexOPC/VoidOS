@@ -41,7 +41,7 @@ if ($UseRustPlan) {
 $project = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if ($PlanOnly) {
     foreach ($key in $boundBuildOptions) {
-        if ($key -notin @('TestSchedulerPeriodic','TestApService','TestK6Process','TestK6Negative')) { throw 'Unsupported plan-only options.' }
+        if ($key -notin @('TestSchedulerPeriodic','TestApService','TestK6Process','TestK6Negative','Ps2Input','Ps2Mouse','ConsoleShell','InteractiveInput')) { throw 'Unsupported plan-only options.' }
     }
     if ($TestApService -notin @('none','ap-timer')) { throw 'Unsupported plan-only options.' }
     . (Join-Path $PSScriptRoot 'build/plan-only.ps1')
@@ -190,7 +190,9 @@ foreach ($source in (@('arch/x86/kernel/scheduler/context.c','arch/x86/kernel/sc
     'arch/x86/kernel/timer/hpet/watchdog/integration/kernel.c',
     'arch/x86/mm/devices/access.c','arch/x86/mm/devices/lapic.c',
     'arch/x86/kernel/exceptions/terminal.c','arch/x86/kernel/descriptors/stacks.c','arch/x86/kernel/descriptors/segments.c','arch/x86/kernel/descriptors/protection.c',
-    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c','lib/geometry/rect.c','lib/geometry/damage.c') + $diagnosticSources)) {
+    'arch/x86/kernel/descriptors/stack_access.c','arch/x86/kernel/stack/main.c','arch/x86/lib/descriptors/gdt.c','arch/x86/lib/descriptors/tss.c','lib/memory/address_ranges.c','lib/geometry/rect.c','lib/geometry/damage.c') + $diagnosticSources |
+    Where-Object { !$Ps2Input -or $_ -notin @('arch/x86/kernel/scheduler/integration/workload.c',
+        'arch/x86/kernel/scheduler/idle/idle.c','arch/x86/kernel/scheduler/persistent/workload.c') })) {
     $object = Join-Path $output ($source.Replace('/', '-') -replace '\.c$', '.obj')
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project $source),('/Fo' + $object)))
     $objects += $object
@@ -468,13 +470,15 @@ if ($UserProcess -and $Ps2Input) {
 if ($UserProcess -or $TestK6Process) {
     Invoke-Compiler $rustc @('--edition=2024','--crate-type=lib','--crate-name','k6_process','--emit=obj','--target','x86_64-pc-windows-msvc',
         '-D','warnings','-C','panic=abort','-C','opt-level=2','-C','codegen-units=1',(Join-Path $project 'kernel/process/rust/lib.rs'),'-o',"$output/k6-policy.obj")
-    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'arch/x86/kernel/process/process.c'),("/Fo$output/k6-process.obj")))
+    foreach ($unit in @(@('runtime','k6-process'),@('image','k6-image'),@('syscall','k6-syscall'),@('irq','k6-irq'))) {
+        Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project "arch/x86/kernel/process/$($unit[0]).c"),("/Fo$output/$($unit[1]).obj")))
+    }
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'arch/x86/kernel/process/resident.c'),("/Fo$output/k6-resident.obj")))
     $k6Assembly = @('/nologo','/W3','/WX','/c')
     if ($TestK6Process) { $k6Assembly += '/DK6_DIAGNOSTICS=1' }
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') ($k6Assembly + @(("/Fo$output/k6-transition.obj"),
         (Join-Path $project 'arch/x86/kernel/process/assembly/entry/transition.asm')))
-    $objects += @("$output/k6-policy.obj","$output/k6-process.obj","$output/k6-resident.obj","$output/k6-transition.obj")
+    $objects += @("$output/k6-policy.obj","$output/k6-process.obj","$output/k6-image.obj","$output/k6-syscall.obj","$output/k6-irq.obj","$output/k6-resident.obj","$output/k6-transition.obj")
 }
 if ($TestK6Process) {
     $programRoot = Join-Path $project 'test/kernel/process'
@@ -486,7 +490,8 @@ if ($TestK6Process) {
     }
     Invoke-Compiler $tool.Nasm @('-f','win64','-Wall','-Werror',"-I$output/",'-o',"$output/k6-programs.obj","$programRoot/integration/programs.asm")
     Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @("$programRoot/integration/probe.c",("/Fo$output/k6-probe.obj")))
-    $objects += @("$output/k6-programs.obj","$output/k6-probe.obj")
+    Invoke-Compiler (Join-Path $ToolchainBin 'cl.exe') ($flags + @((Join-Path $project 'arch/x86/kernel/process/hooks.c'),("/Fo$output/k6-hooks.obj")))
+    $objects += @("$output/k6-programs.obj","$output/k6-probe.obj","$output/k6-hooks.obj")
     $keyboardSources = [ordered]@{
         'k6-keyboard' = 'test/kernel/process/integration/keyboard.c'
         'k6-keyboard-route' = 'arch/x86/kernel/drivers/input/ps2/runtime/route.c'

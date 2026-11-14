@@ -28,6 +28,29 @@ uint32_t x86_scheduler_index(void) { return actor; }
 int x86_scheduler_task_valid(void) { return 1; }
 int x86_scheduler_driver_task_valid(void) { return x86_scheduler_task_valid(); }
 __declspec(noreturn) void kernel_scheduler_fail_stop(void) { abort(); }
+
+// ====== commands_lock_mocks ======
+
+static uint32_t lock_held, lock_acquires, lock_releases, irq_saved;
+static KERNEL_LOCK_CONTEXT lock_context;
+
+uint64_t ks_irq_save(void) { assert(!irq_saved); irq_saved = 1; return 512; }
+void ks_irq_restore(uint64_t saved_if) { assert(irq_saved && saved_if == 512 && !lock_held); irq_saved = 0; }
+KERNEL_LOCK_CONTEXT *kernel_lock_current_context(void) { assert(irq_saved); return &lock_context; }
+
+int kernel_lock_acquire(KERNEL_LOCK *lock, KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard)
+{
+    assert(lock == &owner.CommandsLock && context == &lock_context && guard && irq_saved && !lock_held);
+    lock_held = 1; ++lock_acquires;
+    return 1;
+}
+
+int kernel_lock_release(KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard)
+{
+    assert(context == &lock_context && guard && irq_saved && lock_held);
+    lock_held = 0; ++lock_releases;
+    return 1;
+}
 int kernel_log(unsigned level, const char *text) { (void)level; (void)text; return 1; }
 int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2_SHELL_STATUS *status)
 { assert(actor == 2 && command->Line.Length == 4 && status); return 1; }
@@ -102,6 +125,8 @@ int main(void)
     assert(!x86_ps2_shell_submit());
     x86_ps2_shell_task();
     assert(owner.ShellDone && owner.ShellCommands == 1 && space_signals == 1 && waits == 3);
+    assert(lock_acquires == 8 && lock_releases == 8 && !lock_held && !irq_saved);
     puts("PASS: shell bridge full/wait/retry, stop cancellation, separate consumer and EOF; scheduler MOCK");
+    printf("PASS: every queue operation under the commands lock: %u acquire/release pairs; lock MOCK\n", lock_acquires);
     return 0;
 }

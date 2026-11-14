@@ -128,7 +128,7 @@ pub fn resolved_plan(context: &Context) -> Result<Vec<Vec<String>>, String> {
             "cl.exe" => format!("{bin}/cl.exe"),
             "ml64.exe" => format!("{bin}/ml64.exe"),
             "link.exe" => format!("{bin}/link.exe"),
-            "rustc.exe" => normal(&context.rustc),
+            "rustc.exe" | "rustc" => normal(&context.rustc),
             "nasm.exe" => normal(&context.nasm),
             "convert-image.ps1" => fields[0].clone(),
             other => return Err(format!("Unexpected tool in Rust plan: {other}")),

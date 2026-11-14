@@ -7,6 +7,7 @@
 #include "kernel/console/video/pointer/state.h"
 #include "kernel/drivers/video/display.h"
 #include "lib/geometry/damage.h"
+#include "kernel/sync/lock.h"
 
 // G6 driver object: the interactive console of one input session. The input session owns the
 // instance (X86_PS2_SESSION.Console) and every entry point reaches it from there.
@@ -15,7 +16,7 @@
 // pending and audit in task 1 (worker); mouse in task 3. The tasks are cooperative on one CPU and
 // only task 1 draws. Text requests use the K4-C5 queue; mouse remains BSP-only.
 typedef struct X86_CONSOLE {
-    uint32_t                    Lock;
+    KERNEL_LOCK                 PointerLock;
     X86_PS2_SESSION             *Source;
     // G6 O3: the presenting display (VirtIO GPU session) or none (GOP).
     KERNEL_DISPLAY              Display;
@@ -40,12 +41,17 @@ typedef struct X86_CONSOLE {
     KERNEL_CONSOLE_POINTER      Pointer;
     uint64_t                    PointerFrame, PointerCells;
     uint32_t                    PointerVisibility, PointerPending;
+    int32_t                     DeferredX, DeferredY;
+    uint32_t                    DeferredButtons, Deferred;
 } X86_CONSOLE;
+
+#define X86_CONSOLE_POINTER_RANK 3U
 
 // The session's Console must point at a zeroed object; display Ops 0 draws on the GOP directly.
 int x86_console_open(X86_PS2_SESSION *session, KERNEL_DISPLAY display);
 int x86_console_edit(X86_PS2_SESSION *session);
 int x86_console_mouse(X86_PS2_SESSION *session, int32_t dx, int32_t dy, uint32_t buttons);
+int x86_console_pointer_deferred(X86_CONSOLE *self);
 int x86_console_submit(X86_PS2_SESSION *session);
 int x86_console_flush(X86_PS2_SESSION *session);
 int x86_console_pending(X86_PS2_SESSION *session);

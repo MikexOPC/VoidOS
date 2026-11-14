@@ -48,7 +48,7 @@ try {
     $view=@("$project/$module/hardware/view.c","$project/$test/view_test.c")
     Invoke-Checked "$bin/cl.exe" ($flags+$view+@("/Fo$out/","/Fd$out/view.pdb","/Fe$out/view.exe",'/link','/incremental:no'))
     Invoke-Checked "$out/view.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $paths+=$view
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',
         ('"-I'+$project+'"'))+@($paths | ForEach-Object {'"'+$_+'"'})
