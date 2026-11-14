@@ -26,7 +26,11 @@
 // B2-B4: base scheduler profile, RSDP report, persistent arena state against the contract.
 static void acpi_root_private(KERNEL_BOOTSTRAP_MEMORY *memory)
 {
+#ifdef KERNEL_PS2_INPUT
+    if (!kernel_scheduler_prepare(&memory->Physical, memory->Context.Info.PageTableRoot)) kernel_panic("SCHEDULER_FAILED");
+#else
     if (!kernel_scheduler_run(&memory->Physical, memory->Context.Info.PageTableRoot)) kernel_panic("SCHEDULER_FAILED");
+#endif
     if (!os_acpi_root_valid(&memory->Context.Info.Acpi, x86_physical_bits())) kernel_panic("ACPI_ROOT_INVALID");
     if (memory->Context.Info.Acpi.Source) {
         if (!kernel_section("discovery piattaforma ACPI") ||
