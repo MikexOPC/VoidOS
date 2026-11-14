@@ -5,11 +5,8 @@
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "kernel/diagnostics/log.h"
 #include "lib/memory/address_ranges.h"
-#ifdef KERNEL_PS2_INPUT
-#include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
-#ifdef KERNEL_USER_PROCESS
+#if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
 #include "arch/x86/kernel/drivers/input/ps2/shell/bridge.h"
-#endif
 #endif
 #ifdef KERNEL_SCHEDULER_IRQ
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
@@ -21,11 +18,19 @@
 #ifdef KERNEL_TEST_K6_PROCESS
 #include "test/kernel/process/integration/probe.h"
 #endif
-#ifdef KERNEL_USER_PROCESS
-#include "kernel/process/boot.h"
-#endif
 static X86_LAPIC_TIMER timer;
 static BOOT_U32 finished;
+
+static struct {
+    const KERNEL_BOOT_CONTEXT    *Context;
+    X86_PAGE_WINDOW              *Window;
+    const KERNEL_ACPI_DIRECTORY  *Directory;
+    const X86_LAPIC_MAPPING      *Mapping;
+    const X86_PAGING_INVENTORY   *Inventory;
+    const X86_WATCHDOG_ENV       *Watchdog;
+    BOOT_U64                      Delivered;
+    int                           Result, Stopped, Detached, Restored, Open;
+} pending;
 #ifdef KERNEL_EVENT_LOOP
 static const BOOT_U32 loop_mode = 1;
 #else
@@ -254,8 +259,8 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
 {
     READER reader = {context,window};
     BOOT_U64 delivered = 0;
-    int result = 0, stopped, detached = 1, restored = 0, watchdog_closed;
-    if (finished || !context || !window || !window->Pool || !mapping || !inventory || !x86_irq_ready() ||
+    int result = 0, stopped, detached = 1, restored = 0;
+    if (finished || pending.Open || !context || !window || !window->Pool || !mapping || !inventory || !x86_irq_ready() ||
         !x86_device_inventory_verify(context,window->Pool,mapping,inventory) ||
         !x86_pm_clock_capture(directory,window->Pool->PhysicalBits,read_firmware,&reader,&timer.Clock)) {
         return 0;
@@ -301,17 +306,43 @@ cleanup:
         int lvt = x86_timer_confirm_write(mapping,0x320,timer.OriginalLvt);
         restored = divider && lvt;
     }
-#ifdef KERNEL_USER_PROCESS
-    if (result && stopped && detached && restored &&
-        !kernel_process_boot(window,&timer)) kernel_panic("PROCESS_BOOT_FAILED");
-#endif
-#ifdef KERNEL_PS2_INPUT
-    if (result && stopped && detached && restored &&
-        !x86_ps2_session_run(watchdog,&timer.Clock,directory)) {
-        // A live or unconfirmed source retains its owners; never free its mapping.
-        kernel_panic("PS2_INPUT_FAILED");
-    }
-#endif
+    pending.Context = context; pending.Window = window; pending.Directory = directory;
+    pending.Mapping = mapping; pending.Inventory = inventory; pending.Watchdog = watchdog;
+    pending.Delivered = delivered; pending.Result = result; pending.Stopped = stopped;
+    pending.Detached = detached; pending.Restored = restored; pending.Open = 1;
+    return 1;
+}
+
+// ====== x86_timer_ready ======
+
+int x86_timer_ready(void)
+{
+    return pending.Open && pending.Result && pending.Stopped && pending.Detached && pending.Restored;
+}
+
+// ====== x86_timer_owner ======
+
+X86_LAPIC_TIMER *x86_timer_owner(void)
+{
+    return x86_timer_ready() ? &timer : 0;
+}
+
+// ====== x86_timer_finish ======
+
+int x86_timer_finish(void)
+{
+    const KERNEL_BOOT_CONTEXT *context = pending.Context;
+    X86_PAGE_WINDOW *window = pending.Window;
+    const KERNEL_ACPI_DIRECTORY *directory = pending.Directory;
+    const X86_LAPIC_MAPPING *mapping = pending.Mapping;
+    const X86_PAGING_INVENTORY *inventory = pending.Inventory;
+    const X86_WATCHDOG_ENV *watchdog = pending.Watchdog;
+    BOOT_U64 delivered = pending.Delivered;
+    int result = pending.Result, stopped = pending.Stopped, detached = pending.Detached;
+    int restored = pending.Restored, watchdog_closed;
+    if (!pending.Open) return 0;
+    pending.Open = 0;
+    (void)directory; (void)watchdog;
     watchdog_closed = x86_watchdog_close();
 #if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
     if (!x86_shell_bridge_close()) kernel_panic("SHELL_BRIDGE_CLEANUP_FAILED");
