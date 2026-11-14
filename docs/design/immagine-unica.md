@@ -237,3 +237,26 @@ Conseguenze per la task 3: separare `KERNEL_SCHEDULER_INIT` e il
 salvataggio di pool e radice dal carico della sessione 0; permettere il
 passaggio diretto alla sessione 5; togliere dal percorso ordinario le
 scadenze e i controlli che contano tre consegne (`timer.Count == 3`).
+
+## Risultato di B1 (14 novembre 2026)
+
+- **Timer**: `x86_timer_run` fa solo il timer; processo e shell sono chiamati
+  dall'integrazione del watchdog fra `x86_timer_run` e `x86_timer_finish`.
+- **Nessun collaudo nell'immagine con la shell**: `kernel_scheduler_prepare`
+  inizializza lo scheduler senza la sessione 0; niente scadenze di prova del
+  timer né sessioni 1-4. Il codice di collaudo non è più collegato (mappa
+  del linker verificata; 496 -> 484 KB). Le immagini senza sessione
+  interattiva, cioè i profili diagnostici, eseguono ancora tutta la sequenza.
+- **Nessun arresto automatico**: dopo `KERNEL_READY` l'immagine stampa
+  `KERNEL_IDLE` e resta in `STI; HLT`, salvo `exit` dell'utente.
+- **Sessione lunga**: scenario `--ordinary-soak` del runner; esito sotto.
+
+Limiti rimasti: il ciclo di attesa finale non ha servizi attivi; lo
+scheduler resta a sessioni con 8 task fissi; il runtime parte ancora
+dall'integrazione del watchdog in `arch/x86`, non da `kernel/startup`;
+la memoria controllata è il budget di pagine fisiche, non l'heap.
+
+Sessione lunga: `--ordinary-soak 30` passata, 30 minuti, 311 giri di
+`bridge status` riusciti, 312 comandi contati dal kernel, chiusura pulita
+di scheduler, mouse, input e watchdog (contatori di errore del watchdog a
+zero), budget di pagine fisiche invariato alla chiusura.
