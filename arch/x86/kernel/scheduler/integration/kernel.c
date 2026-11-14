@@ -438,6 +438,26 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     return kernel_log(0, "KERNEL_SCHEDULER_OK");
 }
 
+#ifdef KERNEL_PS2_INPUT
+// ====== kernel_scheduler_prepare ======
+
+int kernel_scheduler_prepare(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
+{
+    if (!x86_percpu_bsp() || !pool || irq_profile || saved_pool) return 0;
+    X86_SCHEDULER_LOCAL *local = x86_scheduler_local_prepare();
+    if (!local || local->phase || local->current != KERNEL_SCHEDULER_NONE ||
+        !x86_scheduler_binding_open(pool, root)) return 0;
+    local->phase = 1;
+    (void)apply_private(KERNEL_SCHEDULER_INIT, KERNEL_SCHEDULER_NONE, 0);
+    saved_pool = pool;
+    saved_root = root;
+    irq_profile = 4;
+    local->phase = 3;
+    x86_scheduler_unbind();
+    return kernel_log(0, "KERNEL_SCHEDULER_READY");
+}
+#endif
+
 // ====== next_session_private ======
 
 static int next_session_private(uint32_t previous)
@@ -455,6 +475,7 @@ static int next_session_private(uint32_t previous)
 int x86_scheduler_run_input(void) { return next_session_private(4); }
 #endif
 
+#ifndef KERNEL_PS2_INPUT
 // ====== x86_scheduler_run_irq ======
 
 int x86_scheduler_run_irq(void)
@@ -476,12 +497,15 @@ int x86_scheduler_run_persistent(void)
     return next_session_private(2);
 }
 
+#endif
+
 #ifdef KERNEL_TEST_SCHEDULER_PERIODIC
 // ====== x86_scheduler_run_periodic ======
 
 int x86_scheduler_run_periodic(void) { return next_session_private(4); }
 #endif
 
+#ifndef KERNEL_PS2_INPUT
 // ====== x86_scheduler_idle_retained_valid ======
 
 int x86_scheduler_idle_retained_valid(void)
@@ -489,6 +513,8 @@ int x86_scheduler_idle_retained_valid(void)
     X86_SCHEDULER_LOCAL *local = local_private();
     return (irq_profile == 2 || irq_profile == 4) && local->stats.waiting_count == 2 && x86_scheduler_retained_valid();
 }
+
+#endif
 
 // ====== x86_scheduler_retained_valid ======
 
@@ -517,12 +543,15 @@ const X86_DISPATCH_STATS *x86_scheduler_session_stats(void)
     return local ? &local->stats : NULL;
 }
 
+#ifndef KERNEL_PS2_INPUT
 // ====== x86_scheduler_run_idle_repeat ======
 
 int x86_scheduler_run_idle_repeat(void)
 {
     return next_session_private(3);
 }
+
+#endif
 
 // ====== x86_scheduler_irq_timeout_valid ======
 

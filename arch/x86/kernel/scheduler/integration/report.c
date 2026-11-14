@@ -19,11 +19,13 @@ int x86_scheduler_report(uint64_t root, uint64_t before, const KERNEL_PHYSICAL_A
 #else
     if (profile == 5) return kernel_log(0,"KERNEL_INPUT_TASKS_COLLECTED");
 #endif
+#ifndef KERNEL_PS2_INPUT
     if (profile == 3) return kernel_text("SCHEDULER_PERSISTENT_DISPATCHES: ") && kernel_number(steps) &&
         kernel_text("\nSCHEDULER_PERSISTENT_CYCLES: ") && kernel_number(x86_scheduler_persistent_cycles()) &&
         kernel_text("\nSCHEDULER_PERSISTENT_BUDGET_BEFORE: ") && kernel_number(before) &&
         kernel_text("\nSCHEDULER_PERSISTENT_BUDGET_AFTER: ") && kernel_number(after) && kernel_text("\n") &&
         kernel_log(0,"KERNEL_SCHEDULER_PERSISTENT_OK");
+#endif
     if (profile == 4) return kernel_text("SCHEDULER_IDLE_REPEAT_DISPATCHES: ") && kernel_number(steps) &&
         kernel_text("\nSCHEDULER_IDLE_REPEAT_BUDGET_BEFORE: ") && kernel_number(before) &&
         kernel_text("\nSCHEDULER_IDLE_REPEAT_BUDGET_AFTER: ") && kernel_number(after) && kernel_text("\n");

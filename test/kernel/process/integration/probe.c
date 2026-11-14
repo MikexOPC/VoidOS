@@ -16,7 +16,7 @@ PROGRAM(ipc_client); PROGRAM(ipc_server);
 PROGRAM(bridge_client); PROGRAM(bridge_server);
 #define IMAGE(name) {k6_program_##name, 0}
 
-extern volatile BOOT_U64 k6_negative;
+extern volatile BOOT_U64 process_negative;
 
 static _Alignas(8) unsigned char corrupted[64];
 
@@ -188,7 +188,7 @@ static int bridge_wait_failure(KERNEL_PHYSICAL_ALLOCATOR *pool)
 static int cases(KERNEL_PHYSICAL_ALLOCATOR *pool)
 {
     X86_PROCESS_RESULT result;
-    if (k6_negative == 37) {
+    if (process_negative == 37) {
         (void)kernel_log(0, "KERNEL_K6_STRAY_NMI_READY");
         return over_budget(k6_program_spin, k6_program_spin_length);
     }

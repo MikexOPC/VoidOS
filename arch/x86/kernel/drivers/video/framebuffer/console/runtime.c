@@ -2,6 +2,7 @@
 #include "../integration/kernel.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/sync/internal.h"
 #include "../drawing/draw.h"
 #include "profile.h"
 #include "../pixels/session.h"
@@ -157,6 +158,36 @@ static int draw_cell(void *context, uint32_t column, uint32_t row, uint32_t scal
 
 // ====== x86_console_open ======
 
+#ifdef KERNEL_PS2_MOUSE
+// ====== pointer_lock ======
+
+static uint64_t pointer_lock(X86_CONSOLE *self, KERNEL_LOCK_GUARD *guard)
+{
+    uint64_t saved_if = ks_irq_save();
+    KERNEL_LOCK_CONTEXT *context = kernel_lock_current_context();
+    if (!context || !kernel_lock_acquire(&self->PointerLock, context, guard)) kernel_scheduler_fail_stop();
+    return saved_if;
+}
+
+// ====== pointer_unlock ======
+
+static void pointer_unlock(KERNEL_LOCK_GUARD *guard, uint64_t saved_if)
+{
+    if (!kernel_lock_release(kernel_lock_current_context(), guard)) kernel_scheduler_fail_stop();
+    ks_irq_restore(saved_if);
+}
+
+// ====== saturate_private ======
+
+static int32_t saturate_private(int32_t total, int32_t delta)
+{
+    int64_t sum = (int64_t)total + delta;
+    return sum > INT32_MAX ? INT32_MAX : sum < INT32_MIN ? INT32_MIN : (int32_t)sum;
+}
+#endif
+
+// ====== x86_console_open ======
+
 int x86_console_open(X86_PS2_SESSION *session, KERNEL_DISPLAY display)
 {
     X86_CONSOLE *self = console_private(session);
@@ -177,6 +208,9 @@ int x86_console_open(X86_PS2_SESSION *session, KERNEL_DISPLAY display)
 #endif
     fb = &session->Env.Context->Info.Framebuffer;
     if (!fb->Base) { self->Absent = 1; return kernel_log(1, "KERNEL_CONSOLE_SHELL_ABSENT"); }
+#ifdef KERNEL_PS2_MOUSE
+    if (!kernel_lock_initialize(&self->PointerLock, X86_CONSOLE_POINTER_RANK)) return 0;
+#endif
     // Geometry A: the grid follows the active drawing target (the VirtIO surface when presenting).
     const X86_FB_TARGET *target = x86_fb_target();
     uint32_t columns = (target ? target->Width : fb->Width) / KERNEL_CONSOLE_CELL_WIDTH;
@@ -204,19 +238,56 @@ int x86_console_mouse(X86_PS2_SESSION *session, int32_t dx, int32_t dy, uint32_t
     X86_CONSOLE *self = console_private(session);
     if (!task_valid(self, session, 3)) return 0;
     if (self->Absent || session->Stop) return 1;
-    uint64_t before = self->Pointer.Moves;
-    if (self->Service.Busy || self->Service.Closed || self->Service.Failed ||
-        !kernel_pointer_request(&self->Pointer, dx, dy, buttons)) return 0;
-    if (self->Pointer.Moves == before) return 1;
-    self->PointerPending = 1;
-    self->Render.Next = self->Pointer.Image.Y / KERNEL_CONSOLE_CELL_HEIGHT * self->View.Columns +
-        self->Pointer.Image.X / KERNEL_CONSOLE_CELL_WIDTH;
-    return wake();
+    KERNEL_LOCK_GUARD guard = {0};
+    uint64_t saved_if = pointer_lock(self, &guard);
+    int accepted = 0, moved = 0;
+    if (!self->Service.Closed && !self->Service.Failed) {
+        if (self->Service.Busy) {
+            self->DeferredX = saturate_private(self->DeferredX, dx);
+            self->DeferredY = saturate_private(self->DeferredY, dy);
+            self->DeferredButtons = buttons;
+            self->Deferred = 1;
+            accepted = 1;
+        } else {
+            uint64_t before = self->Pointer.Moves;
+            accepted = kernel_pointer_request(&self->Pointer, dx, dy, buttons);
+            moved = accepted && self->Pointer.Moves != before;
+            if (moved) {
+                self->PointerPending = 1;
+                self->Render.Next = self->Pointer.Image.Y / KERNEL_CONSOLE_CELL_HEIGHT * self->View.Columns +
+                    self->Pointer.Image.X / KERNEL_CONSOLE_CELL_WIDTH;
+            }
+        }
+    }
+    pointer_unlock(&guard, saved_if);
+    if (!accepted) return 0;
+    return moved ? wake() : 1;
 #else
     (void)session; (void)dx; (void)dy; (void)buttons;
     return 0;
 #endif
 }
+
+#ifdef KERNEL_PS2_MOUSE
+// ====== x86_console_pointer_deferred ======
+
+int x86_console_pointer_deferred(X86_CONSOLE *self)
+{
+    if (!self || self->Absent) return 1;
+    KERNEL_LOCK_GUARD guard = {0};
+    uint64_t saved_if = pointer_lock(self, &guard);
+    int accepted = 1;
+    if (self->Deferred && !self->Service.Busy) {
+        uint64_t before = self->Pointer.Moves;
+        accepted = kernel_pointer_request(&self->Pointer, self->DeferredX, self->DeferredY, self->DeferredButtons);
+        if (accepted && self->Pointer.Moves != before) self->PointerPending = 1;
+        self->DeferredX = self->DeferredY = 0;
+        self->Deferred = 0;
+    }
+    pointer_unlock(&guard, saved_if);
+    return accepted;
+}
+#endif
 
 // ====== x86_console_edit ======
 
@@ -246,7 +317,13 @@ int x86_console_pending(X86_PS2_SESSION *session)
     X86_CONSOLE *self = console_private(session);
     if (!task_valid(self, session, 1)) return -1;
 #ifdef KERNEL_PS2_MOUSE
-    if (!self->Absent && session->Quiet && !kernel_pointer_hide(&self->Pointer)) return -1;
+    if (!self->Absent && session->Quiet) {
+        KERNEL_LOCK_GUARD guard = {0};
+        uint64_t saved_if = pointer_lock(self, &guard);
+        int hidden = kernel_pointer_hide(&self->Pointer);
+        pointer_unlock(&guard, saved_if);
+        if (!hidden) return -1;
+    }
 #endif
     if (self->Absent) return 0;
     int requests = x86_console_requests_pending(self);
@@ -254,7 +331,7 @@ int x86_console_pending(X86_PS2_SESSION *session)
     int pending = kernel_console_service_pending(&self->Service);
     if (pending == 0 && self->Display.Ops && self->Display.Ops->Busy(self->Display.Self)) return 1;
 #ifdef KERNEL_PS2_MOUSE
-    if (pending >= 0 && self->PointerPending) return 1;
+    if (pending >= 0 && (self->PointerPending || self->Deferred)) return 1;
 #endif
     return pending;
 }
@@ -360,6 +437,9 @@ int x86_console_flush(X86_PS2_SESSION *session)
         (display->Ops->Redraw(display->Self) && !retarget_private(self)))) return flush_failure(self, 7);
     begin = clock_read(self);
 #ifdef KERNEL_PS2_MOUSE
+    if (!x86_console_pointer_deferred(self)) return flush_failure(self, 6);
+    KERNEL_LOCK_GUARD guard = {0};
+    uint64_t saved_if = pointer_lock(self, &guard);
     if (self->PointerPending) {
         uint32_t index = self->Pointer.Image.Y / KERNEL_CONSOLE_CELL_HEIGHT * self->View.Columns +
             self->Pointer.Image.X / KERNEL_CONSOLE_CELL_WIDTH;
@@ -367,17 +447,30 @@ int x86_console_flush(X86_PS2_SESSION *session)
         self->Render.Next = index;
         self->PointerPending = 0;
     }
-#endif
+    int began = kernel_console_service_render_begin(&self->Service);
+    pointer_unlock(&guard, saved_if);
+    if (!began) return flush_failure(self, 2);
+#else
     if (!kernel_console_service_render_begin(&self->Service)) return flush_failure(self, 2);
+#endif
     X86_PROFILE_BEGIN(render_start);
     result = kernel_console_measure_batch_step_live(&self->Measured, &self->Batch);
     X86_PROFILE_END(X86_PROFILE_RENDER, render_start);
+#ifdef KERNEL_PS2_MOUSE
+    saved_if = pointer_lock(self, &guard);
+    int ended = kernel_console_service_render_end(&self->Service, result != 0);
+    pointer_unlock(&guard, saved_if);
+    if (!ended) return flush_failure(self, 3);
+#else
     if (!kernel_console_service_render_end(&self->Service, result != 0)) return flush_failure(self, 3);
+#endif
     if (!result || self->Measured.Failed || self->Batch.Failed || self->Render.Busy) return flush_failure(self, 4);
 #ifdef KERNEL_PS2_MOUSE
     {
         uint32_t mark = clock_read(self);
+        saved_if = pointer_lock(self, &guard);
         int settled = pointer_settled(self);
+        pointer_unlock(&guard, saved_if);
         self->SettleTotal += elapsed(self, mark);
         if (!settled) return flush_failure(self, 6);
     }

@@ -1,7 +1,7 @@
 use crate::vm::machine::Inject;
 use std::path::{Path, PathBuf};
 
-pub const USAGE: &str = "qemu_runner --image FILE [--boots 1..10] (--copy | --copy-negative 20..25 | --process | --process-negative 31..37 | --process-disabled | --ordinary | --ordinary-shell | --ordinary-shell-bridge-fault) [--cpu MODEL] [--smp 1..8]\n\
+pub const USAGE: &str = "qemu_runner --image FILE [--boots 1..10] (--copy | --copy-negative 20..25 | --process | --process-negative 31..37 | --process-disabled | --ordinary | --ordinary-shell | --ordinary-shell-bridge-fault | --ordinary-no-ps2 | --ordinary-soak 1..120) [--cpu MODEL] [--smp 1..8]\n\
     \x20   [--root DIR] [--qemu-dir DIR] [--loader FILE] [--out DIR] [--inject drop|stop|quit]\n\
     qemu_runner dump BOOT_DIR\n\
     qemu_runner parity CAMPAIGN_DIR CAMPAIGN_DIR";
@@ -19,6 +19,7 @@ pub struct RunOptions {
     pub process: bool,
     pub ordinary: bool,
     pub cpu: &'static str,
+    pub machine: &'static str,
     pub smp: u32,
 }
 
@@ -81,6 +82,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String
         process: false,
         ordinary: false,
         cpu: "max",
+        machine: "q35",
         smp: 1,
     };
     let mut selected = false;
@@ -121,6 +123,18 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String
                 } else {
                     crate::scenario::ordinary::SHELL_BRIDGE_FAULT_CASE
                 });
+                selected = true;
+            }
+            "--ordinary-soak" => {
+                let minutes = number_in(&value_of(&mut arguments, "--ordinary-soak")?, "--ordinary-soak", 1..=120)?;
+                options.ordinary = true;
+                options.negative = Some(crate::scenario::ordinary::SOAK_CASE_BASE + minutes);
+                selected = true;
+            }
+            "--ordinary-no-ps2" => {
+                options.ordinary = true;
+                options.negative = Some(crate::scenario::ordinary::NO_PS2_CASE);
+                options.machine = "q35,i8042=off";
                 selected = true;
             }
             "--cpu" => {

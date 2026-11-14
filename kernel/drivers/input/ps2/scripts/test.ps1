@@ -14,7 +14,7 @@ function Invoke-Checked([string]$Program, [string[]]$Arguments) { Invoke-OsCheck
 # ============ decoder validation ============
 
 if (!$Python) {
-    $Python = Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+    $Python = Resolve-OsPython
 }
 Invoke-Checked $Python @("$PSScriptRoot/structure.py")
 & "$PSScriptRoot/mouse/test.ps1" -OutputDirectory "$out/mouse"
@@ -168,7 +168,7 @@ try {
         "$project/kernel/console/line/line.c",("/Fo$out/"),("/Fd$out/consumer-video.pdb"),
         ("/Fe$out/consumer-video.exe"),'/link','/incremental:no','/opt:ref',"$out/decoder.obj")
     Invoke-Checked "$out/consumer-video.exe" @()
-    $cppcheck="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $cppcheck=(Resolve-OsCppcheck)
     Invoke-CppcheckRaw "$out/cppcheck.xml" --enable=all "--check-level=$OsCppcheckLevel" "-j$OsCppcheckJobs" "--quiet" --platform=win64 --std=c11 --xml --xml-version=2 `
         ("-I$project") -DKERNEL_PS2_HOST_TEST "$project/test/kernel/drivers/input/ps2/decoder/abi_test.c" "$project/kernel/drivers/input/ps2/controller/controller.c" `
         "$project/kernel/drivers/input/ps2/controller/transport.c" "$project/kernel/drivers/input/ps2/controller/discovery.c" "$project/test/kernel/drivers/input/ps2/controller/transport_test.c" `

@@ -176,6 +176,9 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!kernel_ps2_prepare(&session.Controller,&io)) { kernel_log(3,"PS2_PREPARE_FAILED"); return 0; }
     if (!x86_ps2_route_apply(&session,1)) { kernel_log(3,"PS2_ROUTE_ACQUIRE_FAILED"); return 0; }
     kernel_log(1,"KERNEL_PS2_ROUTE_ACQUIRED");
+    if (!session.CommandsLock.Ready && !kernel_lock_initialize(&session.CommandsLock, X86_PS2_COMMANDS_RANK)) {
+        kernel_log(3,"PS2_COMMANDS_LOCK_FAILED"); return 0;
+    }
     session.Binding = kernel_scheduler_irq_bind(4,(BOOT_U64)&session);
     if (!session.Binding || !kernel_scheduler_payload_open(4,(BOOT_U64)&session,session.Binding,0) ||
         !x86_irq_registry_bind(x86_irq_registry(),0x41,x86_ps2_handle,x86_ps2_quiet,&session.Token)) {

@@ -127,7 +127,7 @@ try {
     if (!$CppcheckPath) {
         $tool = Get-Command cppcheck -ErrorAction SilentlyContinue
         $CppcheckPath = if ($tool) { $tool.Source } else {
-            Join-Path $project 'kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe'
+            Resolve-OsCppcheck
         }
     }
     if (!(Test-Path -LiteralPath $CppcheckPath)) { throw 'Supply -CppcheckPath for C fixture analysis' }

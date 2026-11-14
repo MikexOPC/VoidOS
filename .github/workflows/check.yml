@@ -1,0 +1,82 @@
+# ============ VoidOS check ============
+# Builds the UEFI loader, runs a subset of host suites and boots the ordinary Meson image once in
+# QEMU (scripts/test/run.ps1 -Check). Windows only: the toolchain is MSVC, MASM and NASM.
+
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+
+      # ============ toolchain ============
+
+      # 43 scripts expect MSVC under the BuildTools folder; the runner ships the Enterprise edition.
+      - name: Map Visual Studio to the BuildTools path
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'MSVC not found on the runner' }
+          $target = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools"
+          if (!(Test-Path $target)) { New-Item -ItemType Junction -Path $target -Target $vs | Out-Null }
+          Get-ChildItem "$target\VC\Tools\MSVC" | Select-Object -ExpandProperty Name
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Meson and Ninja
+        run: python -m pip install meson==1.12.1 ninja
+
+      # Same Rust as the reference machine: a newer clippy adds lints and fails unchanged code.
+      - name: Rust 1.98.1
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component clippy --target x86_64-unknown-none
+          rustup default 1.98.1
+          rustc --version
+
+      # Same cppcheck as the reference machine, from the official release.
+      - name: cppcheck 2.22.0
+        run: |
+          $msi = Join-Path $env:RUNNER_TEMP 'cppcheck.msi'
+          Invoke-WebRequest 'https://github.com/danmar/cppcheck/releases/download/2.22.0/cppcheck-2.22.0-x64-Setup.msi' -OutFile $msi
+          $install = Start-Process msiexec.exe -ArgumentList @('/i', $msi, '/qn', '/norestart') -Wait -PassThru
+          if ($install.ExitCode) { throw "cppcheck install failed: $($install.ExitCode)" }
+          & "$env:ProgramFiles\Cppcheck\cppcheck.exe" --version
+
+      - name: QEMU with OVMF
+        run: |
+          choco install qemu --no-progress -y
+          Get-ChildItem "$env:ProgramFiles\qemu\share\edk2-x86_64-code.fd", "$env:ProgramFiles\qemu\share\edk2-i386-vars.fd"
+          & "$env:ProgramFiles\qemu\qemu-system-x86_64.exe" --version
+
+      - name: NASM
+        run: ./arch/x86/kernel/cpu/percpu/startup/scripts/assembler.ps1 -Download
+
+      # ============ check ============
+
+      - name: Host suites and ordinary boot
+        run: |
+          $env:VOIDOS_PWSH = (Get-Command pwsh.exe).Source
+          ./scripts/test/run.ps1 -Check -Suite runner,build-plan,kernel,sync,security,clock,layout
+
+      - name: Evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: evidence
+          path: |
+            kernel/build/test-run-*/
+            kernel/build/qemu-run-*/*.log
+            kernel/build/qemu-run-*/**/results.json
+          if-no-files-found: ignore
+          retention-days: 7

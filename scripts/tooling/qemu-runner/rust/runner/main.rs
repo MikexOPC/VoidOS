@@ -37,7 +37,7 @@ fn run_campaign(options: RunOptions) -> Result<bool, String> {
         out: &out,
         image: &image,
         paths: &paths,
-        plan: Plan { memory: 128, smp: options.smp, inject: options.inject, cpu: options.cpu },
+        plan: Plan { memory: 128, smp: options.smp, inject: options.inject, cpu: options.cpu, machine: options.machine },
         limits: Limits::standard(),
         negative: options.negative,
         process: options.process,

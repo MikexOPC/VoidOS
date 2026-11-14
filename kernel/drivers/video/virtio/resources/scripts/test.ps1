@@ -40,7 +40,7 @@ try {
         "$project/lib/memory/address_ranges.c","$project/test/kernel/drivers/video/virtio/resources/presentation.c")
     Invoke-Checked "$bin/cl.exe" ($flags+$presentation+@("/Fo$out/","/Fd$out/presentation.pdb","/Fe$out/presentation.exe",'/link','/incremental:no',"$out/policy.obj"))
     Invoke-Checked "$out/presentation.exe" @()
-    $python=Join-Path $env:USERPROFILE '.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe'
+    $python=Resolve-OsPython
     if (!(Test-Path $python)) { $python=(Get-Command python.exe -ErrorAction Stop).Source }
     Invoke-Checked $python @('-B',"$project/test/arch/x86/kernel/drivers/video/virtio/resources/presentation/screenshot_test.py")
     foreach ($entry in @(@('kernel/mm/rust/regions/validation.rs','regions'),@('kernel/mm/physical/rust/alignment/placement.rs','placement'))) {
@@ -56,7 +56,7 @@ try {
     Invoke-Checked "$bin/cl.exe" ($flags+$nativePaths+@("/Fo$out/","/Fd$out/native.pdb","/Fe$out/native.exe",'/link','/incremental:no',
         "$out/policy.obj","$out/regions.obj","$out/placement.obj") + $syncObjects)
     Invoke-Checked "$out/native.exe" @()
-    $checker="$project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker=(Resolve-OsCppcheck)
     $paths+=$nativePaths+$presentation+@("$project/test/arch/x86/kernel/drivers/video/virtio/resources/probe.c",
         "$project/test/arch/x86/kernel/drivers/video/virtio/resources/presentation/visual.c")
     $arguments=@('--enable=all',"--check-level=$OsCppcheckLevel","-j$OsCppcheckJobs","--quiet",'--platform=win64','--std=c11','--xml',

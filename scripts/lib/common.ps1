@@ -50,7 +50,7 @@ function Restore-Msvc($Saved) {
 
 # cppcheck with the project profile; error, warning, performance and portability findings block.
 function Invoke-Cppcheck([string]$Project, [string]$Out, [string[]]$Sources, [string[]]$Defines = @()) {
-    $checker = "$Project/kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker = Resolve-OsCppcheck
     # Test tiers: normal level by default (fast tier); OS_CPPCHECK_LEVEL=exhaustive for the full tier.
     # -j spreads the files over the cores (unusedFunction is skipped with -j; the full tier reports it).
     $arguments = @('--enable=all', "--check-level=$OsCppcheckLevel", "-j$OsCppcheckJobs","--quiet", '--platform=win64', '--std=c11', '--xml', ('"-I' + $Project + '"')) +
@@ -77,7 +77,7 @@ $OsCppcheckJobs = [Math]::Max(1, [Environment]::ProcessorCount)
 # left cppcheck blocked on its output pipe. Sets LASTEXITCODE like a native call.
 function Invoke-CppcheckRaw {
     $xml = $args[0]
-    $checker = "$PSScriptRoot/../../kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe"
+    $checker = Resolve-OsCppcheck
     $arguments = @($args | Select-Object -Skip 1 | ForEach-Object { $_ } | ForEach-Object { if ("$_" -match '\s') { '"' + $_ + '"' } else { "$_" } })
     $checked = Start-Process $checker -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru `
         -RedirectStandardError $xml -RedirectStandardOutput ($xml + '.log')
@@ -90,4 +90,54 @@ function Read-Hex([string]$Text, [string]$Pattern) {
     $match = [regex]::Match($Text, $Pattern)
     if (!$match.Success) { throw "Campo assente: $Pattern" }
     return [Convert]::ToUInt64($match.Groups[1].Value, 16)
+}
+
+# ============ tool discovery ============
+
+# Python 3 and PowerShell 7 without paths tied to one machine. Order: the VOIDOS_PYTHON or
+# VOIDOS_PWSH variable, then PATH, then the standard install location. The WindowsApps alias that
+# opens the Store is skipped.
+function Resolve-OsPython {
+    if ($env:VOIDOS_PYTHON) {
+        if (Test-Path -LiteralPath $env:VOIDOS_PYTHON -PathType Leaf) { return $env:VOIDOS_PYTHON }
+        throw "VOIDOS_PYTHON points to a missing file: $env:VOIDOS_PYTHON"
+    }
+    $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($launcher) {
+        $found = & $launcher.Source -3 -c 'import sys; print(sys.executable)' 2>$null
+        if ($LASTEXITCODE -eq 0 -and $found -and (Test-Path -LiteralPath $found -PathType Leaf)) { return [string]$found }
+    }
+    foreach ($command in @(Get-Command python.exe -All -ErrorAction SilentlyContinue)) {
+        if ($command.Source -notlike '*\WindowsApps\*') { return $command.Source }
+    }
+    throw 'Python 3 not found. Install it, add it to PATH or set VOIDOS_PYTHON.'
+}
+
+function Resolve-OsPwsh {
+    if ($env:VOIDOS_PWSH) {
+        if (Test-Path -LiteralPath $env:VOIDOS_PWSH -PathType Leaf) { return $env:VOIDOS_PWSH }
+        throw "VOIDOS_PWSH points to a missing file: $env:VOIDOS_PWSH"
+    }
+    $command = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    $standard = Join-Path $env:ProgramFiles 'PowerShell/7/pwsh.exe'
+    if (Test-Path -LiteralPath $standard -PathType Leaf) { return $standard }
+    throw 'PowerShell 7 not found. Install it, add it to PATH or set VOIDOS_PWSH.'
+}
+
+# cppcheck: VOIDOS_CPPCHECK, then the copy built under kernel/build, then PATH, then the standard
+# install location. Findings can change between versions: CI installs the version recorded in its
+# workflow.
+function Resolve-OsCppcheck {
+    if ($env:VOIDOS_CPPCHECK) {
+        if (Test-Path -LiteralPath $env:VOIDOS_CPPCHECK -PathType Leaf) { return $env:VOIDOS_CPPCHECK }
+        throw "VOIDOS_CPPCHECK points to a missing file: $env:VOIDOS_CPPCHECK"
+    }
+    $built = Join-Path $PSScriptRoot '../../kernel/build/full-review-2026-10-05/tools/cppcheck-2.22.0/build-ninja/bin/cppcheck.exe'
+    if (Test-Path -LiteralPath $built -PathType Leaf) { return (Resolve-Path -LiteralPath $built).Path }
+    $command = Get-Command cppcheck.exe -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    $standard = Join-Path $env:ProgramFiles 'Cppcheck/cppcheck.exe'
+    if (Test-Path -LiteralPath $standard -PathType Leaf) { return $standard }
+    throw 'cppcheck not found. Install it, add it to PATH or set VOIDOS_CPPCHECK.'
 }

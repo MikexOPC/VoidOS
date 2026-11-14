@@ -4,6 +4,8 @@
 #endif
 #include "arch/x86/kernel/platform.h"
 
+static volatile unsigned int line_open;
+
 // ====== testi statici limitati e nessuna dipendenza da printf ====== //
 
 int kernel_text(const char *text)
@@ -14,8 +16,16 @@ int kernel_text(const char *text)
         if (!text[index]) return 1;
         if (text[index] == '\n' && !x86_serial_character('\r')) return 0;
         if (!x86_serial_character(text[index])) return 0;
+        line_open = text[index] != '\n';
     }
     return 0;
+}
+
+// ====== kernel_log_line_open ======
+
+int kernel_log_line_open(void)
+{
+    return line_open != 0;
 }
 
 int kernel_section(const char *name)
