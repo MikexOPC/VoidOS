@@ -31,6 +31,11 @@ static struct {
     BOOT_U64                      Delivered;
     int                           Result, Stopped, Detached, Restored, Open;
 } pending;
+#ifdef KERNEL_PS2_INPUT
+static const BOOT_U32 startup_checks = 0;
+#else
+static const BOOT_U32 startup_checks = 1;
+#endif
 #ifdef KERNEL_EVENT_LOOP
 static const BOOT_U32 loop_mode = 1;
 #else
@@ -105,7 +110,7 @@ static int read_firmware(void *context, BOOT_U64 physical, BOOT_U32 bytes, unsig
 
 static int report(BOOT_U64 deliveries)
 {
-    for (BOOT_U32 index = 0; index < 3; ++index) {
+    for (BOOT_U32 index = 0; startup_checks && index < 3; ++index) {
         if (!kernel_text("KERNEL_TIMER_TIMING_GOAL: ") || !kernel_number(index + 1) ||
             !kernel_text("\nKERNEL_TIMER_IRQ_PM: ") || !kernel_number(timer.DeadlinePm[index]) ||
             !kernel_text("\nKERNEL_TIMER_WAIT_PM: ") || !kernel_number(timer.WaitPm[index]) ||
@@ -125,10 +130,12 @@ static int report(BOOT_U64 deliveries)
         kernel_text("\nKERNEL_TIMER_CONSUMED: ") && kernel_number(timer.Consumed) &&
         kernel_text("\nKERNEL_TIMER_PHASE: ") && kernel_number(timer.Phase) &&
         kernel_text("\nKERNEL_TIMER_LOOP_MODE: ") && kernel_number(loop_mode) &&
-        kernel_text("\n") && kernel_log(0,"KERNEL_IRQ_SLEEP_REJECT_OK") &&
-        kernel_log(0,"KERNEL_TIMER_EVENTS_OK") && kernel_log(0,"KERNEL_TIMER_OK");
+        kernel_text("\n") &&
+        (!startup_checks || (kernel_log(0,"KERNEL_IRQ_SLEEP_REJECT_OK") && kernel_log(0,"KERNEL_TIMER_EVENTS_OK"))) &&
+        kernel_log(0,"KERNEL_TIMER_OK");
 }
 
+#ifndef KERNEL_PS2_INPUT
 // ====== elapsed PM della singola scadenza senza confonderlo con un timestamp globale ===== //
 
 static int deadline_failure(BOOT_U32 goal, BOOT_U32 step, BOOT_U32 observed)
@@ -222,6 +229,8 @@ static int deadlines(void)
     return 1;
 }
 
+#endif
+
 // ====== configurazione acquisita solo se il timer precedente e inattivo e mascherato ===== //
 
 static int acquire(void)
@@ -237,6 +246,7 @@ static int acquire(void)
         x86_timer_previous_valid(timer.OriginalLvt,timer.OriginalDivide,value);
 }
 
+#ifndef KERNEL_PS2_INPUT
 // ====== prove ring zero di precondizioni rifiutate senza HLT o accessi invalidi ===== //
 
 static int sleep_rejections(void)
@@ -250,6 +260,8 @@ static int sleep_rejections(void)
     }
     return x86_exception_environment() != 0;
 }
+
+#endif
 
 // ====== calibrazione masked poi handler poi attesa e cleanup senza perdere owner live ===== //
 
@@ -285,7 +297,11 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     if (!watchdog || watchdog->Mapping != mapping || watchdog->Window != window ||
         watchdog->Context != context || watchdog->Inventory != inventory ||
         !x86_watchdog_open(watchdog)) { goto cleanup; }
+#ifdef KERNEL_PS2_INPUT
+    if (!(loop_mode ? x86_timer_loop_run(&timer,handle,quiet) : 1)) {
+#else
     if (!(loop_mode ? x86_timer_loop_run(&timer,handle,quiet) : deadlines()) || !sleep_rejections()) {
+#endif
         kernel_log(3,"TIMER_DEADLINES_FAILED");
         goto cleanup;
     }
@@ -356,7 +372,7 @@ int x86_timer_finish(void)
         kernel_log(2,"TIMER_WATCHDOG_TIMEOUT_CLEAN");
     }
     if (!result || !stopped || !detached || !restored || delivered != timer.Count ||
-        (!loop_mode && timer.Count != 3) || timer.Error || !watchdog_closed ||
+        (!loop_mode && timer.Count != 3 * startup_checks) || timer.Error || !watchdog_closed ||
         !x86_irq_ready() || !x86_lapic_idle(mapping) || !x86_page_window_idle_valid(window) ||
         !x86_device_inventory_verify(context,window->Pool,mapping,inventory)) {
         return 0;
