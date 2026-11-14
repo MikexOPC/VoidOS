@@ -3,6 +3,7 @@
 #include "kernel/drivers/input/ps2/controller/controller.h"
 #include "kernel/console/line/line.h"
 #include "kernel/shell/shell.h"
+#include "kernel/sync/lock.h"
 #include "arch/x86/kernel/scheduler/diagnostic/profiles.h"
 #include "arch/x86/kernel/timer/lapic/timer.h"
 #include "kernel/drivers/input/ps2/mouse/decoder.h"
@@ -48,6 +49,7 @@ typedef struct {
     KERNEL_PS2_LINE Line;
     BOOT_U32 Lines, LineFull;
     KERNEL_PS2_COMMAND_QUEUE Commands;
+    KERNEL_LOCK CommandsLock;
     BOOT_U32 LineTruncated, ShellDone, ShellCommands;
     BOOT_U64 ConsumerGeneration;
     X86_PS2_MOUSE Mouse;
@@ -60,6 +62,7 @@ typedef struct {
 } X86_PS2_SESSION;
 _Static_assert(offsetof(X86_PS2_SESSION,Error) == 4, "Watchdog source count/error ABI");
 _Static_assert(offsetof(X86_PS2_SESSION,Token) % 8 == 0, "IRQ token alignment");
+#define X86_PS2_COMMANDS_RANK 10U
 X86_PS2_SESSION *x86_ps2_session(void);
 int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     const KERNEL_ACPI_DIRECTORY *directory);
