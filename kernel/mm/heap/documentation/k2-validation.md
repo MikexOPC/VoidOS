@@ -1,7 +1,7 @@
 # K2-C: heap con prenotazione e commit
 
 Snapshot del blocco heap verificato il 28 ottobre 2026. Il gate complessivo
-K2 è stato poi chiuso il 29 ottobre: [campagna finale](../../../sync/documentation/k2-integration.md).
+K2 è stato poi chiuso il 29 ottobre: [campagna finale](../../../sync/documentation/validation.md).
 Le prove sotto restano quelle del blocco originale; questo rapporto non
 attesta K3/SMP guest o il lifecycle concorrente dei mapper.
 

@@ -1,8 +1,8 @@
 # Design: scheduler preemptive nell'immagine di produzione
 
 Stato: proposta, 14 novembre 2026. Nessun codice scritto. Riprende le scelte
-già approvate di K4-C ([design](../../kernel/scheduler/documentation/k4c-design.md),
-[ricerca](../../kernel/scheduler/documentation/research.md)) e la parte B2 di
+già approvate di K4-C ([design e riferimenti](../../kernel/scheduler/documentation/design.md))
+e la parte B2 di
 [immagine unica](immagine-unica.md).
 
 ## Obiettivo

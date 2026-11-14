@@ -6,16 +6,17 @@ eseguire programmi isolati, caricati da disco, su tutte le CPU.
 
 Il profilo Meson `ordinary` avvia il kernel, inizializza la memoria e i core
 secondari e, con SMEP e SMAP disponibili, esegue un programma Rust
-incorporato in ring 3. Il core di avvio si ferma dopo `KERNEL_READY`.
-La shell PS/2 si prova con un profilo separato. Lo
+incorporato in ring 3. Con un controller PS/2, `ordinary` apre la shell
+con tastiera e mouse e può interrogare il servizio `bridge` in ring 3.
+Senza controller, il BSP entra in idle con gli interrupt abilitati. Lo
 [stato del progetto](docs/status.md) riporta le capacità e i limiti di ogni
 profilo.
 
 ## Cosa non funziona ancora
 
-L'immagine ordinaria si ferma dopo il boot. Mancano una shell nella stessa
-immagine e la preemption su tutte le CPU. Mancano anche driver a blocchi, VFS,
-esecuzione di ELF da file, entropia e stack canary. Vedi lo [stato del progetto](docs/status.md).
+La shell gira ancora in una sessione sul BSP. Mancano uno scheduler
+preemptive permanente su tutte le CPU, driver a blocchi, VFS, esecuzione
+di ELF da file, entropia e stack canary. Vedi lo [stato del progetto](docs/status.md).
 
 ## Prerequisiti su Windows x64
 

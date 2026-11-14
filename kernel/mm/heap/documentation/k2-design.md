@@ -2,7 +2,7 @@
 
 28 ottobre 2026. Scelta A approvata dall’utente, implementata e verificata:
 [prove del blocco](k2-validation.md) e
-[gate finale K2 del 29 ottobre](../../../sync/documentation/k2-integration.md).
+[gate finale K2 del 29 ottobre](../../../sync/documentation/validation.md).
 Perimetro: kernel/mm/heap e test/kernel/mm/heap; successivamente solo gli
 adattatori build, binding e test necessari, se concordati. Niente SMP guest,
 crescita del mapping, cache per CPU o nuove allocazioni negli handler IRQ.

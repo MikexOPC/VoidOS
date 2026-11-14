@@ -1,71 +1,38 @@
-# Console video: griglia posseduta, 10 ottobre 2026
+# Console video — design
 
-Snapshot del primo nucleo. Il gateway video e ora implementato nel
-[blocco successivo](rendering.md), con limiti di latenza espliciti.
+I documenti completi precedenti sono in `kernel/console/video/documentation/` al commit `49f8cef`.
 
-Scelta utente: griglia in RAM e aggiornamenti per cella. Modulo
-kernel/console/video/, interfacce pubbliche del framebuffer come dipendenza.
-Non e una task renderer nuova. Questo blocco realizza lo stato della console;
-il collegamento agli output della shell e un blocco successivo, dopo i gate.
+La console mantiene una griglia di celle da 9×18 pixel e una bitmap
+delle celle sporche. Il font bitmap viene generato offline. I limiti
+della griglia sono 240 colonne e 67 righe. Modello, rendering e backend
+restano separati: il modello cambia celle, il renderer sceglie gruppi
+delimitati, il driver verifica il target e applica il gruppo. Il danno
+resta pendente se il backend non conferma il lavoro.
 
-## Ricerca e separazione
+Il worker di console sul BSP è l'owner del renderer e dell'output
+hardware. Il puntatore ha un lock dedicato. Il consumer rinvia gli
+aggiornamenti del mouse mentre il gruppo grafico è in corso. I produttori passano richieste WRITE, EDIT e SUBMIT nella
+coda protetta, con testo copiato fino a 256 byte. La coda distingue
+OPEN, DRAINING, CLOSED e FAILED. Take e complete delimitano una
+richiesta in volo. Un enqueue riuscito segnala il worker. In chiusura
+prima si fermano i produttori e si completano le richieste, poi si
+ritirano window e stack. Un close incerto conserva le risorse.
+I job AP fidati comunicano attraverso la coda, mentre il driver
+continua a girare sul BSP.
 
-[Linux v6.12 fbcon](https://www.kernel.org/doc/html/v6.12/fb/fbcon.html),
-sezione Attaching, Detaching and Unloading: la console e un livello distinto
-dal driver framebuffer e ne rispetta il lifetime. Qui non si copia codice
-Linux: BSP, scheduler cooperativo, font fisso, niente VT, processi o DRM.
-Il [font esistente](../../../../docs/design/consolidamento.md#video-vt-d-e-ps2)
-offre celle8x16, UTF-8 italiano e fallback visibile.
+Caret e puntatore sono overlay. Un movimento sporca la posizione
+vecchia e quella nuova. Il gruppo aggiorna sfondo, caratteri e
+overlay in ordine e non impegna la posizione visualizzata prima
+della conferma. Il puntatore è limitato alla superficie attiva.
+L'audit completo degli owner e delle pagine è separato dal controllo
+breve usato nel percorso di rendering. Le misure distinguono coda,
+preparazione, disegno e presentazione.
 
-## Contratto del nucleo
+KERNEL_DISPLAY offre Check, Poll, Busy, Redraw e Rect. Senza Ops si
+disegna sul GOP. Con VirtIO il worker avanza la presentazione con
+polling e gestisce il ritorno a GOP quando il target è ritirato.
+Il percorso senza video può usare la seriale. Meson `ordinary` usa GOP se presente e include worker, input,
+overlay e shell PS/2. La console VirtIO con VT-d usa un profilo separato.
+Font bitmap e sessione a griglia non costituiscono una GUI utente.
 
-C possiede griglia e dirty bitmap; Rust safe decide transizioni con soli
-interi, senza puntatori FFI, heap, hardware o stato globale. Oggetto originale
-identificato da Self, RAM kernel fidata, un owner/task, nessun accesso IRQ
-o concorrente. Self non e una difesa contro scritture arbitrarie in ring0.
-Massimo240 colonne x67 righe: copre il limite video1920x1080 con celle8x16;
-griglia fissa64320 byte, dirty2010 byte piu metadati/allineamento. Dimensioni
-inferiori usano la stessa riserva; costo esplicito, nessuna allocazione.
-
-Input per scalar Unicode, non stream UTF-8: il chiamante deve completare
-il decoding prima della chiamata. C0/C1 respinti salvo LF, CR, Backspace.
-Un scalar occupa una cella, anche un glifo mancante; grapheme/shaping fuori.
-Wrap differito: X puo essere Columns; il prossimo carattere va alla riga
-seguente. LF va alla colonna0 della riga seguente, CR alla colonna0, BS
-cancella una cella, attraversando la riga se necessario; in origine e noop.
-L'editor di riga mantiene il proprio confine: non deve inviare BS quando
-la riga input e vuota. Tab/ANSI non interpretati.
-
-Scorrimento in RAM: copia ordinata O(celle), ultima riga spazi, tutte le
-celle dirty. Nessuna lettura/copia dal framebuffer UC. Peek non consuma;
-ack azzera dirty solo per indice/scalar ancora corrispondenti. Su store
-video fallito non fare ack: contenuto da ridisegnare conservato. Non e un
-token generazionale o una sincronizzazione fra task/core; non consentire
-mutazioni fra peek/store/ack. Output invalidi lasciano lo stato invariato.
-
-Schema NON eseguibile del collegamento successivo:
-
-```text
-scalar completo -> owner griglia -> transizione validata -> celle dirty
-peek -> gateway BSP: salva IF, CLI -> disegna una cella128 pixel
- -> ripristina IF originale su successo e errore -> ack solo su successo
- -> budget di celle esaurito: torna/yield, conserva il lavoro residuo
-```
-
-Il limite128 store non dimostra latenza IRQ: l'attuale renderer verifica
-anche tutto l'inventario. Misurare la finestra completa e il progresso
-PS/2/watchdog prima del collegamento operativo. Nessuna riduzione delle
-verifiche per ottenere un tempo favorevole. Nessun blocco video a IRQ
-disabilitati per tutto lo schermo; nessuna promessa di latenza oggi.
-Una shell separata e input echo richiedono un owner console condiviso
-attraverso un contratto esplicito, non due mutatori diretti della griglia.
-
-## Gate
-
-Rust debug/release/Clippy: geometria, stati, scalar invalidi, wrap/scroll.
-C MSVC W4/WX ASan: canary, ownership originale, invalidita senza scritture,
-ack stantio, dirty bounds, scroll1riga, riuso/stress, massimo240x67.
-Probe griglia nella sola immagine diagnostica; dieci boot consecutivi
-finali, regressione ordinaria, nessun fault. Prove effettive in validation.md.
-Nessun nuovo accesso hardware; Valgrind Windows/coverage N/D. ASan host
-non certifica leak fisici; zero nuove allocazioni in questo modulo.
+[Validazione del modulo](validation.md).

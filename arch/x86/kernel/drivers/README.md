@@ -7,8 +7,8 @@ in [kernel/drivers](../../../../kernel/drivers/).
 
 **Immagine ordinaria.** Il boot QEMU verificato acquisisce il
 framebuffer GOP e ne prepara la mappatura quando il firmware lo
-fornisce. **Profili separati.** Tastiera, mouse e shell PS/2 sono
-verificati nei profili interattivi. `v2c` verifica una sessione
+fornisce. Tastiera, mouse e shell PS/2 fanno parte di `ordinary`.
+**Profilo separato.** `v2c` verifica una sessione
 VirtIO video con un dominio VT-d dedicato alla GPU.
 [Validazione](../../../../docs/validation/consolidamento.md#boot-memoria-e-dispositivi).
 

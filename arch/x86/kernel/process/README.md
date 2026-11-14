@@ -14,7 +14,7 @@ inviare una richiesta e riprendere un singolo servizio fidato.
 
 **Immagine ordinaria.** Con SMEP e SMAP il boot esegue e raccoglie un
 ELF incorporato con `write` ed `exit`. **Profili separati.** Il
-diagnostico K6 prova due contesti alternati e IPC. La shell PS/2 usa
+diagnostico K6 prova due contesti alternati e IPC. La shell PS/2 di `ordinary` usa
 un servizio residente per `bridge status`.
 [Validazione](../../../../docs/validation/processi.md).
 

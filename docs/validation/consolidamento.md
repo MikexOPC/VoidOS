@@ -11,10 +11,10 @@ report. Lo [stato](../status.md) descrive l'immagine ordinaria attuale.
 | Checkpoint | Prova e perimetro |
 | --- | --- |
 | Loader, 2 ottobre | EFI di 54.272 byte, SHA-256 `FF6EB0D78AF37328394FE015171260577DB225E4CC23BC29996AF933C1AC10C1`. Test host C/C++ e Rust, 5000 mutazioni ELF e 512 sequenze di errore delle tabelle. QEMU/EDK2 10/10 casi loader. Il kernel ordinario non veniva eseguito e il cambio CR3 era fuori prova. |
-| Dispatcher, 8 ottobre | 10 boot positivi e 9 negativi su QEMU TCG/OVMF. Scheduler cooperativo BSP, IRQ durante il worker, epoca e idle riusato. [Report](../../kernel/scheduler/idle/documentation/dispatcher-validation.md). |
-| Boot e console, snapshot 22 ottobre | Bootstrap di memoria separato con 10 boot per profilo e 23 scenari diagnostici. Shell e input PS/2 in profili separati, console grafica GOP e prove VirtIO per componenti. [Bootstrap](../../kernel/bootstrap/documentation/memory.md), [PS/2](../../arch/x86/kernel/drivers/input/ps2/documentation/validation.md), [shell](../../kernel/shell/documentation/shell.md), [presentazione VirtIO](../../kernel/drivers/video/virtio/resources/documentation/presentation-validation.md). |
+| Dispatcher, 8 ottobre | 10 boot positivi e 9 negativi su QEMU TCG/OVMF. Scheduler cooperativo BSP, IRQ durante il worker, epoca e idle riusato. [Report](../../kernel/scheduler/idle/documentation/validation.md). |
+| Boot e console, snapshot 22 ottobre | Bootstrap di memoria separato con 10 boot per profilo e 23 scenari diagnostici. Shell e input PS/2 in profili separati, console grafica GOP e prove VirtIO per componenti. [Bootstrap](../../kernel/bootstrap/documentation/memory.md), [PS/2](../../arch/x86/kernel/drivers/input/ps2/documentation/validation.md), [shell](../../kernel/shell/documentation/shell.md), [presentazione VirtIO](../../kernel/drivers/video/virtio/resources/documentation/validation.md). |
 | K1, revoca dello slot basso | Dieci boot dedicati e negativo con traduzione scaldata prima di MOV CR3. Kernel 23/23, campagne brevi 12/12, `v2c` 10/10 e 37 suite host complessive con retry mirato. Le pagine del loader restano riservate. [Report](../../arch/x86/mm/paging/retirement/documentation/validation.md). |
-| K2, lock, pool e heap | Ticket lock con 140.000 acquisizioni FIFO host. Integrazione ordinaria 17/17 smoke, più dieci boot dell'ELF heap ricompilato. Contesa host con thread e ASan. Il runtime guest di questo checkpoint era BSP. [Report](../../kernel/sync/documentation/k2-integration.md). |
+| K2, lock, pool e heap | Ticket lock con 140.000 acquisizioni FIFO host. Integrazione ordinaria 17/17 smoke, più dieci boot dell'ELF heap ricompilato. Contesa host con thread e ASan. Il runtime guest di questo checkpoint era BSP. [Report](../../kernel/sync/documentation/validation.md). |
 
 Per le verifiche puntuali dei driver del checkpoint di ottobre valgono
 i report di [ECAM](../../arch/x86/kernel/drivers/bus/pci/ecam/documentation/validation.md),
@@ -45,7 +45,7 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   quiescenza incompleta. `v2c` passò 10/10 a quattro CPU e
   un soak VirtIO/VT-d di 301 s. Il comando `ap` resta della shell
   separata e i driver restano sul BSP.
-  [Report K4-C](../../kernel/scheduler/documentation/k4c-validation.md).
+  [Report K4-C](../../kernel/scheduler/documentation/validation.md).
 
 ## Build e runner
 
@@ -71,7 +71,7 @@ minuti dell'immagine unica restano fuori dalle prove citate.
   Per la console PS/2 riporta dieci boot shell, dieci ordinari e 612
   pressioni di stress. I dettagli e gli hash restano nei report dei
   moduli. [Rollover](consolidamento.md#validazione-dei-backend-x86),
-  [verifica input](../../kernel/drivers/input/ps2/documentation/structure.md).
+  [verifica input](../../kernel/drivers/input/ps2/documentation/design.md).
 - Nei checkpoint K3-A–H, i casi host di GS, clock, identità, risorse e
   lock non provavano l'avvio di un AP. Il test di riserva bassa K3-G
   passò 10/10 dedicati, 10/10 ordinari, negativo 1/1 e console VirtIO/VT-d

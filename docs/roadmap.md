@@ -6,7 +6,7 @@ disco, li esegue in ring 3 isolati e resta utilizzabile. Lo
 
 | Ordine | Obiettivo | Risultato richiesto |
 | --- | --- | --- |
-| 1 | Consolidamento | Documentazione breve, divisione di `process.c` dopo il commit del lavoro GUI, build e CI, immagine unica, scheduler preemptive su tutte le CPU e risorse senza limiti fissi minuscoli. |
+| 1 | Consolidamento | Documentazione breve, build e CI, runtime permanente nell'immagine unica, scheduler preemptive su tutte le CPU e risorse senza limiti fissi minuscoli. |
 | 2 | Processi | Più processi con spazi di indirizzamento separati, syscall interrompibili, creazione, terminazione, recupero delle risorse e IPC generale. |
 | 3 | Storage | Driver a blocchi, cache, VFS e un filesystem prima in lettura e poi in scrittura. VirtIO-blk per QEMU, poi NVMe o AHCI. |
 | 4 | Esecuzione da file | Caricamento di ELF dal filesystem, init e shell in ring 3, libreria utente minima. |

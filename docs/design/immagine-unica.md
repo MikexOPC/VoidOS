@@ -1,7 +1,7 @@
 # Design: immagine unica
 
 Stato: scelta l'alternativa C (prima A, poi B), 13 novembre 2026. Parte A
-fatta, parte B da progettare. Da accorpare in `docs/design/consolidamento.md`
+fatta, B1 fatta e B2 da progettare. Da accorpare in `docs/design/consolidamento.md`
 dopo il riordino della documentazione.
 
 ## Risultato della parte A
@@ -17,8 +17,9 @@ immagine delle campagne `k6-shell` e `k6-shell-bridge-disabled`.
   scrivono prima `exit`.
 - Senza controller PS/2 (`k6-no-ps2`, QEMU `i8042=off`) l'immagine segnala
   `KERNEL_PS2_INPUT_ABSENT`, esegue il processo e arriva a `KERNEL_READY`.
-- Restano: runtime dentro l'avvio del timer, arresto dopo `exit` o senza
-  PS/2, GPU VirtIO fuori dall'immagine. Sono la parte B.
+- Al termine di A restavano runtime dentro l'avvio del timer, arresto dopo
+  `exit` o senza PS/2 e GPU VirtIO fuori dall'immagine. Il risultato B1
+  in fondo aggiorna il percorso.
 
 ## Obiettivo
 
@@ -27,7 +28,7 @@ programma utente, offre la shell e non si ferma: resta in un ciclo di attesa
 con gli interrupt attivi. Le funzioni oggi "solo diagnostiche" che servono
 all'uso entrano nell'immagine; le altre restano prove separate.
 
-## Come funziona oggi
+## Percorso di partenza, prima della parte A
 
 Il profilo `ordinary` (Meson) definisce `KERNEL_SCHEDULER_IRQ`,
 `KERNEL_AP_RUNTIME`, `KERNEL_USER_PROCESS` e `KERNEL_PANIC_RUNTIME`.

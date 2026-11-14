@@ -100,7 +100,7 @@ fallback di risoluzione silenzioso. Per risoluzioni piu grandi o RAM
 frammentata, progettare backing scatter/gather e limiti di risorse prima
 di estendere il profilo. Il formato32bit a4K supera il limite attuale.
 Scanout e flush sono verificati con screenshot interi e aggiornamento
-parziale: [report visivo](../kernel/drivers/video/virtio/resources/documentation/presentation-validation.md).
+parziale: [report visivo](../kernel/drivers/video/virtio/resources/documentation/validation.md).
 Da completare: sessione video ordinaria persistente,
 aggiornamenti delle aree cambiate, cursore e integrazione input. Recovery,
 timeout e teardown accompagnano ciascun blocco. Un passo validato non
