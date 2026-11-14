@@ -146,3 +146,31 @@ invece traccia della riga aperta (`kernel_log_line_open`); la politica di
 preemption della task 3 tratterà una riga aperta come un lock tenuto,
 rinviando la sospensione per un numero limitato di tick. Protegge le righe
 dalla preemption sul BSP, non da scritture contemporanee di CPU diverse.
+
+### Task 2, risultato (14 novembre 2026): fatta
+
+- 2a: la coda dei comandi della shell passa da un lock di livello 10.
+- 2b: lo stato del puntatore della console passa da un lock di livello 3.
+  Un evento del mouse che arriva durante il disegno viene accumulato e
+  applicato dopo il disegno, invece di fermare il kernel. Sotto il lock
+  girano solo funzioni senza lock; la coda delle richieste (livello 1) si
+  usa fuori dal lock.
+- 2c: riga di log aperta tracciata, vedi sopra.
+
+Prove sull'immagine `ordinary` Meson ricompilata da `a947255`:
+
+- Suite host ps2, ps2-mouse, console, pointer, x86-framebuffer e log; il
+  test della console fallisce con il vecchio comportamento.
+- Campagne `k6-ordinary` 10/10, `k6-shell` 10/10, `k6-no-ps2` 10/10,
+  `k6-shell-bridge-disabled` 3/3, `k6-shell-bridge-fault` 3/3.
+- Campagne del mouse e della console: plain 3/3, v2c 10/10, k3-soak 1/1,
+  fallback 2/2, absent 2/2, stall 5/5, `paging-tamper`.
+- `--ordinary-soak 30`: 30 minuti, 308 giri di `bridge status`, 309
+  comandi contati dal kernel, budget dello scheduler invariato, contatori
+  di errore del watchdog a zero.
+
+Limiti: le corse sono chiuse per la preemption sul BSP; nessun lock
+protegge da accessi di CPU diverse, che oggi non esistono perché i driver
+restano sul BSP. La preemption non è ancora attiva: la prova vera arriva
+con la task 3. Le campagne del mouse richiedono Pillow nel Python usato
+dai runner. Hardware fisico non provato.
