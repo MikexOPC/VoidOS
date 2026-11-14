@@ -10,10 +10,10 @@ della mappatura.
 di scheduling. Il backend x86 associa i contesti alle task e collega
 timer, switch e servizi inter-CPU. [Design](../../../../docs/design/consolidamento.md#lock-cpu-e-scheduler).
 
-**Immagine ordinaria.** Il BSP esegue task cooperativi durante il boot.
-**Profili separati.** `meson-bsp-periodic` verifica preemption sul BSP,
-`ap-task-four` su quattro AP con task kernel fidati, e la shell
-`v2c` può inviare un job alla volta ad AP1.
+**Immagine ordinaria.** Il BSP esegue task cooperativi nella sessione
+interattiva. La shell può inviare un job alla volta ad AP1.
+**Profili separati.** `meson-bsp-periodic` verifica la preemption sul BSP.
+`ap-task-four` la verifica su quattro AP con task kernel fidati.
 [Validazione](../../../../docs/validation/consolidamento.md#cpu-e-scheduler).
 
 **Limiti.** Otto slot di task nel core comune, driver sul BSP e

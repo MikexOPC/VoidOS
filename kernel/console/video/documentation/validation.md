@@ -1,104 +1,156 @@
-# Verifica del nucleo console video — 10 ottobre 2026
+# Console video — validazione
 
-Modulo kernel/console/video/, scelta griglia RAM confermata dall'utente.
-[Contratto e ricerca](design.md). Implementati cursore, LF/CR, Backspace,
-wrap differito, scorrimento, dirty peek/ack e clear. Non e ancora output
-grafico della shell: il gateway IRQ/video e il collegamento restano successivi.
+I report completi precedenti sono in `kernel/console/video/documentation/` al commit `49f8cef`.
+I risultati riportati riguardano le immagini dei rispettivi checkpoint.
 
-## Host e review
+I casi di disegno verificano pixel fisici e PPM. I checkpoint
+rendering e batch riportano 10/10 per diagnostico, ordinario e
+assenza display sulle rispettive immagini. Il test batch compara
+anche aggiornamento singolo e raggruppato, 10/10 ciascuno.
 
-Log kernel/build/console-grid-host.log:4 test Rust in debug e4 in release,
-Clippy con warning come errori; geometrie/stati validi e invalidi, tutti gli
-scalar Unicode fino a110000 esadecimale, wrap/scroll e cancellazione.
-Rust safe riceve solo interi, nessun puntatore o helper runtime nel link.
-C MSVC x64 W4/WX con ASan:374635 CHECK, canary, copie dell'owner respinte,
-errori senza mutazione, ack incoerente/duplicato, dirty bounds,1x1 e240x67,
-scroll controllato cella per cella e10000 cicli di riuso. sizeof66360.
-Zero nuove allocazioni; riserva fissa esplicita, non prova di leak globali.
+La campagna combinata mouse/tastiera passa 10/10 a 98 tasti,
+10 comandi e 35 eventi mouse per boot. Lo stress separato usa
+812 tasti. Il puntatore passa 10/10 nel profilo interattivo dedicato,
+con 51 eventi mouse e nessuna perdita osservata. Il fallback senza
+video e la regressione senza mouse usano immagini distinte.
 
-Cppcheck2.22.0:3 TU, nessun error/warning/performance/portability. Note
-style variableScope e unusedFunction del probe analizzato senza il caller;
-information per header di sistema/checkers. Non sono assenza di ogni nota
-statica. Review manuale: indice validato prima degli array, shift dirty0..7,
-copy scroll crescente da indirizzi successivi senza sovrascrivere sorgenti,
-clear/reset bounded; dipendenze senza include circolari. Chiamante kernel
-fidato, buffer di output peek validi e separati dall'owner; nessuna user copy.
+La prova coda AP registra 10/10 positivi con quattro CPU avviate
+e 2.000 WRITE per boot. ACK mancante e invio in corso danno
+10/10 arresti attesi per caso, con stack trattenuti. La shell
+rimane BSP. Screenshot e contatori QEMU non provano latenza o
+atomicità del display fisico.
 
-Regressione framebuffer: kernel/build/console-grid-framebuffer-host.log,
-16 test Rust per profilo, Clippy,7 gruppi lifecycle x100,3 pixel e4 drawing
-x100 C/ASan/accounting, cppcheck14 TU senza diagnostiche bloccanti.
-ASan strumenta il C host, non Rust/RAM fisica. Valgrind Windows e coverage
-linee/branch N/D. Non dichiarare sicurezza hardware/SMP da queste prove.
+Riproduzione delle campagne registrate dalla radice con
+`./scripts/test/qemu.ps1 -Campaign framebuffer-draw,console-active,shell-text,shell-novideo,v2c -Fresh`.
+Le campagne citate qui riguardano i checkpoint e i profili del registro. I checkpoint per font, caret, burst, costo
+e qualità visiva restano leggibili con i loro hash nella revisione
+storica indicata sopra.
 
-## Immagini e boot finali
+[Design del modulo](design.md).
 
-Diagnostico: kernel/build/console-grid-diagnostic/kernel.elf, SHA256
-268697DFA1EE96F2296A5FDFF2C02EFF6DA1790BCCC9A59893994845328C9585.
-Ordinario: kernel/build/console-grid-ordinary/kernel.elf, SHA256
-C800F503570CC5C1B4A7C131FAA22BA1F9F8CF6C4770124EB0CC031963D10B33.
-Entrambe le build finali passano warning come errori con la toolchain supportata.
-Il nucleo/probe sono compilati soltanto con TestFramebufferMapping.
-Nessuna modifica a sorgenti IRQ, registri, cache policy o mapper.
+<details>
+<summary>Directory delle prove storiche</summary>
 
-- Diagnostico10/10 consecutivi:
-  kernel/build/framebuffer-live-d500ac4a2cd3485fa6bd18545353d224/console-grid-results.json.
-  Ogni boot:100 riusi3x2, accenti/euro/Backspace/scroll/invalid scalar,
-  dirty consumati una volta e griglia240x67 piena piu wrap/scroll verificato.
-  KERNEL_CONSOLE_GRID_OK e KERNEL_READY, nessun fault inatteso.
-  Regredisce anche unbind/budget/rebind,768 foglie video e guardie,
-  CR3/PAT,16837 pixel fisici e nel PPM. Il raster non mostra la nuova griglia:
-  e il precedente probe font, verificato senza cambiamenti.
-- Ordinario10/10 consecutivi:
-  kernel/build/framebuffer-live-73240fe264674752ad1c710f26e4b2ba/console-grid-results.json.
-  Mapping live e KERNEL_READY, nessun marker/probe console e nessun fault.
-- Senza display10/10 finali sulla stessa immagine ordinaria:
-  kernel/build/framebuffer-live-c25b132c5f0d4fa98bbbb1749988d91a/console-grid-results.json.
-  Descrittore azzerato, nessun mapping/probe console, KERNEL_READY.
+```text
+ap-console-13c1d6a5124f47089e6812c1082fa330
+ap-console-43f9710ec3ea4fbfa4c75108103a6142
+ap-console-7ce51e7713a64aaea602b3d6a8d8167f
+ap-console-cef4b9d9257842deba6e87f99a859db2
+ap-console-e6518738fa954607b6739e7eb266bc22
+ap-console-fe4be9b040b7426998c384764704726b
+framebuffer-live-144c9d5d92484d4b9e14aad41e459232
+framebuffer-live-1db2f9f3ecd0483d96387b27b4b92d36
+framebuffer-live-234725e9d8da45c295a27caaf5421f4d
+framebuffer-live-4f6dd0e5452548f7b75417f960c4467d
+framebuffer-live-6c70d13dfa344146b2a3ffa79e218fb7
+framebuffer-live-73240fe264674752ad1c710f26e4b2ba
+framebuffer-live-75392a9769c543b8ba9bb6c1119ddd65
+framebuffer-live-8e7fa9c91ef640fda21165690504e548
+framebuffer-live-a0211dd4c7104164a917ce3f49c2f42a
+framebuffer-live-a48d10163dfc4ef78a5e15b7714af4ab
+framebuffer-live-b03cc1a7605344b9bb866752fbbeab73
+framebuffer-live-b0d2fbc769b9417a91eb014882ec6005
+framebuffer-live-b1a6cc0631ca4f1d97dbf06cbd4d7a52
+framebuffer-live-bcb7d60474284180ab034fc8d0388c6a
+framebuffer-live-c25b132c5f0d4fa98bbbb1749988d91a
+framebuffer-live-d500ac4a2cd3485fa6bd18545353d224
+framebuffer-live-d846b962d74f48698f239a0769e80c37
+framebuffer-live-e0a60f2c2c204a4994ffc1ac3cbd965a
+framebuffer-live-fddb0149c34f41a88267d642680d8445
+framebuffer-owned-12a8ff5dfeef41cdaaab77ff0ca1edb6
+pointer-interactive-3a4015558eca4733b0a29c424c479819
+pointer-interactive-3b8e35ea65774960ad3a14203dc6085d
+pointer-interactive-4858e8e7c6f3438a85805d4ab7959967
+pointer-interactive-ca8ecc104954495a816eb780a97abaca
+pointer-interactive-check-2fb72c5175644225b9c5d7297d3ccfc2
+pointer-interactive-check-515792a252fb4e5190f8a1bc4dac7c1a
+pointer-interactive-check-6eb3710061654312b7c07d2c2c887577
+pointer-interactive-check-71d62dc614fa45d6968ef4c4159e4518
+pointer-interactive-check-8602a6bfe8064a1a8abe20daf6c35e3b
+pointer-interactive-check-8a7375bd47b24018aeec27bc2c770025
+pointer-interactive-check-a94ea60ef9a549d2b0ef8b1cb8f802f7
+pointer-interactive-check-b3d9d9448d6149b3b51d65e302136c4a
+pointer-interactive-check-fa281b8be36248189e228782048dc957
+ps2-decoder-0723a71976314259963c7223ff87a720
+ps2-decoder-99ebb765d9ec45d198000e87c015b087
+ps2-input-firmware-00d5d677882a44978c2612a7ac8e2721
+ps2-input-firmware-00fb269b02914dd194fe0d849bfc2c59
+ps2-input-firmware-01248b92496e4159909799223fe43a3e
+ps2-input-firmware-0223a10dba6649e494cb90ea23d6214b
+ps2-input-firmware-03d69e69309040079a1237e9b73bf237
+ps2-input-firmware-07f83bfb8d1048178b60fd9091ff77b7
+ps2-input-firmware-09cc52793b764f87be6093e058f4e18e
+ps2-input-firmware-150b188bbeeb4e69a1f006b1a3a1f2a5
+ps2-input-firmware-1941f553dfdb4310a1de0113a9d8003a
+ps2-input-firmware-1acf9624090748d4a3cff52435d5ddce
+ps2-input-firmware-1c71574491d84c9285d05dbada6ee408
+ps2-input-firmware-1f4eef4a21db479c95c1bcc8d3b4414c
+ps2-input-firmware-210cc0a0d4af43d1ac1f7b80530d6490
+ps2-input-firmware-282791b0dcf94725b25cffd0e8ced217
+ps2-input-firmware-2c34c551c828483888c2b277ac3e4215
+ps2-input-firmware-2e714e0b767d4646a0297d5a5d94d8d5
+ps2-input-firmware-31c7671864ad45d480169d4232df48e4
+ps2-input-firmware-32353c8ca7a5477588c44c18aa9c5e0a
+ps2-input-firmware-3e3d1aeac8934848a27770df9d998a39
+ps2-input-firmware-43977f81bc194e55928c3cb4c1824470
+ps2-input-firmware-4503eeacf30147cab3f0b9819ecfa7d9
+ps2-input-firmware-48a7b79107ef4d918285ac4356b97b0a
+ps2-input-firmware-4c6a413c324546079ddb9f40d06b6ff6
+ps2-input-firmware-5120993cbd8d445d9e4163097c58ccd3
+ps2-input-firmware-57fedd6115644d12a18d6c0a5764a7f0
+ps2-input-firmware-5b96d2a595d440a4bf5fae3a66146eb2
+ps2-input-firmware-5ea5d7cc3760485ca1206c8224b54d7c
+ps2-input-firmware-75505195e3cd43d6bc142735ec1ccf35
+ps2-input-firmware-758b09be1d57492cbfd69aed6de251ae
+ps2-input-firmware-78bf9177b8644f6d8789660f9421b44c
+ps2-input-firmware-79ba20daca9349d6b200dd2592349dbb
+ps2-input-firmware-7b45d0e30ced4d2cba6717132f584989
+ps2-input-firmware-7c7496c3a7bc4a4fa7f069c215c88d43
+ps2-input-firmware-7d6aeafd75fe423386f1aedfedac4a3b
+ps2-input-firmware-7f11024cd6564e52a50419b53a382b16
+ps2-input-firmware-80978560d7414395a35d891f4517c7dd
+ps2-input-firmware-84050a86f1fb450ab8e9e84140221204
+ps2-input-firmware-87592a550a8348ac8f0200393faa195e
+ps2-input-firmware-8b1eb8d59e1642f0a0d3d706440c3c0e
+ps2-input-firmware-8ed982aa1f0f400c805b40ba0fc7a528
+ps2-input-firmware-8f777c9f936147829dd9779654a9845b
+ps2-input-firmware-9181011cc09e4ef7ac43ade5b45af323
+ps2-input-firmware-94c576e049eb4294a086c19ffe82984c
+ps2-input-firmware-97f2c45bc88a4d58afbd0c33babe61f7
+ps2-input-firmware-99e6e203462c49b2913aec31065321d4
+ps2-input-firmware-9cb141d8051543ffa46893cc454a6cb4
+ps2-input-firmware-9fea5ef2fd93499eada037ec7b74c546
+ps2-input-firmware-a418c4b2a7de46a3a3dbaea74a525d3c
+ps2-input-firmware-a97798873284406f959888b3966379b6
+ps2-input-firmware-acd624adf7454dfc9b21b18417aee699
+ps2-input-firmware-b195fd9a860440c5aaf064c1c7ac5f8c
+ps2-input-firmware-b6a34d6b196649c3ac8c9efa7c0d02a8
+ps2-input-firmware-b822a7c2fb944dd2b0e4465ba032d840
+ps2-input-firmware-b8394dd442e64bc19898674c2b1ff027
+ps2-input-firmware-c2ff52ad031d493999a3c1171e58c19c
+ps2-input-firmware-c60dc5b95da945cdb98611d3434d6a6a
+ps2-input-firmware-c6a9ef91eb594807b1aa2ac32c95ac0c
+ps2-input-firmware-c9b9d8339f57470c8744222badce5286
+ps2-input-firmware-ccd1f606ad964bab81c44948969c502d
+ps2-input-firmware-d4a3fc801238444883ad5d3ebb0a4897
+ps2-input-firmware-d7e69479bbba496eb752d65d7e2770fd
+ps2-input-firmware-d80e8b5a9f1e4b98bdc3009c54589f71
+ps2-input-firmware-d81d152db17e4c3c97a1d469ec475fc3
+ps2-input-firmware-d83005300ec54c06be258ac8aa57aede
+ps2-input-firmware-e0cdf0bc0d864af08113228b85909f7a
+ps2-input-firmware-e11790c079d243779fa2885e080b1880
+ps2-input-firmware-e37532ee0261442193ee8d03662ebcc0
+ps2-input-firmware-f26132a42dc040bba474a2dab5f10fe7
+ps2-input-firmware-fe0e77facc4c49f88ffa01bb3df9865b
+ps2-input-firmware-fe36d2b03c3141ba8babf94f944cdf58
+ps2-input-firmware-ff87104d314a4b7ca207b7b61b1e7c91
+qemu-run-ee85fab4707b4d629da90be313e6bbc5
+scheduler-firmware-87de35fe092d42b698758d5dadd94284
+scheduler-firmware-fd01a8a159b146d1b50fc5f0857ddb05
+watchdog-host-3e932cc0c7414423b3f06dab9c6bc114
+watchdog-host-477384aab81e4f4bb06d1121c12ad95b
+watchdog-host-8f697584233e4c82a53c6dbc5aa28d0c
+watchdog-host-d0e38b01d2b04a1a901eeb469fd99a90
+```
 
-Una campagna precedente senza display non e PASS: nove boot completi,
-decimo arrivato a KERNEL_READY ma timeout host5 secondi nella chiusura QEMU.
-Evidenza kernel/build/framebuffer-live-4f6dd0e5452548f7b75417f960c4467d/results.json.
-Monitor aveva ricevuto quit; finally ha terminato soltanto la VM posseduta.
-Non e un panic del kernel e non dimostra la causa interna dello stallo host.
-Esposto il timeout host gia supportato dal provider: wrapper console15 secondi
-(range1..30), durata della chiusura registrata. Deadline boot40 secondi,
-assenza fault, hash e controllo exit non modificati; timeout resta FAIL.
-Dieci boot finali senza display: shutdown0.078..0.094 secondi. Questa prova
-non dimostra che lo stallo QEMU non possa ripetersi su un host sotto carico.
-Quattro test Python del wrapper verificano FAIL su provider fallito, hash/
-conteggio/loader incoerenti, marker errato e deadline invalida; subprocess
-mock, nessuna VM. Log kernel/build/console-grid-harness-host.log.
-Il wrapper non interrompe il provider con un secondo timeout che potrebbe
-lasciare una VM orfana: lifetime/deadline/finally restano al provider proprietario.
-
-I provider verificano hash di immagine/ESP/OVMF/QEMU e terminano soltanto
-la VM posseduta; il wrapper console richiede/esclude il marker specifico
-in ciascuno dei dieci log. Hash loader invariato:
-EB2398C1D09EDF333AD13BDDBFA915D591C5DA236D3900AE5E336685B34B67D7.
-Nessuna installazione nella ESP ordinaria in questo blocco.
-
-## Problemi corretti nel ciclo
-
-1. no_std incluso come modulo nei test produceva unused-attributes con
-   D warnings: cfg_attr(not(test), no_std), senza esclusioni dei warning.
-2. /TC sul comando link interpretava l'oggetto Rust come C: separata
-   compilazione /c dal link, mantenendo W4/WX e ASan.
-3. Gli add Rust con overflow-checks=yes richiedevano un helper core panic
-   esterno. Add saturating espliciti entro limiti240/67 gia validati;
-   nessun overflow possibile nel dominio, stessi test e checks mantenuti,
-   niente runtime Windows aggiunto. Le prove finali usano questa versione.
-
-## Riproduzione e prossimo gate
-
-Da D:/OS: kernel/console/video/scripts/test.ps1; kernel/scripts/build.ps1
--TestFramebufferMapping -OutputDirectory <diagnostico>; build ordinaria
-con altro OutputDirectory. Python scripts/firmware.py --kernel <ELF>
---boots 10 --diagnostic per diagnostico, senza flag per ordinario,
---absent per ordinario senza display.
-Manifest finale kernel/build/console-grid-review.json, righe/cartelle,
-whitespace/link e hash. Sorgenti del modulo massimo150 righe.
-
-Prima del prossimo blocco: gateway owner framebuffer senza esporre il
-puntatore, restore IF sia su successo sia su errore,128 pixel per cella,
-misura finestra completa di verifica/store, progresso IRQ e timeout,
-budget redraw e owner console unico. Nessuna preemption, AP o GUI.
+</details>

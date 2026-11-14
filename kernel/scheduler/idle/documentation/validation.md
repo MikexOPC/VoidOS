@@ -1,154 +1,60 @@
-# Dispatcher idle supervisionato: implementazione e validazione
+# Idle e dispatcher — validazione
 
-Snapshot storico del blocco idle. Il successivo arresto cooperativo e le prove
-aggiornate sono nel [report task persistenti](persistent-validation.md).
+I report completi precedenti sono in `kernel/scheduler/idle/documentation/` al commit `49f8cef`.
+I risultati riportati riguardano le immagini dei rispettivi checkpoint.
 
-8 ottobre 2026. [Contratto approvato e fonti](design.md). Il perimetro e lo
-scheduler BSP cooperativo con i soli agganci contabili e timer necessari.
-Le prove IRQ/task precedenti restano [storiche](../../irq/documentation/validation.md).
+La validazione storica del dispatcher registra dieci boot positivi
+e nove negativi isolati, oltre al ciclo continuo separato. Verifica
+IRQ durante il worker, risveglio, budget e riuso della sessione.
+I punti di fault testano anche la conservazione degli owner.
+L'hardware fisico e l'idle permanente dell'immagine unica restano
+fuori dalla prova.
 
-## Risultato
+[Design del modulo](design.md).
 
-SELECT distingue EMPTY da BLOCKED. Nel profilo idle due task si sospendono
-sull'evento 3 e la coda READY diventa vuota. Sullo stack principale e con IF=0,
-il dispatcher verifica le lease, arma la seconda scadenza LAPIC e riutilizza
-l'attesa HPET con backend STI/HLT/CLI gia verificato. Non mantiene un borrow
-dell'Owner Rust durante l'attesa.
+<details>
+<summary>Directory delle prove storiche</summary>
 
-L'IRQ LAPIC valida la source, completa stop/EOI e pubblica una notifica Rust
-atomica. Dopo acknowledgement dell'HPET indipendente, il dispatcher ricontrolla
-Count/Phase e applica una transazione Rust: due WAITING diventano READY.
-Entrambe le task ricontrollano la condizione persistente e terminano; quattro
-dispatch effettivi, due raccolte, budget ripristinato e 144 PTE task assenti.
-L'attesa non viene conteggiata come esecuzione di una task.
+```text
+loop-firmware-63bb78476f3f4363915470df42a877f0
+loop-firmware-712fad0db01a4f93980dc4caecd3b371
+loop-firmware-7f251649d037423ebb15aa07d078c71d
+scheduler-context-080f98c5bf8643f587de7f491b4f57f1
+scheduler-context-192f05e388a04a7f951e3a1f1798080b
+scheduler-context-7b3f20e4466d4b74bc023e8c0a8a92fc
+scheduler-firmware-00dae40773194d4c92850798c74c0b37
+scheduler-firmware-06cb6f2e1fbb4b52bd5bdb0b0135e6c4
+scheduler-firmware-1ac43879d5a94e76bec8b7e88ba6b454
+scheduler-firmware-273ee095dcbd45d7a2bc33345db88d32
+scheduler-firmware-2bef194348e842b490e3bca49d478e4c
+scheduler-firmware-3c7b85ca998340c7b71e2bb10a54c880
+scheduler-firmware-4295503d2a12485b9edb4d4c276e2034
+scheduler-firmware-42d1a6ee45224e359e0692980a245c10
+scheduler-firmware-4330cc40fce045d18dab19f253bb1557
+scheduler-firmware-44a28ce6e9574cf39651de6c342ae47c
+scheduler-firmware-4c7d86ce04484d67b587a2a1349f4a37
+scheduler-firmware-4cbd99c42c0f494788793b0ba9b2daab
+scheduler-firmware-5062574772ab44d285904f3729217bc3
+scheduler-firmware-539f4365be2a48f48af894ce66107a0f
+scheduler-firmware-5486b9d968fc4253adfade7d184e7d04
+scheduler-firmware-5a3715dd185d4066be5eb86b0258234a
+scheduler-firmware-5c761df0a8e84f88950bffd494845a07
+scheduler-firmware-6b8d8b439d964ba2971605bb1714831b
+scheduler-firmware-804e103a47734183afb9135727d24bc4
+scheduler-firmware-8c7e3d30cdc443d095bb8ab07e77744c
+scheduler-firmware-98c10fc7c9144be791cdbef6b277103c
+scheduler-firmware-a8f140aa4eed46a28d76e77033bdd6c6
+scheduler-firmware-badd796b993b438c989dda8760e80e93
+scheduler-firmware-c486bab361ba4cde921870ff89489474
+scheduler-firmware-e73443c17d1247b79d790de98c78135b
+scheduler-firmware-f3a83ea2ea934963b441d3dbcf2e9382
+scheduler-firmware-f4ed91aaba5f4bde99f2bc089388c265
+scheduler-firmware-fbcdcf49b4734a0983862b8930ededb8
+scheduler-host-02308ab0630d48a885715af884bdc032
+scheduler-host-6e3424080b094d698dc4f44d1be52cb4
+scheduler-host-7bab943c61d54fc28dd6f2b8ba120f3e
+scheduler-host-d70f01a103254917bc8c93f58747b4ed
+watchdog-host-58b411bce9ca4af7adc21c5bae029272
+```
 
-La prima scadenza conserva la prova IRQ nel worker e la terza conserva il
-percorso timer precedente. Totale tre consegne LAPIC e tre watchdog HPET:
-il driver consuma la seconda consegna dopo la sessione idle, senza eseguire
-una seconda attesa HPET per lo stesso evento. Il ciclo continuo usa lo stesso
-aggancio sulla sua seconda consegna.
-
-## Review e correzioni
-
-La prima prova QEMU ha rifiutato l'attesa: `x86_watchdog_valid` richiedeva
-FreePages uguale al budget originale, incompatibile con gli stack WAITING.
-La fase SCHEDULER_IDLE_FAILURE rende il rifiuto localizzabile, anziche confonderlo
-con un hang. Quel tentativo e una prova fallita, non uno dei boot finali PASS.
-
-L'integrazione contabile conserva il budget originale del watchdog e la sua
-ABI di 224 byte. Un prestito privato conserva copie bounded di due lease da
-sedici pagine, disgiunte, con identita/generazioni riconosciute dall'allocatore
-e pin attivi; il delta libero deve essere esattamente 32. Le verifiche restano
-attive nei gate watchdog. Non si imposta un nuovo budget per accettare una
-perdita e non si accetta una sottrazione arbitraria.
-
-End termina il prestito prima della raccolta degli stack: il gate rigoroso
-originale rifiuta ulteriori operazioni device finche le pagine non sono state
-restituite. Close e vietato con prestito vivo. Su timeout si conservano scope,
-lease e binding nel profilo terminale. La ledger privata occupa 72 byte, non
-alloca heap e non prende ownership delle pagine; il protocollo e BSP/IF=0 con
-caller kernel fidato, non un'API per user pointer o allocatori concorrenti.
-
-Il reporting numerico e stato separato in `integration/report.c` per tenere
-il controller sotto 400 righe. Nessun nuovo Assembly, registro MMIO o porta
-hardware: sono riutilizzati i driver e i relativi prerequisiti gia validati.
-
-## Prove host
-
-| Prova | Esito reale | Limite |
-| --- | --- | --- |
-| Rust debug/release | 22/22 per profilo, Clippy e warning gate passano | Core e pending esistenti riutilizzati |
-| FFI C/Rust ASan | 520699 controlli; 1000 nuovi cicli con due WAITING, doppio post coalescente, wake-all, raccolta e EMPTY | Contesto nativo mock; Rust/ASM non ASan |
-| Idle adapter ASan | Cinque scenari × 10; 26/18/21/23/22 controlli per scenario | Hardware/gateway mock: successo, timeout, errore source, post rifiutato, wake count errato |
-| Prestito contabile ASan | 190002 controlli × 10; 10000 scope/run | Allocatore/CPU mock, pin, drift budget, rollback, mutazione caller, overlap, end/rifiuti |
-| CPU/context | 55900 controlli × 10 | Snapshot privilegiati mock; rifiuto CPL3 reale |
-| Switch host | 4004 switch × 10, quattro guard fault attesi/run, due reservation restituite/run | GPR/XMM/FP reali; separato da ASan fibers |
-| Stack resources ASan | 361000 controlli × 10 | Allocatore/PTE mock, lifecycle e rollback |
-| Native mapper ASan | 554149 controlli × 10 | CPU/PTE mock, bounds/ownership/invalidazione |
-| Ponte IRQ ASan | 22 controlli × 10 | Backend/source mock |
-| Watchdog regressione ASan | 100 ripetizioni, 10000 wait positivi piu fault/rollback; compatibility 10 scenari × 100; diagnostics 24 × 100; recovery 23 × 100 | Hardware mock; adapter MMIO RAM strumentato, non un HPET fisico |
-| Cppcheck | 18 input scheduler e cinque input interfacce, zero error/warning/performance/portability | Style/information conservati nell'XML |
-
-MSVC/MASM/Rust con warning come errori, ABI Microsoft x64; nessun warning
-ignorato per ottenere il PASS. Evidenze sotto `kernel/build/`:
-
-- `scheduler-host-02308ab0630d48a885715af884bdc032/`: core, FFI, Clippy e modelli.
-- `scheduler-context-7b3f20e4466d4b74bc023e8c0a8a92fc/`: backend, adapter idle,
-  prestito contabile, disassembly e cppcheck.
-- `watchdog-host-58b411bce9ca4af7adc21c5bae029272/`: regressione HPET.
-- `scheduler-idle-interface-review/`: cppcheck interfacce, righe e manifest finale.
-
-## Firmware finale
-
-Immagine: `kernel/build/scheduler-idle-final/kernel.elf`.
-SHA256: `96D32082BF37F14C6358468271EB9D6F1256CD37D24ECD3C81C2E41DE20293D7`.
-Dieci boot consecutivi PASS:
-`kernel/build/scheduler-firmware-badd796b993b438c989dda8760e80e93/`.
-
-QEMU q35/TCG, max, 128 MiB, un BSP, OVMF/ESP privati e immagine copiata con
-hash controllato. Il verifier richiede IDLE_OK, quattro dispatch, entrambe le
-task risvegliate, attesa bounded, budget prima/dopo uguale e marker IRQ/task
-precedenti. Confronta la prima consegna hardware con il RIP compute worker e
-la seconda con il punto di ritorno HLT/CLI del dispatcher; IF del frame e 1.
-Una verifica delle dieci trace controlla anche il RSP idle nel range principale:
-`idle-hardware-evidence.json`. Al termine CR3 invariato, RSP principale,
-RAX ready, 144 PTE task assenti e nessun triple fault. I gate driver verificano
-consume/stop/unbind, quiescenza LAPIC e chiusura HPET col budget originale.
-
-Il negativo finale idle-timeout e PASS:
-`kernel/build/scheduler-firmware-4cbd99c42c0f494788793b0ba9b2daab/`.
-La source LAPIC viene fermata tramite la sua API verificata prima di HLT;
-l'IRQ HPET riprende realmente la CPU. La classificazione e TIMEOUT/DEADLINE,
-il marker terminale e distinto da READY, IF torna a zero, due lease/32 pagine
-dati restano pinnate e le guardie assenti. Non e una raccolta riuscita o una
-prova di recovery del device: il dispatcher termina conservando le risorse.
-
-La matrice finale comprende otto scenari negativi, ciascuno con immagine
-dedicata compilata dai sorgenti finali e un avvio verificato. I fault previsti
-sono distinti dai crash inattesi; nessuno di questi avvii sostituisce i dieci
-boot positivi consecutivi della stessa immagine.
-
-| Scenario | Esito | Directory evidenze sotto kernel/build/ |
-| --- | --- | --- |
-| guard-low | PASS | scheduler-firmware-539f4365be2a48f48af894ce66107a0f/ |
-| guard-high | PASS | scheduler-firmware-00dae40773194d4c92850798c74c0b37/ |
-| nx | PASS | scheduler-firmware-06cb6f2e1fbb4b52bd5bdb0b0135e6c4/ |
-| retired | PASS | scheduler-firmware-1ac43879d5a94e76bec8b7e88ba6b454/ |
-| rollback | PASS | scheduler-firmware-42d1a6ee45224e359e0692980a245c10/ |
-| blocked | PASS | scheduler-firmware-5c761df0a8e84f88950bffd494845a07/ |
-| irq-timeout | PASS | scheduler-firmware-4295503d2a12485b9edb4d4c276e2034/ |
-| idle-timeout | PASS | scheduler-firmware-4cbd99c42c0f494788793b0ba9b2daab/ |
-
-La regressione del ciclo continuo e PASS con nove eventi hardware, stop esterno
-e cleanup verificati: `kernel/build/loop-firmware-7f251649d037423ebb15aa07d078c71d/`,
-immagine `kernel/build/scheduler-idle-loop/kernel.elf`, log
-`kernel/build/scheduler-idle-loop-qemu.log`. La prima consegna interrompe il
-compute task, la seconda riprende l'idle e le successive riprendono il percorso
-HLT del timer. Il verifier controlla conteggi, arresto/quiescenza LAPIC e
-chiusura HPET. Questa prova finita non dimostra uno stress di durata arbitraria.
-
-Totale finale: dieci boot positivi, otto negativi e una prova del ciclo continuo
-su varianti dedicate. Il blocco v0 e concluso nel perimetro dichiarato. Nessuna
-modifica C/Rust/Assembly dopo queste prove; manifest dei sorgenti e hash
-dell'immagine positiva ricontrollati durante la review finale.
-
-## Qualita e limiti
-
-Massimo sorgente scheduler: 382 righe; massimo cinque file diretti nelle
-cartelle funzionali. Header compatti, C alla radice funzionale, test in test/,
-Rust state/pending nella struttura gia adottata. Nessun uso di reuse/ in questo
-blocco; .gitignore e address_ranges.c preesistenti non sono stati modificati.
-
-ASan host non certifica leak fisici: il positivo verifica restituzione delle
-lease dei due stack e assenza PTE; il negativo conserva intenzionalmente gli
-owner. Valgrind non eseguito, coverage linee/branch N/D, hardware reale N/D.
-Le atomiche riguardano notifiche; non sono una dimostrazione di SMP/payload
-condivisi. Nessuna nuova preemption, user mode o protezione CPU opzionale.
-
-Il profilo e finito e monouso: evento 3, due waiter, seconda consegna LAPIC.
-Non e ancora un idle generale per driver arbitrari o task persistenti che
-aspettano all'infinito. L'HPET one-shot viene drenato prima della classificazione:
-la latenza v0 include la sua deadline, non e un benchmark di risveglio immediato.
-Perdita simultanea di LAPIC e HPET/controller resta fuori dal modello verificato.
-Recovery/restart dopo il timeout terminale, piu source concorrenti e stress su
-hardware fisico sono lavoro futuro e non sono dichiarati PASS.
+</details>

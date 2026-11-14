@@ -38,8 +38,8 @@ dispatcher per CPU e switch all'uscita dell'IRQ in Assembly. Preemption
 solo da una task con IF=1 e senza lock tenuti. La slice iniziale del
 design era 10 ms, soggetta a misura. L'ordinaria esegue i task cooperativi
 sul BSP, mentre i driver e gli IRQ dei dispositivi restano sul BSP.
-Il profilo shell inoltra un solo job fidato ad AP1 e raccoglie lo stack
-dopo la quiescenza. [Design K4-C](../../kernel/scheduler/documentation/k4c-design.md).
+La shell ordinaria inoltra un solo job fidato ad AP1 e raccoglie lo stack
+dopo la quiescenza. [Design K4-C](../../kernel/scheduler/documentation/design.md).
 
 ## Oggetti driver
 
@@ -66,8 +66,8 @@ e il confronto fra esecuzioni. La migrazione delle suite host procede
 per gruppi verificando conteggi, esiti e casi negativi. Il bootloader
 resta sullo script PowerShell. I profili diagnostici disponibili solo
 in `build.ps1` vengono ritirati quando la prova equivalente gira
-altrove. Restano il percorso di build a un comando e la CI con test host e
-boot QEMU. [Istruzioni di build](../../README.md).
+altrove. Restano il percorso di build a un comando e la migrazione delle suite host.
+Il workflow CI esegue suite host e un boot QEMU. [Istruzioni di build](../../README.md).
 
 Il debito aperto comprende i limiti fissi di task, IRQ e heap, i driver
 sul BSP, la duplicazione delle attese con deadline e della geometria nei
@@ -146,9 +146,8 @@ Intel HPET 1.0a §§2.3.4–2.3.9 e §2.4.3.1.
 Il framebuffer adotta metadati GOP validati e usa mapping UC con
 lease e guardie. Limita coordinate, stride, area e formati RGB/BGR.
 Testo e rettangoli usano batch delimitati e font offline. L'ordinaria
-prepara il framebuffer se presente. Disegno e console interattiva
-sono provati in profili separati.
-[Font e cella](../../kernel/console/video/documentation/font-cell.md).
+prepara il framebuffer se presente e lo usa per la shell PS/2. I probe di disegno e la console VirtIO con VT-d usano profili separati.
+[Font e cella](../../kernel/console/video/documentation/design.md).
 
 La console VirtIO con VT-d ha un dominio per la GPU. La presentazione
 separa submit e polling, applica una scadenza e gestisce fallback GOP

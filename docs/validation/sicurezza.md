@@ -10,7 +10,7 @@ Versione completa precedente in `docs/handoff/security-plan.md` e `docs/design/k
   `k6-process`, `k6-process-smp` e `k6-ordinary` 3/3 ciascuna.
   UMIP non era richiesto per ammettere ring 3. Restano non verificati
   il caso QEMU senza UMIP e il #GP di `SGDT` eseguito da ring 3.
-- **Arresti con nome.** Dieci chiamate C ad arresti muti in `process.c`
+- **Arresti con nome.** Dieci chiamate C ad arresti muti nel backend processi del checkpoint
   passano a panic identificabili. Le 18 campagne `k6-*` passarono
   tre boot ciascuna, negativi inclusi. La working tree di quella prova
   comprendeva lavoro GUI non committato.

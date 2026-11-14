@@ -68,8 +68,8 @@ I codici negativi sono rappresentati in complemento a due su 64 bit.
 
 L'ELF di avvio di `ordinary` dispone di `exit` e `write`. Il
 diagnostico `k6-process` usa i contesti riprendibili e l'IPC. Il
-profilo separato della shell PS/2 usa `wait_readable` per il bridge
-residente. [Dispatcher](../../arch/x86/kernel/process/process.c),
+shell PS/2 di `ordinary` usa `wait_readable` per il bridge
+residente. [Dispatcher](../../arch/x86/kernel/process/syscall.c),
 [codici IPC](../../kernel/process/rust/ipc/channel.rs),
 [policy di copia e quota](../../kernel/process/rust/policy/rules.rs).
 
