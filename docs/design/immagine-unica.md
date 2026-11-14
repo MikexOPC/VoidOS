@@ -134,3 +134,106 @@ Per B, in più:
   riconosciuta come successo, non come VM silenziosa.
 - B cambia l'ordine di avvio di più moduli: è il punto con più rischio di
   regressioni su SMP e watchdog.
+
+## Parte B: proposta (14 novembre 2026)
+
+### Cosa c'è davvero oggi
+
+Ricerca nel codice, nessuna prova nuova eseguita.
+
+- **Lo scheduler lavora a sessioni in sequenza.** `next_session_private`
+  in `arch/x86/kernel/scheduler/integration/kernel.c` ammette le sessioni
+  0-4 una dopo l'altra; ognuna deve finire prima della successiva.
+- **Le sessioni 0-3 sono carichi di prova.** IRQ (`irq/bridge.c`), idle e
+  "persistente" (`idle/idle.c`, `persistent/workload.c`, 32 giri
+  produttore/consumatore) girano durante l'avvio del timer, a ogni boot
+  dell'immagine ordinaria. Anche le tre scadenze del timer sono una prova.
+- **La sessione 4 è la shell** (`x86_scheduler_run_input`): task di
+  tastiera, mouse, shell e console, finché l'utente scrive `exit`.
+- **Il watchdog HPET non è un limite.** Si arma a ogni attesa con `HLT`
+  (100 ms) e protegge il ciclo continuo del BSP; il "budget" è contabilità
+  di pagine prestate, non una scadenza.
+- Tutto questo è chiamato dall'interno dell'avvio del timer LAPIC
+  (`timer/lapic/driver.c`).
+- **Le prove fanno anche l'inizializzazione.** `deadlines()` in
+  `timer/lapic/driver.c` registra l'interrupt del timer (vettore 0x41) e
+  ogni scadenza avvia una sessione di prova (0: IRQ, 1-2: idle e
+  persistente, 3: idle ripetuto). La sessione della shell parte solo se
+  `irq_profile` vale 4, cioè dopo le sessioni 0-3. Toglierle richiede di
+  separare prima l'inizializzazione dal collaudo.
+
+### Alternative
+
+**B1. Riordino con il modello a sessioni (consigliata ora).**
+
+1. Il driver del timer fa solo il timer: calibrazione e avvio. La sequenza
+   (processo utente, sessione della shell) la guida `kernel/startup`.
+2. Le sessioni di prova 0-3 e le scadenze di prova escono dal percorso di
+   produzione: restano nei profili di test e nei test host.
+3. La sessione della shell resta l'ultima. Alla fine il sistema non si
+   ferma da solo: senza tastiera, o dopo che la sessione finisce per un
+   motivo diverso da `exit`, il BSP entra in un ciclo di attesa con gli
+   interrupt attivi.
+4. `exit` resta un arresto chiesto dall'utente.
+
+- Pro: struttura giusta, rischio contenuto, il modello di scheduler
+  provato resta.
+- Contro: lo scheduler resta a sessioni con 8 task fissi; più processi e
+  preemption richiedono comunque il punto successivo della roadmap.
+
+**B2. Scheduler persistente unico.**
+
+Un solo ciclo dello scheduler che non termina mai: input, shell, bridge e
+servizi AP sono task permanenti, un task idle fa `HLT` con interrupt
+attivi.
+
+- Pro: è il modello finale.
+- Contro: coincide con l'obiettivo "scheduler preemptive su tutte le CPU"
+  del punto 1. Farlo qui mescola due obiettivi, contro la regola 2.2.
+
+### Decisioni da prendere
+
+1. **Alternativa**: B1 ora e B2 dentro l'obiettivo dello scheduler, oppure
+   B2 subito. Proposta: B1.
+2. **Prove di avvio dello scheduler** (sessioni 0-3): fuori dal percorso di
+   produzione. Effetto: l'avvio perde un controllo automatico del percorso
+   IRQ, che resta coperto dalle campagne dei profili di test. Proposta:
+   toglierle, come vuole la regola 2.1.
+3. **`exit`**: arresto della CPU con messaggio (come oggi), oppure riavvio
+   tramite il registro di reset della tabella ACPI FADT. Il riavvio cambia
+   i runner Python che controllano il BSP fermo. Proposta: arresto ora,
+   riavvio in un passo successivo.
+4. **Senza tastiera**: ciclo di attesa con interrupt attivi e un marker
+   `KERNEL_IDLE`; la campagna `k6-no-ps2` verifica quel marker.
+
+### Criteri di chiusura di B1
+
+- `timer/lapic/driver.c` non chiama più processo, sessione PS/2 o carichi
+  dello scheduler.
+- Nessun carico di prova nell'immagine ordinaria (verifica sul piano di
+  build e sulla mappa del linker).
+- Senza tastiera il BSP resta in attesa con IF=1 per tutta la prova, senza
+  arresto.
+- Le 15 campagne dell'immagine ordinaria, a boot pieni, e la CI verdi.
+- Una sessione di almeno 30 minuti con la shell aperta senza errori né
+  perdite di memoria.
+
+### Task 2: inizializzazione o collaudo (ricerca, 14 novembre 2026)
+
+| Sessione | Avvio | Contenuto | Inizializza |
+|---|---|---|---|
+| 0 base | `kernel/startup/platform.c` | 2 task, 210 passi di prova | Sì: `KERNEL_SCHEDULER_INIT`, pool e radice salvati per le sessioni dopo |
+| 1 IRQ | scadenza 1 del timer | percorso IRQ dei task | No |
+| 2 idle | scadenza 2 | attesa con `HLT` | No |
+| 3 persistente | scadenza 2 | 32 giri produttore/consumatore | No |
+| 4 idle ripetuto | scadenza 3 | ripete l'attesa | No |
+| 5 shell | sessione PS/2 | tastiera, mouse, shell, console | Runtime |
+
+Le tre scadenze di `deadlines()` registrano l'IRQ del timer (0x41), che
+viene comunque scollegato prima della shell: durante la shell le attese
+usano il watchdog HPET. Il resto serve solo a portare `irq_profile` a 5.
+
+Conseguenze per la task 3: separare `KERNEL_SCHEDULER_INIT` e il
+salvataggio di pool e radice dal carico della sessione 0; permettere il
+passaggio diretto alla sessione 5; togliere dal percorso ordinario le
+scadenze e i controlli che contano tre consegne (`timer.Count == 3`).

@@ -52,4 +52,7 @@ int x86_timer_service(X86_LAPIC_TIMER *timer);
 int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     const KERNEL_ACPI_DIRECTORY *directory, const X86_LAPIC_MAPPING *mapping,
     const X86_PAGING_INVENTORY *inventory, const X86_WATCHDOG_ENV *watchdog);
+int x86_timer_ready(void);
+X86_LAPIC_TIMER *x86_timer_owner(void);
+int x86_timer_finish(void);
 #endif
