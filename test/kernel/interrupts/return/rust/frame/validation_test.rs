@@ -18,7 +18,7 @@ fn idtr_bounds() {
 fn return_frame() {
     for vector in 0..256 {
         assert_eq!(validation::x86_irq_frame(vector,8,2,16), u32::from(vector == 0xf0 || vector == 0xff));
-        assert_eq!(validation::x86_irq_frame(vector,8,0x202,16),u32::from((0x40..=0x43).contains(&vector) || vector == 0xff));
+        assert_eq!(validation::x86_irq_frame(vector,8,0x202,16),u32::from((0x40..=0x43).contains(&vector) || vector == 0xd1 || vector == 0xff));
     }
     for (cs, flags, ss) in [(0,2,16),(8,0,16),(8,2,0),(8,0x202,16)] {
         assert_eq!(validation::x86_irq_frame(0xf0,cs,flags,ss),0);

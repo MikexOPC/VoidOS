@@ -150,7 +150,7 @@ typedef struct {
     BOOT_U64                  IpcEndpoint;
     X86_PROCESS_RESULT       *Current;
     BOOT_U32                  InputIrqMask;
-    X86_IRQ_TOKEN             InputIrqTokens[X86_IRQ_CAPACITY];
+    X86_IRQ_TOKEN             InputIrqTokens[X86_IRQ_DEVICE_SLOTS];
     volatile BOOT_U64         CopyPointer, CopyLength, CopyWrite;
     unsigned char             Buffer[MAX_COPY + 1];
 } X86_PROCESS_RUNTIME;

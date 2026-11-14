@@ -159,21 +159,21 @@ int x86_process_close(void)
 
 int x86_process_input_irqs(BOOT_U32 mask)
 {
-    static void (*const entries[X86_IRQ_CAPACITY])(void) = {
+    static void (*const entries[X86_IRQ_DEVICE_SLOTS])(void) = {
         x86_process_device_irq40, x86_process_device_irq41,
         x86_process_device_irq42, x86_process_device_irq43,
     };
-    X86_IRQ_TOKEN tokens[X86_IRQ_CAPACITY] = {0};
+    X86_IRQ_TOKEN tokens[X86_IRQ_DEVICE_SLOTS] = {0};
     X86_IRQ_REGISTRY *registry = x86_irq_registry();
     if (!process_rt.Opened || process_rt.Current || !registry || registry->Busy ||
         x86_percpu_current_local() != x86_percpu_bsp() || (mask & ~15U)) return 0;
-    for (BOOT_U32 index = 0; index < X86_IRQ_CAPACITY; ++index) {
+    for (BOOT_U32 index = 0; index < X86_IRQ_DEVICE_SLOTS; ++index) {
         if (!(mask & (1U << index))) continue;
         const X86_IRQ_SUBSCRIPTION *source = &registry->Slots[index];
         tokens[index] = (X86_IRQ_TOKEN){source->Id, 0x40U + index, 0};
         if (!x86_irq_registry_token_live(registry, &tokens[index])) return 0;
     }
-    for (BOOT_U32 index = 0; index < X86_IRQ_CAPACITY; ++index) {
+    for (BOOT_U32 index = 0; index < X86_IRQ_DEVICE_SLOTS; ++index) {
         int enabled = (mask & (1U << index)) != 0;
         process_rt.InputIrqTokens[index] = tokens[index];
         gate(0x40U + index, (BOOT_U64)(enabled ? entries[index] : x86_process_stray), enabled ? 0 : 3);

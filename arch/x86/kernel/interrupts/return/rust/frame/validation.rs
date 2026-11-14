@@ -21,8 +21,8 @@ pub extern "C" fn x86_irq_idtr(base: u64, limit: u64) -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_irq_frame(vector: u64, cs: u64, flags: u64, ss: u64) -> u32 {
-    u32::from(matches!(vector,0x40..=0x43 | 0xf0 | 0xff) && cs == 8 && ss == 16 && flags & 2 != 0
-        && (vector != 0xf0 || flags & 0x200 == 0) && (!matches!(vector,0x40..=0x43) || flags & 0x200 != 0))
+    u32::from(matches!(vector,0x40..=0x43 | 0xd1 | 0xf0 | 0xff) && cs == 8 && ss == 16 && flags & 2 != 0
+        && (vector != 0xf0 || flags & 0x200 == 0) && (!matches!(vector,0x40..=0x43 | 0xd1) || flags & 0x200 != 0))
 }
 
 // ====== x86_irq_saved_area ======
