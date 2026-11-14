@@ -117,7 +117,7 @@ static int invalid(void)
     if (!reset()) return 1;
     save();
     for (vector = 0; vector < 256; ++vector) {
-        if (vector >= 0x40 && vector <= 0x43) continue;
+        if ((vector >= 0x40 && vector <= 0x43) || vector == X86_PREEMPT_VECTOR) continue;
         if (x86_irq_registry_bind(&registry,vector,handler,quiet,&output) || !unchanged()) return 2;
     }
     if (x86_irq_registry_bind(&registry,0x40,0,quiet,&output) ||
@@ -247,6 +247,36 @@ static int fourth_subscription(void)
     return x86_irq_registry_validate(&registry) ? 0 : 7;
 }
 
+// ====== timer_subscription ======
+
+static int timer_subscription(void)
+{
+    X86_IRQ_TOKEN third = {0}, fourth = {0}, timer = {0}, stale = {0};
+    if (!reset() || !x86_irq_registry_bind(&registry,0x40,handler,quiet,&first) ||
+        !x86_irq_registry_bind(&registry,0x41,handler,quiet,&second) ||
+        !x86_irq_registry_bind(&registry,0x42,handler,quiet,&third) ||
+        !x86_irq_registry_bind(&registry,0x43,handler,quiet,&fourth)) return 1;
+    if (!x86_irq_registry_bind(&registry,X86_PREEMPT_VECTOR,handler,quiet,&timer) ||
+        timer.Id != 5 || timer.Vector != X86_PREEMPT_VECTOR ||
+        registry.Slots[X86_IRQ_TIMER_SLOT].Id != timer.Id) return 2;
+    save();
+    if (x86_irq_registry_bind(&registry,X86_PREEMPT_VECTOR,handler,quiet,&stale) || !unchanged()) return 3;
+    calls = 0;
+    if (!x86_irq_registry_deliver(&registry,X86_PREEMPT_VECTOR) || calls != 1 ||
+        x86_irq_registry_deliveries(&registry,&timer) != 1 ||
+        x86_irq_registry_deliveries(&registry,&fourth)) return 4;
+    registry.Slots[X86_IRQ_TIMER_SLOT].Vector = 0x43;
+    if (x86_irq_registry_validate(&registry)) return 5;
+    registry.Slots[X86_IRQ_TIMER_SLOT].Vector = X86_PREEMPT_VECTOR;
+    stale = timer; stale.Vector = 0x43;
+    if (x86_irq_registry_unbind(&registry,&stale) || !x86_irq_registry_token_live(&registry,&timer)) return 6;
+    if (!x86_irq_registry_unbind(&registry,&timer) || x86_irq_registry_deliver(&registry,X86_PREEMPT_VECTOR) ||
+        !x86_irq_registry_token_live(&registry,&fourth)) return 7;
+    if (!x86_irq_registry_unbind(&registry,&fourth) || !x86_irq_registry_unbind(&registry,&third) ||
+        !x86_irq_registry_unbind(&registry,&second) || !x86_irq_registry_unbind(&registry,&first)) return 8;
+    return x86_irq_registry_validate(&registry) ? 0 : 9;
+}
+
 // ====== gruppi di verifiche con esito diagnostico distinto ===== //
 
 __declspec(dllexport) int run_irq_registry_tests(void)
@@ -260,5 +290,6 @@ __declspec(dllexport) int run_irq_registry_tests(void)
     result = tokens(); if (result) return 600+result;
     result = three_subscriptions(); if (result) return 700+result;
     result = fourth_subscription(); if (result) return 800+result;
+    result = timer_subscription(); if (result) return 900+result;
     return 0;
 }

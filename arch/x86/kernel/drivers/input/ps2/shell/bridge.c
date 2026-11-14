@@ -45,7 +45,7 @@ void x86_shell_bridge_dispatch(void)
     const X86_IRQ_REGISTRY *registry = x86_irq_registry();
     BOOT_U32 mask = 0;
     if (!owner || !x86_irq_ready() || !registry) kernel_scheduler_fail_stop();
-    for (BOOT_U32 index = 0; index < X86_IRQ_CAPACITY; ++index) {
+    for (BOOT_U32 index = 0; index < X86_IRQ_DEVICE_SLOTS; ++index) {
         if (registry->Slots[index].Id) mask |= 1U << index;
     }
     ready = x86_process_resident_request(request, response, mask, &result, 1) &&

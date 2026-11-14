@@ -77,7 +77,7 @@ int x86_process_irq_service(BOOT_U64 *frame)
 
 static int input_irq_deliver(BOOT_U32 vector)
 {
-    if (vector < 0x40U || vector >= 0x40U + X86_IRQ_CAPACITY) return 0;
+    if (vector < 0x40U || vector >= 0x40U + X86_IRQ_DEVICE_SLOTS) return 0;
     BOOT_U32 index = vector - 0x40U;
     X86_IRQ_REGISTRY *registry = x86_irq_registry();
     return (process_rt.InputIrqMask & (1U << index)) &&

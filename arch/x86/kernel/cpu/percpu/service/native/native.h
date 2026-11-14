@@ -40,7 +40,7 @@ void x86_k5_ap_run(unsigned int index);
 #endif
 
 #define XIS_VECTOR 0xe1U
-#define XIS_TIMER_VECTOR 0xd1U
+#define XIS_TIMER_VECTOR X86_PREEMPT_VECTOR
 // Stack bytes reserved by xis_service_loop (idle.asm: sub rsp, 576) below the private frame.
 #define XIS_IDLE_FRAME_BYTES 576ULL
 uint32_t xis_idle_return_valid(uint64_t frame, uint64_t top, uint64_t rsp, uint64_t cs,
