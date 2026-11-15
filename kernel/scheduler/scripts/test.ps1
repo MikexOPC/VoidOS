@@ -118,6 +118,12 @@ try {
         ("/Fo$out/"),("/Fd$out/engine-preempt.pdb"),("/Fe$out/engine-preempt.exe"),
         '/link','/incremental:no',"$out/scheduler-smp.lib")
     Invoke-Checked "$out/engine-preempt.exe" @()
+    Invoke-Checked "$bin/cl.exe" @('/nologo','/TC','/std:c11','/W4','/WX','/Zi','/fsanitize=address',
+        '/MD','/O2',('/I' + $project),(Join-Path $module 'preempt.c'),
+        (Join-Path $project 'test/kernel/scheduler/preempt_test.c'),
+        ("/Fo$out/"),("/Fd$out/preempt-policy.pdb"),("/Fe$out/preempt-policy.exe"),
+        '/link','/incremental:no')
+    Invoke-Checked "$out/preempt-policy.exe" @()
     $bindingSymbols = & "$bin/dumpbin.exe" /symbols "$out/scheduler-bound.lib" 2>&1
     if ($LASTEXITCODE) { throw 'Production symbol inspection failed' }
     if ($bindingSymbols -match '\| kernel_scheduler_irq_post\s*$') {
@@ -138,7 +144,8 @@ try {
         (Join-Path $project 'test/kernel/scheduler/ffi/lot_test.c'),
         (Join-Path $project 'arch/x86/kernel/scheduler/dispatcher/engine.c'),
         (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/preempt_cpu_test.c'),
-        (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/cpu_test.c'))
+        (Join-Path $project 'test/arch/x86/kernel/scheduler/dispatcher/cpu_test.c'),
+        (Join-Path $module 'preempt.c'),(Join-Path $project 'test/kernel/scheduler/preempt_test.c'))
     & $CppcheckPath @cppcheckArguments 2> "$out/cppcheck.xml"
     if ($LASTEXITCODE) { throw 'Cppcheck execution failed' }
     [xml]$analysis = Get-Content -LiteralPath "$out/cppcheck.xml"

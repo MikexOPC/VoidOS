@@ -174,3 +174,17 @@ protegge da accessi di CPU diverse, che oggi non esistono perché i driver
 restano sul BSP. La preemption non è ancora attiva: la prova vera arriva
 con la task 3. Le campagne del mouse richiedono Pillow nel Python usato
 dai runner. Hardware fisico non provato.
+
+### Task 3, sotto-task 3a e 3b (15 novembre 2026)
+
+- 3a: il vettore D1h, già usato dagli AP per il timer, ha un posto
+  riservato nel registro IRQ del BSP (`X86_IRQ_TIMER_SLOT`). I quattro
+  posti dei dispositivi 40h-43h restano invariati.
+- 3b: la politica è una funzione pura nel codice comune
+  (`kernel/scheduler/preempt.c`). A ogni tick: ignora se non gira un task o
+  se il timeslice non è finito; rinvia se c'è un lock tenuto; rinvia al
+  massimo 4 tick se la riga di log è aperta, poi sospende e conta uno
+  sforamento; altrimenti sospende. Il budget della riga riparte a ogni
+  cambio di task. I contatori saturano.
+- Il collegamento al ritorno dall'IRQ passa dalla 3b alla 3c: senza timer
+  nessun tick lo eseguirebbe, quindi non sarebbe provato.
