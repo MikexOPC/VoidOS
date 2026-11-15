@@ -4,6 +4,9 @@
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/descriptors/stacks.h"
 #include "arch/x86/kernel/interrupts/registry/registry.h"
+#ifdef KERNEL_PS2_INPUT
+#include "arch/x86/kernel/scheduler/irq/preempt.h"
+#endif
 #ifdef KERNEL_SCHEDULER_IRQ
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
 #include "arch/x86/kernel/scheduler/context.h"
@@ -235,6 +238,12 @@ void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
 
 void x86_irq_after(const X86_IRQ_FRAME *frame)
 {
+#ifdef KERNEL_PS2_INPUT
+    if (frame->Vector == X86_PREEMPT_VECTOR) {
+        x86_preempt_after(frame);
+        return;
+    }
+#endif
 #ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
     x86_scheduler_irq_after(frame);
 #else

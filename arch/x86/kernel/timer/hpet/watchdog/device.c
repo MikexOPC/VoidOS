@@ -2,6 +2,8 @@
 static BOOT_U32 arm_detail;
 static BOOT_U64 arm_registers;
 static BOOT_U32 rollover_seen;
+static BOOT_U32 missed_matches;
+static BOOT_U32 missed_outcome;
 
 // ====== x86_watchdog_arm_detail ======
 
@@ -65,6 +67,53 @@ static int restore(X86_HPET_WATCHDOG *owner, BOOT_U32 offset)
     return 1;
 }
 
+// ====== missed_private ======
+
+/* HPET 1.0a 2.3.5: 0x10 bit0 ENABLE_CNF halts the main counter; 2.3.6: 0x20 Tn_INT_STS,
+ * level mode, W1C; 2.3.8: Tn_INT_ENB_CNF bit2. Overdue past twice the deadline with no
+ * status is a missed match; status set after the halt is a real match left to the IRQ. */
+static int missed_private(X86_HPET_WATCHDOG *owner, BOOT_U32 offset, BOOT_U32 config, BOOT_U32 pending)
+{
+    BOOT_U32 bit = 1u << owner->Timer, expected = owner->ConfigBase | (owner->Pin << 9), now;
+    missed_outcome = X86_WATCHDOG_MISSED_NONE;
+    if (!owner->Armed || config != (expected | 4) || (pending & ~bit) ||
+        owner->Ticks >= 0x40000000u || owner->Count == ~0U) return 0;
+    if (pending) {
+        missed_outcome = X86_WATCHDOG_MISSED_PENDING;
+        return 1;
+    }
+    if (!x86_watchdog_mmio_read(0xf0,&now) || (BOOT_U32)(now - owner->Start) >= 0x80000000u) return 0;
+    if ((BOOT_U32)(now - owner->Start) < 2 * owner->Ticks) return 1;
+    if (!confirmed(0x10,owner->GlobalSaved) || !x86_watchdog_mmio_read(0x20,&pending) ||
+        (pending & ~bit)) return 0;
+    if (pending) {
+        if (!confirmed(0x10,owner->GlobalSaved | 1)) return 0;
+        missed_outcome = X86_WATCHDOG_MISSED_PENDING;
+        return 1;
+    }
+    if (!confirmed(offset,expected) || !x86_watchdog_mmio_write(0x20,bit) ||
+        !x86_watchdog_mmio_read(0x20,&pending) || pending) return 0;
+    owner->Armed = 0;
+    ++owner->Count;
+    if (missed_matches != ~0U) ++missed_matches;
+    missed_outcome = X86_WATCHDOG_MISSED_RECOVERED;
+    return 1;
+}
+
+// ====== x86_watchdog_missed ======
+
+BOOT_U32 x86_watchdog_missed(void) { return missed_matches; }
+
+// ====== x86_watchdog_missed_recover ======
+
+BOOT_U32 x86_watchdog_missed_recover(void)
+{
+    BOOT_U32 operation = 8;
+    missed_outcome = X86_WATCHDOG_MISSED_NONE;
+    if (!x86_watchdog_device(operation)) return X86_WATCHDOG_MISSED_NONE;
+    return missed_outcome;
+}
+
 // ====== device_operation ======
 
 static int device_operation(void *argument)
@@ -92,6 +141,7 @@ static int device_operation(void *argument)
     if (op == 2) arm_detail = 2;
     if (!x86_watchdog_mmio_read(offset,&config) || !x86_watchdog_mmio_read(0x20,&pending)) { return 0; }
     if (op == 2) arm_registers = ((BOOT_U64)config << 32) | pending;
+    if (op == 8) { return missed_private(owner,offset,config,pending); }
     if (op == 1) {
         BOOT_U32 index;
         if (!confirmed(offset,owner->ConfigBase | (owner->Pin << 9)) ||
@@ -198,7 +248,7 @@ int x86_watchdog_device(BOOT_U32 operation)
     X86_HPET_WATCHDOG *owner = x86_watchdog_state();
     int result;
     if (operation == 2) { arm_detail = 1; arm_registers = 0; }
-    if (!x86_watchdog_valid() || operation > 7 ||
+    if (!x86_watchdog_valid() || operation > 8 ||
         (operation == 6 && (owner->Ready || owner->Armed || owner->RouteOwned)) ||
         (operation && operation != 7 && !owner->Acquired) || (!operation && owner->Acquired) ||
         (operation == 7 && (owner->Timer >= 32 || owner->Armed || owner->Error))) { return 0; }

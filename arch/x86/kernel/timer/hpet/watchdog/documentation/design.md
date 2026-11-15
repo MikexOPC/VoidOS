@@ -40,6 +40,19 @@ dell'unmask. Gli errori di apertura non pubblicano un owner pronto.
    Classifica EVENT, TIMEOUT, FAULT o STOP. Una scadenza durante
    l'idle diventa IDLE, mentre la stessa scadenza con una
    sorgente attesa produce la diagnostica DEADLINE.
+6. Match saltato. Se i 256 risvegli finiscono senza IRQ del
+   watchdog, il backend legge l'HPET. Contatore oltre l'inizio di
+   almeno due volte la durata e stato a zero: ferma il contatore,
+   rilegge lo stato, disarma come l'handler, avanza il contatore
+   del watchdog, stampa `KERNEL_WATCHDOG_MISSED_MATCH` e conta
+   l'evento (`KERNEL_WATCHDOG_MISSED` alla chiusura). Stato
+   presente, prima o dopo l'arresto: l'IRQ è vero e l'attesa
+   dorme di nuovo per riceverlo. Contatore ancora vicino
+   all'inizio: raffica di risvegli, errore WAKE come prima.
+   Osservato con QEMU 11.1 (TCG) circa una volta su un milione
+   di armamenti. Il rilevamento richiede altri risvegli: con il
+   tick di preemption arriva dopo circa 2,6 s; senza, solo al
+   giro del contatore a 32 bit (circa 43 s a 100 MHz).
 
 ## Chiusura e recovery
 

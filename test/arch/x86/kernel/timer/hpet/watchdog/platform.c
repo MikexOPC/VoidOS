@@ -186,6 +186,10 @@ int x86_watchdog_mmio_write(BOOT_U32 offset, BOOT_U32 value)
         ((test_mode == 15 && x86_watchdog_state()->Ready) ||
         (test_mode == 26 && stop_requests > 1))) { return 0; }
     if (test_mode == 21 && offset == 0x20) { return 0; }
+    if (test_mode == 77 && offset == 0x10 && !(value & 1) && x86_watchdog_state()->Armed) {
+        test_hpet[0x20/4] = 1u << x86_watchdog_state()->Timer;
+        test_mode = 0;
+    }
     if (test_mode == 40 && offset == 0x10 && !(value & 1) && test_in_irq) return 0;
     if ((test_mode == 31 && offset == 0x10 && !(value & 1) && x86_watchdog_state()->Ready) ||
         (test_mode == 32 && offset == 0x10 && (value & 1) && x86_watchdog_state()->Armed) ||
@@ -276,6 +280,11 @@ BOOT_U32 x86_irq_sleep(volatile BOOT_U32 *source, BOOT_U32 goal, BOOT_U32 budget
 {
     X86_HPET_WATCHDOG *owner = x86_watchdog_state();
     if (source != &owner->Count || goal != owner->Count + 1 || budget != X86_WATCHDOG_WAKE_BUDGET || !handler) { return 0; }
+    if (test_mode >= 75 && test_mode <= 78) {
+        test_hpet[0xf0/4] = owner->Start + (test_mode == 76 ? 1u : 3u * owner->Ticks);
+        if (test_mode == 78) { test_hpet[0x20/4] = 1u << owner->Timer; test_mode = 0; }
+        return 0;
+    }
     if (test_mode != 2 && test_mode != 23) { ++test_source[0]; }
     if (test_mode == 3 || test_mode == 23) { test_stop = 1; }
     test_hpet[0xf0/4] = test_mode == 36 || test_mode == 38 ||

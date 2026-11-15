@@ -2,6 +2,7 @@
 #include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "lib/memory/address_ranges.h"
+#include "kernel/diagnostics/log.h"
 static BOOT_U32 wake_detail;
 
 // ====== x86_watchdog_wake_detail ======
@@ -30,21 +31,32 @@ static int source_valid(const volatile BOOT_U32 *source, const volatile BOOT_U32
 
 // ====== wake_lapic_valid ======
 
-// Only owned vectors41h..43h with a live registry token may remain pending in IRR.
 static int wake_lapic_valid(const X86_HPET_WATCHDOG *owner)
 {
     const X86_IRQ_REGISTRY *registry = x86_irq_registry();
     BOOT_U32 allowed = 0, index;
     if (!x86_irq_registry_validate(registry) || registry->Busy) return 0;
-    for (index = 1; index < X86_IRQ_DEVICE_SLOTS; ++index) {
+    for (index = 1; index < X86_IRQ_SLOTS; ++index) {
         const X86_IRQ_SUBSCRIPTION *item = &registry->Slots[index];
         X86_IRQ_TOKEN token = {item->Id, item->Vector, 0};
+        BOOT_U32 vector = index == X86_IRQ_TIMER_SLOT ? X86_PREEMPT_VECTOR : 0x40 + index;
         if (item->Id) {
-            if (item->Vector != 0x40 + index || !x86_irq_registry_token_live(registry, &token)) return 0;
+            if (item->Vector != vector || !x86_irq_registry_token_live(registry, &token)) return 0;
             allowed |= 1U << index;
         }
     }
     return x86_lapic_idle_except(owner->Env.Mapping, allowed);
+}
+
+// ====== missed_private ======
+
+static BOOT_U32 missed_private(BOOT_U32 next)
+{
+    X86_HPET_WATCHDOG *owner = x86_watchdog_state();
+    BOOT_U32 outcome = x86_watchdog_missed_recover();
+    if (outcome == X86_WATCHDOG_MISSED_PENDING) return x86_irq_sleep(&owner->Count,next,X86_WATCHDOG_WAKE_BUDGET);
+    if (outcome != X86_WATCHDOG_MISSED_RECOVERED || owner->Count != next) return 0;
+    return kernel_log(1,"KERNEL_WATCHDOG_MISSED_MATCH") ? X86_WATCHDOG_WAKE_LIMIT : 0;
 }
 
 // ====== wait_private ======
@@ -73,6 +85,7 @@ static BOOT_U32 wait_private(const volatile BOOT_U32 *source, BOOT_U32 goal,
     if (!owner->Ticks) return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_ARM);
     if (!x86_watchdog_device(2)) { return (BOOT_U32)x86_watchdog_fail(X86_WATCHDOG_ARM); }
     slept = x86_irq_sleep(&owner->Count,next,X86_WATCHDOG_WAKE_BUDGET);
+    if (!slept && !owner->Error && owner->Count + 1 == next) slept = missed_private(next);
     if (!slept || slept > X86_WATCHDOG_WAKE_LIMIT) wake_detail = 1;
     else if (owner->Count != next) wake_detail = 2;
     else if (owner->Error) wake_detail = 3;

@@ -214,6 +214,8 @@ ordinary	c	kernel/shell/queue.c
 ordinary	c	arch/x86/kernel/drivers/input/ps2/shell/task.c
 ordinary	c	arch/x86/kernel/drivers/input/ps2/runtime/consumer/stream.c
 ordinary	c	arch/x86/kernel/drivers/input/ps2/runtime/consumer/recovery.c
+ordinary	c	arch/x86/kernel/scheduler/irq/preempt.c
+ordinary	c	kernel/scheduler/preempt.c
 ordinary	c	kernel/drivers/input/ps2/mouse/decoder.c
 ordinary	c	kernel/drivers/input/ps2/mouse/stream/control.c
 ordinary	c	arch/x86/kernel/drivers/input/ps2/mouse/session.c

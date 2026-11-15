@@ -20,6 +20,15 @@ static int dispatch_command_private(uint32_t cpu, uint32_t retained, const X86_D
 {
     KERNEL_SCHEDULER_REPLY reply;
     KERNEL_EVENT_REPLY result;
+    if (command->reason == X86_TASK_TICK) {
+        if (command->target || command->token) return 0;
+        reply = kernel_scheduler_tick_on(cpu);
+        if (reply.status != KERNEL_SCHEDULER_OK || reply.state > 1) return 0;
+        if (!reply.state) return dispatch_apply_private(cpu,KERNEL_SCHEDULER_YIELD,task,&reply);
+        reply = kernel_scheduler_apply_on(cpu,KERNEL_SCHEDULER_PREEMPT,task->index,task->generation);
+        return reply.status == KERNEL_SCHEDULER_OK && reply.state == KERNEL_TASK_READY &&
+            reply.index == task->index && reply.generation == task->generation;
+    }
     if (command->reason == X86_TASK_PREEMPT) {
         if (command->target || command->token) return 0;
         reply = kernel_scheduler_tick_on(cpu);
