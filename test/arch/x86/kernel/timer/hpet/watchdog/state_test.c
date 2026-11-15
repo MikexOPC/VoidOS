@@ -12,6 +12,40 @@ static int restored(void)
         test_hpet[0x10c/4] == 0x12345678 && test_io[0x30] == 0x10040 && test_io[0x31] == 0;
 }
 
+// ====== run_missed_match_tests ======
+
+static int run_missed_match_tests(void)
+{
+    X86_HPET_WATCHDOG *owner = x86_watchdog_state();
+    BOOT_U32 before = x86_watchdog_missed(), result;
+    watchdog_test_reset(75);
+    if (!x86_watchdog_open(&test_env)) return 1500;
+    result = x86_watchdog_idle(test_source);
+    if (result != X86_WATCHDOG_WAKE_LIMIT || x86_watchdog_failure() || x86_watchdog_wake_detail() ||
+        x86_watchdog_result() != X86_WATCHDOG_IDLE || owner->Armed || owner->Count != 1 ||
+        test_interrupts || test_source[0] || x86_watchdog_missed() != before + 1 ||
+        (test_hpet[0x10/4] & 1) || (test_hpet[0x100/4] & 4) || test_hpet[0x20/4]) return 1501;
+    test_mode = 0;
+    if (!x86_watchdog_idle(test_source) || x86_watchdog_result() != X86_WATCHDOG_EVENT ||
+        owner->Count != 2 || x86_watchdog_missed() != before + 1) return 1502;
+    if (!x86_watchdog_close() || !restored()) return 1503;
+    watchdog_test_reset(76);
+    if (!x86_watchdog_open(&test_env)) return 1510;
+    if (x86_watchdog_idle(test_source) || x86_watchdog_failure() != X86_WATCHDOG_WAKE ||
+        x86_watchdog_wake_detail() != 1 || !owner->Armed || owner->Count ||
+        x86_watchdog_missed() != before + 1 || !(test_hpet[0x10/4] & 1)) return 1511;
+    for (BOOT_U32 mode = 77; mode <= 78; ++mode) {
+        watchdog_test_reset(mode);
+        if (!x86_watchdog_open(&test_env)) return (int)(1520 + mode);
+        result = x86_watchdog_idle(test_source);
+        if (result != 3 || x86_watchdog_failure() || x86_watchdog_wake_detail() ||
+            x86_watchdog_result() != X86_WATCHDOG_EVENT || owner->Armed || owner->Count != 1 ||
+            test_interrupts != 1 || test_in_irq || x86_watchdog_missed() != before + 1 ||
+            !x86_watchdog_close() || !restored()) return (int)(1530 + mode);
+    }
+    return 0;
+}
+
 // ====== run_watchdog_tests ======
 
 int run_watchdog_tests(void)
@@ -211,5 +245,5 @@ int run_watchdog_tests(void)
             x86_watchdog_state()->Armed || test_hpet[0x10/4] ||
             !x86_watchdog_close() || !restored()) return (int)(200 + mode);
     }
-    return 0;
+    return run_missed_match_tests();
 }

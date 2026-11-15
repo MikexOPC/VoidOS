@@ -40,7 +40,7 @@ static int run_private(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_COMMAND 
 {
     uint32_t index = task->index;
     check_private(index < config.task_count && task->generation == handles[index].generation);
-    if (mode == 3) { command->reason = 9; return 1; }
+    if (mode == 3) { command->reason = X86_TASK_TICK + 1U; return 1; }
     if (mode == 5) { context = 0; return 1; }
     if (!stage[index]) {
         KERNEL_EVENT_REPLY observed = kernel_scheduler_event_apply(0,index,task->generation,(cycle + index) % 8,0);

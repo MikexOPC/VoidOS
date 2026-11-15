@@ -2,6 +2,7 @@
 #include "arch/x86/kernel/descriptors/protection.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
+#include "arch/x86/kernel/scheduler/irq/preempt.h"
 #include "kernel/diagnostics/log.h"
 
 extern const unsigned char kernel_user_bridge[];
@@ -48,9 +49,10 @@ void x86_shell_bridge_dispatch(void)
     for (BOOT_U32 index = 0; index < X86_IRQ_DEVICE_SLOTS; ++index) {
         if (registry->Slots[index].Id) mask |= 1U << index;
     }
+    if (!x86_preempt_pause()) kernel_scheduler_fail_stop();
     ready = x86_process_resident_request(request, response, mask, &result, 1) &&
         response[0] == 1 && response[1] == 0;
-    if (!x86_irq_ready()) kernel_scheduler_fail_stop();
+    if (!x86_irq_ready() || !x86_preempt_resume()) kernel_scheduler_fail_stop();
     pending = 0;
 }
 

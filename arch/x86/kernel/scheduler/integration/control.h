@@ -15,6 +15,7 @@ int x86_scheduler_dispatch_run(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_
 int x86_scheduler_dispatch_reply(const KERNEL_SCHEDULER_REPLY *task, const KERNEL_EVENT_REPLY *reply);
 int x86_scheduler_dispatch_release(void);
 void x86_scheduler_irq_suspend(void);
+void x86_scheduler_tick_suspend(void);
 __declspec(noreturn) void x86_scheduler_exit(void);
 uint32_t x86_scheduler_index(void);
 uint64_t x86_scheduler_generation(void);

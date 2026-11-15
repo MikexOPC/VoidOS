@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static uint32_t cpu, checks, held, acquired, released, stages[2], collected;
+static uint32_t cpu, checks, held, acquired, released, stages[2], collected, tick_mode;
 static KERNEL_SCHEDULER_REPLY tasks[2];
 
 // ====== check_private ======
@@ -28,7 +28,7 @@ __declspec(noreturn) void kernel_scheduler_fail_stop(void) { exit(99); }
 static int run_private(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_COMMAND *command)
 {
     check_private(!held && task->index < 2 && task->generation == tasks[task->index].generation);
-    command->reason = stages[task->index]++ ? X86_TASK_EXIT : X86_TASK_PREEMPT;
+    command->reason = stages[task->index]++ ? X86_TASK_EXIT : (tick_mode ? X86_TASK_TICK : X86_TASK_PREEMPT);
     return 1;
 }
 static int collect_private(const KERNEL_SCHEDULER_REPLY *task)
@@ -62,7 +62,27 @@ int main(void)
             check_private(kernel_scheduler_apply_on(cpu,KERNEL_SCHEDULER_COLLECT,index,tasks[index].generation).status == 0);
         }
     }
+    tick_mode = 1;
+    cpu = 0;
+    for (uint32_t count = 1; count <= 2; ++count) {
+        X86_DISPATCH_STATS stats = {0};
+        X86_DISPATCH_CONFIG config = {count,8,0,0,run_private,collect_private,reply_private,release_private,NULL};
+        collected = 0;
+        for (uint32_t index = 0; index < count; ++index) {
+            stages[index] = 0;
+            tasks[index] = kernel_scheduler_apply_on(cpu,KERNEL_SCHEDULER_RESERVE,KERNEL_SCHEDULER_NONE,0);
+            check_private(tasks[index].status == 0 && tasks[index].index == index);
+            check_private(kernel_scheduler_affinity_on(cpu,index,tasks[index].generation,1) == 0);
+            check_private(kernel_scheduler_apply_on(cpu,KERNEL_SCHEDULER_PUBLISH,index,tasks[index].generation).status == 0);
+        }
+        check_private(x86_scheduler_dispatch_retained_on(cpu,&config,&stats));
+        check_private(!stats.failure && stats.steps == 2 * count && stats.completed == count && collected == count);
+        for (uint32_t index = 0; index < count; ++index) {
+            check_private(stages[index] == 2);
+            check_private(kernel_scheduler_apply_on(cpu,KERNEL_SCHEDULER_COLLECT,index,tasks[index].generation).status == 0);
+        }
+    }
     check_private(!held && acquired == released);
-    printf("AP_PREEMPT_ENGINE_PASS: %u checks, 64 sequential identities; real Rust tick/preempt, CPU/stacks MOCK\n",checks);
+    printf("AP_PREEMPT_ENGINE_PASS: %u checks, 64 sequential identities, tick alone and with a peer; real Rust tick/preempt, CPU/stacks MOCK\n",checks);
     return 0;
 }

@@ -1,6 +1,6 @@
 # Design: scheduler preemptive nell'immagine di produzione
 
-Stato: proposta, 14 novembre 2026. Nessun codice scritto. Riprende le scelte
+Stato: in corso (obiettivo 1, task 3), 15 novembre 2026. Riprende le scelte
 già approvate di K4-C ([design e riferimenti](../../kernel/scheduler/documentation/design.md))
 e la parte B2 di
 [immagine unica](immagine-unica.md).
@@ -188,3 +188,74 @@ dai runner. Hardware fisico non provato.
   cambio di task. I contatori saturano.
 - Il collegamento al ritorno dall'IRQ passa dalla 3b alla 3c: senza timer
   nessun tick lo eseguirebbe, quindi non sarebbe provato.
+
+### Task 3, sotto-task 3c (15 novembre 2026)
+
+Timer LAPIC periodico da 10 ms sul vettore D1h durante la sessione della
+shell (`arch/x86/kernel/scheduler/irq/preempt.c`).
+
+- Si arma in `x86_ps2_activate`, dopo i bind dei dispositivi, e si ferma
+  all'inizio della chiusura della sessione, prima dei controlli di
+  quiescenza. Alla chiusura stampa i contatori `KERNEL_PREEMPT_*`.
+- Conflitto risolto con la scelta A dell'utente: il servizio residente in
+  ring 3 usa lo stesso timer LAPIC (one-shot su 44h). Intorno a ogni
+  richiesta `bridge status` il timer di preemption viene fermato, il tick
+  pendente svuotato e poi riarmato. Debito: un solo timer condiviso fra
+  kernel e processi (alternativa B) nell'obiettivo processi.
+- Il core Rust si modifica solo dal dispatcher, quindi l'IRQ non chiama
+  `tick_on`. L'IRQ decide solo se è sicuro sospendere (politica 3b, con
+  timeslice di un tick sempre finito) e consegna il comando `X86_TASK_TICK`.
+  Il dispatcher chiama `tick_on`: se un altro task è pronto applica PREEMPT,
+  altrimenti YIELD e lo stesso task riparte.
+- Fino alla 3d i task girano con gli interrupt spenti fuori dalla finestra
+  di attesa: i tick sospendono solo task in attesa. È preemption vera ma
+  limitata.
+- Errore commesso e corretto: la prima versione chiamava `tick_on`
+  dall'IRQ, il core rifiutava e il kernel si fermava senza messaggio
+  (`kernel_scheduler_fail_stop`). Resta il difetto noto che quell'arresto
+  non stampa il motivo.
+- Secondo errore, trovato dalla campagna `k6-shell` (fallimento al boot 7
+  su 10, riprodotto al primo boot della ripetizione). Per far consegnare un
+  D1h rimasto pendente, l'arresto del timer apriva una breve finestra IF=1.
+  Lì entrava anche l'IRQ della tastiera, che pubblicava l'evento 4 dopo
+  l'ultimo svuotamento del dispatcher. `xcn_close` svegliava poi il worker
+  e la chiusura falliva (`SCHEDULER_DISPATCH_FAILURE: 6`). Correzione:
+  durante quella finestra CR8 vale 4. I vettori 40h-4Fh restano in IRR e
+  passa solo D1h (classe Dh), secondo SDM Vol. 3A, 11.8.3.1 e 11.8.6. Il
+  difetto dipende dai tempi e non esiste un test deterministico; la prova
+  sono le ripetizioni di boot.
+- Difetto esterno trovato dalla sessione da 30 minuti (3 corse fallite su
+  8). Con QEMU 11.1 (TCG), l'HPET a volte supera il comparatore senza
+  generare il match: i registri letti al fallimento mostrano stato zero,
+  interrupt abilitato, contatore 2,56 s oltre l'obiettivo e voce IOAPIC
+  libera. Prima della 3c questo evento probabilmente causava un fermo di
+  circa 43 s (non verificato). Con i tick D1 il budget di 256 risvegli si
+  esauriva e il kernel si fermava. Decisione dell'utente: opzione B, cioè
+  il watchdog rileva il match saltato e lo recupera
+  (`arch/x86/kernel/timer/hpet/watchdog/documentation/design.md`, punto
+  6). L'opzione A, fermare D1 durante l'idle, avrebbe solo nascosto il
+  difetto.
+
+Prove sull'immagine `ordinary` Meson con la 3c completa:
+
+- Suite host watchdog, kernel, scheduler, x86-scheduler, ps2, ps2-mouse,
+  console e build-plan. Controprove: senza il ramo YIELD il test del motore
+  fallisce; tre mutazioni del recupero HPET fanno fallire i casi 1501, 1511
+  e 1607.
+- Campagne 13/13 (72 boot): `k6-ordinary`, `k6-shell`, `k6-no-ps2`,
+  `k6-shell-bridge-disabled`, `k6-shell-bridge-fault`, `k6-process`,
+  plain, v2c, k3-soak, fallback, absent, stall, `paging-tamper`. Prima
+  della correzione CR8, invece, `k6-shell` falliva 1 boot su 8; dopo, 30/30.
+- `--ordinary-soak 30`, tre QEMU in parallelo: 11 sessioni su 12 verdi
+  (308-311 giri di `bridge status`, sforamenti 0). In una il recupero HPET
+  è scattato e la sessione è proseguita pulita (`KERNEL_WATCHDOG_MISSED: 1`).
+- Dubbio aperto, accettato dall'utente: in 1 sessione su 21 complessive,
+  dopo la chiusura della shell, un AP non ha confermato lo shootdown del TLB
+  entro 1 s (`K4TLBACK`). Causa ignota, ipotesi non verificata il carico di
+  tre QEMU con log `-d int`. Nove sessioni con diagnostica sullo shootdown
+  non lo hanno riprodotto. Si ricontrolla nelle campagne lunghe della 3e.
+- Non provato su hardware fisico.
+
+Per la 3d: con IF=1 nei task, cambio di contesto, chiamate al core e
+sezioni dei driver devono restare a IF=0; `x86_ps2_irq_record` va allargata
+a tutto il codice dei task.

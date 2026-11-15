@@ -18,7 +18,8 @@ void test_lapic_ram_busy(BOOT_U32 busy);
 static BOOT_U32 local[64], routes[240], selector, calls, fail, stores, bad, port_writes;
 static unsigned char master, slave;
 static unsigned char ier, iir, lcr;
-static BOOT_U32 in_service, eois, uart_bad, irr_pending;
+static BOOT_U32 in_service, eois, uart_bad, irr_pending, in_service6, irr6;
+#define D1_BIT (1U << (0xd1 % 32))
 static BOOT_U32 tx_writes;
 static unsigned char tx_last;
 
@@ -88,7 +89,7 @@ static int reset(void)
     for (index = 0; index < 64; ++index) local[index] = 0;
     for (index = 0; index < 240; ++index) routes[index] = 0;
     selector = 17; calls = fail = stores = bad = port_writes = 0; master = slave = 0;
-    ier = 2; iir = 0xc2; lcr = 3; in_service = eois = uart_bad = irr_pending = 0;
+    ier = 2; iir = 0xc2; lcr = 3; in_service = eois = uart_bad = irr_pending = in_service6 = irr6 = 0;
     tx_writes = 0; tx_last = 0;
     return test_mask_reset();
 }
@@ -157,9 +158,11 @@ __declspec(dllexport) int run_apic_control_tests(void)
 int x86_lapic_native_eoi(void)
 {
     if ((test_lapic_entry() & 0x000ffffffffff000ULL) != 0xfee00000 ||
-        (in_service != 1 && in_service != 2 && in_service != 4 && in_service != 8) || (in_service == 1 && ier && !tx_writes)) return 0;
+        (in_service6 ? in_service || in_service6 != D1_BIT :
+            in_service != 1 && in_service != 2 && in_service != 4 && in_service != 8) ||
+        (in_service == 1 && ier && !tx_writes)) return 0;
     ++eois;
-    if (uart_bad != 2) in_service = 0;
+    if (uart_bad != 2) in_service = in_service6 = 0;
     return 1;
 }
 
@@ -168,7 +171,8 @@ int x86_lapic_native_eoi(void)
 int x86_lapic_native_read(BOOT_U32 offset, BOOT_U32 *value)
 {
     if (++calls == fail) return 0;
-    *value = offset == 0x120 ? in_service : offset == 0x220 ? irr_pending : 0;
+    *value = offset == 0x120 ? in_service : offset == 0x220 ? irr_pending :
+        offset == 0x160 ? in_service6 : offset == 0x260 ? irr6 : 0;
     return 1;
 }
 // ====== attesa privilegiata esclusa dal processo host ===== //
@@ -207,7 +211,8 @@ __declspec(dllexport) int run_lapic_timer_eoi_tests(void)
     uart_bad = 0;
     if (!x86_lapic_eoi_vector(state.Mapping,0x42) || in_service) return 9;
     if (!x86_lapic_idle(state.Mapping) || !x86_lapic_idle_except(state.Mapping,0) ||
-        !x86_lapic_idle_except(state.Mapping,6) || x86_lapic_idle_except(state.Mapping,16)) return 10;
+        !x86_lapic_idle_except(state.Mapping,6) || !x86_lapic_idle_except(state.Mapping,16) ||
+        x86_lapic_idle_except(state.Mapping,32)) return 10;
     irr_pending = 2;
     if (x86_lapic_idle(state.Mapping) || x86_lapic_idle_except(state.Mapping,4) ||
         !x86_lapic_idle_except(state.Mapping,2) || !x86_lapic_idle_except(state.Mapping,6)) return 11;
@@ -226,6 +231,18 @@ __declspec(dllexport) int run_lapic_timer_eoi_tests(void)
     if (x86_lapic_eoi_vector(state.Mapping,0x43) || eois != 5 || in_service != 8) return 17;
     uart_bad = 0;
     if (!x86_lapic_eoi_vector(state.Mapping,0x43) || in_service || eois != 6) return 18;
+    in_service6 = D1_BIT;
+    if (x86_lapic_idle(state.Mapping) || x86_lapic_eoi_vector(state.Mapping,0x41) || eois != 6) return 19;
+    if (!x86_lapic_eoi_vector(state.Mapping,0xd1) || in_service6 || eois != 7) return 20;
+    in_service6 = D1_BIT; in_service = 2;
+    if (x86_lapic_eoi_vector(state.Mapping,0xd1) || eois != 7) return 21;
+    in_service = in_service6 = 0; irr6 = D1_BIT;
+    if (x86_lapic_idle(state.Mapping) || x86_lapic_idle_except(state.Mapping,15) ||
+        !x86_lapic_idle_except(state.Mapping,16) || !x86_lapic_idle_except(state.Mapping,18)) return 22;
+    irr6 = D1_BIT | 1;
+    if (x86_lapic_idle_except(state.Mapping,16)) return 23;
+    irr6 = 0;
+    if (x86_lapic_eoi_vector(state.Mapping,0xd0) || x86_lapic_eoi_vector(state.Mapping,0xd2)) return 24;
     return 0;
 }
 

@@ -14,6 +14,7 @@
 #endif
 #include "kernel/scheduler/payload.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
+#include "arch/x86/kernel/scheduler/irq/preempt.h"
 #include "kernel/diagnostics/log.h"
 #ifdef KERNEL_AP_TASKS
 #include "arch/x86/kernel/scheduler/remote/remote.h"
@@ -77,7 +78,8 @@ int x86_ps2_activate(void)
 #else
     if (!kernel_ps2_start(&session.Controller)) return 0;
 #endif
-    return x86_ps2_route_apply(&session,0) && kernel_log(0,"KERNEL_PS2_INPUT_READY");
+    return x86_ps2_route_apply(&session,0) && x86_preempt_open(x86_timer_owner()) &&
+        kernel_log(0,"KERNEL_PS2_INPUT_READY");
 }
 
 // ====== x86_ps2_after_dispatch ======
@@ -92,6 +94,7 @@ int x86_ps2_after_dispatch(void)
     x86_remote_service();
 #endif
     if (!session.Stop || session.Quiet) return 1;
+    if (!x86_preempt_close()) return 0;
     if (!session.WorkerGeneration || !x86_ps2_route_apply(&session,1)) return 0;
 #ifdef KERNEL_PS2_MOUSE
     if (!session.Mouse.Generation || !x86_ps2_mouse_route_apply(&session,1) ||

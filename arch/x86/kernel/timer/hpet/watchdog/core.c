@@ -270,6 +270,7 @@ int x86_watchdog_finish_cleanup(void)
     watchdog.Ready = 0; watchdog.Closed = 1;
     if (!report_failure() || !kernel_text("KERNEL_WATCHDOG_FIRED: ") || !kernel_number(watchdog.Count) ||
         !kernel_text("\nKERNEL_WATCHDOG_RESULT: ") || !kernel_number(watchdog.Result) ||
+        !kernel_text("\nKERNEL_WATCHDOG_MISSED: ") || !kernel_number(x86_watchdog_missed()) ||
         !kernel_text("\n") || !kernel_log(0,"KERNEL_WATCHDOG_CLEANUP_OK")) {
         return cleanup_failure(X86_WATCHDOG_LOG);
     }

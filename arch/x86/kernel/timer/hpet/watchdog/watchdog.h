@@ -85,6 +85,11 @@ BOOT_U32 x86_watchdog_wait(const volatile BOOT_U32 *source, BOOT_U32 goal,
 BOOT_U32 x86_watchdog_idle(const volatile BOOT_U32 *source);
 BOOT_U32 x86_watchdog_result(void);
 BOOT_U32 x86_watchdog_wake_detail(void);
+#define X86_WATCHDOG_MISSED_NONE      0U
+#define X86_WATCHDOG_MISSED_RECOVERED 1U
+#define X86_WATCHDOG_MISSED_PENDING   2U
+BOOT_U32 x86_watchdog_missed_recover(void);
+BOOT_U32 x86_watchdog_missed(void);
 BOOT_U32 x86_watchdog_arm_detail(void);
 BOOT_U64 x86_watchdog_arm_registers(void);
 int x86_watchdog_close(void);

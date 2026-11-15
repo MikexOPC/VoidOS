@@ -1,4 +1,4 @@
-# Stato di VoidOS — 14 novembre 2026
+# Stato di VoidOS — 15 novembre 2026
 
 ## Immagine ordinaria (`ordinary`, Meson)
 
@@ -7,7 +7,10 @@
   inizializzato anche il framebuffer GOP.
 - In QEMU con quattro vCPU, il core di avvio (BSP) avvia tre core secondari
   (AP). Tutti e tre rispondono al PING inter-CPU e attendono parcheggiati.
-  Lo scheduler cooperativo gestisce la sessione PS/2 sul BSP.
+  Lo scheduler gestisce la sessione PS/2 sul BSP con un timer di preemption
+  da 10 ms (vettore D1h). Fino alla task 3d i task hanno gli interrupt
+  spenti fuori dalla finestra di attesa, quindi la preemption sospende solo
+  task in attesa.
 - Con SMEP e SMAP disponibili, il BSP esegue un ELF Rust incorporato in
   ring 3 con tabelle di paging dedicate. Il programma stampa via syscall,
   termina e viene rilasciato prima di `KERNEL_READY`. UMIP viene abilitato
@@ -34,7 +37,7 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 - Shell e processo utente convivono in `ordinary`. Il dispatcher gira a
   sessioni sul BSP e l'idle finale non ospita servizi. Manca la preemption
-  ordinaria su tutte le CPU. Restano limiti fissi di otto task
+  ordinaria sugli AP e nel codice dei task (task 3d). Restano limiti fissi di otto task
   e quattro sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è un solo
   processo attivo alla volta.
 - Mancano driver a blocchi, VFS, filesystem del kernel ed esecuzione di ELF
@@ -43,6 +46,14 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   dell'intera immagine e overflow reale dello stack syscall sono non
   verificati. Il cancello «base solida» resta aperto. Hardware fisico non
   verificato per il percorso descritto qui.
+- Il watchdog HPET rileva e recupera il confronto saltato dall'HPET di
+  QEMU 11.1 (circa una volta su un milione di armamenti); recupero osservato
+  dal vivo in una sessione da 30 minuti.
+- Dubbio aperto, accettato dall'utente il 15 novembre 2026: in 1 sessione da
+  30 minuti su 21 (tre QEMU in parallelo), dopo la chiusura della shell, un
+  AP non ha confermato lo shootdown del TLB entro 1 s (`K4TLBACK`). Causa
+  ignota; ipotesi non verificata: carico dell'host. Non si è ripresentato in
+  9 sessioni con diagnostica dedicata.
 - Il backend processi è stato diviso. La CI ha un workflow per suite host
   e boot ordinario. Restano la migrazione delle suite host in `meson test`
   e la scelta del [dispatcher permanente](design/scheduler-produzione.md).

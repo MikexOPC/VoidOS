@@ -250,19 +250,33 @@ void x86_scheduler_yield(void)
         kernel_scheduler_fail_stop();
 }
 
-// ====== x86_scheduler_irq_suspend ======
+// ====== suspend_private ======
 
-void x86_scheduler_irq_suspend(void)
+static void suspend_private(uint32_t event)
 {
     X86_SCHEDULER_LOCAL *local = local_private();
     uint32_t index = local->current;
     uint64_t gen = local->generation;
     if (!x86_scheduler_task_valid() || local->event || !dispatcher_resume_private()) kernel_scheduler_fail_stop();
-    local->event = X86_TASK_PREEMPT;
+    local->event = event;
     x86_scheduler_context_switch(&x86_task_contexts[index], &local->dispatcher);
     local = local_private();
     if (!x86_scheduler_task_valid() || local->current != index || local->generation != gen || local->event)
         kernel_scheduler_fail_stop();
+}
+
+// ====== x86_scheduler_irq_suspend ======
+
+void x86_scheduler_irq_suspend(void)
+{
+    suspend_private(X86_TASK_PREEMPT);
+}
+
+// ====== x86_scheduler_tick_suspend ======
+
+void x86_scheduler_tick_suspend(void)
+{
+    suspend_private(X86_TASK_TICK);
 }
 
 // ====== x86_scheduler_event_request ======

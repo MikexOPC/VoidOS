@@ -3,6 +3,7 @@
 #include "arch/x86/kernel/cpu/percpu/panic/native/runtime.h"
 #endif
 #include "arch/x86/configs/layout.h"
+#include "arch/x86/kernel/interrupts/apic/lvt.h"
 #include "arch/x86/mm/window/access.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "lib/memory/address_ranges.h"
@@ -187,11 +188,12 @@ int x86_lapic_read(const X86_LAPIC_MAPPING *owner, BOOT_U32 offset, BOOT_U32 *va
 
 // ====== EOI ammesso solo attraverso un owner ancora collegato ===== //
 
-static int isr(const X86_LAPIC_MAPPING *owner, BOOT_U32 expected) {
+// Intel SDM 078US 11.8.4/Fig11-20: vector v is ISR 100h+16*(v/32), bit v%32.
+static int isr(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector) {
     BOOT_U32 index, value;
     for (index = 0; index < 8; ++index)
         if (!x86_lapic_read(owner,0x100+index*16,&value) ||
-            value != (index == 2 ? expected : 0)) return 0;
+            value != (vector && index == vector / 32 ? 1U << (vector % 32) : 0)) return 0;
     return 1;
 }
 
@@ -206,8 +208,8 @@ int x86_lapic_eoi(const X86_LAPIC_MAPPING *owner) {
 // Intel SDM 078US 11.8.4/Fig11-20: vector43h = ISR120h bit3.
 // 11.8.5/Fig11-21: EOI b0h=0 only for the sole authorized in-service vector.
 int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector) {
-    if (vector < 0x40 || vector > 0x43) return 0;
-    return isr(owner,1U<<(vector-0x40)) && x86_lapic_native_eoi() && isr(owner,0);
+    if ((vector < 0x40 || vector > 0x43) && vector != X86_PREEMPT_VECTOR) return 0;
+    return isr(owner,vector) && x86_lapic_native_eoi() && isr(owner,0);
 }
 
 // ====== nessuna consegna pendente prima di arm o revoca ===== //
@@ -219,13 +221,15 @@ int x86_lapic_idle(const X86_LAPIC_MAPPING *owner) {
 // ====== ISR vuoto e IRR limitato ai vettori autorizzati ancora pendenti ===== //
 
 // Intel SDM 078US Vol3A, 11.8.4/Fig11-20: ISR100h..170h, IRR200h..270h.
-// IRR bank2 (220h) bits0..3 = vettori40h..43h; un IRQ input vivo puo pendere dopo EOI.
+// IRR bank2 (220h) bits0..3 = vettori40h..43h; pending bit4 = vettore D1h, IRR bank6 bit17.
 int x86_lapic_idle_except(const X86_LAPIC_MAPPING *owner, BOOT_U32 pending) {
-    BOOT_U32 index, value;
-    if ((pending & ~15U) || !isr(owner,0)) return 0;
-    for (index = 0; index < 8; ++index)
-        if (!x86_lapic_read(owner,0x200+index*16,&value) ||
-            (value & ~(index == 2 ? pending : 0U))) return 0;
+    BOOT_U32 index, value, allowed;
+    if ((pending & ~31U) || !isr(owner,0)) return 0;
+    for (index = 0; index < 8; ++index) {
+        allowed = index == 2 ? pending & 15U : 0U;
+        if (index == X86_PREEMPT_VECTOR / 32 && (pending & 16U)) allowed |= 1U << (X86_PREEMPT_VECTOR % 32);
+        if (!x86_lapic_read(owner,0x200+index*16,&value) || (value & ~allowed)) return 0;
+    }
     return 1;
 }
 
