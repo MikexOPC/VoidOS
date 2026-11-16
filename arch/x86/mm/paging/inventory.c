@@ -45,7 +45,7 @@ static int append_table(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICA
 
 static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCATOR *pool,
                  const X86_LAPIC_MAPPING *owner, const X86_PAGING_VIDEO_AUTH *video,
-    X86_PAGING_INVENTORY *draft)
+    X86_PAGING_INVENTORY *draft, X86_PAGING_CHECKPOINT checkpoint, void *checkpoint_context)
 {
     BOOT_U32 index, slot;
     BOOT_U32 surface_seen=0;
@@ -99,6 +99,7 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
         const volatile BOOT_U64 *entries = x86_paging_view(record->View);
         if (!entries) return 0;
         for (slot = 0; slot < 512; ++slot) {
+            if (!(slot % X86_PAGING_SCAN_SLICE) && checkpoint && !checkpoint(checkpoint_context)) return 0;
             BOOT_U64 entry = entries[slot];
             if (!record->Level && slot == X86_BOOT_RECURSIVE_SLOT) {
                 if ((entry & ~0x60ULL) != (draft->Root | 3 | PAGING_NX)) return 0;
@@ -135,7 +136,8 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
                                 x86_paging_child_view(record->View, record->Level, slot), record->Level + 1)) return 0;
         }
     }
-    if (!x86_paging_leaf_aliases_absent(draft, PAGING_ADDRESS) || draft->MmioPages != (owner ? 1U : 0U) +
+    if (!x86_paging_leaf_aliases_absent_sliced(draft, PAGING_ADDRESS, checkpoint, checkpoint_context) ||
+        draft->MmioPages != (owner ? 1U : 0U) +
         (video ? video->Region.Pages : 0) + (gpu ? gpu->Plan.Count : 0) + draft->Iommu.Count || !x86_paging_gpu_complete(draft)) return 0;
     if (!x86_iommu_complete(&draft->Iommu,iommu_seen,iommu_leaves)) return 0;
     if (!x86_dma_complete(&draft->Dma,dma_seen,dma_leaves)) return 0;
@@ -153,7 +155,7 @@ int x86_paging_inventory_capture(const KERNEL_BOOT_CONTEXT *context,
 {
     X86_PAGING_INVENTORY draft;
     BOOT_U32 index;
-    if (!x86_paging_buffers_valid(context, pool, output) || !scan(context, pool, 0, 0, &draft)) return 0;
+    if (!x86_paging_buffers_valid(context, pool, output) || !scan(context, pool, 0, 0, &draft, 0, 0)) return 0;
     for (index = 0; index < sizeof(draft); ++index)
         ((volatile unsigned char *)output)[index] = ((const unsigned char *)&draft)[index];
     return 1;
@@ -216,7 +218,7 @@ int x86_paging_inventory_verify(const KERNEL_BOOT_CONTEXT *context,
     X86_PAGING_INVENTORY draft;
     BOOT_U32 index;
     if (!x86_paging_buffers_valid(context, pool, inventory) || !snapshot_valid(inventory, pool->PhysicalBits) ||
-        inventory->Root != context->Info.PageTableRoot || !scan(context, pool, 0, 0, &draft)) return 0;
+        inventory->Root != context->Info.PageTableRoot || !scan(context, pool, 0, 0, &draft, 0, 0)) return 0;
     for (index = 0; index < sizeof(draft); ++index)
         if (((const unsigned char *)inventory)[index] != ((const unsigned char *)&draft)[index]) return 0;
     return 1;
@@ -259,7 +261,7 @@ static __declspec(noinline) int capture_lapic_private(const KERNEL_BOOT_CONTEXT 
 {
     X86_PAGING_INVENTORY draft;
     BOOT_U32 byte;
-    if (!mixed_inputs(context,pool,owner,output) || !scan(context,pool,owner,0,&draft) ||
+    if (!mixed_inputs(context,pool,owner,output) || !scan(context,pool,owner,0,&draft,0,0) ||
         !x86_lapic_authority(owner)) return 0;
     for (byte = 0; byte < sizeof(draft); ++byte)
         ((volatile unsigned char *)output)[byte] = ((const unsigned char *)&draft)[byte];
@@ -299,7 +301,7 @@ static __declspec(noinline) int verify_lapic_private(const KERNEL_BOOT_CONTEXT *
     X86_PAGING_INVENTORY draft;
     BOOT_U32 byte;
     if (!mixed_inputs(context,pool,owner,inventory) || !snapshot_valid(inventory,pool->PhysicalBits) ||
-        !scan(context,pool,owner,0,&draft) || !x86_lapic_authority(owner)) return 0;
+        !scan(context,pool,owner,0,&draft,0,0) || !x86_lapic_authority(owner)) return 0;
     for (byte = 0; byte < sizeof(draft); ++byte)
         if (((const unsigned char *)inventory)[byte] != ((const unsigned char *)&draft)[byte]) return 0;
     return 1;
@@ -337,7 +339,7 @@ __declspec(noinline) int x86_paging_inventory_capture_video(const KERNEL_BOOT_CO
     X86_PAGING_INVENTORY draft;
     BOOT_U32 byte;
     if (!video_inputs(context, pool, lapic, video, check, output) ||
-        !scan(context, pool, lapic, video, &draft) || !check(video) || !x86_lapic_authority(lapic) ||
+        !scan(context, pool, lapic, video, &draft, 0, 0) || !check(video) || !x86_lapic_authority(lapic) ||
         !x86_paging_video_inputs(context, pool, video, output) ||
         !x86_paging_video_tables_complete(video, &draft)) return 0;
     for (byte = 0; byte < sizeof(draft); ++byte)
@@ -345,21 +347,32 @@ __declspec(noinline) int x86_paging_inventory_capture_video(const KERNEL_BOOT_CO
     return 1;
 }
 
-// ====== x86_paging_inventory_verify_video ======
+// ====== x86_paging_inventory_verify_video_sliced ======
 
-__declspec(noinline) int x86_paging_inventory_verify_video(const KERNEL_BOOT_CONTEXT *context,
+__declspec(noinline) int x86_paging_inventory_verify_video_sliced(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
     const X86_PAGING_VIDEO_AUTH *video, X86_PAGING_VIDEO_CHECK check,
-    const X86_PAGING_INVENTORY *inventory)
+    const X86_PAGING_INVENTORY *inventory, X86_PAGING_CHECKPOINT checkpoint, void *checkpoint_context)
 {
     X86_PAGING_INVENTORY draft;
     BOOT_U32 byte;
     if (!video_inputs(context, pool, lapic, video, check, inventory) ||
-        !snapshot_valid(inventory, pool->PhysicalBits) || !scan(context, pool, lapic, video, &draft) ||
+        !snapshot_valid(inventory, pool->PhysicalBits) ||
+        !scan(context, pool, lapic, video, &draft, checkpoint, checkpoint_context) ||
         !check(video) || !x86_lapic_authority(lapic) ||
         !x86_paging_video_inputs(context, pool, video, inventory) ||
         !x86_paging_video_tables_complete(video, &draft)) return 0;
     for (byte = 0; byte < sizeof(draft); ++byte)
         if (((const unsigned char *)inventory)[byte] != ((const unsigned char *)&draft)[byte]) return 0;
     return 1;
+}
+
+// ====== x86_paging_inventory_verify_video ======
+
+int x86_paging_inventory_verify_video(const KERNEL_BOOT_CONTEXT *context,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool, const X86_LAPIC_MAPPING *lapic,
+    const X86_PAGING_VIDEO_AUTH *video, X86_PAGING_VIDEO_CHECK check,
+    const X86_PAGING_INVENTORY *inventory)
+{
+    return x86_paging_inventory_verify_video_sliced(context, pool, lapic, video, check, inventory, 0, 0);
 }

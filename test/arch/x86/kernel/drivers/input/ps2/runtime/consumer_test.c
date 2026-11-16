@@ -13,6 +13,7 @@ static uint32_t head, count, submitted, closed, waits, recovery;
 static uint32_t cancel_profile, cancelled, expected_modifiers;
 static jmp_buf failure;
 static int expect_failure;
+static uint64_t interrupt_flag;
 #ifdef KERNEL_CONSOLE_SHELL
 static uint32_t edits;
 
@@ -27,6 +28,21 @@ int x86_console_edit(X86_PS2_SESSION *session)
     return 1;
 }
 #endif
+
+// ====== simulated_preempt_section ======
+
+uint64_t kernel_preempt_section_enter(void)
+{
+    uint64_t saved_if = interrupt_flag;
+    interrupt_flag = 0;
+    return saved_if;
+}
+
+void kernel_preempt_section_leave(uint64_t saved_if)
+{
+    assert(!interrupt_flag && saved_if == 0x200);
+    interrupt_flag = saved_if;
+}
 
 // ====== scheduler_and_output_boundaries ======
 
@@ -56,13 +72,14 @@ void x86_scheduler_yield(void) { }
 uint64_t kernel_scheduler_payload_pop(uint32_t event, uint64_t source, uint64_t token,
     uint32_t consumer, uint64_t generation)
 {
+    assert(!interrupt_flag);
     assert(event == 4 && source == (uint64_t)&owner && token == 3 && !consumer && generation == 7);
     return head < count ? queue[head++] : KERNEL_PAYLOAD_EMPTY;
 }
 KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uint64_t token)
 {
     KERNEL_EVENT_REPLY reply = {0};
-    assert(id == 4);
+    assert(interrupt_flag == 0x200 && id == 4);
     reply.epoch = 1;
     if (reason == X86_TASK_WAIT) {
         assert(token == 1);
@@ -95,6 +112,7 @@ static void reset_private(void)
 #ifdef KERNEL_CONSOLE_SHELL
     edits = 0;
 #endif
+    interrupt_flag = 0x200;
     owner.Binding = 3;
     owner.Decoder = 1;
     owner.TextState = 9;

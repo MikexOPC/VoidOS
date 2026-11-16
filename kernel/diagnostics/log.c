@@ -14,8 +14,13 @@ int kernel_text(const char *text)
     if (!text) return 0;
     for (index = 0; index < 256; ++index) {
         if (!text[index]) return 1;
-        if (text[index] == '\n' && !x86_serial_character('\r')) return 0;
-        if (!x86_serial_character(text[index])) return 0;
+        unsigned int was_open = line_open;
+        line_open = 1;
+        if ((text[index] == '\n' && !x86_serial_character('\r')) ||
+            !x86_serial_character(text[index])) {
+            line_open = was_open;
+            return 0;
+        }
         line_open = text[index] != '\n';
     }
     return 0;

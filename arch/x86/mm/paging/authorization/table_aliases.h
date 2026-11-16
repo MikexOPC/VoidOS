@@ -2,9 +2,11 @@
 #define OS_X86_PAGING_TABLE_ALIASES_H
 #include "../inventory.h"
 
-// ====== x86_paging_leaf_aliases_absent ======
+// ====== x86_paging_leaf_aliases_absent_sliced ======
 
-static __declspec(noinline) int x86_paging_leaf_aliases_absent(const X86_PAGING_INVENTORY *draft, BOOT_U64 mask) {
+static __declspec(noinline) int x86_paging_leaf_aliases_absent_sliced(const X86_PAGING_INVENTORY *draft,
+    BOOT_U64 mask, X86_PAGING_CHECKPOINT checkpoint, void *checkpoint_context)
+{
     BOOT_U64 frames[X86_BOOT_TABLE_LIMIT];
     if (!draft || !draft->Count || draft->Count > X86_BOOT_TABLE_LIMIT) return 0;
     for (BOOT_U32 index = 0; index < draft->Count; ++index) {
@@ -21,6 +23,7 @@ static __declspec(noinline) int x86_paging_leaf_aliases_absent(const X86_PAGING_
         const volatile BOOT_U64 *entries = x86_paging_view(draft->Tables[index].View);
         if (!entries) return 0;
         for (BOOT_U32 slot = 0; slot < 512; ++slot) {
+            if (!(slot % X86_PAGING_SCAN_SLICE) && checkpoint && !checkpoint(checkpoint_context)) return 0;
             BOOT_U64 entry = entries[slot];
             if (!entry) continue;
             BOOT_U64 physical = entry & mask;
@@ -34,5 +37,11 @@ static __declspec(noinline) int x86_paging_leaf_aliases_absent(const X86_PAGING_
         }
     }
     return 1;
+}
+// ====== x86_paging_leaf_aliases_absent ======
+
+static inline int x86_paging_leaf_aliases_absent(const X86_PAGING_INVENTORY *draft, BOOT_U64 mask)
+{
+    return x86_paging_leaf_aliases_absent_sliced(draft, mask, 0, 0);
 }
 #endif

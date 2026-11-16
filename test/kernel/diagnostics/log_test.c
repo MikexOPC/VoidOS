@@ -11,6 +11,7 @@ static unsigned int count, refuse_at;
 
 int x86_serial_character(char value)
 {
+    assert(kernel_log_line_open());
     if (refuse_at && count + 1 == refuse_at) return 0;
     assert(count < sizeof(written) - 1);
     written[count++] = value;

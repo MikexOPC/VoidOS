@@ -90,7 +90,10 @@ static void worker_private(void)
 #ifdef KERNEL_CONSOLE_SHELL
         if (x86_console_pending(owner)) { x86_scheduler_yield(); continue; }
 #endif
-        if (!owner->Ready && !owner->Quiet) (void)x86_scheduler_event_request(X86_TASK_WAIT,worker_event,observed.epoch);
+        uint64_t saved_if = kernel_preempt_section_enter();
+        int wait = !owner->Ready && !owner->Quiet;
+        kernel_preempt_section_leave(saved_if);
+        if (wait) (void)x86_scheduler_event_request(X86_TASK_WAIT,worker_event,observed.epoch);
         else x86_scheduler_yield();
     }
     owner->WorkerDone = 1;

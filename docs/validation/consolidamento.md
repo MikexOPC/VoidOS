@@ -65,6 +65,20 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   Frame fuori dalla finestra in QEMU e PC fisico non provati.
   [Design](../design/scheduler-produzione.md#3d-2--ammissione-del-frame-irq-di-un-task-bsp).
 
+- **3d-3.** Suite host `ps2`, `ps2-mouse`, `console`,
+  `kernel`, `scheduler`, `x86-scheduler` e `plan_parity` superati.
+  Il test dello scanner si arresta a ogni confine e rifiuta un alias.
+  Il test del worker simula cambi indipendenti delle due generazioni
+  e verifica il riavvio. Il profilo diagnostico `paging-tamper` rileva
+  la corruzione in 3/3 boot. Immagine ordinaria Meson con quattro
+  vCPU QEMU TCG: 10/10 boot `--ordinary-shell` e cinque minuti di
+  stress con 52 risposte del bridge, 65 audit completati, uscita
+  pulita, zero sforamenti e zero recuperi HPET. Il tempo totale
+  massimo di un audit è circa 146 ms, comprese le cessioni al
+  dispatcher. Durata massima a IF=0, task avviati con IF=1 e
+  hardware fisico non verificati.
+  [Design](../design/scheduler-produzione.md#3d-3--dati-condivisi-con-gli-irq).
+
 ## Build e runner
 
 | Passo | Risultato storico |

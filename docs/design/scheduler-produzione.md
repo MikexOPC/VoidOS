@@ -283,5 +283,37 @@ sopra la base mappata. La guard page è sotto quella base. Il predicato non
 dipende più dall'indice 1 né dagli indirizzi della finestra di attesa.
 
 I profili diagnostici del timer fuori dalla sessione PS/2 usano i loro
-predicati per finestra. I task ordinari partono ancora a IF=0. La 3d-3
-verifica i dati condivisi con gli handler e la 3d-4 abilita IF all'avvio.
+predicati per finestra. I task ordinari partono ancora a IF=0.
+
+### 3d-3 — Dati condivisi con gli IRQ
+
+- Tastiera e mouse tolgono i payload dalle code con IF=0. Il controllo
+  di coda vuota e l'azzeramento del segnale `Ready` avvengono nella
+  stessa sezione. Il consumatore tastiera registra e scarta la coda
+  del guasto prima di riaprire gli IRQ. Osservazione dell'epoca, seconda
+  lettura della coda e attesa preservano il protocollo di risveglio.
+- Il worker fotografa `Ready` e `Quiet` prima di decidere se attendere.
+  La shell fotografa i contatori prima di eseguire il comando. La
+  validazione del task BSP e la pubblicazione del lavoro AP rispettano
+  il requisito IF=0 delle verifiche native. La seriale pubblica lo
+  stato di riga aperta prima del primo carattere, per il rinvio
+  limitato della preemption durante la scrittura.
+- I lock delle code comandi, delle richieste console e del puntatore
+  proteggono già le rispettive mutazioni. Il bridge pubblica la
+  richiesta dalla shell e la consuma nel dispatcher, che sospende
+  il tick durante il passaggio a ring 3. Gli handler non scrivono
+  lo stato della richiesta.
+- Il worker della console mantiene una sola sezione a IF=0 per
+  ciascun gruppo di disegno, inclusi preparazione e verifica delle
+  lease. Ripristina IF prima di passare al gruppo successivo. Il
+  limite del backend di disegno è otto celle per gruppo.
+- L'audit periodico della console usa lo stesso scanner e i suoi
+  controlli di autorità, topologia, contabilità e alias. Lo scanner
+  e il controllo degli alias aprono un punto di ripresa ogni 128
+  voci. A quel punto il worker ripristina IF, cede il BSP e riprende
+  a IF=0 solo dopo aver ricontrollato le generazioni di paginazione
+  e allocatore. L'inventario atteso rimane privato sullo stack del
+  worker. Se cambia una generazione, l'audit scarta la scansione e
+  la riavvia alla successiva occasione di inattività. Una violazione
+  a generazione stabile resta un errore terminale. L'avvio dei task
+  a IF=1 e la prova degli IRQ fuori finestra appartengono alla 3d-4.

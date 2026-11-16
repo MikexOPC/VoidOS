@@ -1,6 +1,7 @@
 #include "task.h"
 #include "kernel/shell/shell.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/sync/lock.h"
 #include "arch/x86/kernel/scheduler/remote/remote.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.h"
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
@@ -39,7 +40,11 @@ int kernel_shell_remote(uint64_t argument, uint64_t result[4])
 {
     uint64_t waits = 0;
     if (!result || x86_scheduler_index() != 2 || !x86_scheduler_driver_task_valid() ||
-        !argument || argument > 1000000 || !x86_remote_request(1,job_private,argument)) return 0;
+        !argument || argument > 1000000) return 0;
+    uint64_t saved_if = kernel_preempt_section_enter();
+    int requested = x86_remote_request(1,job_private,argument);
+    kernel_preempt_section_leave(saved_if);
+    if (!requested) return 0;
     for (uint32_t round = 0; round < 4096; ++round) {
         KERNEL_EVENT_REPLY observed = event_private(X86_TASK_OBSERVE,0);
         int taken = x86_remote_take(result);

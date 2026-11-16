@@ -3,6 +3,15 @@
 #include "../console/profile.h"
 #include "../pixels/session.h"
 #include "kernel/mm/physical/holdings.h"
+#include "kernel/sync/lock.h"
+#include "arch/x86/kernel/scheduler/integration/control.h"
+
+typedef struct {
+    const KERNEL_PHYSICAL_ALLOCATOR *Pool;
+    BOOT_U64 SavedIf, PagingGeneration, PoolGeneration;
+    int Restart;
+} X86_FB_AUDIT_SECTION;
+
 // ====== budget_matches ======
 
 static int budget_matches(const X86_FB_MAPPING *owner, const X86_PAGING_INVENTORY *inventory, BOOT_U64 pages)
@@ -42,37 +51,71 @@ int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 r
     int result;
     if (!ticks || !scalars || !count || count > 8) return 0;
 
+    uint64_t saved_if = kernel_preempt_section_enter();
     X86_PROFILE_BEGIN(prepare_start);
     int prepared = prepare(owner, &expected, &pages);
     X86_PROFILE_END(X86_PROFILE_PREPARE, prepare_start);
 
-    if (!prepared) return 0;
+    if (!prepared) {
+        kernel_preempt_section_leave(saved_if);
+        return 0;
+    }
     original = owner->Inventory;
     owner->Inventory = &expected;
     result = pointer ? x86_fb_group_pointer(owner, column, row, scalars, count, foreground, background, ticks, caret, pointer) :
         x86_fb_group_caret(owner, column, row, scalars, count, foreground, background, ticks, caret);
     owner->Inventory = original;
-    return result && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
+    result = result && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
         budget_matches(owner, original, pages);
+    kernel_preempt_section_leave(saved_if);
+    return result;
+}
+
+// ====== audit_checkpoint ======
+
+static int audit_checkpoint(void *opaque)
+{
+    X86_FB_AUDIT_SECTION *section = opaque;
+    BOOT_U64 generation;
+    kernel_preempt_section_leave(section->SavedIf);
+    x86_scheduler_yield();
+    section->SavedIf = kernel_preempt_section_enter();
+    if (!kernel_physical_generation_read(section->Pool, &generation)) return 0;
+    section->Restart = x86_paging_generation() != section->PagingGeneration ||
+        generation != section->PoolGeneration;
+    return !section->Restart;
+}
+
+// ====== audit_private ======
+
+static __declspec(noinline) int audit_private(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected)
+{
+    X86_FB_AUDIT_SECTION section = {0};
+    BOOT_U64 pages;
+    int result = X86_FB_AUDIT_FAILED;
+
+    section.SavedIf = kernel_preempt_section_enter();
+    if (prepare(owner, expected, &pages)) {
+        section.Pool = owner->Window->Pool;
+        section.PagingGeneration = x86_paging_generation();
+        if (kernel_physical_generation_read(section.Pool, &section.PoolGeneration)) {
+            int verified = x86_paging_inventory_verify_video_sliced(owner->Context, section.Pool, owner->Lapic,
+                &owner->Authority, x86_fb_authority, expected, audit_checkpoint, &section);
+            if (section.Restart) result = X86_FB_AUDIT_RETRY;
+            else if (verified && pages == x86_scheduler_live_stack_pages_for(section.Pool, owner->Authority.Root) &&
+                budget_matches(owner, owner->Inventory, pages)) result = X86_FB_AUDIT_OK;
+        }
+    }
+    kernel_preempt_section_leave(section.SavedIf);
+    return result;
 }
 
 // ====== x86_fb_live_audit ======
 
-// G5 V1-A: the idle audit. Same expected inventory as a drawing group (the live task stacks
-// added), one full scan, and the same accounting check afterwards.
 int x86_fb_live_audit(X86_FB_MAPPING *owner)
 {
-    X86_PAGING_INVENTORY expected, *original;
-    BOOT_U64 pages;
-
-    if (!prepare(owner, &expected, &pages)) return 0;
-
-    original = owner->Inventory;
-    owner->Inventory = &expected;
-    int audited = x86_fb_audit(owner);
-    owner->Inventory = original;
-    return audited && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
-        budget_matches(owner, original, pages);
+    X86_PAGING_INVENTORY expected;
+    return audit_private(owner, &expected);
 }
 
 // ====== x86_fb_live_group_caret ======

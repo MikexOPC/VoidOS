@@ -126,19 +126,23 @@ void x86_ps2_consume(void)
     X86_PS2_SESSION *owner = x86_ps2_session();
     owner->ConsumerGeneration = x86_scheduler_generation();
     for (;;) {
+        uint64_t saved_if = kernel_preempt_section_enter();
         BOOT_U64 value = pop_private(), decoded;
         int verdict = x86_ps2_fault_poll(owner);
+        if (verdict && !x86_ps2_fault_discard(owner)) kernel_scheduler_fail_stop();
+        if (!verdict && value == KERNEL_PAYLOAD_EMPTY && !(owner->Stop && owner->Quiet)) owner->Ready = 0;
+        kernel_preempt_section_leave(saved_if);
         if (verdict) {
-            if (!x86_ps2_fault_discard(owner)) kernel_scheduler_fail_stop();
             if (!resync_private(owner, verdict)) x86_scheduler_yield();
             continue;
         }
         if (value == KERNEL_PAYLOAD_EMPTY) {
             KERNEL_EVENT_REPLY observed;
             if (owner->Stop && owner->Quiet) break;
-            owner->Ready = 0;
             observed = x86_scheduler_event_request(X86_TASK_OBSERVE,4,0);
+            saved_if = kernel_preempt_section_enter();
             value = pop_private();
+            kernel_preempt_section_leave(saved_if);
             if (value == KERNEL_PAYLOAD_EMPTY) {
                 if (owner->Stop && owner->Quiet) break;
                 (void)x86_scheduler_event_request(X86_TASK_WAIT,4,observed.epoch);
