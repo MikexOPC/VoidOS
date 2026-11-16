@@ -5,6 +5,7 @@
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
 #include "kernel/scheduler/payload.h"
+#include "arch/x86/kernel/scheduler/stacks.h"
 
 static X86_PS2_SESSION owner;
 static KERNEL_MADT_TOPOLOGY topology;
@@ -14,9 +15,10 @@ static BOOT_U32 regs[256], selector, calls, fail, borrowed, checks;
 static unsigned char bytes[256];
 static BOOT_U32 head, size, port_reads, bad_status, pushed, push_result, eoi, eoi_result;
 static BOOT_U32 discard_left, discard_calls;
+static uint32_t task_index;
+static int driver_task_valid;
+static const uint64_t task_rip = X86_KERNEL_IMAGE_BASE + 0x1000;
 static BOOT_U64 discard_tail = KERNEL_PAYLOAD_EMPTY;
-const unsigned char x86_scheduler_irq_compute_begin[1] = {0};
-const unsigned char x86_scheduler_irq_compute_end[1] = {0};
 #define CHECK(e) do { ++checks; assert(e); } while (0)
 
 // ====== checked MMIO and IRQ boundary mocks ======
@@ -60,7 +62,7 @@ BOOT_U32 kernel_scheduler_payload_push(BOOT_U32 event, BOOT_U64 source, BOOT_U64
 }
 int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *mapping, BOOT_U32 vector)
 { (void)mapping; CHECK(vector == 0x41 || vector == 0x42); ++eoi; return (int)eoi_result; }
-uint32_t x86_scheduler_index(void) { return 1; }
+uint32_t x86_scheduler_index(void) { return task_index; }
 uint64_t x86_scheduler_generation(void) { return 7; }
 uint64_t kernel_scheduler_payload_pop(uint32_t event, uint64_t source, uint64_t token,
     uint32_t consumer, uint64_t generation)
@@ -73,9 +75,12 @@ uint64_t kernel_scheduler_payload_pop(uint32_t event, uint64_t source, uint64_t 
     return value;
 }
 int x86_scheduler_task_valid(void) { return 1; }
-int x86_scheduler_driver_task_valid(void) { return x86_scheduler_task_valid(); }
-uint64_t x86_task_stack_base(uint32_t index) { (void)index; return (X86_LAYOUT_WINDOWS_VIRTUAL + 0x150000ULL); }
-int x86_scheduler_code_valid(uint64_t address) { (void)address; return 1; }
+int x86_scheduler_driver_task_valid(void) { return driver_task_valid; }
+uint64_t x86_task_stack_base(uint32_t index)
+{
+    return X86_TASK_STACK_GUARD + ((uint64_t)index * X86_TASK_STACK_STRIDE + 1) * 4096;
+}
+int x86_scheduler_code_valid(uint64_t address) { return address == task_rip; }
 
 static BOOT_U32 line_cleared;
 void kernel_ps2_line_clear(KERNEL_PS2_LINE *line) { (void)line; ++line_cleared; }
@@ -98,6 +103,8 @@ static void reset(void)
     selector = 7; regs[1] = 0x170020; regs[0x12] = 0x10055; regs[0x13] = 0x1000000;
     calls = fail = borrowed = head = size = port_reads = bad_status = pushed = eoi = 0;
     push_result = eoi_result = 1;
+    task_index = 1;
+    driver_task_valid = 1;
 }
 
 // ====== route discovery rejects aliases conflicts and inconsistent capacities ======
@@ -284,11 +291,41 @@ static void mouse_route_tests(void)
     CHECK(!x86_ps2_route_plan_source(&topology,&caps,48,11,&owner.Mouse.Route));
 }
 
+// ====== irq_record_tests ======
+
+static void irq_record_tests(void)
+{
+    reset();
+    owner.Active = 1;
+    for (task_index = 0; task_index < 4; ++task_index) {
+        uint64_t base = x86_task_stack_base(task_index);
+        uint64_t rsp = base + 4096;
+        uint64_t peer_rsp = x86_task_stack_base((task_index + 1) % 4) + 4096;
+        CHECK(x86_ps2_irq_record(X86_PREEMPT_VECTOR, task_rip, rsp, 0x200));
+        CHECK(x86_ps2_irq_record(0x40, task_rip, rsp, 0x200));
+        CHECK(!x86_ps2_irq_record(0x44, task_rip, rsp, 0x200));
+        CHECK(!x86_ps2_irq_record(0x41, task_rip, rsp, 0));
+        CHECK(!x86_ps2_irq_record(0x41, task_rip, rsp, 0x600));
+        CHECK(!x86_ps2_irq_record(0x41, task_rip + 4096, rsp, 0x200));
+        CHECK(!x86_ps2_irq_record(0x41, task_rip, peer_rsp, 0x200));
+        CHECK(!x86_ps2_irq_record(0x41, task_rip, base - 1, 0x200));
+        CHECK(!x86_ps2_irq_record(0x41, task_rip, rsp - 1, 0x200));
+        CHECK(!x86_ps2_irq_record(0x41, task_rip, base + X86_TASK_STACK_BYTES, 0x200));
+        driver_task_valid = 0;
+        CHECK(!x86_ps2_irq_record(0x41, task_rip, rsp, 0x200));
+        driver_task_valid = 1;
+        CHECK(owner.TaskIrqs == 2 * task_index && owner.Mouse.TaskIrqs == task_index);
+        CHECK(x86_ps2_irq_record(0x41, task_rip, rsp, 0x200));
+        CHECK(x86_ps2_irq_record(0x42, task_rip, rsp, 0x200));
+    }
+    CHECK(owner.TaskIrqs == 8 && owner.Mouse.TaskIrqs == 4);
+}
+
 // ====== runtime_host_main ======
 
 int main(void)
 {
-    plan_tests(); route_tests(); mouse_route_tests(); interrupt_tests(); fault_policy_tests();
+    plan_tests(); route_tests(); mouse_route_tests(); interrupt_tests(); fault_policy_tests(); irq_record_tests();
     printf("PASS: PS2 runtime %u checks, actual MADT validator, route/IRQ hardware MOCK\n",checks);
     return 0;
 }

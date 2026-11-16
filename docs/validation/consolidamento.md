@@ -55,6 +55,16 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   da task che partono a IF=0. Ingresso nelle transizioni con IF=1 e
   hardware fisico non provati. [Design](../design/scheduler-produzione.md#3d-1--if-durante-le-transizioni-dello-scheduler).
 
+- **3d-2.** Test host del predicato con frame simulati per i quattro
+  task BSP. Il primo frame valido fuori dalla finestra falliva con il
+  codice 3d-1. Suite host `ps2`, `ps2-mouse`, `scheduler`,
+  `x86-scheduler` e test Meson `plan_parity` superati. Sull'immagine
+  ordinaria Meson con quattro vCPU QEMU TCG, 10/10 boot
+  `--ordinary-shell` e stress di cinque minuti con 52 richieste
+  `bridge status`, uscita pulita, zero sforamenti e zero recuperi HPET.
+  Frame fuori dalla finestra in QEMU e PC fisico non provati.
+  [Design](../design/scheduler-produzione.md#3d-2--ammissione-del-frame-irq-di-un-task-bsp).
+
 ## Build e runner
 
 | Passo | Risultato storico |
