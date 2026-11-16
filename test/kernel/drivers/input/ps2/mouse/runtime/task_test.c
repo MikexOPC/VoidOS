@@ -7,9 +7,25 @@
 #include <string.h>
 
 static X86_PS2_SESSION owner;
+static uint64_t interrupt_flag = 0x200;
 static uint64_t bytes[1024];
 static uint32_t count, offset, yields, checks;
 #define CHECK(expression) do { ++checks; assert(expression); } while (0)
+
+// ====== simulated_preempt_section ======
+
+uint64_t kernel_preempt_section_enter(void)
+{
+    uint64_t saved_if = interrupt_flag;
+    interrupt_flag = 0;
+    return saved_if;
+}
+
+void kernel_preempt_section_leave(uint64_t saved_if)
+{
+    assert(!interrupt_flag && saved_if == 0x200);
+    interrupt_flag = saved_if;
+}
 
 // ====== boundary_mocks ======
 
@@ -18,6 +34,7 @@ uint64_t x86_scheduler_generation(void) { return 11; }
 uint64_t kernel_scheduler_payload_pop(uint32_t event, uint64_t source, uint64_t token,
     uint32_t consumer, uint64_t generation)
 {
+    CHECK(!interrupt_flag);
     CHECK(event == 6 && source == (uint64_t)&owner.Mouse && token == 7 && consumer == 3 && generation == 11);
     if (offset < count) return bytes[offset++];
     owner.Stop = owner.Quiet = 1;
@@ -32,6 +49,7 @@ __declspec(noreturn) void kernel_scheduler_fail_stop(void) { abort(); }
 
 void x86_scheduler_yield(void)
 {
+    CHECK(interrupt_flag == 0x200);
     ++yields;
     if (owner.Stop) owner.Quiet = 1;
 }

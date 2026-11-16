@@ -13,6 +13,8 @@
 _Static_assert(X86_FB_CELL_WIDTH == KERNEL_CONSOLE_CELL_WIDTH && X86_FB_CELL_HEIGHT == KERNEL_CONSOLE_CELL_HEIGHT,
     "Console cell size must match the framebuffer font cell");
 // G5 V1-A: one idle audit per second at most.
+#include "../live/group.h"
+
 #define AUDIT_PERIOD (KERNEL_PM_TIMER_HZ)
 
 // ====== damage_private ======
@@ -401,15 +403,16 @@ int x86_console_audit(X86_PS2_SESSION *session)
 
     if (self->AuditStarted && kernel_counter_delta(session->Clock.Mask, self->AuditLast, now) < AUDIT_PERIOD) return 1;
 
+    int audited = x86_fb_kernel_audit();
+    if (audited == X86_FB_AUDIT_RETRY) return 1;
     self->AuditStarted = 1;
     self->AuditLast = now;
-    int audited = x86_fb_kernel_audit();
     uint32_t spent = elapsed(self, now);
 
     ++self->AuditCount;
     self->AuditTotal += spent;
     if (spent > self->AuditMax) self->AuditMax = spent;
-    if (audited) return 1;
+    if (audited == X86_FB_AUDIT_OK) return 1;
 
     (void)kernel_log(3, "KERNEL_PAGING_AUDIT_FAILED");
     return 0;

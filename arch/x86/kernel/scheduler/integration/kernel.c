@@ -230,9 +230,12 @@ int x86_scheduler_task_valid(void)
 
 int x86_scheduler_driver_task_valid(void)
 {
+    uint64_t saved_if = kernel_preempt_section_enter();
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
-    return local && local->current < 8 && !task_cpus[local->current] && !cpu_private() &&
-        x86_percpu_bsp() && x86_scheduler_task_valid();
+    int valid = local && local->current < X86_TASK_STACK_SLOTS && !task_cpus[local->current] &&
+        !cpu_private() && x86_percpu_bsp() && x86_scheduler_task_valid();
+    kernel_preempt_section_leave(saved_if);
+    return valid;
 }
 
 // ====== x86_scheduler_yield ======

@@ -6,8 +6,24 @@
 static X86_PS2_SESSION session;
 static uint32_t pending, flushes, observes, polls, yields, stop_at, checks;
 static uint32_t injected, failure_stage, reporting;
+static uint64_t interrupt_flag = 0x200;
 static jmp_buf stopped;
 #define CHECK(expression) do { ++checks; assert(expression); } while (0)
+
+// ====== simulated_preempt_section ======
+
+uint64_t kernel_preempt_section_enter(void)
+{
+    uint64_t saved_if = interrupt_flag;
+    interrupt_flag = 0;
+    return saved_if;
+}
+
+void kernel_preempt_section_leave(uint64_t saved_if)
+{
+    assert(!interrupt_flag && saved_if == 0x200);
+    interrupt_flag = saved_if;
+}
 
 // ====== worker_boundary_mocks ======
 
@@ -21,7 +37,7 @@ __declspec(noreturn) void kernel_scheduler_fail_stop(void)
     CHECK(injected != 0);
     longjmp(stopped, 1);
 }
-void x86_scheduler_yield(void) { ++yields; CHECK(yields < 100); }
+void x86_scheduler_yield(void) { CHECK(interrupt_flag == 0x200); ++yields; CHECK(yields < 100); }
 int x86_console_pending(X86_PS2_SESSION *owner)
 { CHECK(owner == &session); return injected == 1 ? -1 : pending != 0; }
 // G5: the idle audit always succeeds here; the audit itself is covered by its own tests.

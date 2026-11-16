@@ -8,9 +8,14 @@
 
 // ====== pop_private ======
 
-static BOOT_U64 pop_private(X86_PS2_MOUSE *mouse)
+static BOOT_U64 pop_private(X86_PS2_SESSION *owner, int reset_ready)
 {
-    return kernel_scheduler_payload_pop(6,(BOOT_U64)mouse,mouse->Binding,3,x86_scheduler_generation());
+    uint64_t saved_if = kernel_preempt_section_enter();
+    X86_PS2_MOUSE *mouse = &owner->Mouse;
+    BOOT_U64 value = kernel_scheduler_payload_pop(6,(BOOT_U64)mouse,mouse->Binding,3,x86_scheduler_generation());
+    if (reset_ready && value == KERNEL_PAYLOAD_EMPTY && !(owner->Stop && owner->Quiet)) owner->Ready = 0;
+    kernel_preempt_section_leave(saved_if);
+    return value;
 }
 
 // ====== delta_private ======
@@ -45,16 +50,15 @@ void x86_ps2_mouse_task(void)
     uint32_t burst = 0;
     mouse->Generation = x86_scheduler_generation();
     for (;;) {
-        BOOT_U64 value = pop_private(mouse);
+        BOOT_U64 value = pop_private(owner, 1);
         KERNEL_PS2_MOUSE_EVENT event;
         KERNEL_PS2_MOUSE_RESULT result;
         if (value == KERNEL_PAYLOAD_EMPTY) {
             burst = 0;
             KERNEL_EVENT_REPLY observed;
             if (owner->Stop && owner->Quiet) break;
-            owner->Ready = 0;
             observed = x86_scheduler_event_request(X86_TASK_OBSERVE,6,0);
-            value = pop_private(mouse);
+            value = pop_private(owner, 0);
             if (value == KERNEL_PAYLOAD_EMPTY) {
                 if (owner->Stop && owner->Quiet) break;
                 (void)x86_scheduler_event_request(X86_TASK_WAIT,6,observed.epoch);

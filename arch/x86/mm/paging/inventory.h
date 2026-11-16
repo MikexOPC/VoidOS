@@ -23,6 +23,8 @@ typedef struct {
     KERNEL_PHYSICAL_LEASE  Tables[X86_PAGING_VIDEO_TABLES];
 } X86_PAGING_VIDEO_AUTH;
 typedef int (*X86_PAGING_VIDEO_CHECK)(const X86_PAGING_VIDEO_AUTH *owner);
+typedef int (*X86_PAGING_CHECKPOINT)(void *context);
+#define X86_PAGING_SCAN_SLICE 128U
 typedef struct {
     BOOT_U64 Root, LeafPages;
     BOOT_U32 Count, Ready;
@@ -63,6 +65,10 @@ int x86_paging_inventory_verify_video(const KERNEL_BOOT_CONTEXT *context,
     const KERNEL_PHYSICAL_ALLOCATOR *pool, const struct X86_LAPIC_MAPPING *lapic,
     const X86_PAGING_VIDEO_AUTH *video, X86_PAGING_VIDEO_CHECK check,
     const X86_PAGING_INVENTORY *inventory);
+int x86_paging_inventory_verify_video_sliced(const KERNEL_BOOT_CONTEXT *context,
+    const KERNEL_PHYSICAL_ALLOCATOR *pool, const struct X86_LAPIC_MAPPING *lapic,
+    const X86_PAGING_VIDEO_AUTH *video, X86_PAGING_VIDEO_CHECK check,
+    const X86_PAGING_INVENTORY *inventory, X86_PAGING_CHECKPOINT checkpoint, void *checkpoint_context);
 // H1-A/H2: paging generation. x86_invalidate_page and every CR3 reload advance it, so any change
 // of the page tables made through the kernel APIs is visible as a new generation.
 extern volatile BOOT_U64 x86_paging_generation_counter;

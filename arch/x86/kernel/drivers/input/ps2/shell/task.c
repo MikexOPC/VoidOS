@@ -84,7 +84,9 @@ void x86_ps2_shell_task(void)
         if (result != KERNEL_PS2_QUEUE_OK) kernel_scheduler_fail_stop();
         (void)event_private(X86_TASK_SIGNAL,6,0);
         if (!owner->Stop) {
+            uint64_t saved_if = kernel_preempt_section_enter();
             KERNEL_PS2_SHELL_STATUS status = {owner->Bytes,owner->Keys,owner->Lines};
+            kernel_preempt_section_leave(saved_if);
             int executed = kernel_ps2_shell_execute(&command,&status);
             if (!executed || owner->ShellCommands == ~0U) kernel_scheduler_fail_stop();
             ++owner->ShellCommands;

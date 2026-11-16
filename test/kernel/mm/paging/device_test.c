@@ -44,6 +44,18 @@ static int video_fixture(void)
     return 1;
 }
 
+typedef struct {
+    BOOT_U32 Calls, StopAt;
+} AUDIT_CHECKPOINT_FIXTURE;
+
+// ====== video_checkpoint ======
+
+static int video_checkpoint(void *opaque)
+{
+    AUDIT_CHECKPOINT_FIXTURE *fixture = opaque;
+    return ++fixture->Calls != fixture->StopAt;
+}
+
 // ====== video_owned ======
 
 int video_owned(void)
@@ -53,6 +65,20 @@ int video_owned(void)
         !x86_paging_inventory_capture_video(&context, &pool, &mapping, &video, video_authority, &ledger) ||
         !x86_paging_inventory_verify_video(&context, &pool, &mapping, &video, video_authority, &ledger) ||
         ledger.Count != 8 || ledger.MmioPages != 4 || ledger.RamPages != 2 || pool.FreePages != 125) return 1;
+    AUDIT_CHECKPOINT_FIXTURE checkpoints = {0};
+    if (!x86_paging_inventory_verify_video_sliced(&context, &pool, &mapping, &video, video_authority,
+            &ledger, video_checkpoint, &checkpoints) || checkpoints.Calls <= ledger.Count * 4) return 13;
+    BOOT_U32 slices = checkpoints.Calls;
+    for (BOOT_U32 stop = 1; stop <= slices; ++stop) {
+        checkpoints = (AUDIT_CHECKPOINT_FIXTURE){0, stop};
+        if (x86_paging_inventory_verify_video_sliced(&context, &pool, &mapping, &video, video_authority,
+                &ledger, video_checkpoint, &checkpoints) || checkpoints.Calls != stop) return 14;
+    }
+    checkpoints = (AUDIT_CHECKPOINT_FIXTURE){0};
+    tables[3][2] = 0x8000000000100003ULL;
+    if (x86_paging_inventory_verify_video_sliced(&context, &pool, &mapping, &video, video_authority,
+            &ledger, video_checkpoint, &checkpoints)) return 15;
+    tables[3][2] = 0;
     for (index = 0; index < 3; ++index) {
         BOOT_U32 record, found = 0;
         for (record = 0; record < ledger.Count; ++record)

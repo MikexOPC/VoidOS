@@ -8,15 +8,43 @@ static KERNEL_PHYSICAL_ALLOCATOR pool, foreign;
 static X86_PAGE_WINDOW window;
 static X86_PAGING_INVENTORY inventory;
 static X86_FB_MAPPING owner;
-static BOOT_U64 pages;
+static BOOT_U64 pages, paging_epoch, interrupt_flag = 0x200;
+static BOOT_U32 change_epoch;
 static BOOT_U32 checks, calls, fail, changed;
 #define CHECK(value) do { ++checks; if (!(value)) { \
     fprintf(stderr, "FAIL live group line %d\n", __LINE__); exit(1); } } while (0)
+
+// ====== audit_boundaries ======
+
+uint64_t kernel_preempt_section_enter(void)
+{
+    uint64_t saved_if = interrupt_flag;
+    interrupt_flag = 0;
+    return saved_if;
+}
+
+void kernel_preempt_section_leave(uint64_t saved_if)
+{
+    CHECK(!interrupt_flag && saved_if == 0x200);
+    interrupt_flag = saved_if;
+}
+
+void x86_scheduler_yield(void)
+{
+    CHECK(interrupt_flag == 0x200 && owner.Inventory == &inventory);
+    if (change_epoch == 1) ++paging_epoch;
+    if (change_epoch == 2) ++pool.Generation;
+}
+
+BOOT_U64 x86_paging_generation(void) { return paging_epoch; }
+
+int x86_fb_authority(const X86_PAGING_VIDEO_AUTH *authority) { return authority == &owner.Authority; }
 
 // ====== x86_scheduler_live_stack_pages_for ======
 
 uint64_t x86_scheduler_live_stack_pages_for(const KERNEL_PHYSICAL_ALLOCATOR *physical, uint64_t root)
 {
+    CHECK(!interrupt_flag);
     return physical == &pool && root == 0x200000 ? pages : UINT64_MAX;
 }
 
@@ -51,12 +79,17 @@ int x86_fb_group_pointer(X86_FB_MAPPING *mapping, BOOT_U32 column, BOOT_U32 row,
 // G5: the audit scans with the live expected inventory (task stacks added) and restores the owner.
 static BOOT_U32 audits, audit_fail;
 
-int x86_fb_audit(X86_FB_MAPPING *mapping)
+int x86_paging_inventory_verify_video_sliced(const KERNEL_BOOT_CONTEXT *boot,
+    const KERNEL_PHYSICAL_ALLOCATOR *physical, const struct X86_LAPIC_MAPPING *lapic,
+    const X86_PAGING_VIDEO_AUTH *authority, X86_PAGING_VIDEO_CHECK check,
+    const X86_PAGING_INVENTORY *expected, X86_PAGING_CHECKPOINT checkpoint, void *cookie)
 {
-    CHECK(mapping == &owner && mapping->Inventory != &inventory);
-    CHECK(mapping->Inventory->LeafPages == inventory.LeafPages + pages);
+    (void)lapic;
+    CHECK(!interrupt_flag && boot == &context && physical == &pool && check(authority));
+    CHECK(owner.Inventory == &inventory && expected != &inventory);
+    CHECK(expected->LeafPages == inventory.LeafPages + pages);
     ++audits;
-    return !audit_fail;
+    return checkpoint(cookie) && !audit_fail;
 }
 
 // ====== setup ======
@@ -119,6 +152,13 @@ int main(void)
     CHECK(x86_fb_live_audit(&owner) && audits == 1 && owner.Inventory == &inventory);
     audit_fail = 1; CHECK(!x86_fb_live_audit(&owner) && audits == 2 && owner.Inventory == &inventory);
     audit_fail = 0; --pool.FreePages; CHECK(!x86_fb_live_audit(&owner));
+    for (change_epoch = 1; change_epoch <= 2; ++change_epoch) {
+        setup(48);
+        CHECK(x86_fb_live_audit(&owner) == X86_FB_AUDIT_RETRY);
+        CHECK(owner.Inventory == &inventory && interrupt_flag == 0x200);
+    }
+    change_epoch = 0;
+    CHECK(x86_fb_live_audit(&owner) == X86_FB_AUDIT_OK);
     // G5 V3: pages declared by a registered holder are subtracted from the budget.
     static KERNEL_HOLDING session;
     setup(48); pool.FreePages -= 7;

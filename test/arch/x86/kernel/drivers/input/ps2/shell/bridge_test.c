@@ -36,6 +36,8 @@ static KERNEL_LOCK_CONTEXT lock_context;
 
 uint64_t ks_irq_save(void) { assert(!irq_saved); irq_saved = 1; return 512; }
 void ks_irq_restore(uint64_t saved_if) { assert(irq_saved && saved_if == 512 && !lock_held); irq_saved = 0; }
+uint64_t kernel_preempt_section_enter(void) { return ks_irq_save(); }
+void kernel_preempt_section_leave(uint64_t saved_if) { ks_irq_restore(saved_if); }
 KERNEL_LOCK_CONTEXT *kernel_lock_current_context(void) { assert(irq_saved); return &lock_context; }
 
 int kernel_lock_acquire(KERNEL_LOCK *lock, KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard)
@@ -53,7 +55,7 @@ int kernel_lock_release(KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard)
 }
 int kernel_log(unsigned level, const char *text) { (void)level; (void)text; return 1; }
 int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2_SHELL_STATUS *status)
-{ assert(actor == 2 && command->Line.Length == 4 && status); return 1; }
+{ assert(actor == 2 && command->Line.Length == 4 && status && !irq_saved); return 1; }
 void x86_scheduler_yield(void) { }
 KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uint64_t token)
 {
