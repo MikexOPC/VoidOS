@@ -269,7 +269,19 @@ Prove sull'immagine `ordinary` Meson con la 3c completa:
   IRQ dopo aver salvato il contesto e ripristina IF dopo averlo ricostruito.
   La sospensione da IRQ continua a ripristinare i flag tramite il ritorno
   dall'interrupt. Riferimento: Intel SDM Vol. 3A, §7.8.1.
-- Nell'immagine ordinaria i task partono ancora a IF=0. Il predicato di
-  `x86_ps2_irq_record` resta limitato alla finestra di attesa. Estensione
-  del predicato, verifica dei dati condivisi e avvio dei task con IF=1
-  appartengono rispettivamente a 3d-2, 3d-3 e 3d-4.
+- Al termine della 3d-1 i task ordinari partono a IF=0. Sono successivi
+  l'estensione del predicato IRQ, la verifica dei dati condivisi e
+  l'avvio dei task con IF=1.
+
+### 3d-2 — Ammissione del frame IRQ di un task BSP
+
+Nell'immagine ordinaria `x86_ps2_irq_record` usa il task BSP corrente.
+Accetta i frame con IF=1 e DF=0 per i vettori già supportati. Il RIP deve
+puntare a una pagina di codice del kernel eseguibile in supervisore.
+L'RSP deve stare nello stack del task corrente, con una pagina di margine
+sopra la base mappata. La guard page è sotto quella base. Il predicato non
+dipende più dall'indice 1 né dagli indirizzi della finestra di attesa.
+
+I profili diagnostici del timer fuori dalla sessione PS/2 usano i loro
+predicati per finestra. I task ordinari partono ancora a IF=0. La 3d-3
+verifica i dati condivisi con gli handler e la 3d-4 abilita IF all'avvio.

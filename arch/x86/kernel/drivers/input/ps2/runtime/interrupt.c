@@ -5,7 +5,6 @@
 #ifdef KERNEL_AP_TASKS
 #include "arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.h"
 #endif
-extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_compute_end[];
 
 // ====== drain_private ======
 
@@ -106,10 +105,9 @@ int x86_ps2_irq_record(BOOT_U64 vector, BOOT_U64 rip, BOOT_U64 rsp, BOOT_U64 fla
 #ifdef KERNEL_AP_TASKS
     accepted |= vector == XCN_VECTOR;
 #endif
-    if (!accepted || x86_scheduler_index() != 1 ||
-        !x86_scheduler_driver_task_valid() || !(flags & 512) || (flags & 1024) ||
-        rip < (BOOT_U64)x86_scheduler_irq_compute_begin || rip >= (BOOT_U64)x86_scheduler_irq_compute_end ||
-        rsp < x86_task_stack_base(1) + 4096 || rsp >= x86_task_stack_base(1) + 65536 ||
+    if (!accepted || (flags & 0x600) != 0x200 || !x86_scheduler_driver_task_valid()) return 0;
+    BOOT_U64 base = x86_task_stack_base(x86_scheduler_index());
+    if (rsp < base + 4096 || rsp >= base + X86_TASK_STACK_BYTES ||
         !x86_scheduler_code_valid(rip) || owner->TaskIrqs == ~0U) return 0;
     if (vector == 0x42) {
         if (owner->Mouse.TaskIrqs == UINT32_MAX) return 0;
