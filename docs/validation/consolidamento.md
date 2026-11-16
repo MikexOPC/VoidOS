@@ -46,6 +46,14 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   un soak VirtIO/VT-d di 301 s. Il comando `ap` resta della shell
   separata e i driver restano sul BSP.
   [Report K4-C](../../kernel/scheduler/documentation/validation.md).
+- **3d-1.** Sull'immagine ordinaria Meson, QEMU TCG con quattro vCPU:
+  10/10 boot di `--ordinary-shell` e un `--ordinary-soak 30` con
+  311 richieste `bridge status`, uscita della shell e rilascio delle
+  risorse confermati. Sforamenti della preemption e recuperi HPET: zero.
+  Suite host superate: watchdog, kernel, scheduler, x86-scheduler, ps2,
+  ps2-mouse, console, build-plan. Il boot ordinario esercita le transizioni
+  da task che partono a IF=0. Ingresso nelle transizioni con IF=1 e
+  hardware fisico non provati. [Design](../design/scheduler-produzione.md#3d-1--if-durante-le-transizioni-dello-scheduler).
 
 ## Build e runner
 

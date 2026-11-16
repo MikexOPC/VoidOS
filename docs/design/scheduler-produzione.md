@@ -256,6 +256,20 @@ Prove sull'immagine `ordinary` Meson con la 3c completa:
   non lo hanno riprodotto. Si ricontrolla nelle campagne lunghe della 3e.
 - Non provato su hardware fisico.
 
-Per la 3d: con IF=1 nei task, cambio di contesto, chiamate al core e
-sezioni dei driver devono restare a IF=0; `x86_ps2_irq_record` va allargata
-a tutto il codice dei task.
+### 3d-1 — IF durante le transizioni dello scheduler
+
+- `kernel_preempt_section_enter/leave` salva e ripristina solo IF, usando
+  il backend IRQ dei lock. L'ingresso annidato salva IF=0 e lascia gli
+  interrupt spenti fino all'uscita dalla sezione esterna.
+- Yield e richieste di evento disabilitano gli interrupt prima di leggere
+  lo stato del dispatcher. Il task ripristina IF dopo la ripresa e la
+  verifica del contesto, dopo aver acquisito anche la risposta per gli
+  eventi. L'uscita del task consegna il controllo al dispatcher a IF=0.
+- La routine di attesa conserva IF sullo stack del task. Apre la finestra
+  IRQ dopo aver salvato il contesto e ripristina IF dopo averlo ricostruito.
+  La sospensione da IRQ continua a ripristinare i flag tramite il ritorno
+  dall'interrupt. Riferimento: Intel SDM Vol. 3A, §7.8.1.
+- Nell'immagine ordinaria i task partono ancora a IF=0. Il predicato di
+  `x86_ps2_irq_record` resta limitato alla finestra di attesa. Estensione
+  del predicato, verifica dei dati condivisi e avvio dei task con IF=1
+  appartengono rispettivamente a 3d-2, 3d-3 e 3d-4.

@@ -47,6 +47,9 @@ _Static_assert(sizeof(KERNEL_LOCK) == 32 && offsetof(KERNEL_LOCK, Next) == 8, "T
 _Static_assert(sizeof(KERNEL_LOCK_FRAME) == 48 && sizeof(KERNEL_LOCK_CONTEXT) == 416, "Per-CPU lock context ABI");
 _Static_assert(sizeof(KERNEL_LOCK_GUARD) == 48 && sizeof(KERNEL_LOCK_WAIT) == 32, "Lock guard ABI");
 
+uint64_t kernel_preempt_section_enter(void);
+void kernel_preempt_section_leave(uint64_t saved_if);
+
 int kernel_lock_initialize(KERNEL_LOCK *lock, uint32_t rank);
 int kernel_lock_context_initialize(KERNEL_LOCK_CONTEXT *context, const KERNEL_LOCK_WAIT *wait);
 int kernel_lock_context_bind_wait(KERNEL_LOCK_CONTEXT *context, const KERNEL_LOCK_WAIT *wait);

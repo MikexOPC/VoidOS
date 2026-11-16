@@ -1,5 +1,19 @@
 #include "internal.h"
 
+// ====== kernel_preempt_section_enter ======
+
+uint64_t kernel_preempt_section_enter(void)
+{
+    return ks_irq_save();
+}
+
+// ====== kernel_preempt_section_leave ======
+
+void kernel_preempt_section_leave(uint64_t saved_if)
+{
+    ks_irq_restore(saved_if);
+}
+
 // ====== ks_span ======
 
 int ks_span(const void *object, size_t bytes) {
