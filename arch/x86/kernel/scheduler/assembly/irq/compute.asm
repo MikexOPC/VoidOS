@@ -30,8 +30,9 @@ x86_scheduler_irq_poll PROC
     jnz rejected
     pushfq
     pop rax
-    test eax, 600h
+    test eax, 400h
     jnz rejected
+    cli
     push rbx
     push rbp
     push rsi
@@ -41,6 +42,7 @@ x86_scheduler_irq_poll PROC
     push r14
     push r15
     sub rsp, 1608
+    mov [rsp+1568], eax
     mov [rsp+1584], rcx
     mov [rsp+1592], edx
     mov [rsp+1596], r8d
@@ -128,6 +130,7 @@ corrupted:
 restored:
     fxrstor64 [rsp+32]
     mov eax, [rsp+1576]
+    mov edx, [rsp+1568]
     add rsp, 1608
     pop r15
     pop r14
@@ -137,6 +140,10 @@ restored:
     pop rsi
     pop rbp
     pop rbx
+    test edx, 200h
+    jz return_poll
+    sti
+return_poll:
     ret
 rejected:
     xor eax, eax

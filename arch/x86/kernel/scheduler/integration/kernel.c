@@ -6,6 +6,7 @@
 #include "../diagnostic/profiles.h"
 #include "kernel/scheduler/kernel.h"
 #include "kernel/scheduler/scheduler.h"
+#include "kernel/sync/lock.h"
 #include "kernel/diagnostics/log.h"
 #include "arch/x86/kernel/cpu/percpu/resources/geometry.h"
 #if KERNEL_TEST_AP_SERVICE == 9
@@ -238,6 +239,7 @@ int x86_scheduler_driver_task_valid(void)
 
 void x86_scheduler_yield(void)
 {
+    uint64_t saved_if = kernel_preempt_section_enter();
     X86_SCHEDULER_LOCAL *local = local_private();
     uint32_t index = local->current;
     uint64_t gen = local->generation;
@@ -248,6 +250,7 @@ void x86_scheduler_yield(void)
     local = local_private();
     if (!x86_scheduler_task_valid() || local->current != index || local->generation != gen || local->event)
         kernel_scheduler_fail_stop();
+    kernel_preempt_section_leave(saved_if);
 }
 
 // ====== suspend_private ======
@@ -283,6 +286,7 @@ void x86_scheduler_tick_suspend(void)
 
 KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uint64_t token)
 {
+    uint64_t saved_if = kernel_preempt_section_enter();
     X86_SCHEDULER_LOCAL *local = local_private();
     uint32_t index = local->current;
     uint64_t gen = local->generation;
@@ -296,7 +300,9 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
         event_replies[index].reply.status != KERNEL_SCHEDULER_OK ||
         event_replies[index].reply.index != (reason >= 6 ? id : index) ||
         event_replies[index].reply.generation != (reason >= 6 ? token : gen)) kernel_scheduler_fail_stop();
-    return event_replies[index];
+    KERNEL_EVENT_REPLY reply = event_replies[index];
+    kernel_preempt_section_leave(saved_if);
+    return reply;
 }
 
 // ====== x86_scheduler_task_start ======
@@ -317,6 +323,7 @@ void x86_scheduler_task_start(void)
 
 __declspec(noreturn) void x86_scheduler_exit(void)
 {
+    (void)kernel_preempt_section_enter();
     X86_SCHEDULER_LOCAL *local = local_private();
     if (!x86_scheduler_task_valid() || local->event || !dispatcher_resume_private()) kernel_scheduler_fail_stop();
     local->event = X86_TASK_EXIT;
