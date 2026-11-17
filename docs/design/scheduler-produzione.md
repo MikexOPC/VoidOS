@@ -315,5 +315,21 @@ predicati per finestra. I task ordinari partono ancora a IF=0.
   e allocatore. L'inventario atteso rimane privato sullo stack del
   worker. Se cambia una generazione, l'audit scarta la scansione e
   la riavvia alla successiva occasione di inattività. Una violazione
-  a generazione stabile resta un errore terminale. L'avvio dei task
-  a IF=1 e la prova degli IRQ fuori finestra appartengono alla 3d-4.
+  a generazione stabile resta un errore terminale.
+
+### 3d-4 — Preemption fuori dalla finestra di attesa
+
+- Nel percorso BSP che combina la sessione PS/2 e i processi utente,
+  il bootstrap verifica task, stack ed entry point a IF=0 e abilita
+  gli IRQ prima di chiamare il task. Yield, eventi e uscita usano
+  le sezioni critiche della 3d-1. La sospensione dal timer ripristina
+  IF con il ritorno dal frame IRQ.
+- `KERNEL_PREEMPT_OUTSIDE_WINDOW` conta le sospensioni quando il
+  RIP salvato dal timer è fuori dall'intervallo della finestra di
+  attesa. `KERNEL_PREEMPT_SUSPENDED` include entrambi i percorsi.
+  Il runner applicherà i gate ai contatori nella 3e.
+- La console riporta in `KERNEL_PAGING_AUDIT_MASKED_MAX_PM` il
+  massimo campionato dal PM timer nelle singole porzioni di audit
+  a IF=0. Il tempo totale dell'audit include anche i cambi di task.
+- I task degli AP e i profili PS/2 senza processi utente conservano
+  l'avvio a IF=0. La prova di preemption riguarda il BSP.

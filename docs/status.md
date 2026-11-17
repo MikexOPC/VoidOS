@@ -1,4 +1,4 @@
-# Stato di VoidOS — 15 novembre 2026
+# Stato di VoidOS — 16 novembre 2026
 
 ## Immagine ordinaria (`ordinary`, Meson)
 
@@ -8,9 +8,8 @@
 - In QEMU con quattro vCPU, il core di avvio (BSP) avvia tre core secondari
   (AP). Tutti e tre rispondono al PING inter-CPU e attendono parcheggiati.
   Lo scheduler gestisce la sessione PS/2 sul BSP con un timer di preemption
-  da 10 ms (vettore D1h). Fino alla task 3d i task hanno gli interrupt
-  spenti fuori dalla finestra di attesa, quindi la preemption sospende solo
-  task in attesa.
+  da 10 ms (vettore D1h). I task della sessione partono con gli interrupt
+  attivi e il timer li sospende anche fuori dalla finestra di attesa.
 - Con SMEP e SMAP disponibili, il BSP esegue un ELF Rust incorporato in
   ring 3 con tabelle di paging dedicate. Il programma stampa via syscall,
   termina e viene rilasciato prima di `KERNEL_READY`. UMIP viene abilitato
@@ -37,9 +36,12 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 - Shell e processo utente convivono in `ordinary`. Il dispatcher gira a
   sessioni sul BSP e l'idle finale non ospita servizi. Manca la preemption
-  ordinaria sugli AP e nel codice dei task (task 3d). Restano limiti fissi di otto task
-  e quattro sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è un solo
+  ordinaria sugli AP. La 3e deve applicare i gate ai contatori del runner
+  e rieseguire le campagne. Restano limiti fissi di otto task e quattro
+  sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è un solo
   processo attivo alla volta.
+- Nel soak della 3d-4 una porzione dell'audit a IRQ spenti ha misurato
+  18,7 ms. Il quanto nominale da 10 ms non garantisce quella latenza.
 - Mancano driver a blocchi, VFS, filesystem del kernel ed esecuzione di ELF
   da file. La lettura dell'ELF del kernel avviene nel loader tramite UEFI.
 - Mancano sorgente di entropia e stack canary del kernel. W^X per sezione

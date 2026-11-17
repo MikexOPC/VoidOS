@@ -403,7 +403,9 @@ int x86_console_audit(X86_PS2_SESSION *session)
 
     if (self->AuditStarted && kernel_counter_delta(session->Clock.Mask, self->AuditLast, now) < AUDIT_PERIOD) return 1;
 
-    int audited = x86_fb_kernel_audit();
+    BOOT_U32 masked;
+    int audited = x86_fb_kernel_audit(&session->Clock, &masked);
+    if (audited != X86_FB_AUDIT_FAILED && masked > self->AuditMaskedMax) self->AuditMaskedMax = masked;
     if (audited == X86_FB_AUDIT_RETRY) return 1;
     self->AuditStarted = 1;
     self->AuditLast = now;
@@ -543,6 +545,7 @@ int x86_console_finish(X86_PS2_SESSION *session)
         kernel_text("\nKERNEL_PAGING_AUDITS: ") && kernel_number(self->AuditCount) &&
         kernel_text("\nKERNEL_PAGING_AUDIT_TOTAL_PM: ") && kernel_number(self->AuditTotal) &&
         kernel_text("\nKERNEL_PAGING_AUDIT_MAX_PM: ") && kernel_number(self->AuditMax) &&
+        kernel_text("\nKERNEL_PAGING_AUDIT_MASKED_MAX_PM: ") && kernel_number(self->AuditMaskedMax) &&
         kernel_text("\n") &&
 #ifdef KERNEL_PROFILE_VGPU_FLUSH
         x86_profile_report() &&

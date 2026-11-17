@@ -316,6 +316,11 @@ void x86_scheduler_task_start(void)
     X86_TASK_ENTRY entry = local->current < 8 ? task_entries[local->current] : NULL;
     if (!x86_scheduler_task_valid() || local->event || !entry || !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry))
         kernel_scheduler_fail_stop();
+#if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
+    if (irq_profile == 5 && !cpu_private()
+    )
+        kernel_preempt_section_leave(0x200);
+#endif
     entry(local->current);
 #if !defined(KERNEL_TEST_SCHEDULER_FAULT) || KERNEL_TEST_SCHEDULER_FAULT != 6
     x86_scheduler_exit();

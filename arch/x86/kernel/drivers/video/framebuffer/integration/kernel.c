@@ -20,10 +20,10 @@ static X86_FB_MAPPING mapping;
 // ====== x86_fb_kernel_audit ======
 
 #ifdef KERNEL_CONSOLE_SHELL
-int x86_fb_kernel_audit(void)
+int x86_fb_kernel_audit(const X86_PM_CLOCK *clock, BOOT_U32 *max_masked)
 {
     if (!x86_scheduler_driver_task_valid() || x86_scheduler_index() != 1) return 0;
-    return x86_fb_live_audit(&mapping);
+    return x86_fb_live_audit(&mapping, clock, max_masked);
 }
 #endif
 
