@@ -9,6 +9,8 @@
 #include "arch/x86/kernel/timer/lapic/runtime/runtime.h"
 #include "arch/x86/mm/devices/lapic.h"
 
+extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_compute_end[];
+
 #define PREEMPT_LVT     (X86_LVT_TIMER_PERIODIC | X86_PREEMPT_VECTOR)
 #define STOPPED_LVT     0x10041U
 #define PREEMPT_DIVIDE  3U
@@ -24,7 +26,7 @@ static struct {
     X86_IRQ_TOKEN           Token;
     KERNEL_PREEMPT_STATE    Policy;
     BOOT_U64                Ticks;
-    BOOT_U64                Pauses;
+    BOOT_U64                Pauses, OutsideWindow;
     BOOT_U32                Open;
     BOOT_U32                Running;
     BOOT_U32                Lvt;
@@ -166,7 +168,18 @@ void x86_preempt_after(const X86_IRQ_FRAME *frame)
     input.lock_depth = locks ? locks->Depth : 1;
     input.line_open = (uint32_t)kernel_log_line_open();
     input.slice_over = input.task != 0;
-    if (kernel_preempt_decide(&preempt.Policy,&input) == KERNEL_PREEMPT_SUSPEND) x86_scheduler_tick_suspend();
+    if (kernel_preempt_decide(&preempt.Policy,&input) != KERNEL_PREEMPT_SUSPEND
+    )
+        return;
+
+    if ((frame->Rip < (BOOT_U64)x86_scheduler_irq_compute_begin ||
+         frame->Rip >= (BOOT_U64)x86_scheduler_irq_compute_end) &&
+        preempt.OutsideWindow != UINT64_MAX
+    )
+        ++preempt.OutsideWindow;
+
+
+    x86_scheduler_tick_suspend();
 }
 
 // ====== x86_preempt_close ======
@@ -188,6 +201,7 @@ int x86_preempt_close(void)
     preempt.Timer = 0;
     return kernel_text("KERNEL_PREEMPT_TICKS: ") && kernel_number(preempt.Ticks) &&
         kernel_text("\nKERNEL_PREEMPT_SUSPENDED: ") && kernel_number(policy->preempted) &&
+        kernel_text("\nKERNEL_PREEMPT_OUTSIDE_WINDOW: ") && kernel_number(preempt.OutsideWindow) &&
         kernel_text("\nKERNEL_PREEMPT_IGNORED: ") && kernel_number(policy->ignored) &&
         kernel_text("\nKERNEL_PREEMPT_DEFERRED_LINE: ") && kernel_number(policy->deferred_line) &&
         kernel_text("\nKERNEL_PREEMPT_OVERRUNS: ") && kernel_number(policy->overruns) &&

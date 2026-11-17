@@ -9,7 +9,8 @@ static X86_PAGE_WINDOW window;
 static X86_PAGING_INVENTORY inventory;
 static X86_FB_MAPPING owner;
 static BOOT_U64 pages, paging_epoch, interrupt_flag = 0x200;
-static BOOT_U32 change_epoch;
+static BOOT_U32 change_epoch, pm_counter;
+static const X86_PM_CLOCK clock = {.Port = 7, .Mask = 0xffffff, .Ready = 1};
 static BOOT_U32 checks, calls, fail, changed;
 #define CHECK(value) do { ++checks; if (!(value)) { \
     fprintf(stderr, "FAIL live group line %d\n", __LINE__); exit(1); } } while (0)
@@ -32,9 +33,21 @@ void kernel_preempt_section_leave(uint64_t saved_if)
 void x86_scheduler_yield(void)
 {
     CHECK(interrupt_flag == 0x200 && owner.Inventory == &inventory);
+    pm_counter += 1000;
     if (change_epoch == 1) ++paging_epoch;
     if (change_epoch == 2) ++pool.Generation;
 }
+
+// ====== x86_pm_read ======
+
+BOOT_U32 x86_pm_read(unsigned short port)
+{
+    CHECK(!interrupt_flag && port == clock.Port);
+    pm_counter += 13;
+    return pm_counter;
+}
+
+// ====== x86_paging_generation ======
 
 BOOT_U64 x86_paging_generation(void) { return paging_epoch; }
 
@@ -115,6 +128,16 @@ static int run(void)
     return result;
 }
 
+// ====== run_audit ======
+
+static int run_audit(void)
+{
+    BOOT_U32 max_masked = 0;
+    int result = x86_fb_live_audit(&owner, &clock, &max_masked);
+    CHECK(max_masked == 13);
+    return result;
+}
+
 // ====== main ======
 
 int main(void)
@@ -149,28 +172,28 @@ int main(void)
     }
     // G5 V1-A: the idle audit uses the same expected inventory and accounting as a group.
     setup(48); audits = audit_fail = 0;
-    CHECK(x86_fb_live_audit(&owner) && audits == 1 && owner.Inventory == &inventory);
-    audit_fail = 1; CHECK(!x86_fb_live_audit(&owner) && audits == 2 && owner.Inventory == &inventory);
-    audit_fail = 0; --pool.FreePages; CHECK(!x86_fb_live_audit(&owner));
+    CHECK(run_audit() && audits == 1 && owner.Inventory == &inventory);
+    audit_fail = 1; CHECK(!run_audit() && audits == 2 && owner.Inventory == &inventory);
+    audit_fail = 0; --pool.FreePages; CHECK(!run_audit());
     for (change_epoch = 1; change_epoch <= 2; ++change_epoch) {
         setup(48);
-        CHECK(x86_fb_live_audit(&owner) == X86_FB_AUDIT_RETRY);
+        CHECK(run_audit() == X86_FB_AUDIT_RETRY);
         CHECK(owner.Inventory == &inventory && interrupt_flag == 0x200);
     }
     change_epoch = 0;
-    CHECK(x86_fb_live_audit(&owner) == X86_FB_AUDIT_OK);
+    CHECK(run_audit() == X86_FB_AUDIT_OK);
     // G5 V3: pages declared by a registered holder are subtracted from the budget.
     static KERNEL_HOLDING session;
     setup(48); pool.FreePages -= 7;
-    CHECK(!x86_fb_live_audit(&owner) && kernel_holdings_register(&session, 7) && x86_fb_live_audit(&owner));
-    CHECK(kernel_holdings_total() == 7 && kernel_holdings_update(&session, 9) && !x86_fb_live_audit(&owner));
-    CHECK(kernel_holdings_update(&session, 7) && x86_fb_live_audit(&owner));
+    CHECK(!run_audit() && kernel_holdings_register(&session, 7) && run_audit());
+    CHECK(kernel_holdings_total() == 7 && kernel_holdings_update(&session, 9) && !run_audit());
+    CHECK(kernel_holdings_update(&session, 7) && run_audit());
     CHECK(!kernel_holdings_register(&session, 1) && kernel_holdings_unregister(&session) && !kernel_holdings_unregister(&session));
-    CHECK(kernel_holdings_total() == 0 && !x86_fb_live_audit(&owner));
+    CHECK(kernel_holdings_total() == 0 && !run_audit());
     setup(48); inventory.Gpu.Ready = 1; pool.FreePages -= X86_GPU_TABLES - 1;
     CHECK(kernel_holdings_register(&session, 7));
     session.Self = 0;
-    CHECK(kernel_holdings_total() == UINT64_MAX && !x86_fb_live_audit(&owner) && !run() && !calls);
+    CHECK(kernel_holdings_total() == UINT64_MAX && !run_audit() && !run() && !calls);
     CHECK(kernel_holdings_unregister(&session));
     printf("PASS live group: %u checks; authority/CPU/paging MOCK; scoped snapshot restored\n", checks);
     return 0;

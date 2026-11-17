@@ -79,6 +79,26 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   hardware fisico non verificati.
   [Design](../design/scheduler-produzione.md#3d-3--dati-condivisi-con-gli-irq).
 
+- **3d-4.** Otto suite host superate, `plan_parity` 1/1 e test del
+  runner 2/2. Dopo la correzione del testo di stato della shell, suite
+  PS/2 e mouse ripetute con esito positivo. Sull'ELF ordinario finale
+  `70E4E885D943F6C0BE0CEA6F5ACB7E521AC1E285316E2102C6D627AF8546241F`,
+  QEMU TCG con quattro vCPU: 10/10 boot della shell, con 122–147
+  sospensioni fuori finestra per boot e zero sforamenti. Un boot
+  interattivo verifica mouse, cancellazione, job su AP1 e budget
+  finale invariato. La prima esecuzione falliva perché il test
+  richiedeva almeno un'attesa anche con risultato AP già disponibile.
+  Rimosso quel vincolo, mantenuti i controlli del risultato e cleanup.
+  Soak di 30 minuti passato: 310 richieste al bridge, 11.186 sospensioni
+  fuori finestra, 372 audit, zero sforamenti e zero recuperi HPET,
+  uscita pulita. Massimo misurato di una porzione audit a IF=0:
+  66.951 tick PM, circa 18,7 ms. Il dato supera il quanto nominale
+  di 10 ms e non dimostra un limite massimo di latenza. Il contatore
+  degli sforamenti riguarda il rinvio per riga seriale aperta.
+  `paging-tamper` 3/3 su profilo diagnostico. Hardware fisico
+  e preemption ordinaria degli AP non provati.
+  [Design](../design/scheduler-produzione.md#3d-4--preemption-fuori-dalla-finestra-di-attesa).
+
 ## Build e runner
 
 | Passo | Risultato storico |

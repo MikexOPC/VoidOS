@@ -310,7 +310,7 @@ def boot(image, out, index, iommu=False, absent=False, fallbacks=0, presenting=T
                 Waits=answer.number('SHELL_AP_WAITS'))
             check = 0xcbf29ce484222325
             for value in range(1,1001): check = ((check ^ value) * 0x100000001b3) & (2**64 - 1)
-            if remote != dict(remote,Cpu=1,Count=1000,Sum=500500,Checksum=check) or remote['Waits'] < 1:
+            if remote != dict(remote,Cpu=1,Count=1000,Sum=500500,Checksum=check):
                 raise RuntimeError('AP task result differs: '+str(remote))
         log = exit_input(vm)
         if remote is not None and (not log.has('KERNEL_AP_TASKS_CLEAN') or log.number('KERNEL_AP_TASK_JOBS') != 1):

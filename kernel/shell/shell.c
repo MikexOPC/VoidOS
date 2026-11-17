@@ -131,7 +131,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | ap <n> | exit");
     if (kind == 2) return TEXT("SHELL_ECHO: ") &&
         kernel_ps2_shell_write(line->Data + argument,line->Length - argument) && TEXT("\n");
-    if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, cooperative, kernel tasks") &&
+    if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, kernel tasks") &&
         TEXT("SHELL_INPUT_BYTES: ") && number_private(status->Bytes) &&
         TEXT("\nSHELL_INPUT_KEYS: ") && number_private(status->Keys) &&
         TEXT("\nSHELL_INPUT_LINES: ") && number_private(status->Lines) && TEXT("\n");

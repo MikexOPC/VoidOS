@@ -147,7 +147,7 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     shell_type(vm, "exit");
     let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
     if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 ||
-        !log.text.contains("SHELL_STATUS: BSP PS2, cooperative, kernel tasks") ||
+        !log.text.contains("SHELL_STATUS: BSP PS2, kernel tasks") ||
         !log.before("SHELL_EXIT_REQUEST", "KERNEL_PS2_INPUT_CLEANUP_OK") ||
         !log.before("KERNEL_PS2_INPUT_CLEANUP_OK", "KERNEL_READY") {
         return Err("The input session did not clean up".to_string());

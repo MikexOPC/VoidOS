@@ -13,8 +13,8 @@
 // instance (X86_PS2_SESSION.Console) and every entry point reaches it from there.
 // Context: open and finish run in the session setup and teardown; edit and submit in task 0
 // (consumer) and the shell output in task 2, which only queue text and wake task 1; flush,
-// pending and audit in task 1 (worker); mouse in task 3. The tasks are cooperative on one CPU and
-// only task 1 draws. Text requests use the K4-C5 queue; mouse remains BSP-only.
+// pending and audit in task 1 (worker); mouse in task 3. The tasks run on the BSP and
+// only task 1 draws. Text requests use the K4-C5 queue.
 typedef struct X86_CONSOLE {
     KERNEL_LOCK                 PointerLock;
     X86_PS2_SESSION             *Source;
@@ -34,7 +34,7 @@ typedef struct X86_CONSOLE {
     uint32_t                    FlushMax;
     // G5 V1-A: idle audits of the paging inventory, at most one per second.
     uint64_t                    AuditCount, AuditTotal;
-    uint32_t                    AuditMax, AuditLast, AuditStarted, Tampered;
+    uint32_t                    AuditMax, AuditMaskedMax, AuditLast, AuditStarted, Tampered;
     // V2c Z2-A: cells drawn since the last present, one envelope (lib/geometry, Limit 1).
     OS_DAMAGE                   Damage;
     uint32_t                    PointerX, PointerY, PointerSeen;

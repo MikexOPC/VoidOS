@@ -8,7 +8,9 @@
 
 typedef struct {
     const KERNEL_PHYSICAL_ALLOCATOR *Pool;
+    const X86_PM_CLOCK *Clock;
     BOOT_U64 SavedIf, PagingGeneration, PoolGeneration;
+    BOOT_U32 Start, MaxMasked;
     int Restart;
 } X86_FB_AUDIT_SECTION;
 
@@ -71,15 +73,27 @@ int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 r
     return result;
 }
 
+// ====== audit_sample ======
+
+static void audit_sample(X86_FB_AUDIT_SECTION *section) {
+    BOOT_U32 now = x86_pm_read((unsigned short)section->Clock->Port);
+    BOOT_U32 spent = (now - section->Start) & section->Clock->Mask;
+    if (spent > section->MaxMasked
+    )
+        section->MaxMasked = spent;
+}
+
 // ====== audit_checkpoint ======
 
 static int audit_checkpoint(void *opaque)
 {
     X86_FB_AUDIT_SECTION *section = opaque;
     BOOT_U64 generation;
+    audit_sample(section);
     kernel_preempt_section_leave(section->SavedIf);
     x86_scheduler_yield();
     section->SavedIf = kernel_preempt_section_enter();
+    section->Start = x86_pm_read((unsigned short)section->Clock->Port);
     if (!kernel_physical_generation_read(section->Pool, &generation)) return 0;
     section->Restart = x86_paging_generation() != section->PagingGeneration ||
         generation != section->PoolGeneration;
@@ -88,13 +102,16 @@ static int audit_checkpoint(void *opaque)
 
 // ====== audit_private ======
 
-static __declspec(noinline) int audit_private(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected)
+static __declspec(noinline) int audit_private(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected,
+    const X86_PM_CLOCK *clock, BOOT_U32 *max_masked)
 {
     X86_FB_AUDIT_SECTION section = {0};
     BOOT_U64 pages;
     int result = X86_FB_AUDIT_FAILED;
 
+    section.Clock = clock;
     section.SavedIf = kernel_preempt_section_enter();
+    section.Start = x86_pm_read((unsigned short)clock->Port);
     if (prepare(owner, expected, &pages)) {
         section.Pool = owner->Window->Pool;
         section.PagingGeneration = x86_paging_generation();
@@ -106,16 +123,18 @@ static __declspec(noinline) int audit_private(X86_FB_MAPPING *owner, X86_PAGING_
                 budget_matches(owner, owner->Inventory, pages)) result = X86_FB_AUDIT_OK;
         }
     }
+    audit_sample(&section);
     kernel_preempt_section_leave(section.SavedIf);
+    *max_masked = section.MaxMasked;
     return result;
 }
 
 // ====== x86_fb_live_audit ======
 
-int x86_fb_live_audit(X86_FB_MAPPING *owner)
+int x86_fb_live_audit(X86_FB_MAPPING *owner, const X86_PM_CLOCK *clock, BOOT_U32 *max_masked)
 {
     X86_PAGING_INVENTORY expected;
-    return audit_private(owner, &expected);
+    return audit_private(owner, &expected, clock, max_masked);
 }
 
 // ====== x86_fb_live_group_caret ======
