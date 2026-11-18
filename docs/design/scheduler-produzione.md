@@ -327,9 +327,31 @@ predicati per finestra. I task ordinari partono ancora a IF=0.
 - `KERNEL_PREEMPT_OUTSIDE_WINDOW` conta le sospensioni quando il
   RIP salvato dal timer è fuori dall'intervallo della finestra di
   attesa. `KERNEL_PREEMPT_SUSPENDED` include entrambi i percorsi.
-  Il runner applicherà i gate ai contatori nella 3e.
+  Il runner applica i gate ai contatori nelle sessioni concluse della 3e.
 - La console riporta in `KERNEL_PAGING_AUDIT_MASKED_MAX_PM` il
   massimo campionato dal PM timer nelle singole porzioni di audit
   a IF=0. Il tempo totale dell'audit include anche i cambi di task.
 - I task degli AP e i profili PS/2 senza processi utente conservano
   l'avvio a IF=0. La prova di preemption riguarda il BSP.
+
+### 3e — Chiusura delle prove BSP
+
+Il runner delle sessioni shell e del soak richiede i tre contatori
+`KERNEL_PREEMPT_OUTSIDE_WINDOW`, `KERNEL_PREEMPT_SUSPENDED` e
+`KERNEL_PREEMPT_OVERRUNS`. Fallisce per dati mancanti, nessuna sospensione
+fuori finestra, sospensioni fuori finestra maggiori del totale o
+sforamenti diversi da zero. Conserva i numeri nel risultato JSON.
+
+Il carico reale è la sessione ordinaria con input, rendering della
+console e richieste al servizio ring 3 attraverso `bridge status`.
+Il conteggio viene raccolto dal RIP del frame IRQ del timer.
+
+Il flag `KERNEL_TEST_SCHEDULER_PREEMPTION` e il caso `bsp-preemption`
+sono ritirati. I due pianificatori rifiutano `-TestSchedulerPreemption`
+con un messaggio esplicito. Il diagnostico periodico usa il proprio flag
+esistente e resta solo diagnostico. La sua prova richiede il marker
+periodico, che certifica le sei sospensioni e l'arresto del timer.
+
+Il boot che si ferma alla shell per verificare le protezioni e il caso
+senza PS/2 mantengono i rispettivi criteri. Il gate sui contatori viene
+applicato dopo la chiusura di una sessione di task BSP.

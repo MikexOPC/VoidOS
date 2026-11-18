@@ -13,7 +13,7 @@ int x86_scheduler_run_periodic(void);
 #endif
 int x86_scheduler_timer_tasks(X86_LAPIC_TIMER *source);
 int x86_scheduler_timer_notify(const X86_LAPIC_TIMER *source);
-#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
 void x86_scheduler_irq_after(const X86_IRQ_FRAME *frame);
 #endif
 uint64_t x86_scheduler_irq_stack_top(uint64_t frame);

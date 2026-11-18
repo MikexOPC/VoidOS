@@ -1,5 +1,6 @@
 use crate::evidence::results::{Value, object};
 use crate::evidence::trace;
+use crate::evidence::serial::SerialLog;
 use crate::vm::machine::{Limits, Paths, Plan, Vm};
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -123,6 +124,24 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     ]))
 }
 
+// ====== preemption_evidence ======
+
+pub fn preemption_evidence(log: &SerialLog) -> Result<Value, String> {
+    let outside = log.number("KERNEL_PREEMPT_OUTSIDE_WINDOW", 0)?;
+    let suspended = log.number("KERNEL_PREEMPT_SUSPENDED", 0)?;
+    let overruns = log.number("KERNEL_PREEMPT_OVERRUNS", 0)?;
+
+    if outside == 0 || outside > suspended || overruns != 0 {
+        return Err(format!("Invalid production preemption: outside={outside}, suspended={suspended}, overruns={overruns}"));
+    }
+
+    Ok(object(vec![
+        ("OutsideWindow", Value::Number(outside)),
+        ("Suspended", Value::Number(suspended)),
+        ("Overruns", Value::Number(overruns)),
+    ]))
+}
+
 // ====== shell_boot ======
 
 fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
@@ -157,7 +176,12 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     if trace::user_faults(&trace_bytes) != expected || trace::triple_fault(&trace_bytes) {
         return Err("Unexpected fault during the shell session".to_string());
     }
-    Ok(object(vec![("Process", Value::Bool(enabled)), ("Bridge", Value::Bool(enabled && !fault))]))
+    let preemption = preemption_evidence(&log)?;
+    Ok(object(vec![
+        ("Process", Value::Bool(enabled)),
+        ("Bridge", Value::Bool(enabled && !fault)),
+        ("Preemption", preemption),
+    ]))
 }
 
 // ====== no_ps2_boot ======
@@ -228,7 +252,12 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
     if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {
         return Err("Unexpected fault during the long session".to_string());
     }
-    Ok(object(vec![("Minutes", Value::Number(u64::from(minutes))), ("Rounds", Value::Number(rounds as u64))]))
+    let preemption = preemption_evidence(&log)?;
+    Ok(object(vec![
+        ("Minutes", Value::Number(u64::from(minutes))),
+        ("Rounds", Value::Number(rounds as u64)),
+        ("Preemption", preemption),
+    ]))
 }
 
 // ====== shell_type ======

@@ -7,12 +7,8 @@
 #include "kernel/diagnostics/log.h"
 static X86_LAPIC_TIMER *timer_source;
 static uint32_t posted, finished;
-#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
-#include "kernel/sync/internal.h"
-static uint32_t suspended, peer_ran, resumed;
-void x86_scheduler_irq_suspend(void);
-#endif
 #ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+#include "kernel/sync/internal.h"
 static const X86_LAPIC_TIMER *periodic_source;
 static X86_IRQ_TOKEN periodic_token;
 static volatile uint32_t periodic_completion[2][2];
@@ -67,33 +63,23 @@ int x86_scheduler_timer_notify(const X86_LAPIC_TIMER *source)
     return 1;
 }
 
-#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
 // ====== x86_scheduler_irq_after ======
 
-void x86_scheduler_irq_after(const X86_IRQ_FRAME *frame)
-{
-#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
+void x86_scheduler_irq_after(const X86_IRQ_FRAME *frame) {
     if (periodic_source && frame->Vector == X86_TIMER_VECTOR) {
         uint32_t index = x86_scheduler_index();
         const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
-        if (index >= 2 || !locks || locks->Depth || ks_irq_state() || !(frame->Flags & 512) ||
-            periodic_ticks[index] != periodic_resumed[index] + 1)
+
+        if (index >= 2 || !locks || locks->Depth || ks_irq_state() ||
+            !(frame->Flags & 512) ||
+            periodic_ticks[index] != periodic_resumed[index] + 1
+        )
             kernel_scheduler_fail_stop();
+
         x86_scheduler_irq_suspend();
         ++periodic_resumed[index];
-        return;
     }
-#endif
-    if (!timer_source || frame->Vector != X86_TIMER_VECTOR || !posted || suspended) return;
-    const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
-    if (!locks || locks->Depth || ks_irq_state() || frame->Rip != irq_rip ||
-        frame->Rsp != irq_rsp || frame->Flags != irq_flags || !(frame->Flags & 512) ||
-        x86_scheduler_index() != 1 || x86_scheduler_generation() != irq_generation)
-        kernel_scheduler_fail_stop();
-    suspended = 1;
-    x86_scheduler_irq_suspend();
-    if (!peer_ran) kernel_scheduler_fail_stop();
-    resumed = 1;
 }
 #endif
 
@@ -104,14 +90,8 @@ void x86_scheduler_irq_task(uint32_t index)
 {
     if (!timer_source || !x86_scheduler_task_valid()) kernel_scheduler_fail_stop();
     if (index == 0) {
-#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
-        x86_scheduler_yield();
-        if (!suspended || resumed || finished) kernel_scheduler_fail_stop();
-        peer_ran = 1;
-#else
         KERNEL_EVENT_REPLY result = x86_scheduler_event_request(4, 2, 0);
         if (result.outcome != KERNEL_EVENT_WAITING || result.epoch || !finished) kernel_scheduler_fail_stop();
-#endif
         if (!posted || timer_source->Count != 1 || timer_source->Error) kernel_scheduler_fail_stop();
         if (kernel_scheduler_payload_pop(2,(uint64_t)(uintptr_t)timer_source,binding_generation,
                 index,x86_scheduler_generation()) != (KERNEL_PAYLOAD_DATA | 1) ||
@@ -158,9 +138,6 @@ void x86_scheduler_irq_task(uint32_t index)
 
 int x86_scheduler_irq_verified(void)
 {
-#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
-    if (!suspended || !peer_ran || !resumed) return 0;
-#endif
     return timer_source && irq_rip && irq_rsp && irq_generation && (irq_flags & 512) &&
         posted == 1 && finished == 1 && timer_source->Count == 1 &&
         !timer_source->Error && timer_source->Phase == X86_TIMER_PENDING;
@@ -184,9 +161,6 @@ int x86_scheduler_timer_tasks(X86_LAPIC_TIMER *source)
         !kernel_scheduler_payload_close(2,(uint64_t)(uintptr_t)source,binding_generation) ||
         !kernel_scheduler_irq_unbind(2,(uint64_t)(uintptr_t)source,binding_generation)) return 0;
     timer_source = 0;
-#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
-    if (!kernel_log(0, "KERNEL_SCHEDULER_PREEMPTION_OK")) return 0;
-#endif
     if (kernel_scheduler_irq_post_bound(2,(uint64_t)(uintptr_t)source,binding_generation)) return 0;
     return kernel_text("SCHEDULER_IRQ_RIP: ") && kernel_number(irq_rip) &&
         kernel_text("\nSCHEDULER_IRQ_BEGIN: ") && kernel_number((uint64_t)x86_scheduler_irq_compute_begin) &&

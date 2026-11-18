@@ -244,7 +244,7 @@ void x86_irq_after(const X86_IRQ_FRAME *frame)
         return;
     }
 #endif
-#ifdef KERNEL_TEST_SCHEDULER_PREEMPTION
+#ifdef KERNEL_TEST_SCHEDULER_PERIODIC
     x86_scheduler_irq_after(frame);
 #else
     (void)frame;

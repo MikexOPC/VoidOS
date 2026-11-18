@@ -99,6 +99,31 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   e preemption ordinaria degli AP non provati.
   [Design](../design/scheduler-produzione.md#3d-4--preemption-fuori-dalla-finestra-di-attesa).
 
+- **3e.** Otto suite host superate, con ripetizione di `build-plan`
+  dopo l'allineamento del messaggio di rifiuto del profilo ritirato.
+  Runner Meson 2/2, con casi positivi e negativi del gate sui contatori;
+  `plan_parity` 1/1. Quattordici campagne completate, 77 boot riusciti:
+  `k6-ordinary`, `k6-shell`, `k6-no-ps2` e `k6-process` 10 ciascuna,
+  bridge disabilitato e bridge fault 3 ciascuna, `plain` 3, `v2c` 10,
+  `k3-soak` 1, fallback e absent 2 ciascuna, stall 5, paging-tamper 3,
+  `meson-bsp-periodic` 5. I casi video, fault e periodico restano
+  diagnostici. La prima prova periodica richiedeva ancora il marker
+  ritirato: corretto il controllo e ripetuti tutti i cinque boot.
+  Le esecuzioni non concluse per interruzione della sessione non sono
+  incluse nei 77 boot.
+  Soak QEMU TCG ordinario con quattro vCPU, sullo stesso ELF finale
+  della 3d-4: 30 minuti, 311 risposte del bridge, 19.340 sospensioni
+  totali, 14.168 fuori finestra, zero sforamenti, 521 audit, zero
+  recuperi HPET e cleanup confermato. `K4TLBACK` non riprodotto.
+  Massimo campionato per porzione audit a IF=0 circa 13,5 ms.
+  Il limite di latenza già riportato nello stato resta aperto.
+  Preemption ordinaria AP e hardware fisico non verificati.
+  Evidenze locali: `qemu-run-84f32efd12c64006a6d619d9358df0c3`,
+  `qemu-run-e5cbaf39bfc94fc491357f14d6187814`,
+  `qemu-run-d2759cb60f174c8fa795a1dfd2184a6c` e `qemu-3e-soak`,
+  sotto `kernel/build/`.
+  [Design](../design/scheduler-produzione.md#3e--chiusura-delle-prove-bsp).
+
 ## Build e runner
 
 | Passo | Risultato storico |

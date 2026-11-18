@@ -3,7 +3,7 @@ use qemu_runner_core::evidence::results::{Value, object, render};
 use qemu_runner_core::evidence::serial::{SerialLog, split_lines, strip_ansi};
 use qemu_runner_core::evidence::sha256::hash_bytes;
 use qemu_runner_core::evidence::trace;
-use qemu_runner_core::scenario::ordinary::{parse_cr4, parse_register};
+use qemu_runner_core::scenario::ordinary::{parse_cr4, parse_register, preemption_evidence};
 use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, arguments};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -277,4 +277,30 @@ fn ordinary_options_and_cr4() {
     assert_eq!(parse_cr4(b"CPU#3\nCR4=0030", 3), None);
     assert_eq!(parse_cr4(b"CPU#3\nCR4=x\n", 3), None);
     assert_eq!(parse_cr4(b"CR4=00300ee8\n", 3), None);
+}
+
+// ====== production_preemption_gate ======
+
+#[test]
+fn production_preemption_gate() {
+    for (outside, suspended, overruns, valid) in [
+        (0, 10, 0, false),
+        (1, 0, 0, false),
+        (3, 2, 0, false),
+        (1, 10, 1, false),
+        (1, 1, 0, true),
+        (20, 30, 0, true),
+    ] {
+        let text = format!(
+            "KERNEL_PREEMPT_OUTSIDE_WINDOW: 0x{outside:016x}\nKERNEL_PREEMPT_SUSPENDED: 0x{suspended:016x}\nKERNEL_PREEMPT_OVERRUNS: 0x{overruns:016x}\n"
+        );
+        assert_eq!(preemption_evidence(&SerialLog::parse(text.as_bytes())).is_ok(), valid);
+    }
+    for text in [
+        "",
+        "KERNEL_PREEMPT_OUTSIDE_WINDOW: 0x1\n",
+        "KERNEL_PREEMPT_OUTSIDE_WINDOW: 0x1\nKERNEL_PREEMPT_SUSPENDED: 0x1\n",
+    ] {
+        assert!(preemption_evidence(&SerialLog::parse(text.as_bytes())).is_err());
+    }
 }

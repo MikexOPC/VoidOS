@@ -349,12 +349,6 @@
       "boots": 10, "smoke": 1, "heavy": true,
       "summary": "Six BSP timer preemptions across two tasks, with IRQ return and verified stop"
     },
-    "bsp-preemption": {
-      "build": ["-TestSchedulerPreemption"],
-      "runner": ["python", "test/arch/x86/kernel/cpu/percpu/startup/runtime/firmware.py", "--image", "{image}", "--boots", "{boots}", "--smp", "4", "--preempt"],
-      "boots": 10, "smoke": 1, "heavy": true,
-      "summary": "BSP timer IRQ suspends the task, runs a peer, and resumes the saved IRQ frame"
-    },
     "ap-task-preempt": {
       "summary": "AP1 timer preemption, six suspensions, quiescent BSP cleanup",
       "build": ["-TestApService", "ap-preempt"],

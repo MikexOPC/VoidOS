@@ -56,10 +56,10 @@ fn parse_profile(args: impl IntoIterator<Item = String>) -> Result<Profile, &'st
     }
     let periodic = options.contains("-testschedulerperiodic");
     let preemption = options.contains("-testschedulerpreemption");
-    if periodic && preemption {
-        return Err("Choose one preemption diagnostic.");
+    if preemption {
+        return Err("TestSchedulerPreemption is retired; use the ordinary image.");
     }
-    if (periodic || preemption) && options.len() > 1 {
+    if periodic && options.len() > 1 {
         return Err("Preemption requires an isolated diagnostic profile.");
     }
     match (periodic, service.as_deref(), options.len()) {
@@ -103,7 +103,6 @@ fn c_command(profile: Profile, source: &str, object: Option<&str>, optimize: boo
     }
     if profile == Profile::Periodic {
         command.extend([
-            "/DKERNEL_TEST_SCHEDULER_PREEMPTION=1".into(),
             "/DKERNEL_TEST_SCHEDULER_PERIODIC=1".into(),
         ]);
     }
@@ -173,7 +172,7 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
         if profile == Profile::Periodic && fields.contains(&"/Fo{out}/irq-entry-return.obj") {
             command.insert(
                 command.len() - 1,
-                "/DKERNEL_TEST_SCHEDULER_PREEMPTION=1".into(),
+                "/DKERNEL_TEST_SCHEDULER_PERIODIC=1".into(),
             );
         }
         if profile == Profile::Ordinary

@@ -227,7 +227,7 @@ Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c
 $objects += ($output+'/pm-read.obj')
 foreach ($entry in @('entry/return','verification/registers')) {
     $object = $output + '/irq-' + ($entry.Replace('/','-')) + '.obj'
-    $irqDefines = if (($TestSchedulerPreemption -or $TestSchedulerPeriodic) -and $entry -eq 'entry/return') { @('/DKERNEL_TEST_SCHEDULER_PREEMPTION=1') } else { @() }
+    $irqDefines = if ($TestSchedulerPeriodic -and $entry -eq 'entry/return') { @('/DKERNEL_TEST_SCHEDULER_PERIODIC=1') } else { @() }
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') (@('/nologo','/W3','/WX','/c',('/Fo'+$object)) + $irqDefines +
         @((Join-Path $project ('arch/x86/kernel/interrupts/return/assembly/'+$entry+'.asm'))))
     $objects += $object

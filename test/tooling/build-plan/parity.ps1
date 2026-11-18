@@ -58,7 +58,7 @@ foreach ($case in 31..37) {
 }
 
 Assert-PlanRejected 'conflicting-preemption' @{TestSchedulerPeriodic = $true; TestSchedulerPreemption = $true} `
-    @('-TestSchedulerPeriodic', '-TestSchedulerPreemption') 'Choose one preemption diagnostic.'
+    @('-TestSchedulerPeriodic', '-TestSchedulerPreemption') 'TestSchedulerPreemption is retired; use the ordinary image.'
 Assert-PlanRejected 'periodic-with-ap-timer' @{TestSchedulerPeriodic = $true; TestApService = 'ap-timer'} `
     @('-TestSchedulerPeriodic', '-TestApService', 'ap-timer') 'Preemption requires an isolated diagnostic profile.'
 Assert-PlanRejected 'ap-timer-with-ps2' @{TestApService = 'ap-timer'; Ps2Input = $true} `
