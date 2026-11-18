@@ -1,4 +1,4 @@
-# Stato di VoidOS — 16 novembre 2026
+# Stato di VoidOS — 18 novembre 2026
 
 ## Immagine ordinaria (`ordinary`, Meson)
 
@@ -36,8 +36,8 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 - Shell e processo utente convivono in `ordinary`. Il dispatcher gira a
   sessioni sul BSP e l'idle finale non ospita servizi. Manca la preemption
-  ordinaria sugli AP. La 3e deve applicare i gate ai contatori del runner
-  e rieseguire le campagne. Restano limiti fissi di otto task e quattro
+  ordinaria sugli AP. La 3e chiude le prove BSP e applica i gate del runner
+  alle sessioni shell e soak. Restano limiti fissi di otto task e quattro
   sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è un solo
   processo attivo alla volta.
 - Nel soak della 3d-4 una porzione dell'audit a IRQ spenti ha misurato

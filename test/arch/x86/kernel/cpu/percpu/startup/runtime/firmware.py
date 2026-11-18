@@ -219,7 +219,7 @@ def main():
                         group.settle(vm, 0)
                     if args.periodic and log.count("KERNEL_SCHEDULER_PERIODIC_OK", "OK") != 1:
                         raise RuntimeError("Missing repeated periodic preemption and timer stop proof")
-                    if (args.preempt or args.periodic) and log.count("KERNEL_SCHEDULER_PREEMPTION_OK", "OK") != 1:
+                    if args.preempt and log.count("KERNEL_SCHEDULER_PREEMPTION_OK", "OK") != 1:
                         raise RuntimeError("Missing task suspension and IRQ return proof")
                     results.append(verify(vm, log, args.smp, args.panic))
                 except BaseException:

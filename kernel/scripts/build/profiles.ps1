@@ -1,7 +1,7 @@
+if ($TestSchedulerPreemption) { throw 'TestSchedulerPreemption is retired; use the ordinary image.' }
 # ============ isolated synchronization profile ============
 
-if ($TestSchedulerPreemption -or $TestSchedulerPeriodic) {
-    if ($TestSchedulerPreemption -and $TestSchedulerPeriodic) { throw 'Choose one preemption diagnostic.' }
+if ($TestSchedulerPeriodic) {
     foreach ($key in $boundBuildOptions) {
         if ($key -notin @('TestSchedulerPreemption','TestSchedulerPeriodic','OutputDirectory','ToolchainBin')) { throw 'Preemption requires an isolated diagnostic profile.' }
     }

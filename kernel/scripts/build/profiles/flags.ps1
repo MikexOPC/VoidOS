@@ -59,7 +59,6 @@ if ($TestSchedulerFault -ne 'none') {
     $mode = switch ($TestSchedulerFault) { 'guard-low' {1} 'guard-high' {2} 'nx' {3} 'retired' {4} 'rollback' {5} 'blocked' {6} 'irq-timeout' {7} 'idle-timeout' {8} 'idle-repeat-timeout' {9} }
     $flags += ('/DKERNEL_TEST_SCHEDULER_FAULT=' + $mode)
 }
-if ($TestSchedulerPreemption -or $TestSchedulerPeriodic) { $flags += '/DKERNEL_TEST_SCHEDULER_PREEMPTION=1' }
 if ($TestSchedulerPeriodic) { $flags += '/DKERNEL_TEST_SCHEDULER_PERIODIC=1' }
 if ($TestSchedulerPreservation) { $flags += '/DKERNEL_TEST_SCHEDULER_PRESERVATION=1' }
 if ($TestPanic) { $flags += '/DKERNEL_TEST_PANIC=1' }
