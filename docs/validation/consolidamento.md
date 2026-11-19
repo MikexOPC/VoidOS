@@ -206,6 +206,63 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   `test-run-4352b870782f4576a51b0a4ad6b4658e` e `b2-2-diagnostics`.
   Restano B2-3, preemption ordinaria AP e prove su hardware fisico.
 
+- **B2-3, 19 novembre 2026.** B2 e l'obiettivo BSP di S1 sono fatti.
+  Riletti il diff complessivo di B2 e i percorsi di ownership e raccolta.
+  Il runner esegue `ap 1000` nei casi shell con almeno due vCPU e
+  verifica CPU 1, somma 500.500 e raccolta del job prima del cleanup PS/2.
+  Legge dalla memoria della VM i 240 byte del registro IRQ, secondo
+  `arch/x86/kernel/interrupts/registry/registry.h`. Tastiera, mouse e
+  notifica AP devono avere i tre slot completamente azzerati; HPET e
+  timer D1h restano sottoscritti. I controlli nativi verificano task,
+  stack, PTE, payload, binding e budget fisico della sessione.
+  Sull'immagine `ordinary` QEMU/OVMF TCG/q35 finale, i 25/25 boot ripetuti
+  con il runner corretto comprendono shell 10/10, controller PS/2 assente 10/10,
+  SMAP assente 3/3, una vCPU 1/1 e otto vCPU 1/1. Quattordici job AP
+  verificati. Nei dieci boot shell, 174–201 sospensioni IRQ fuori
+  finestra e 258–264 complessive per boot, zero sforamenti.
+  Lo stress conclusivo 1/1 sulla stessa immagine con quattro vCPU ha
+  completato quindici minuti nella shell con 156 risposte bridge, 9.750 sospensioni
+  complessive, 7.205 fuori finestra, 286 audit e zero sforamenti.
+  Dopo `exit`, quindici minuti di dispatcher con 119.200 cicli,
+  171.589 tick LAPIC complessivi e 16.172 pagine libere invariate.
+  Il budget prima e dopo la sessione è 16.172. Snapshot finale IRQ
+  con tre slot liberi, sottoscrizione HPET 2 e timer 6. Nessun recupero
+  HPET segnalato. La VM posseduta è stata terminata dal runner a prova
+  conclusa; il sistema ospite continuava nel dispatcher.
+  Le sei suite host superate comprendono scheduler, x86-scheduler,
+  watchdog, PS/2, richieste console e contratto kernel. PS/2 ripetuta dopo la correzione
+  della shell. Meson integrazione/log con ASan 2/2, `plan_parity` 1/1.
+  Runner Meson 2/2, con 17 test unitari e sei test di processo.
+  Il test Windows verifica richiesta di esecuzione e ripristino dello
+  stato del thread; i test del monitor coprono dump incompleti e invalidi.
+  Cppcheck 2.22.0 sulla shell senza diagnostiche bloccanti.
+  La prima campagna falliva su `SHELL_AP_SUM`, poiché il callback video
+  poteva cedere il BSP fra etichetta e numero seriale. La shell ora
+  completa le righe numeriche e di `echo` prima dei callback video.
+  La regressione host inserisce output concorrente da quel callback.
+  Un successivo soak scadeva 40 secondi dopo l'ultimo campione delle
+  21:37:41. Windows registra sospensione per inattività alle 21:37:42
+  e riattivazione alle 21:37:45. Il runner ora mantiene una richiesta
+  temporanea di esecuzione sul proprio thread durante la campagna e
+  ripristina lo stato precedente all'uscita. Nel test conclusivo non
+  risultano nuovi eventi di sospensione. [API Windows](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadexecutionstate).
+  Il gate IF/HLT di un altro tentativo usava due richieste distinte al
+  monitor e falliva, sebbene 58 dei 477 snapshot mostrassero già IF=1 e HLT=1
+  insieme. Il gate ora richiede entrambi nello stesso snapshot.
+  I 25 boot conclusivi sono stati ripetuti dopo questa correzione.
+  Prove fallite, immagini precedenti e stress interrotti sono esclusi
+  dai conteggi conclusivi. Gli snapshot diagnostici vengono raccolti
+  dal monitor prima della chiusura anche quando una prova fallisce.
+  Kernel SHA-256 `36C2995FDE351EBC4DE29942348D784F03F2E5646322E056F77E026E44D03D71`.
+  Loader SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+  Runner SHA-256 `7EC7C9823359A3FA4B8D9FB8C9E3B3DA255236CD910077FD13A830298B9E5E60`.
+  Evidenze in `kernel/build/b2-3-conclusive-*`, `meson-qemu-runner`,
+  `meson-watchdog-integration`, `test-run-c20af78c3e4543a0b4eb6d3d4664ee9c`
+  e `test-run-5a93871b39e74245b799e209e1edce18`. Eventi Windows della prova
+  interrotta in `kernel/build/b2-3-final-soak/host-sleep.json`.
+  Restano preemption ordinaria AP, capacità e hardware fisico.
+  Il dubbio storico `K4TLBACK` e la latenza a IF=0 restano nello stato.
+
 ## Build e runner
 
 | Passo | Risultato storico |

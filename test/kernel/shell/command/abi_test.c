@@ -21,18 +21,22 @@ int kernel_log(unsigned level, const char *text)
 {
     (void)level; return kernel_text(text) && kernel_text("\n");
 }
-int kernel_number(BOOT_U64 value) { (void)value; return kernel_text("NUMBER"); }
 
 // ====== command_fixture ======
 
 static char video[1024];
 static uint32_t video_used, video_fail;
+static uint32_t video_interleave;
 
 // ====== video_output ======
 
 static int video_output(void *context, const char *data, uint32_t length)
 {
     CHECK(context == video && length <= 256);
+    if (video_interleave) {
+        CHECK(used && output[used - 1] == '\n');
+        CHECK(kernel_log(1,"OTHER_TASK"));
+    }
     if (video_fail || length > sizeof(video) - video_used - 1) return 0;
     memcpy(video + video_used, data, length); video_used += length;
     video[video_used] = 0;
@@ -113,12 +117,16 @@ int main(void)
     CHECK(kernel_ps2_shell_output_bind(video_output, video));
     CHECK(!kernel_ps2_shell_output_bind(video_output, video));
     CHECK(!kernel_ps2_shell_output_unbind(video_output, &command));
+    video_interleave = 1;
     fixture(&command,"echo \xc3\xa8 \xe2\x82\xac");
     CHECK(kernel_ps2_shell_execute(&command, &status) == 1);
     CHECK(!strcmp(video, "SHELL_ECHO: \xc3\xa8 \xe2\x82\xac\n"));
     video_used = 0; fixture(&command,"status");
     CHECK(kernel_ps2_shell_execute(&command, &status) == 1);
     CHECK(strstr(video, "SHELL_INPUT_BYTES: 0x0000000000000001"));
+    CHECK(strstr(output, "SHELL_INPUT_BYTES: 0x0000000000000001\n"));
+    CHECK(strstr(output, "SHELL_INPUT_KEYS: 0x0000000000000002\n"));
+    CHECK(strstr(output, "SHELL_INPUT_LINES: 0x0000000000000003\n"));
     video_fail = 1; fixture(&command,"exit");
     CHECK(kernel_ps2_shell_execute(&command, &status) == 0);
     CHECK(kernel_ps2_shell_output_unbind(video_output, video));

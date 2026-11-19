@@ -1,7 +1,7 @@
 # Design: scheduler preemptive nell'immagine di produzione
 
-Stato: 3d, 3e, B2-1 e B2-2 fatte sul BSP. L'obiettivo 1 di S1
-resta parziale fino alla chiusura di B2. Il design riprende
+Stato: 3d, 3e e B2 fatte sul BSP. L'obiettivo 1 di S1 è chiuso.
+Restano gli obiettivi AP e capacità. Il design riprende
 le scelte di [K4-C](../../kernel/scheduler/documentation/design.md)
 e di [immagine unica](immagine-unica.md).
 
@@ -68,9 +68,36 @@ Il dispatcher continua anche quando il controller PS/2 è assente.
    `KERNEL_PREEMPT_OUTSIDE_WINDOW` continua a contare solo i RIP dei
    frame IRQ esterni alla finestra di attesa. Il drain del canale AP
    in chiusura accetta i risvegli validi di altri task della sessione.
-3. **B2-3, chiusura di B2.** Verifica conclusiva di ownership e raccolta
+3. **B2-3 fatta, chiusura di B2.** Verifica conclusiva di ownership e raccolta
    PS/2, contabilità e continuità del runtime nei due percorsi con
    `exit` e controller assente, con revisione complessiva del diff.
+   Il runner esegue anche un job `ap 1000` prima di `exit` e verifica
+   CPU, risultato e raccolta del job. Dopo il cleanup legge dalla VM i
+   240 byte di `X86_IRQ_REGISTRY`, secondo il layout dichiarato in
+   `arch/x86/kernel/interrupts/registry/registry.h`. Gli slot di tastiera,
+   mouse e notifica AP devono essere azzerati. Le sottoscrizioni HPET
+   e timer D1h devono restare presenti, con vettori e stato validi.
+   Questa prova si aggiunge ai controlli nativi su task, stack, PTE,
+   payload e binding e al confronto del budget fisico prima/dopo.
+   La shell completa ogni riga seriale numerica o di `echo` prima di
+   chiamare l'output video, che può cedere il BSP. Il runner legge IF e
+   HLT nello stesso snapshot del monitor. Durante la campagna mantiene
+   una richiesta Windows `ES_CONTINUOUS | ES_SYSTEM_REQUIRED`, posseduta
+   dal thread chiamante e rilasciata al ritorno o all'errore.
+   Chiusura verificata con 25 boot e stress di quindici minuti nella
+   shell più quindici dopo `exit` sulla stessa immagine `ordinary`.
+   [Risultati e limiti](../validation/consolidamento.md#cpu-e-scheduler).
+
+### Criteri di chiusura B2
+
+- `ordinary` mantiene dispatcher, timer BSP e watchdog dopo `exit` e
+  senza controller PS/2, con IF=1 durante l'attesa.
+- La sessione rilascia task, stack, IRQ e binding dopo la quiescenza.
+  I tre slot IRQ dei dispositivi risultano liberi nella memoria della VM.
+- Il budget fisico torna al valore iniziale della sessione e resta
+  invariato durante l'attesa successiva.
+- Dieci boot per i due percorsi principali, scenario shell completo e
+  stress di quindici minuti nella shell più quindici dopo `exit`.
 
 ## Alternative
 
@@ -112,8 +139,8 @@ K4-C lascia aperta dietro l'interfaccia `pick/enqueue`.
 
 ## Criteri di chiusura (per S1 completa)
 
-- Lo scheduler dell'immagine di produzione non termina; shell e input sono
-  task permanenti; nessuna sessione.
+- Lo scheduler dell'immagine di produzione non termina. Il ciclo di vita
+  dei task di shell e input è quello della sessione PS/2, secondo l'opzione A.
 - Un task che non cede la CPU viene sospeso dal timer su ogni CPU avviata
   e la shell resta reattiva.
 - Almeno 64 task creati e terminati in ciclo, con budget di pagine e heap

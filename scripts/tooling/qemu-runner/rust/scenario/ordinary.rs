@@ -63,24 +63,26 @@ pub fn parse_register(bytes: &[u8], cpu: u32, name: &[u8]) -> Option<u64> {
 // ====== read_cr4 ======
 
 fn read_cr4(vm: &mut Vm, cpu: u32) -> Result<u64, String> {
-    read_register(vm, cpu, b"CR4=")
+    Ok(read_registers(vm, cpu, &[b"CR4="])?[0])
 }
 
-// ====== read_register ======
+// ====== read_registers ======
 
-fn read_register(vm: &mut Vm, cpu: u32, name: &[u8]) -> Result<u64, String> {
+fn read_registers(vm: &mut Vm, cpu: u32, names: &[&[u8]]) -> Result<Vec<u64>, String> {
     vm.command(&format!("cpu {cpu}"));
     let offset = vm.monitor_size()? as usize;
     vm.command("info registers");
     let deadline = Instant::now() + CR4_DEADLINE;
     while Instant::now() < deadline {
         let bytes = vm.monitor_bytes()?;
-        if let Some(value) = bytes.get(offset..).and_then(|bytes| parse_register(bytes, cpu, name)) {
-            return Ok(value);
+        if let Some(values) = bytes.get(offset..).and_then(|bytes| {
+            names.iter().map(|name| parse_register(bytes, cpu, name)).collect::<Option<Vec<_>>>()
+        }) {
+            return Ok(values);
         }
         std::thread::sleep(CR4_POLL);
     }
-    Err(format!("Missing {} of CPU {cpu}", String::from_utf8_lossy(name)))
+    Err(format!("Missing register snapshot of CPU {cpu}"))
 }
 
 // ====== ordinary_boot ======
@@ -173,6 +175,58 @@ pub fn dispatcher_evidence(log: &SerialLog) -> Result<Value, String> {
     ]))
 }
 
+// ====== parse_memory ======
+
+pub fn parse_memory(bytes: &[u8], address: u64, count: usize) -> Option<Vec<u64>> {
+    let mut words = Vec::new();
+    for line in std::str::from_utf8(bytes).ok()?.split_inclusive('\n') {
+        let Some(line) = line.strip_suffix('\n') else { break };
+        let Some((location, values)) = line.trim().split_once(':') else { continue };
+        let location = location.strip_prefix("0x").unwrap_or(location);
+        let Ok(location) = u64::from_str_radix(location, 16) else { continue };
+        if location != address.checked_add((words.len() * 8) as u64)? {
+            continue;
+        }
+        for value in values.split_whitespace() {
+            let digits = value.strip_prefix("0x")?;
+            if digits.len() != 16 {
+                return None;
+            }
+            words.push(u64::from_str_radix(digits, 16).ok()?);
+            if words.len() == count {
+                return Some(words);
+            }
+        }
+    }
+    None
+}
+
+// ====== irq_ownership ======
+
+fn irq_ownership(vm: &mut Vm) -> Result<Value, String> {
+    let address = vm.log().number("KERNEL_IRQ_REGISTRY", 0)?;
+    let offset = vm.monitor_size()? as usize;
+    vm.command("cpu 0");
+    vm.command(&format!("x /30gx 0x{address:016x}"));
+    let deadline = Instant::now() + CR4_DEADLINE;
+    while Instant::now() < deadline {
+        let bytes = vm.monitor_bytes()?;
+        if let Some(words) = bytes.get(offset..).and_then(|bytes| parse_memory(bytes, address, 30)) {
+            if words[0] != address || words[5] == 0 || words[9] != 0x40 ||
+                words[10..25].iter().any(|word| *word != 0) || words[25] == 0 || words[29] != 0xd1 {
+                return Err("IRQ ownership after PS/2 cleanup is invalid".to_string());
+            }
+            return Ok(object(vec![
+                ("HpetSubscription", Value::Number(words[5])),
+                ("TimerSubscription", Value::Number(words[25])),
+                ("ReleasedDeviceSlots", Value::Number(3)),
+            ]));
+        }
+        std::thread::sleep(CR4_POLL);
+    }
+    Err("Missing IRQ registry memory snapshot".to_string())
+}
+
 // ====== wait_dispatcher ======
 
 fn wait_dispatcher(vm: &mut Vm) -> Result<Value, String> {
@@ -180,9 +234,8 @@ fn wait_dispatcher(vm: &mut Vm) -> Result<Value, String> {
     let evidence = dispatcher_evidence(&log)?;
     let deadline = Instant::now() + CR4_DEADLINE;
     while Instant::now() < deadline {
-        let flags = read_register(vm, 0, b"RFL=")?;
-        let halted = read_register(vm, 0, b"HLT=")?;
-        if flags & IF != 0 && halted == 1 {
+        let registers = read_registers(vm, 0, &[b"RFL=", b"HLT="])?;
+        if registers[0] & IF != 0 && registers[1] == 1 {
             return Ok(evidence);
         }
     }
@@ -209,14 +262,27 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         shell_type(vm, "bridge status");
         vm.wait(marker, count, None)?;
     }
+    let remote = plan.smp > 1 && !fault;
+    if remote {
+        shell_type(vm, "ap 1000");
+    }
     shell_type(vm, "status");
     shell_type(vm, "exit");
     let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
-    if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 ||
+    if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 + u64::from(remote) ||
         !log.text.contains("SHELL_STATUS: BSP PS2, kernel tasks") ||
         !log.before("SHELL_EXIT_REQUEST", "KERNEL_PS2_INPUT_CLEANUP_OK") ||
         !log.before("KERNEL_PS2_INPUT_CLEANUP_OK", "KERNEL_READY") {
         return Err("The input session did not clean up".to_string());
+    }
+    if !log.before("KERNEL_SCHEDULER_CLEANUP_OK", "KERNEL_PS2_INPUT_CLEANUP_OK") ||
+        !log.has("KERNEL_PS2_MOUSE_CLEANUP_OK") || !log.has("KERNEL_CONSOLE_SHELL_CLEAN") {
+        return Err("Missing collected stacks, mouse or console cleanup".to_string());
+    }
+    if remote && (log.number("SHELL_AP_CPU", 0)? != 1 || log.number("SHELL_AP_COUNT", 0)? != 1000 ||
+        log.number("SHELL_AP_SUM", 0)? != 500500 || log.number("KERNEL_AP_TASK_JOBS", 0)? != 1 ||
+        !log.before("KERNEL_AP_TASKS_CLEAN", "KERNEL_PS2_INPUT_CLEANUP_OK")) {
+        return Err("AP job or its session cleanup is invalid".to_string());
     }
     let trace_bytes = vm.trace_bytes()?;
     let expected = if fault { vec![("06".to_string(), "0000".to_string())] } else { Vec::new() };
@@ -225,11 +291,14 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     }
     let preemption = preemption_evidence(&log)?;
     let dispatcher = wait_dispatcher(vm)?;
+    let ownership = irq_ownership(vm)?;
     Ok(object(vec![
         ("Process", Value::Bool(enabled)),
         ("Bridge", Value::Bool(enabled && !fault)),
         ("Preemption", preemption),
         ("Dispatcher", dispatcher),
+        ("IrqOwnership", ownership),
+        ("ApJob", Value::Bool(remote)),
     ]))
 }
 
@@ -257,7 +326,9 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {
         return Err("Unexpected fault without a PS/2 controller".to_string());
     }
-    Ok(object(vec![("Ps2", Value::Bool(false)), ("Process", Value::Bool(enabled)), ("Dispatcher", dispatcher)]))
+    let ownership = irq_ownership(vm)?;
+    Ok(object(vec![("Ps2", Value::Bool(false)), ("Process", Value::Bool(enabled)),
+        ("Dispatcher", dispatcher), ("IrqOwnership", ownership)]))
 }
 
 // ====== soak_boot ======
@@ -298,15 +369,20 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
     let mut samples = 2;
     while Instant::now() < idle_deadline {
         samples += 1;
-        let log = vm.wait("KERNEL_DISPATCH_IDLE_OK", samples, Some("OK"))?;
+        let log = vm.wait("KERNEL_DISPATCH_IDLE_OK", samples, Some("OK")).map_err(|error| {
+            let log = vm.log();
+            format!("{error}; expected {samples} samples, found {}", log.count("KERNEL_DISPATCH_IDLE_OK", Some("OK")))
+        })?;
         dispatcher = dispatcher_evidence(&log)?;
     }
+    let ownership = irq_ownership(vm)?;
     Ok(object(vec![
         ("Minutes", Value::Number(u64::from(minutes))),
         ("IdleMinutes", Value::Number(u64::from(minutes))),
         ("Rounds", Value::Number(rounds as u64)),
         ("Preemption", preemption),
         ("Dispatcher", dispatcher),
+        ("IrqOwnership", ownership),
     ]))
 }
 
@@ -340,6 +416,14 @@ pub fn run_ordinary(
         Some(case) if case > SOAK_CASE_BASE => soak_boot(&mut vm, plan, case - SOAK_CASE_BASE),
         _ => ordinary_boot(&mut vm, plan),
     };
+    if outcome.is_err() {
+        let _ = read_registers(&mut vm, 0, &[b"RFL=", b"HLT="]);
+        vm.command("info lapic");
+        if let Ok(owner) = vm.log().number("KERNEL_WATCHDOG_OWNER", 0) {
+            vm.command(&format!("x /28gx 0x{owner:016x}"));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
     let closed = vm.close();
     match (outcome, closed) {
         (Err(error), _) => Err(error),

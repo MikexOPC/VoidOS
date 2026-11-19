@@ -1,7 +1,7 @@
 use qemu_runner_core::campaign::{Campaign, run};
 use qemu_runner_core::cli::{self, Mode, RunOptions, USAGE};
 use qemu_runner_core::parity;
-use qemu_runner_core::vm::job::bind_children_to_runner;
+use qemu_runner_core::vm::job::{SystemAwake, bind_children_to_runner};
 use qemu_runner_core::vm::machine::{Limits, Paths, Plan};
 use std::path::{PathBuf, absolute};
 use std::process::ExitCode;
@@ -20,6 +20,7 @@ fn unique_out(root: &std::path::Path) -> PathBuf {
 
 fn run_campaign(options: RunOptions) -> Result<bool, String> {
     bind_children_to_runner().map_err(|error| format!("Job object: {error}"))?;
+    let _awake = SystemAwake::new().map_err(|error| format!("Host execution state: {error}"))?;
     let current = std::env::current_exe().map_err(|error| error.to_string())?;
     let root = match options.root {
         Some(root) => root,
