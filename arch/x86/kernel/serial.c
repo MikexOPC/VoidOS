@@ -1,4 +1,8 @@
 #include "platform.h"
+#include "kernel/diagnostics/log.h"
+#ifdef KERNEL_PANIC_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/panic/native/runtime.h"
+#endif
 #define COM1 0x3f8U
 static int serial_ready;
 
@@ -39,4 +43,26 @@ int x86_serial_character(char value)
     }
     serial_ready = 0;
     return 0;
+}
+
+// ====== kernel_log_character ======
+
+int kernel_log_character(char value) {
+    return x86_serial_character(value);
+}
+
+// ====== kernel_log_panic_prepare ======
+
+void kernel_log_panic_prepare(const char *message) {
+#ifdef KERNEL_PANIC_RUNTIME
+    if (ks_atomic_load_acquire(&xp_panic_armed)) xp_panic_voluntary((BOOT_U64)message);
+#else
+    (void)message;
+#endif
+}
+
+// ====== kernel_log_stop ======
+
+__declspec(noreturn) void kernel_log_stop(BOOT_U64 marker) {
+    x86_kernel_stop(marker);
 }

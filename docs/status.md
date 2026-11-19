@@ -1,4 +1,4 @@
-# Stato di VoidOS — 18 novembre 2026
+# Stato di VoidOS — 19 novembre 2026
 
 ## Immagine ordinaria (`ordinary`, Meson)
 
@@ -16,8 +16,9 @@
   se la CPU lo supporta. Lo stack delle syscall ha due guard page.
 - Con PS/2, `ordinary` apre la shell con tastiera e mouse. `bridge status`
   interroga il servizio residente e `ap <n>` invia un job fidato ad AP1.
-  `exit` chiude la sessione e arresta il BSP. Senza PS/2, dopo
-  `KERNEL_READY` il BSP entra in `KERNEL_IDLE` con interrupt abilitati.
+  `exit` chiude la sessione e rilascia task, stack, IRQ e binding PS/2.
+  Il dispatcher BSP continua con timer LAPIC e attese HPET, anche senza
+  controller PS/2. Nell'attesa gli interrupt sono abilitati.
   [Build e boot](../README.md).
 
 ## Profili separati
@@ -35,9 +36,9 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 ## Limiti e prossimo passo
 
 - La 3e chiude le prove della preemption nella sessione PS/2 sul BSP.
-  Il prossimo passo di S1 è il [dispatcher permanente sul BSP](design/scheduler-produzione.md#prossimo-passo-di-s1).
-  B2-1 separa preparazione di timer/watchdog ed esecuzione dei servizi.
-  Restano l'ingresso permanente e il cleanup PS/2 con dispatcher attivo.
+  B2-2 porta il [dispatcher permanente sul BSP](design/scheduler-produzione.md#prossimo-passo-di-s1)
+  in `ordinary`, con cleanup della sessione e continuità senza PS/2.
+  Resta la verifica conclusiva B2-3 prevista dal design.
   Poi restano la preemption ordinaria sugli AP e i limiti fissi di otto
   task e quattro sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è
   un solo processo attivo alla volta.
@@ -63,16 +64,13 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Su `a947255`, kernel Meson `ordinary` con quattro vCPU e loader UEFI
-già compilato nel worktree: `plan_parity` 1/1 e tre boot QEMU/OVMF,
-uno per avvio ordinario, bridge nella shell e idle senza PS/2.
-Nessun test di durata o prova fisica in questo passaggio.
-
-Verifica iniziale su `efecb8b`: test host del loader completati,
-`plan_parity` 1/1 e un boot QEMU/OVMF 1/1 di `ordinary` con quattro vCPU.
-Il log mostra tre AP parcheggiati e tre ACK, l'uscita di init e
-`KERNEL_READY`. Il runner ha letto SMEP, SMAP e UMIP su tutte e quattro
-le vCPU. Stress e profili separati non sono stati rieseguiti in questa prova.
+B2-2, Meson `ordinary`, kernel SHA-256 `9F6DA47B48075FAE7E763EF4750F71D450AB17AD87807470EFB9079CCDD13ED2`.
+QEMU/OVMF TCG/q35, 25 boot superati con shell, PS/2 assente, SMAP
+assente e configurazioni da una, quattro e otto vCPU. Soak superato con
+cinque minuti di shell e cinque minuti di dispatcher dopo `exit`,
+zero sforamenti e pagine libere invariate. Sei suite host e diagnostica
+ASan superate; Meson integrazione/log 2/2, runner 2/2 e `plan_parity` 1/1.
+[Risultati e limiti B2-2](validation/consolidamento.md#cpu-e-scheduler).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni
 [AP nel boot ordinario](validation/consolidamento.md#validazione-dei-backend-x86),

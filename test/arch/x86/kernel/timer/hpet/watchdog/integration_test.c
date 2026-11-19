@@ -102,8 +102,9 @@ int kernel_process_boot(X86_PAGE_WINDOW *pages, X86_LAPIC_TIMER *clock)
 // ====== x86_ps2_session_run ======
 
 int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
-    const KERNEL_ACPI_DIRECTORY *tables)
+    const KERNEL_ACPI_DIRECTORY *tables, int persistent)
 {
+    require(persistent == 1);
     require(env == retained && clock == &timer.Clock && tables == &directory);
     require(processes == 1 && !closed);
     ++sessions;

@@ -88,6 +88,25 @@ static void task_change(void)
     check(state.task == 0 && state.line_ticks == 0, "idle tick forgets the task");
 }
 
+// ====== completed_lines ======
+
+static void completed_lines(void) {
+    reset();
+    for (uint32_t line = 0; line < 1000; ++line) {
+        check(tick(9,1,0,1,1) == KERNEL_PREEMPT_DEFER, "IRQ defers an open line");
+        check(kernel_preempt_line_complete(&state,9,1,0) == KERNEL_PREEMPT_SUSPEND,
+            "completed line fulfills deferred preemption");
+        check(!state.line_ticks && !state.overruns, "line completion clears the pending deferral");
+    }
+    check(state.preempted == 1000 && state.ticks == 1000, "boundary suspensions preserve IRQ count");
+    check(kernel_preempt_line_complete(&state,9,1,0) == KERNEL_PREEMPT_IGNORE, "no pending deferral");
+    (void)tick(9,1,0,1,1);
+    check(kernel_preempt_line_complete(&state,10,1,0) == KERNEL_PREEMPT_IGNORE, "another task keeps its pending deferral");
+    check(kernel_preempt_line_complete(&state,9,0,0) == KERNEL_PREEMPT_IGNORE, "masked caller cannot suspend");
+    check(kernel_preempt_line_complete(&state,9,1,1) == KERNEL_PREEMPT_IGNORE, "locked caller cannot suspend");
+    check(kernel_preempt_line_complete(&state,9,1,0) == KERNEL_PREEMPT_SUSPEND, "eligible owner consumes pending deferral");
+}
+
 // ====== saturation ======
 
 static void saturation(void)
@@ -108,6 +127,7 @@ int main(void)
     refusals();
     line_boundary();
     task_change();
+    completed_lines();
     saturation();
     if (failures) {
         printf("FAIL: preemption policy, %u checks failed\n", failures);

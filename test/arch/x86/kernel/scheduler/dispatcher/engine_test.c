@@ -6,6 +6,8 @@ static uint32_t checks, mode, context = 1, stage[8], collected, cycle;
 #define LONG_SESSION_STEPS 70000U // beyond the old 65536 step and 32768 idle caps
 static KERNEL_SCHEDULER_REPLY handles[8];
 static X86_DISPATCH_CONFIG config;
+static uint32_t completions, runtime_waits, completion_failure;
+static const X86_DISPATCH_STATS *runtime_stats;
 
 // ====== check_private ======
 
@@ -123,6 +125,59 @@ static void prepare_private(uint32_t count)
         run_private,collect_private,reply_private,release_private,idle_private};
 }
 
+// ====== complete_private ======
+
+static int complete_private(void)
+{
+    check_private(!completions && collected == config.task_count);
+    check_private(runtime_stats && !runtime_stats->failure && runtime_stats->completed == config.task_count);
+    check_private(apply_private(KERNEL_SCHEDULER_SELECT,NULL).status == KERNEL_SCHEDULER_EMPTY);
+    ++completions;
+    return !completion_failure;
+}
+
+// ====== runtime_idle_private ======
+
+static int runtime_idle_private(void)
+{
+    X86_DISPATCH_STATS nested = {0};
+    check_private(completions == 1);
+    check_private(!x86_scheduler_dispatch_continuous(&config,&nested,complete_private,runtime_idle_private));
+    check_private(!nested.steps && !nested.failure);
+    return ++runtime_waits < 3;
+}
+
+// ====== continuous_private ======
+
+static void continuous_private(void)
+{
+    for (uint32_t count = 0; count <= 2; count += 2) {
+        for (completion_failure = 0; completion_failure <= 1; ++completion_failure) {
+            X86_DISPATCH_STATS stats = {0};
+            runtime_stats = &stats;
+            completions = 0;
+            runtime_waits = 0;
+            prepare_private(count);
+            config.step_limit = config.idle_limit = X86_DISPATCH_UNLIMITED;
+            check_private(!x86_scheduler_dispatch_continuous(&config,&stats,NULL,runtime_idle_private));
+            check_private(!x86_scheduler_dispatch_continuous(&config,&stats,complete_private,NULL));
+            check_private(!x86_scheduler_dispatch_continuous(&config,&stats,complete_private,runtime_idle_private));
+            check_private(completions == 1 && stats.completed == count && collected == count);
+            check_private(runtime_waits == (completion_failure ? 0U : 3U));
+            check_private(stats.failure == (completion_failure ? 1U : 2U));
+            check_private(apply_private(KERNEL_SCHEDULER_SELECT,NULL).status == KERNEL_SCHEDULER_EMPTY);
+        }
+    }
+    X86_DISPATCH_STATS stats = {0};
+    prepare_private(0);
+    config.task_count = 1;
+    config.step_limit = config.idle_limit = X86_DISPATCH_UNLIMITED;
+    completions = 0;
+    runtime_waits = 0;
+    check_private(!x86_scheduler_dispatch_continuous(&config,&stats,complete_private,runtime_idle_private));
+    check_private(stats.failure == 3 && !completions && !runtime_waits);
+}
+
 // ====== main ======
 
 int main(int argc, char **argv)
@@ -169,6 +224,7 @@ int main(int argc, char **argv)
         prepare_private(1);
         stats = (X86_DISPATCH_STATS){0};
         check_private(x86_scheduler_dispatch(&config,&stats) && stats.completed == 1);
+        continuous_private();
     } else if (mode == 9) {
         // B1: an operational session has no fixed length; per-operation timeouts live in idle().
         prepare_private(1);

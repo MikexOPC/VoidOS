@@ -43,8 +43,13 @@ void x86_watchdog_kernel_dispatch(const X86_WATCHDOG_KERNEL_RUNTIME *runtime)
     kernel_panic("PROCESS_BOOT_FAILED");
 #endif
 #ifdef KERNEL_PS2_INPUT
+#ifdef KERNEL_USER_PROCESS
+    const int persistent = 1;
+#else
+    const int persistent = 0;
+#endif
     if (x86_timer_ready() &&
-        !x86_ps2_session_run(&runtime->Environment,&x86_timer_owner()->Clock,runtime->Directory)
+        !x86_ps2_session_run(&runtime->Environment,&x86_timer_owner()->Clock,runtime->Directory,persistent)
     )
     kernel_panic("PS2_INPUT_FAILED");
 #endif

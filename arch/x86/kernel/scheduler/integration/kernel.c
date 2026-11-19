@@ -20,6 +20,7 @@
 #endif
 #ifdef KERNEL_PS2_INPUT
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
+#include "../irq/preempt.h"
 #endif
 
 X86_TASK_STACK x86_task_stacks[8];
@@ -392,10 +393,61 @@ int x86_scheduler_dispatch_release(void)
     if (!kernel_scheduler_context_valid()) return 0;
     local->current = KERNEL_SCHEDULER_NONE; local->generation = 0;
 #ifdef KERNEL_PS2_INPUT
-    if (x86_percpu_bsp() && irq_profile == 5 && !x86_ps2_after_dispatch()) return 0;
+    if (x86_percpu_bsp() && irq_profile == 5 && x86_ps2_session()->Active && !x86_ps2_after_dispatch()) return 0;
 #endif
     return 1;
 }
+
+// ====== session_complete_private ======
+
+static int session_complete_private(void)
+{
+    X86_SCHEDULER_LOCAL *local = local_private();
+    KERNEL_SCHEDULER_REPLY reply = kernel_scheduler_apply(KERNEL_SCHEDULER_SELECT,KERNEL_SCHEDULER_NONE,0);
+    if (reply.status != KERNEL_SCHEDULER_EMPTY || !x86_scheduler_profile_complete(irq_profile,&local->stats) ||
+        !kernel_physical_validate(saved_pool) || !kernel_physical_budget_matches(saved_pool,budget)) return 0;
+    for (uint32_t index = 0; index < X86_TASK_STACK_SLOTS; ++index) {
+        if (x86_task_stacks[index].self) return 0;
+    }
+    for (uint32_t index = 320; index < 464; ++index) {
+        if (x86_stack_entries(3)[index]) return 0;
+    }
+    return x86_scheduler_report(saved_root,budget,saved_pool,local->stats.steps,irq_profile) &&
+        kernel_log(0,"KERNEL_SCHEDULER_WAIT_OK") && kernel_log(0,"KERNEL_SCHEDULER_SWITCH_OK") &&
+        kernel_log(0,"KERNEL_SCHEDULER_CLEANUP_OK");
+}
+
+#ifdef KERNEL_PS2_INPUT
+// ====== runtime_complete_private ======
+
+static int runtime_complete_private(void)
+{
+    if (x86_ps2_session()->Active) {
+        if (!session_complete_private() || !x86_ps2_session_finish()) return 0;
+    }
+    else if (!x86_preempt_pause()) return 0;
+
+    if (!x86_watchdog_valid() || !x86_preempt_report() || !x86_preempt_resume()) return 0;
+    return kernel_log(0,"KERNEL_READY") && kernel_log(0,"KERNEL_DISPATCHER_READY");
+}
+
+// ====== runtime_idle_private ======
+
+static int runtime_idle_private(void)
+{
+    _Alignas(8) volatile BOOT_U32 source[2] = {0,0};
+    X86_SCHEDULER_LOCAL *local = local_private();
+    BOOT_U64 pages;
+    if (!x86_watchdog_idle(source) || !kernel_physical_budget_matches(saved_pool,budget) ||
+        !kernel_physical_budget_read(saved_pool,&pages) || local->idle_cycles == UINT64_MAX) return 0;
+    ++local->idle_cycles;
+    if (local->idle_cycles != 1 && local->idle_cycles % 200) return 1;
+    return kernel_text("KERNEL_DISPATCH_IDLE_CYCLES: ") && kernel_number(local->idle_cycles) &&
+        kernel_text("\nKERNEL_DISPATCH_TIMER_TICKS: ") && kernel_number(x86_preempt_ticks()) &&
+        kernel_text("\nKERNEL_DISPATCH_FREE_PAGES: ") && kernel_number(pages) && kernel_text("\n") &&
+        kernel_log(0,"KERNEL_DISPATCH_IDLE_OK");
+}
+#endif
 
 // ====== kernel_scheduler_run ======
 
@@ -404,12 +456,18 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     if (!x86_percpu_bsp()) return 0;
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_prepare();
     if (!local) return 0;
-    KERNEL_SCHEDULER_REPLY reply;
     X86_DISPATCH_CONFIG config;
+    uint32_t task_count;
+    int continuous = 0;
     active_profile = x86_scheduler_profile(irq_profile);
     if (local->phase || !pool || !active_profile || !kernel_section("scheduler cooperativo BSP") ||
         !x86_scheduler_binding_open(pool, root)) return 0;
     local->phase = 1; if (!kernel_physical_budget_read(pool, &budget)) return 0;
+    task_count = active_profile->task_count;
+#ifdef KERNEL_PS2_INPUT
+    continuous = irq_profile == 5 && x86_ps2_session()->Persistent;
+    if (continuous && !x86_ps2_session()->Active) task_count = 0;
+#endif
     if (!irq_profile) {
         (void)apply_private(KERNEL_SCHEDULER_INIT, KERNEL_SCHEDULER_NONE, 0);
         saved_pool = pool; saved_root = root;
@@ -417,17 +475,18 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
 #ifdef KERNEL_AP_TASKS
     if (irq_profile == 5 && xis_native.Count >= 2 && kernel_scheduler_configure(xis_native.Count,1)) return 0;
 #endif
-    for (uint32_t index = 0; index < active_profile->task_count; ++index) prepare_private(pool,root);
+    for (uint32_t index = 0; index < task_count; ++index) prepare_private(pool,root);
     if ((irq_profile == 2 || irq_profile == 4
 #ifdef KERNEL_PS2_INPUT
-        || irq_profile == 5
+        || (irq_profile == 5 && task_count)
 #endif
         ) &&
         !x86_watchdog_budget_begin_four(&x86_task_stacks[0].lease,&x86_task_stacks[1].lease,irq_profile == 5 ? &x86_task_stacks[2].lease : NULL,
-            active_profile->task_count == 4 ? &x86_task_stacks[3].lease : NULL))
+            task_count == 4 ? &x86_task_stacks[3].lease : NULL))
         kernel_panic("SCHEDULER_IDLE_ACCOUNTING_FAILED");
 #ifdef KERNEL_PS2_INPUT
-    if (irq_profile == 5 && !x86_ps2_activate()) return 0;
+    if (continuous && !x86_preempt_open(x86_timer_owner())) return 0;
+    if (irq_profile == 5 && task_count && !x86_ps2_activate()) return 0;
 #endif
     if (!kernel_log(0, "KERNEL_SCHEDULER_STACKS_OK") ||
         !kernel_text("SCHEDULER_CONTEXTS: ") || !kernel_number((BOOT_U64)x86_task_contexts) || !kernel_text("\n")) return 0;
@@ -436,9 +495,20 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT < 5
     x86_scheduler_test_fault(1);
 #endif
-    config = (X86_DISPATCH_CONFIG){active_profile->task_count,active_profile->step_limit,
+    config = (X86_DISPATCH_CONFIG){task_count,active_profile->step_limit,
         active_profile->idle_limit,active_profile->drain_irq,x86_scheduler_dispatch_run,
         native_dispatch_collect_private,x86_scheduler_dispatch_reply,x86_scheduler_dispatch_release,active_profile->idle};
+#ifdef KERNEL_PS2_INPUT
+    if (continuous) {
+        (void)x86_scheduler_dispatch_continuous(&config,&local->stats,runtime_complete_private,runtime_idle_private);
+        kernel_text("SCHEDULER_DISPATCH_FAILURE: ");
+        kernel_number(local->stats.failure);
+        kernel_text("\n");
+        kernel_panic("SCHEDULER_RUNTIME_FAILED");
+    }
+#else
+    (void)continuous;
+#endif
     if (!x86_scheduler_dispatch(&config,&local->stats)) {
         kernel_text("SCHEDULER_DISPATCH_FAILURE: "); kernel_number(local->stats.failure); kernel_text("\n");
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT == 8
@@ -452,14 +522,7 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
 #endif
         kernel_panic("SCHEDULER_DISPATCH_FAILED");
     }
-    reply = kernel_scheduler_apply(KERNEL_SCHEDULER_SELECT, KERNEL_SCHEDULER_NONE, 0);
-    if (reply.status != KERNEL_SCHEDULER_EMPTY || !x86_scheduler_profile_complete(irq_profile,&local->stats) || !kernel_physical_validate(pool) ||
-        !kernel_physical_budget_matches(pool, budget)) return 0;
-    for (uint32_t index = 0; index < 8; ++index) if (x86_task_stacks[index].self) return 0;
-    for (uint32_t index = 320; index < 464; ++index) if (x86_stack_entries(3)[index]) return 0;
-    if (!x86_scheduler_report(root,budget,pool,local->stats.steps,irq_profile)) return 0;
-    if (!kernel_log(0, "KERNEL_SCHEDULER_WAIT_OK") || !kernel_log(0, "KERNEL_SCHEDULER_SWITCH_OK") ||
-        !kernel_log(0, "KERNEL_SCHEDULER_CLEANUP_OK")) return 0;
+    if (!session_complete_private()) return 0;
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT < 5
     x86_scheduler_test_fault(4);
 #endif

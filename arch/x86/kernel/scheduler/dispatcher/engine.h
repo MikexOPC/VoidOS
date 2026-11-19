@@ -56,4 +56,6 @@ int x86_scheduler_dispatch_retained_on(uint32_t cpu, const X86_DISPATCH_CONFIG *
 int x86_scheduler_dispatch_lot_on(uint32_t cpu, uint64_t group, uint64_t token,
     const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
 int x86_scheduler_dispatch(const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats);
+int x86_scheduler_dispatch_continuous(const X86_DISPATCH_CONFIG *config, X86_DISPATCH_STATS *stats,
+    int (*complete)(void), int (*idle)(void));
 #endif

@@ -13,3 +13,8 @@ integration = executable('watchdog_integration', 'integration_test.c',
     include_directories: include_directories(repo),
     c_args: ['-DKERNEL_USER_PROCESS', '-DKERNEL_PS2_INPUT'])
 test('watchdog_integration', integration, env: runtime)
+
+log_boundary = executable('log_boundary', repo / 'kernel/diagnostics/log.c',
+    repo / 'test/kernel/diagnostics/log_test.c',
+    include_directories: include_directories(repo), c_args: ['-DKERNEL_PS2_INPUT'])
+test('log_boundary', log_boundary, env: runtime)

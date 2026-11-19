@@ -78,7 +78,7 @@ int x86_ps2_activate(void)
 #else
     if (!kernel_ps2_start(&session.Controller)) return 0;
 #endif
-    return x86_ps2_route_apply(&session,0) && x86_preempt_open(x86_timer_owner()) &&
+    return x86_ps2_route_apply(&session,0) && (session.Persistent || x86_preempt_open(x86_timer_owner())) &&
         kernel_log(0,"KERNEL_PS2_INPUT_READY");
 }
 
@@ -94,7 +94,7 @@ int x86_ps2_after_dispatch(void)
     x86_remote_service();
 #endif
     if (!session.Stop || session.Quiet) return 1;
-    if (!x86_preempt_close()) return 0;
+    if (!(session.Persistent ? x86_preempt_pause() : x86_preempt_close())) return 0;
     if (!session.WorkerGeneration || !x86_ps2_route_apply(&session,1)) return 0;
 #ifdef KERNEL_PS2_MOUSE
     if (!session.Mouse.Generation || !x86_ps2_mouse_route_apply(&session,1) ||
@@ -114,8 +114,18 @@ int x86_ps2_after_dispatch(void)
 #ifdef KERNEL_AP_TASKS
     // The dispatcher must still own the scheduler while xcn_close drains event 7.
     if (xis_native.Count >= 2 && (!kernel_text("KERNEL_AP_TASK_JOBS: ") ||
-        !kernel_number(x86_remote_jobs()) || !kernel_text("\n") || !x86_remote_close() ||
-        !xcn_close(1,1) || !xcn_release_allowed() || !kernel_log(0,"KERNEL_AP_TASKS_CLEAN"))) return 0;
+        !kernel_number(x86_remote_jobs()) || !kernel_text("\n"))) return 0;
+    if (xis_native.Count >= 2) {
+        if (!x86_remote_close()) {
+            kernel_log(3,"PS2_REMOTE_CLOSE_FAILED");
+            return 0;
+        }
+        if (!xcn_close(1,1) || !xcn_release_allowed()) {
+            kernel_log(3,"PS2_NOTIFY_CLOSE_FAILED");
+            return 0;
+        }
+        if (!kernel_log(0,"KERNEL_AP_TASKS_CLEAN")) return 0;
+    }
 #endif
 #ifdef KERNEL_PS2_MOUSE
     reply = kernel_scheduler_stop_apply(0,3,session.Mouse.Generation);
@@ -158,7 +168,7 @@ int x86_ps2_complete(void)
 // ====== x86_ps2_session_run ======
 
 int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
-    const KERNEL_ACPI_DIRECTORY *directory)
+    const KERNEL_ACPI_DIRECTORY *directory, int persistent)
 {
     KERNEL_PS2_DESCRIPTION description;
     KERNEL_PS2_IO io;
@@ -166,10 +176,14 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!env || !clock || !directory || session.Active || session.Stop || !clock->Ready ||
         !x86_watchdog_valid() || env->Window != watchdog->Env.Window || env->Mapping != watchdog->Env.Mapping) return 0;
     session.Env = *env; session.Clock = *clock;
+    session.Persistent = persistent != 0;
     if (!kernel_ps2_discover(directory,env->Window->Pool->PhysicalBits,firmware_read,&session,&description)) {
         kernel_log(3,"PS2_DISCOVERY_FAILED"); return 0;
     }
-    if (!description.Present) return kernel_log(2,"KERNEL_PS2_INPUT_ABSENT");
+    if (!description.Present) {
+        if (!kernel_log(2,"KERNEL_PS2_INPUT_ABSENT")) return 0;
+        return !session.Persistent || x86_scheduler_run_input();
+    }
     if (!x86_ps2_route_plan(env->Topology,env->Capabilities,env->Window->Pool->PhysicalBits,&session.Route)) {
         kernel_log(3,"PS2_ROUTE_PLAN_FAILED"); return 0;
     }
@@ -207,10 +221,20 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     }
 #endif
     session.Active = 1;
-    if (!x86_scheduler_run_input() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
+    if (!x86_scheduler_run_input()) return 0;
+    return x86_ps2_session_finish();
+}
+
+// ====== x86_ps2_session_finish ======
+
+int x86_ps2_session_finish(void)
+{
+    if (!x86_ps2_complete() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
         !kernel_scheduler_irq_unbind(4,(BOOT_U64)&session,session.Binding) || !x86_watchdog_valid()) return 0;
+    session.Binding = 0;
 #ifdef KERNEL_PS2_MOUSE
     if (!x86_ps2_mouse_close(&session) || !x86_ps2_mouse_report(&session)) return 0;
+    session.Mouse.Binding = 0;
 #endif
     session.Active = 0;
 #ifdef KERNEL_CONSOLE_SHELL

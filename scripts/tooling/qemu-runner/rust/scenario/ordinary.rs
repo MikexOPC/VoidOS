@@ -16,7 +16,6 @@ const SMEP: u64 = 1 << 20;
 const SMAP: u64 = 1 << 21;
 const CR4_DEADLINE: Duration = Duration::from_secs(5);
 const CR4_POLL: Duration = Duration::from_millis(10);
-const IDLE_SETTLE: Duration = Duration::from_secs(3);
 const IF: u64 = 1 << 9;
 const INIT_LINE: &[u8] = b"USER: VoidOS init, ring3";
 // The ordinary image ends in the shell: success is the shell waiting for input.
@@ -142,6 +141,54 @@ pub fn preemption_evidence(log: &SerialLog) -> Result<Value, String> {
     ]))
 }
 
+// ====== dispatcher_evidence ======
+
+pub fn dispatcher_evidence(log: &SerialLog) -> Result<Value, String> {
+    let samples = log.events.iter().filter(|event| event.name == "KERNEL_DISPATCH_IDLE_OK" && event.level == "OK").count();
+    let cycles = log.numbers("KERNEL_DISPATCH_IDLE_CYCLES");
+    let ticks = log.numbers("KERNEL_DISPATCH_TIMER_TICKS");
+    let pages = log.numbers("KERNEL_DISPATCH_FREE_PAGES");
+    if samples < 2 || cycles.len() < samples || ticks.len() < samples || pages.len() < samples {
+        return Err("Missing complete BSP dispatcher samples".to_string());
+    }
+    let cycles = &cycles[..samples];
+    let ticks = &ticks[..samples];
+    let pages = &pages[..samples];
+    if !log.failures().is_empty() || log.terminal() || cycles[0] == 0 ||
+        cycles.windows(2).any(|pair| pair[1] <= pair[0]) ||
+        ticks.windows(2).any(|pair| pair[1] <= pair[0]) || pages.iter().any(|value| *value != pages[0]) ||
+        !log.before("KERNEL_READY", "KERNEL_DISPATCHER_READY") ||
+        !log.before("KERNEL_DISPATCHER_READY", "KERNEL_DISPATCH_IDLE_OK") {
+        return Err("Invalid persistent BSP dispatcher evidence".to_string());
+    }
+    if log.has("KERNEL_SCHEDULER_CLEANUP_OK") &&
+        (log.number("SCHEDULER_BUDGET_BEFORE", 0)? != pages[0] ||
+         log.number("SCHEDULER_BUDGET_AFTER", 0)? != pages[0]) {
+        return Err("The input session changed the BSP page budget".to_string());
+    }
+    Ok(object(vec![
+        ("IdleCycles", Value::Number(*cycles.last().unwrap())),
+        ("TimerTicks", Value::Number(*ticks.last().unwrap())),
+        ("FreePages", Value::Number(pages[0])),
+    ]))
+}
+
+// ====== wait_dispatcher ======
+
+fn wait_dispatcher(vm: &mut Vm) -> Result<Value, String> {
+    let log = vm.wait("KERNEL_DISPATCH_IDLE_OK", 2, Some("OK"))?;
+    let evidence = dispatcher_evidence(&log)?;
+    let deadline = Instant::now() + CR4_DEADLINE;
+    while Instant::now() < deadline {
+        let flags = read_register(vm, 0, b"RFL=")?;
+        let halted = read_register(vm, 0, b"HLT=")?;
+        if flags & IF != 0 && halted == 1 {
+            return Ok(evidence);
+        }
+    }
+    Err("BSP dispatcher did not idle with interrupts enabled".to_string())
+}
+
 // ====== shell_boot ======
 
 fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
@@ -177,10 +224,12 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         return Err("Unexpected fault during the shell session".to_string());
     }
     let preemption = preemption_evidence(&log)?;
+    let dispatcher = wait_dispatcher(vm)?;
     Ok(object(vec![
         ("Process", Value::Bool(enabled)),
         ("Bridge", Value::Bool(enabled && !fault)),
         ("Preemption", preemption),
+        ("Dispatcher", dispatcher),
     ]))
 }
 
@@ -189,7 +238,7 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
 // Machine without a PS/2 controller: no shell, the process still ran and the BSP stays idle
 // with interrupts enabled instead of stopping.
 fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
-    let log = vm.wait("KERNEL_IDLE", 1, Some("OK"))?;
+    let log = vm.wait("KERNEL_DISPATCHER_READY", 1, Some("OK"))?;
     let enabled = expected_protection(plan.cpu) & (SMEP | SMAP) == SMEP | SMAP;
     if !log.failures().is_empty() || log.terminal() {
         return Err(format!("Unexpected kernel failure {:?}", log.failures()));
@@ -200,24 +249,15 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     if enabled && !log.before("KERNEL_PROCESS_OK", "KERNEL_READY") {
         return Err("The first process did not run".to_string());
     }
-    if !log.before("KERNEL_READY", "KERNEL_IDLE") {
+    if !log.before("KERNEL_READY", "KERNEL_DISPATCHER_READY") {
         return Err("The idle loop started before the boot completed".to_string());
     }
-    std::thread::sleep(IDLE_SETTLE);
-    let flags = read_register(vm, 0, b"RFL=")?;
-    let halted = read_register(vm, 0, b"HLT=")?;
-    if flags & IF == 0 || halted != 1 {
-        return Err(format!("BSP not idle with interrupts enabled: RFL={flags:x} HLT={halted}"));
-    }
-    let after = vm.wait("KERNEL_IDLE", 1, Some("OK"))?;
-    if !after.failures().is_empty() || after.terminal() {
-        return Err(format!("Kernel failure while idle {:?}", after.failures()));
-    }
+    let dispatcher = wait_dispatcher(vm)?;
     let bytes = vm.trace_bytes()?;
     if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {
         return Err("Unexpected fault without a PS/2 controller".to_string());
     }
-    Ok(object(vec![("Ps2", Value::Bool(false)), ("Process", Value::Bool(enabled))]))
+    Ok(object(vec![("Ps2", Value::Bool(false)), ("Process", Value::Bool(enabled)), ("Dispatcher", dispatcher)]))
 }
 
 // ====== soak_boot ======
@@ -253,10 +293,20 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
         return Err("Unexpected fault during the long session".to_string());
     }
     let preemption = preemption_evidence(&log)?;
+    let mut dispatcher = wait_dispatcher(vm)?;
+    let idle_deadline = Instant::now() + Duration::from_secs(u64::from(minutes) * 60);
+    let mut samples = 2;
+    while Instant::now() < idle_deadline {
+        samples += 1;
+        let log = vm.wait("KERNEL_DISPATCH_IDLE_OK", samples, Some("OK"))?;
+        dispatcher = dispatcher_evidence(&log)?;
+    }
     Ok(object(vec![
         ("Minutes", Value::Number(u64::from(minutes))),
+        ("IdleMinutes", Value::Number(u64::from(minutes))),
         ("Rounds", Value::Number(rounds as u64)),
         ("Preemption", preemption),
+        ("Dispatcher", dispatcher),
     ]))
 }
 

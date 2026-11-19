@@ -41,7 +41,7 @@ typedef struct {
     X86_PS2_ROUTE Route;
     X86_IRQ_TOKEN Token;
     BOOT_U64 Binding, WorkerGeneration;
-    BOOT_U32 Active, Stop, Quiet, ScopeEnded, ConsumerDone, WorkerDone;
+    BOOT_U32 Active, Stop, Quiet, ScopeEnded, ConsumerDone, WorkerDone, Persistent;
     BOOT_U32 Bytes, Keys, Releases, Losses, Irqs, TaskIrqs, Idle, Decoder;
     BOOT_U32 SavedLow, SavedHigh, RouteOwned;
     BOOT_U32 Failed;
@@ -65,7 +65,8 @@ _Static_assert(offsetof(X86_PS2_SESSION,Token) % 8 == 0, "IRQ token alignment");
 #define X86_PS2_COMMANDS_RANK 10U
 X86_PS2_SESSION *x86_ps2_session(void);
 int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
-    const KERNEL_ACPI_DIRECTORY *directory);
+    const KERNEL_ACPI_DIRECTORY *directory, int persistent);
+int x86_ps2_session_finish(void);
 int x86_ps2_route_plan(const KERNEL_MADT_TOPOLOGY *topology, const X86_APIC_CAPABILITIES *caps,
     BOOT_U32 physical_bits, X86_PS2_ROUTE *route);
 int x86_ps2_route_apply(X86_PS2_SESSION *owner, BOOT_U32 masked);

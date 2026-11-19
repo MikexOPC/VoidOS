@@ -30,5 +30,8 @@ typedef struct {
 } KERNEL_PREEMPT_STATE;
 
 uint32_t kernel_preempt_decide(KERNEL_PREEMPT_STATE *state, const KERNEL_PREEMPT_INPUT *input);
+uint32_t kernel_preempt_line_complete(KERNEL_PREEMPT_STATE *state, uint64_t task,
+    uint32_t interrupts_enabled, uint32_t lock_depth);
+void kernel_preempt_log_boundary(void);
 
 #endif
