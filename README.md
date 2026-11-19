@@ -68,3 +68,9 @@ Il font Cascadia Mono e i dati derivati del font mantengono la
 [SIL Open Font License 1.1](arch/x86/kernel/drivers/video/framebuffer/font/LICENSE).
 La [provenienza e l'hash del font sorgente](arch/x86/kernel/drivers/video/framebuffer/font/source/origin.json)
 sono registrati insieme al file originale.
+
+## Partecipare
+
+Consulta le [linee guida per contribuire](CONTRIBUTING.md), il
+[codice di condotta](CODE_OF_CONDUCT.md) e la
+[policy per le segnalazioni di sicurezza](SECURITY.md).
