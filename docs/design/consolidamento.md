@@ -41,9 +41,10 @@ nelle sessioni shell e soak. I driver e gli IRQ dei dispositivi restano
 sul BSP. Il comando `ap <n>` inoltra un job fidato ad AP1 e ne raccoglie
 lo stack dopo la quiescenza.
 
-Il passo successivo di S1 è il dispatcher permanente sul BSP (B2).
-Oggi `exit` chiude la sessione e arresta il BSP. Senza PS/2 il BSP entra
-in `KERNEL_IDLE` con interrupt attivi e senza servizi schedulati.
+Il dispatcher BSP di B2 continua dopo `exit` e senza controller PS/2.
+La sessione rilascia task, stack, IRQ e binding. Il runtime mantiene
+timer LAPIC, watchdog HPET e servizio bridge. L'attesa usa il percorso
+HPET con interrupt attivi. Restano la chiusura B2-3 e la preemption AP.
 [Design dello scheduler](scheduler-produzione.md) ·
 [Validazione della 3e](../validation/consolidamento.md#cpu-e-scheduler).
 

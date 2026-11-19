@@ -2,6 +2,7 @@
 #include "preempt.h"
 #include "../integration/control.h"
 #include "kernel/scheduler/preempt.h"
+#include "kernel/sync/lock.h"
 #include "kernel/sync/internal.h"
 #include "kernel/diagnostics/log.h"
 #include "arch/x86/kernel/interrupts/registry/registry.h"
@@ -182,11 +183,29 @@ void x86_preempt_after(const X86_IRQ_FRAME *frame)
     x86_scheduler_tick_suspend();
 }
 
+// ====== kernel_preempt_log_boundary ======
+
+void kernel_preempt_log_boundary(void) {
+    if (!preempt.Open || !preempt.Running) return;
+    uint64_t saved_if = kernel_preempt_section_enter();
+    const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
+    uint64_t task = 0;
+    if (x86_scheduler_task_valid()) {
+        task = ((uint64_t)(x86_scheduler_index() + 1U) << 56) |
+            (x86_scheduler_generation() & 0x00ffffffffffffffULL);
+    }
+    if (kernel_preempt_line_complete(&preempt.Policy,task,(saved_if & 0x200) != 0,
+        locks ? locks->Depth : 1) == KERNEL_PREEMPT_SUSPEND
+    )
+        x86_scheduler_tick_suspend();
+
+    kernel_preempt_section_leave(saved_if);
+}
+
 // ====== x86_preempt_close ======
 
 int x86_preempt_close(void)
 {
-    const KERNEL_PREEMPT_STATE *policy = &preempt.Policy;
     const X86_LAPIC_MAPPING *mapping;
     BOOT_U64 delivered;
     if (!preempt.Open || !dispatcher_private()) return 0;
@@ -199,6 +218,21 @@ int x86_preempt_close(void)
         !x86_timer_confirm_write(mapping,0x320,preempt.Lvt)) return 0;
     preempt.Open = 0;
     preempt.Timer = 0;
+    return x86_preempt_report() && kernel_log(0,"KERNEL_PREEMPT_CLOSED");
+}
+
+// ====== x86_preempt_ticks ======
+
+BOOT_U64 x86_preempt_ticks(void)
+{
+    return preempt.Ticks;
+}
+
+// ====== x86_preempt_report ======
+
+int x86_preempt_report(void)
+{
+    const KERNEL_PREEMPT_STATE *policy = &preempt.Policy;
     return kernel_text("KERNEL_PREEMPT_TICKS: ") && kernel_number(preempt.Ticks) &&
         kernel_text("\nKERNEL_PREEMPT_SUSPENDED: ") && kernel_number(policy->preempted) &&
         kernel_text("\nKERNEL_PREEMPT_OUTSIDE_WINDOW: ") && kernel_number(preempt.OutsideWindow) &&
@@ -206,5 +240,5 @@ int x86_preempt_close(void)
         kernel_text("\nKERNEL_PREEMPT_DEFERRED_LINE: ") && kernel_number(policy->deferred_line) &&
         kernel_text("\nKERNEL_PREEMPT_OVERRUNS: ") && kernel_number(policy->overruns) &&
         kernel_text("\nKERNEL_PREEMPT_PAUSES: ") && kernel_number(preempt.Pauses) &&
-        kernel_text("\n") && kernel_log(0,"KERNEL_PREEMPT_CLOSED");
+        kernel_text("\n");
 }

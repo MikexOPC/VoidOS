@@ -157,6 +157,55 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   attivo appartengono ai task successivi. Hardware fisico e preemption
   ordinaria AP non verificati in questo task.
 
+- **B2-2, 19 novembre 2026.** Il dispatcher BSP usa il motore continuo
+  e rimane operativo dopo la raccolta della sessione PS/2 o in assenza
+  del controller. Il runtime conserva timer, watchdog e servizio bridge.
+  Il runner richiede due campioni completi con cicli e tick crescenti,
+  pagine libere invariate e IF=1 durante l'attesa. Dopo `exit` confronta
+  anche le pagine con il budget precedente alla creazione dei task.
+  `ordinary` QEMU/OVMF TCG/q35, stesso ELF: shell 10/10, assenza PS/2
+  10/10, SMAP assente 3/3, shell con una vCPU 1/1 e con otto vCPU 1/1.
+  Nei dieci boot shell: 151-198 sospensioni IRQ fuori finestra,
+  166-236 sospensioni complessive per boot e zero sforamenti.
+  Soak 1/1 sullo stesso ELF: cinque minuti nella shell con 52 risposte
+  bridge, 5.046 sospensioni totali, 4.252 IRQ fuori finestra, 85 audit e
+  zero sforamenti. Dopo `exit`, altri cinque minuti con 41.200 cicli del
+  dispatcher, 58.128 tick LAPIC complessivi e 16.172 pagine libere
+  invariate. Cleanup PS/2 confermato prima dell'attesa continua.
+  Sei suite host superate: scheduler, x86-scheduler, watchdog, PS/2,
+  richieste console e contratto kernel. Diagnostica con ASan superata.
+  Meson integrazione/log 2/2, runner 2/2 e `plan_parity` 1/1.
+  La regressione del motore copre zero task, raccolta, completamento una
+  sola volta, rientro rifiutato, callback fallito e EMPTY prematuro.
+  La regressione della preemption copre mille righe completate con un
+  tick rinviato ciascuna; resta verificato lo sforamento di una riga
+  che rimane aperta oltre il limite. Il test del log usa la seriale
+  simulata; il test del canale AP usa la FFI Rust reale con modelli di
+  hardware, registro IRQ e scheduler, incluso il risveglio di altri task.
+  Cppcheck 2.22.0 superato con le soppressioni già previste per le stringhe
+  del log. Il codice comune del log usa ora interfacce dichiarate in
+  `kernel/diagnostics/log.h`, con backend in `arch/x86`.
+  Il primo boot falliva perché il callback riceveva `stats.failure=1`:
+  corretto e aggiunta regressione. Una campagna successiva si fermava a
+  3/10 per uno sforamento; ora il task soddisfa la preemption pendente
+  alla chiusura della riga, senza aumentare il limite di quattro tick.
+  Il primo soak falliva nella chiusura AP con failure 6 del dispatcher.
+  Il canale in chiusura ora accetta risvegli validi di altri task; il
+  percorso diagnostico conserva il controllo sui risvegli inattesi.
+  Il log originario non distingueva il singolo passo del cleanup;
+  sono stati aggiunti i motivi distinti per canale e servizio remoto.
+  Una fixture del runner usava numeri esadecimali corti: allineata al
+  formato reale a sedici cifre. Una compilazione del runner in uso è
+  fallita per il lock dell'eseguibile Windows; ripetuta a runner chiuso.
+  Le campagne preliminari interrotte e le immagini precedenti sono
+  escluse dai conteggi conclusivi.
+  Kernel SHA-256 `9F6DA47B48075FAE7E763EF4750F71D450AB17AD87807470EFB9079CCDD13ED2`.
+  Loader SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+  Evidenze sotto `kernel/build/b2-2-corrected-*`,
+  `test-run-eb05297d90f44bb8bfed53ab4d656977`,
+  `test-run-4352b870782f4576a51b0a4ad6b4658e` e `b2-2-diagnostics`.
+  Restano B2-3, preemption ordinaria AP e prove su hardware fisico.
+
 ## Build e runner
 
 | Passo | Risultato storico |

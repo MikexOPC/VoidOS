@@ -42,3 +42,21 @@ uint32_t kernel_preempt_decide(KERNEL_PREEMPT_STATE *state, const KERNEL_PREEMPT
     state->line_ticks = 0;
     return KERNEL_PREEMPT_SUSPEND;
 }
+
+// ====== kernel_preempt_line_complete ======
+
+uint32_t kernel_preempt_line_complete(KERNEL_PREEMPT_STATE *state, uint64_t task,
+    uint32_t interrupts_enabled, uint32_t lock_depth) {
+    if (!state ||
+        !task ||
+        state->task != task ||
+        !state->line_ticks ||
+        !interrupts_enabled ||
+        lock_depth
+    )
+        return KERNEL_PREEMPT_IGNORE;
+
+    state->line_ticks = 0;
+    count(&state->preempted);
+    return KERNEL_PREEMPT_SUSPEND;
+}

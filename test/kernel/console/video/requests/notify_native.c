@@ -16,6 +16,20 @@ static X86_IRQ_CALLBACK handler, quiet;
 static uint32_t actor, irq, task, now, sent, pending, posted, bound, event_bound, quiesced = 1;
 static uint32_t bad_esr, stop_clock, bad_eoi, bad_post;
 static uint32_t error;
+static uint32_t other_wakes, reported_wakes;
+
+// ====== kernel_text ======
+
+int kernel_text(const char *text) {
+    return text != NULL;
+}
+
+// ====== kernel_number ======
+
+int kernel_number(BOOT_U64 value) {
+    reported_wakes = (uint32_t)value;
+    return 1;
+}
 
 // ====== native_context_and_hardware_model ======
 
@@ -96,6 +110,8 @@ uint32_t kernel_scheduler_irq_unbind(uint32_t event, uint64_t source, uint64_t g
 }
 KERNEL_EVENT_REPLY kernel_scheduler_irq_drain(void) {
     KERNEL_EVENT_REPLY reply = {0};
+    reply.woken = other_wakes;
+    other_wakes = 0;
     posted = 0;
     return reply;
 }
@@ -116,7 +132,11 @@ int main(int argc, char **argv) {
     CHECK(xcn_prepare(123));
     CHECK(!xcn_prepare(123) && !xcn_send(0) && !xcn_release_allowed());
     if (mode == 5) {
+        other_wakes = 3;
+        CHECK(!xcn_poll());
+        other_wakes = 3;
         CHECK(xcn_close(1,1) && xcn_release_allowed() && !bound && !event_bound);
+        CHECK(reported_wakes == 3 && !other_wakes);
         CHECK(!xcn_record.Delivered && !xcn_record.Eois && !error);
         puts("PASS: unused native transport closes without a synthetic IPI");
         return 0;

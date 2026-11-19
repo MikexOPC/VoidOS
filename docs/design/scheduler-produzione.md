@@ -1,7 +1,7 @@
 # Design: scheduler preemptive nell'immagine di produzione
 
-Stato: 3d e 3e fatte per la sessione PS/2 sul BSP. L'obiettivo 1 di S1
-resta parziale: manca il dispatcher permanente (B2). Il design riprende
+Stato: 3d, 3e, B2-1 e B2-2 fatte sul BSP. L'obiettivo 1 di S1
+resta parziale fino alla chiusura di B2. Il design riprende
 le scelte di [K4-C](../../kernel/scheduler/documentation/design.md)
 e di [immagine unica](immagine-unica.md).
 
@@ -18,8 +18,8 @@ numero di task.
 | Core Rust: stati, coda globale sotto lock, `current` per CPU, affinità | `kernel/scheduler/rust/` | Sì, usato dal BSP |
 | Preemption all'uscita dell'IRQ verso il dispatcher | `arch/x86/kernel/scheduler/`, `arch/x86/kernel/interrupts/return/` | Attiva nella sessione PS/2 sul BSP, anche fuori dalla finestra di attesa |
 | Dispatcher sugli AP, task concorrenti, preemption AP | `arch/x86/kernel/scheduler/batch/`, `arch/x86/kernel/scheduler/admission/` | Solo diagnostici `KERNEL_TEST_AP_*`. L'ordinaria offre il job fidato `ap <n>` su AP1 |
-| Timer LAPIC periodico | `arch/x86/kernel/scheduler/irq/preempt.c` | D1h sul BSP durante la sessione PS/2, quanto nominale di 10 ms |
-| Modello di esecuzione | Dispatcher a sessioni | `exit` chiude la sessione e arresta il BSP. Senza PS/2 il BSP attende in `KERNEL_IDLE` con interrupt attivi |
+| Timer LAPIC periodico | `arch/x86/kernel/scheduler/irq/preempt.c` | D1h posseduto dal runtime BSP, quanto nominale di 10 ms, attivo dopo `exit` e senza PS/2 |
+| Modello di esecuzione | Dispatcher BSP permanente | `exit` rilascia la sessione PS/2. Il dispatcher continua con attese HPET e interrupt attivi anche senza PS/2 |
 | Capacità | 8 task: coda, registro IRQ e canali Rust da 8; stack in 8 posizioni da 18 pagine nella tabella delle finestre (voci 320-463) | 8 |
 | Driver | console, PS/2, shell, watchdog presuppongono il BSP | BSP |
 
@@ -48,11 +48,29 @@ Il dispatcher continua anche quando il controller PS/2 è assente.
    questa durata. L'ingresso esistente `x86_watchdog_kernel_start`
    orchestra preparazione, esecuzione e chiusura. Il dispatcher resta
    ancora a sessioni in questo primo task.
-2. **B2-2, dispatcher permanente.** Portare la proprietà del dispatcher
-   al runtime BSP, con idle a interrupt attivi anche senza PS/2.
-3. **B2-3, chiusura della sessione.** Completare rilascio e raccolta
-   delle risorse PS/2 mentre il dispatcher continua. Verificare `exit`,
-   controller assente, contabilità e attività del runtime dopo il cleanup.
+2. **B2-2 fatta, dispatcher permanente.** L'immagine `ordinary` entra una volta
+   nel motore continuo, anche con zero task PS/2. Il callback di
+   completamento verifica e raccoglie la sessione una sola volta, con
+   coda vuota e tutti gli stack restituiti. Mapping dello scheduler,
+   timer LAPIC, watchdog HPET e servizio bridge restano al runtime BSP.
+   Il contesto resta sullo stack del chiamante per tutta l'esecuzione.
+   La chiusura PS/2 sospende e drena il timer; il runtime ne riprende il
+   conteggio dopo il rilascio di IRQ, route e binding della sessione.
+   Il dispatcher continua a selezionare task e attende con l'API HPET
+   esistente quando la coda è vuota. Il runner verifica l'avanzamento
+   di cicli e tick, IF=1 nell'attesa e budget fisico invariato.
+   I profili PS/2 diagnostici senza processi utente conservano il
+   contratto di sessione finita.
+   La preemption rinviata durante una riga seriale viene soddisfatta
+   alla chiusura della riga, se il task gira con IF=1 e senza lock.
+   Il limite di quattro tick resta attivo per una riga che non termina.
+   `KERNEL_PREEMPT_SUSPENDED` include questi passaggi al dispatcher;
+   `KERNEL_PREEMPT_OUTSIDE_WINDOW` continua a contare solo i RIP dei
+   frame IRQ esterni alla finestra di attesa. Il drain del canale AP
+   in chiusura accetta i risvegli validi di altri task della sessione.
+3. **B2-3, chiusura di B2.** Verifica conclusiva di ownership e raccolta
+   PS/2, contabilità e continuità del runtime nei due percorsi con
+   `exit` e controller assente, con revisione complessiva del diff.
 
 ## Alternative
 

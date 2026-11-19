@@ -8,14 +8,15 @@ Il profilo Meson `ordinary` avvia il kernel, inizializza la memoria e i core
 secondari e, con SMEP e SMAP disponibili, esegue un programma Rust
 incorporato in ring 3. Con un controller PS/2, `ordinary` apre la shell
 con tastiera e mouse e può interrogare il servizio `bridge` in ring 3.
-Senza controller, il BSP entra in idle con gli interrupt abilitati. Lo
+Il dispatcher BSP continua dopo `exit` e senza controller PS/2, con
+timer attivo e interrupt abilitati durante l'attesa. Lo
 [stato del progetto](docs/status.md) riporta le capacità e i limiti di ogni
 profilo.
 
 ## Cosa non funziona ancora
 
-La shell gira ancora in una sessione sul BSP. Mancano uno scheduler
-preemptive permanente su tutte le CPU, driver a blocchi, VFS, esecuzione
+La shell gira in una sessione sul dispatcher BSP permanente. Mancano la
+preemption ordinaria sugli AP, driver a blocchi, VFS, esecuzione
 di ELF da file, entropia e stack canary. Vedi lo [stato del progetto](docs/status.md).
 
 ## Prerequisiti su Windows x64

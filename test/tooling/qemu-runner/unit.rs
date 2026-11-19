@@ -3,7 +3,7 @@ use qemu_runner_core::evidence::results::{Value, object, render};
 use qemu_runner_core::evidence::serial::{SerialLog, split_lines, strip_ansi};
 use qemu_runner_core::evidence::sha256::hash_bytes;
 use qemu_runner_core::evidence::trace;
-use qemu_runner_core::scenario::ordinary::{parse_cr4, parse_register, preemption_evidence};
+use qemu_runner_core::scenario::ordinary::{dispatcher_evidence, parse_cr4, parse_register, preemption_evidence};
 use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, arguments};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -277,6 +277,34 @@ fn ordinary_options_and_cr4() {
     assert_eq!(parse_cr4(b"CPU#3\nCR4=0030", 3), None);
     assert_eq!(parse_cr4(b"CPU#3\nCR4=x\n", 3), None);
     assert_eq!(parse_cr4(b"CR4=00300ee8\n", 3), None);
+}
+
+// ====== persistent_dispatcher_gate ======
+
+#[test]
+fn persistent_dispatcher_gate() {
+    let text = "[ OK ] KERNEL_READY\n[ OK ] KERNEL_DISPATCHER_READY\n\
+        KERNEL_DISPATCH_IDLE_CYCLES: 0x0000000000000001\nKERNEL_DISPATCH_TIMER_TICKS: 0x000000000000000a\n\
+        KERNEL_DISPATCH_FREE_PAGES: 0x0000000000000100\n[ OK ] KERNEL_DISPATCH_IDLE_OK\n\
+        KERNEL_DISPATCH_IDLE_CYCLES: 0x00000000000000c8\nKERNEL_DISPATCH_TIMER_TICKS: 0x0000000000000070\n\
+        KERNEL_DISPATCH_FREE_PAGES: 0x0000000000000100\n[ OK ] KERNEL_DISPATCH_IDLE_OK\n";
+    assert!(dispatcher_evidence(&SerialLog::parse(text.as_bytes())).is_ok());
+    let partial = format!("{text}KERNEL_DISPATCH_IDLE_CYCLES: 0x0000000000000190\n");
+    assert!(dispatcher_evidence(&SerialLog::parse(partial.as_bytes())).is_ok());
+    for invalid in [
+        String::new(),
+        text.replace("IDLE_CYCLES: 0x00000000000000c8", "IDLE_CYCLES: 0x0000000000000001"),
+        text.replace("TIMER_TICKS: 0x0000000000000070", "TIMER_TICKS: 0x000000000000000a"),
+        text.replacen("FREE_PAGES: 0x0000000000000100", "FREE_PAGES: 0x0000000000000101", 1),
+        text.replace("[ OK ] KERNEL_DISPATCHER_READY\n", ""),
+        format!("{text}[ FAIL ] SCHEDULER_RUNTIME_FAILED\n"),
+        format!("{text}[ OK ] KERNEL_DISPATCH_IDLE_OK\n"),
+        format!("{text}[ OK ] KERNEL_SCHEDULER_CLEANUP_OK\n\
+            SCHEDULER_BUDGET_BEFORE: 0x0000000000000101\n\
+            SCHEDULER_BUDGET_AFTER: 0x0000000000000100\n"),
+    ] {
+        assert!(dispatcher_evidence(&SerialLog::parse(invalid.as_bytes())).is_err());
+    }
 }
 
 // ====== production_preemption_gate ======

@@ -7,6 +7,8 @@ int x86_preempt_open(const X86_LAPIC_TIMER *timer);
 int x86_preempt_close(void);
 int x86_preempt_pause(void);
 int x86_preempt_resume(void);
+int x86_preempt_report(void);
+BOOT_U64 x86_preempt_ticks(void);
 void x86_preempt_after(const X86_IRQ_FRAME *frame);
 
 #endif

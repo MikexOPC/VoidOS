@@ -10,7 +10,8 @@ typedef __declspec(align(64)) struct {
     uint64_t            generation, requested_epoch;
     uint32_t            phase, current, event, requested_event;
     uint64_t            self, owner;
-    uint64_t            reserved[4];
+    uint64_t            idle_cycles;
+    uint64_t            reserved[3];
 } X86_SCHEDULER_LOCAL;
 _Static_assert(_Alignof(X86_SCHEDULER_LOCAL) == 64, "Dispatcher cache alignment");
 _Static_assert(offsetof(X86_SCHEDULER_LOCAL, dispatcher) == 0, "Native context offset");

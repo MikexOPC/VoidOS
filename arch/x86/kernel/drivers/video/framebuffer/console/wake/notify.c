@@ -2,6 +2,7 @@
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "arch/x86/kernel/interrupts/apic/icr/icr.h"
+#include "kernel/diagnostics/log.h"
 #ifdef KERNEL_TEST_AP_NOTIFY_INFLIGHT
 #include "test/kernel/console/video/ap/channel.h"
 #endif
@@ -120,17 +121,30 @@ int xcn_send(uint32_t producer) {
     return kernel_console_ap_notify(2,1,xcn_record.Token,producer,notice) == 1;
 }
 
-// ====== xcn_poll ======
+// ====== poll_private ======
 
 // Diagnostic bounded IRQ window, NOT an HLT or worker wake proof.
-int xcn_poll(void) {
+static int poll_private(int closing) {
     if (ks_irq_state() || xis_native_index() || !ks_atomic_load_acquire(&xcn_record.Active) ||
         completion[0] == UINT32_MAX) return 0;
     (void)x86_irq_wait(completion,completion[0] + 1,128);
     KERNEL_EVENT_REPLY reply = kernel_scheduler_irq_drain();
-    if (reply.reply.status || reply.woken || completion[1]) return 0;
+    if (reply.reply.status || completion[1] || (!closing && reply.woken)) return 0;
+    if (closing && reply.woken &&
+        (!kernel_text("KERNEL_NOTIFY_CLOSE_WOKEN: ") ||
+         !kernel_number(reply.woken) ||
+         !kernel_text("\n"))
+    )
+        return 0;
+
     ++xcn_record.Drains;
     return 1;
+}
+
+// ====== xcn_poll ======
+
+int xcn_poll(void) {
+    return poll_private(0);
 }
 
 // ====== xcn_close ======
@@ -143,7 +157,7 @@ int xcn_close(int queue_empty, int producers_quiet) {
     if (!xis_native_now(NULL,&start)) return 0;
     int quiet = 0;
     for (uint32_t poll = 0; poll < 1000000; ++poll) {
-        if (!xcn_poll() || !xis_native_now(NULL,&now)) return 0;
+        if (!poll_private(1) || !xis_native_now(NULL,&now)) return 0;
         if (quiet_private() && kernel_console_ap_notify(7,0,xcn_record.Token,3,0) == 0) {
             quiet = 1;
             break;

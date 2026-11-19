@@ -1,8 +1,7 @@
 #include "log.h"
-#ifdef KERNEL_PANIC_RUNTIME
-#include "arch/x86/kernel/cpu/percpu/panic/native/runtime.h"
+#ifdef KERNEL_PS2_INPUT
+#include "kernel/scheduler/preempt.h"
 #endif
-#include "arch/x86/kernel/platform.h"
 
 static volatile unsigned int line_open;
 
@@ -16,12 +15,15 @@ int kernel_text(const char *text)
         if (!text[index]) return 1;
         unsigned int was_open = line_open;
         line_open = 1;
-        if ((text[index] == '\n' && !x86_serial_character('\r')) ||
-            !x86_serial_character(text[index])) {
+        if ((text[index] == '\n' && !kernel_log_character('\r')) ||
+            !kernel_log_character(text[index])) {
             line_open = was_open;
             return 0;
         }
         line_open = text[index] != '\n';
+#ifdef KERNEL_PS2_INPUT
+        if (!line_open) kernel_preempt_log_boundary();
+#endif
     }
     return 0;
 }
@@ -63,14 +65,12 @@ int kernel_number(BOOT_U64 value)
 __declspec(noreturn) __declspec(noinline) static void panic_legacy_private(const char *message) {
     kernel_section("kernel panic");
     kernel_log(3, message);
-    x86_kernel_stop(0x4b50414e49430001ULL);
+    kernel_log_stop(0x4b50414e49430001ULL);
 }
 
 // ====== kernel_panic ======
 
 __declspec(noreturn) void kernel_panic(const char *message) {
-#ifdef KERNEL_PANIC_RUNTIME
-    if (ks_atomic_load_acquire(&xp_panic_armed)) xp_panic_voluntary((BOOT_U64)message);
-#endif
+    kernel_log_panic_prepare(message);
     panic_legacy_private(message);
 }
