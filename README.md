@@ -62,4 +62,8 @@ avvia una VM senza finestra grafica, controlla i marker seriali e scrive
 
 I sorgenti del kernel sono in [kernel/](kernel/) e [arch/x86/](arch/x86/).
 Consulta la [mappa del codice](docs/architecture.md), la [roadmap](docs/roadmap.md) e la [guida agli script](scripts/README.md).
-Il progetto è distribuito con licenza [GPL-3.0-only](LICENSE).
+Il codice del progetto è distribuito con licenza [GPL-3.0-only](LICENSE).
+Il font Cascadia Mono e i dati derivati del font mantengono la
+[SIL Open Font License 1.1](arch/x86/kernel/drivers/video/framebuffer/font/LICENSE).
+La [provenienza e l'hash del font sorgente](arch/x86/kernel/drivers/video/framebuffer/font/source/origin.json)
+sono registrati insieme al file originale.

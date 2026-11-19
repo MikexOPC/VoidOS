@@ -77,7 +77,7 @@ Il cambio stack non e un context switch di thread.
 
 Tabelle paging, contratto, mappa e altre risorse del loader restano persistenti.
 Lo stack loader e unmapped, ma non reclamato. Nessuna prova su hardware fisico.
-Le modifiche preesistenti a direttive-locali, .gitignore, SKILL.md e cartelle IDE sono
+Le modifiche preesistenti a .gitignore, SKILL.md e cartelle IDE sono
 escluse dal checkpoint. Moduli C principali entro 200–400 righe; header,
 validatori Rust e adapter Assembly compatti.
 
