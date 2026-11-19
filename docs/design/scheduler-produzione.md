@@ -32,10 +32,27 @@ riporta i gate del runner per la shell e il soak nell'immagine ordinaria.
 
 B2 rende permanente il dispatcher sul BSP nell'immagine ordinaria. Il
 dispatcher deve restare operativo senza PS/2 e dopo la chiusura della
-shell, con gli interrupt attivi durante l'idle. Il design di B2 deve
-definire il ciclo di vita di shell e servizi, il significato di `exit`
-e come verificare il rilascio delle risorse quando il dispatcher rimane
-attivo.
+shell, con gli interrupt attivi durante l'idle.
+
+Opzione A approvata dall'utente, confermata il 19 novembre 2026. Il BSP
+possiede il dispatcher, il timer e il watchdog per tutta la vita del
+runtime. La sessione PS/2 possiede i propri task, stack, IRQ e binding.
+`exit` chiude la sessione e ne rilascia le risorse dopo la quiescenza.
+Il dispatcher continua anche quando il controller PS/2 è assente.
+
+1. **B2-1 fatta, separazione dell'avvio.** `x86_watchdog_kernel_prepare`
+   prepara timer e watchdog. `x86_watchdog_kernel_dispatch` esegue init
+   e la sessione PS/2. `X86_WATCHDOG_KERNEL_RUNTIME` conserva l'ambiente
+   e la directory ACPI, con durata fino a `x86_timer_finish` incluso.
+   Il chiamante mantiene il contesto nello stesso indirizzo per tutta
+   questa durata. L'ingresso esistente `x86_watchdog_kernel_start`
+   orchestra preparazione, esecuzione e chiusura. Il dispatcher resta
+   ancora a sessioni in questo primo task.
+2. **B2-2, dispatcher permanente.** Portare la proprietà del dispatcher
+   al runtime BSP, con idle a interrupt attivi anche senza PS/2.
+3. **B2-3, chiusura della sessione.** Completare rilascio e raccolta
+   delle risorse PS/2 mentre il dispatcher continua. Verificare `exit`,
+   controller assente, contabilità e attività del runtime dopo il cleanup.
 
 ## Alternative
 
@@ -43,8 +60,8 @@ attivo.
 Si promuovono i pezzi già provati, in tre obiettivi in fila:
 
 1. **Dispatcher persistente sul BSP** (è B2): una sola esecuzione dello
-   scheduler che non termina; input, shell e servizi diventano task
-   permanenti; un task idle fa `STI; HLT`. Preemption sul BSP con il timer
+   scheduler che non termina; input, shell e servizi hanno un ciclo di
+   vita proprio; un task idle fa `STI; HLT`. Preemption sul BSP con il timer
    LAPIC periodico, timeslice iniziale 10 ms da misurare.
 2. **Dispatcher su tutti gli AP**: ogni AP esegue il proprio dispatcher e
    l'idle; task senza affinità vanno su qualsiasi CPU, i task dei driver

@@ -124,6 +124,39 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   sotto `kernel/build/`.
   [Design](../design/scheduler-produzione.md#3e--chiusura-delle-prove-bsp).
 
+- **B2-1, 19 novembre 2026.** Separata la preparazione di timer/watchdog
+  dall'esecuzione di init e della sessione PS/2, con contesto posseduto
+  dal chiamante fino al cleanup. Test Meson `watchdog_integration` 1/1
+  con ASan e warning come errori: otto scenari verificano ordine,
+  ambiente conservato, directory/topologia mancanti, preparazione
+  fallita, timer indisponibile e propagazione dell'errore di cleanup.
+  Timer, processo e PS/2 sono sostituiti nel test host: la prova riguarda
+  l'orchestrazione. Cppcheck 2.22.0 sul file di integrazione senza
+  diagnostiche bloccanti. Suite host watchdog, x86-scheduler, scheduler
+  e PS/2 4/4; `plan_parity` 1/1, runner Meson 2/2. Il primo tentativo
+  era privo di cppcheck; dipendenza recuperata dalla release ufficiale.
+  Le esecuzioni Meson rimaste in attesa nel sandbox sono state chiuse
+  e ripetute fuori dal sandbox. Il test ASan usa il runtime del
+  compilatore MSVC rilevato da Meson.
+  Build di kernel e loader nel checkout pubblico `D:\VoidOS-public`.
+  `ordinary` su QEMU/OVMF, TCG/q35, quattro vCPU: shell con bridge e
+  cleanup 10/10, controller PS/2 assente con init e idle a IF=1 10/10.
+  Soak di cinque minuti 1/1: 52 risposte bridge, 2.907 sospensioni totali,
+  2.204 fuori finestra, zero sforamenti, 85 audit, zero recuperi HPET
+  e cleanup completato. Nei dieci boot shell: 144-172 sospensioni fuori
+  finestra e 211-217 totali per boot, zero sforamenti.
+  Kernel SHA-256 `C384F91197F560A1F5063A372FF909E968ED181034B0D58B02FDD54F4EAB4242`.
+  Loader SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+  Evidenze in `kernel/build/b2-1-shell`, `b2-1-no-ps2`, `b2-1-soak`,
+  `meson-watchdog-integration`, `meson-qemu-runner` e
+  `test-run-0d7782aa2352411b95dee6979d04c575`.
+  Il test di orchestrazione si configura con
+  `meson setup kernel/build/meson-watchdog-integration test/arch/x86/kernel/timer/hpet/watchdog --vsenv`
+  e si esegue con `meson test -C kernel/build/meson-watchdog-integration`.
+  Il dispatcher permanente e il cleanup PS/2 con dispatcher ancora
+  attivo appartengono ai task successivi. Hardware fisico e preemption
+  ordinaria AP non verificati in questo task.
+
 ## Build e runner
 
 | Passo | Risultato storico |
