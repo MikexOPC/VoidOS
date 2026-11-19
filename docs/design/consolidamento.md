@@ -2,10 +2,9 @@
 
 Versione completa precedente in `docs/design/k1-higher-half.md`, `docs/design/g7-smp-user.md`, `docs/design/project-direction.md` e `docs/design/k6-design.md` (Migrazione della build), al commit `efecb8b`.
 
-Il consolidamento porta boot, shell e processi nello stesso runtime,
-con build riproducibile e scheduler preemptive su tutte le CPU. Qui sono
-raccolti i contratti già adottati. L'immagine unica e lo scheduler di
-produzione richiedono ancora alternative e scelta dell'utente.
+L'immagine Meson `ordinary` riunisce shell e programmi incorporati in
+ring 3. Il consolidamento richiede ancora un dispatcher permanente,
+preemption su tutte le CPU e una build avviabile con un solo comando.
 
 ## Layout e risorse
 
@@ -33,13 +32,20 @@ conserva le lease dopo il punto irreversibile. Gli AP ammessi rispondono
 a PING e shootdown. Il panic coordinato usa NMI e attese limitate.
 [Design per CPU](../../arch/x86/kernel/cpu/percpu/documentation/design.md).
 
-La scelta K4-C è la coda globale con lock, stato e affinità in Rust,
-dispatcher per CPU e switch all'uscita dell'IRQ in Assembly. Preemption
-solo da una task con IF=1 e senza lock tenuti. La slice iniziale del
-design era 10 ms, soggetta a misura. L'ordinaria esegue i task cooperativi
-sul BSP, mentre i driver e gli IRQ dei dispositivi restano sul BSP.
-La shell ordinaria inoltra un solo job fidato ad AP1 e raccoglie lo stack
-dopo la quiescenza. [Design K4-C](../../kernel/scheduler/documentation/design.md).
+La scelta K4-C usa una coda globale con lock, stato e affinità in Rust,
+dispatcher per CPU e switch all'uscita dell'IRQ in Assembly. In
+`ordinary` il timer LAPIC D1h sospende i task della sessione PS/2 sul
+BSP anche fuori dalla finestra di attesa. I task partono con IF=1 e il
+quanto nominale è 10 ms. Il runner verifica i contatori di preemption
+nelle sessioni shell e soak. I driver e gli IRQ dei dispositivi restano
+sul BSP. Il comando `ap <n>` inoltra un job fidato ad AP1 e ne raccoglie
+lo stack dopo la quiescenza.
+
+Il passo successivo di S1 è il dispatcher permanente sul BSP (B2).
+Oggi `exit` chiude la sessione e arresta il BSP. Senza PS/2 il BSP entra
+in `KERNEL_IDLE` con interrupt attivi e senza servizi schedulati.
+[Design dello scheduler](scheduler-produzione.md) ·
+[Validazione della 3e](../validation/consolidamento.md#cpu-e-scheduler).
 
 ## Oggetti driver
 

@@ -34,14 +34,14 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Limiti e prossimo passo
 
-- Shell e processo utente convivono in `ordinary`. Il dispatcher gira a
-  sessioni sul BSP e l'idle finale non ospita servizi. Manca la preemption
-  ordinaria sugli AP. La 3e chiude le prove BSP e applica i gate del runner
-  alle sessioni shell e soak. Restano limiti fissi di otto task e quattro
-  sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è un solo
-  processo attivo alla volta.
-- Nel soak della 3d-4 una porzione dell'audit a IRQ spenti ha misurato
-  18,7 ms. Il quanto nominale da 10 ms non garantisce quella latenza.
+- La 3e chiude le prove della preemption nella sessione PS/2 sul BSP.
+  Il prossimo passo di S1 è il [dispatcher permanente sul BSP](design/scheduler-produzione.md#prossimo-passo-di-s1).
+  Poi restano la preemption ordinaria sugli AP e i limiti fissi di otto
+  task e quattro sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è
+  un solo processo attivo alla volta.
+- Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
+  e circa 13,5 ms nel soak della 3e. Il quanto nominale è 10 ms.
+  [Validazione](validation/consolidamento.md#cpu-e-scheduler).
 - Mancano driver a blocchi, VFS, filesystem del kernel ed esecuzione di ELF
   da file. La lettura dell'ELF del kernel avviene nel loader tramite UEFI.
 - Mancano sorgente di entropia e stack canary del kernel. W^X per sezione
@@ -57,8 +57,7 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   ignota; ipotesi non verificata: carico dell'host. Non si è ripresentato in
   9 sessioni con diagnostica dedicata.
 - Il backend processi è stato diviso. La CI ha un workflow per suite host
-  e boot ordinario. Restano la migrazione delle suite host in `meson test`
-  e la scelta del [dispatcher permanente](design/scheduler-produzione.md).
+  e boot ordinario. Resta la migrazione delle suite host in `meson test`.
 
 ## Evidenze
 

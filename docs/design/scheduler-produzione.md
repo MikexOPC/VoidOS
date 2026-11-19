@@ -1,9 +1,9 @@
 # Design: scheduler preemptive nell'immagine di produzione
 
-Stato: in corso (obiettivo 1, task 3), 15 novembre 2026. Riprende le scelte
-già approvate di K4-C ([design e riferimenti](../../kernel/scheduler/documentation/design.md))
-e la parte B2 di
-[immagine unica](immagine-unica.md).
+Stato: 3d e 3e fatte per la sessione PS/2 sul BSP. L'obiettivo 1 di S1
+resta parziale: manca il dispatcher permanente (B2). Il design riprende
+le scelte di [K4-C](../../kernel/scheduler/documentation/design.md)
+e di [immagine unica](immagine-unica.md).
 
 ## Obiettivo
 
@@ -16,16 +16,26 @@ numero di task.
 | Pezzo | Dove | In produzione |
 |---|---|---|
 | Core Rust: stati, coda globale sotto lock, `current` per CPU, affinità | `kernel/scheduler/rust/` | Sì, usato dal BSP |
-| Preemption all'uscita dell'IRQ verso il dispatcher | `arch/x86/kernel/scheduler/`, `interrupts/return/` | No: solo con flag di test |
-| Dispatcher sugli AP, task concorrenti, preemption AP | `arch/x86/kernel/scheduler/batch/`, `admission/` | No: solo `KERNEL_TEST_AP_*`; in produzione solo il job `ap <n>` |
-| Timer LAPIC periodico per CPU | profili `bsp-periodic`, `ap-timer` | No |
-| Modello di esecuzione | sessioni in sequenza che terminano | La shell è l'ultima sessione |
+| Preemption all'uscita dell'IRQ verso il dispatcher | `arch/x86/kernel/scheduler/`, `arch/x86/kernel/interrupts/return/` | Attiva nella sessione PS/2 sul BSP, anche fuori dalla finestra di attesa |
+| Dispatcher sugli AP, task concorrenti, preemption AP | `arch/x86/kernel/scheduler/batch/`, `arch/x86/kernel/scheduler/admission/` | Solo diagnostici `KERNEL_TEST_AP_*`. L'ordinaria offre il job fidato `ap <n>` su AP1 |
+| Timer LAPIC periodico | `arch/x86/kernel/scheduler/irq/preempt.c` | D1h sul BSP durante la sessione PS/2, quanto nominale di 10 ms |
+| Modello di esecuzione | Dispatcher a sessioni | `exit` chiude la sessione e arresta il BSP. Senza PS/2 il BSP attende in `KERNEL_IDLE` con interrupt attivi |
 | Capacità | 8 task: coda, registro IRQ e canali Rust da 8; stack in 8 posizioni da 18 pagine nella tabella delle finestre (voci 320-463) | 8 |
 | Driver | console, PS/2, shell, watchdog presuppongono il BSP | BSP |
 
-Prove esistenti dei pezzi di test: `ap-task-four` (8 task su 4 AP,
-preemption), `bsp-periodic`, `ap-task-concurrent-stress`. Sono profili
-diagnostici: niente di questo è provato nell'immagine di produzione.
+La [validazione della 3e](../validation/consolidamento.md#cpu-e-scheduler)
+riporta i gate del runner per la shell e il soak nell'immagine ordinaria.
+`meson-bsp-periodic`, `ap-task-four` (otto task su quattro AP) e
+`ap-task-concurrent-stress` sono prove diagnostiche.
+
+## Prossimo passo di S1
+
+B2 rende permanente il dispatcher sul BSP nell'immagine ordinaria. Il
+dispatcher deve restare operativo senza PS/2 e dopo la chiusura della
+shell, con gli interrupt attivi durante l'idle. Il design di B2 deve
+definire il ciclo di vita di shell e servizi, il significato di `exit`
+e come verificare il rilascio delle risorse quando il dispatcher rimane
+attivo.
 
 ## Alternative
 
