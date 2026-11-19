@@ -36,6 +36,8 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 - La 3e chiude le prove della preemption nella sessione PS/2 sul BSP.
   Il prossimo passo di S1 è il [dispatcher permanente sul BSP](design/scheduler-produzione.md#prossimo-passo-di-s1).
+  B2-1 separa preparazione di timer/watchdog ed esecuzione dei servizi.
+  Restano l'ingresso permanente e il cleanup PS/2 con dispatcher attivo.
   Poi restano la preemption ordinaria sugli AP e i limiti fissi di otto
   task e quattro sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è
   un solo processo attivo alla volta.
