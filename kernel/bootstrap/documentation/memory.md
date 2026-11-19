@@ -68,9 +68,9 @@ Mapping/ownership reali sono esercitati in QEMU tramite le API esistenti;
 risorse persistenti sono intenzionalmente vive. Valgrind non eseguito, coverage
 linee/branch N/D, hardware fisico e SMP/AP non dimostrati.
 
-[Manifest di 14 sorgenti/script](D:/OS/kernel/build/bootstrap-review/sources.json),
-whitespace, limiti dimensionali e hash ricontrollati a fine task. Nessuna
-modifica a `reuse/`: 460 file presenti coincidono con la vecchia fotografia;
-`reuse/LunaroidOS-main/LICENSE` presente in quella fotografia ora e assente.
-Non viene attribuita la causa o la data della rimozione, ne ripristinato il file.
-[Confronto](D:/OS/kernel/build/bootstrap-review/legacy-comparison.json).
+Nel checkpoint furono ricontrollati il manifest di 14 sorgenti/script,
+gli spazi, i limiti dimensionali e gli hash. Manifest e confronti erano
+artefatti locali sotto `kernel/build/bootstrap-review/`.
+La vecchia nota sulla licenza mancante riguardava una cartella locale
+di riferimento, assente dai file tracciati e dalla cronologia pubblicata.
+Non documentava una rimozione della licenza del progetto.

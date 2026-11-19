@@ -83,7 +83,7 @@ prima di pianificare interrupt e scheduling del kernel ibrido.
 Struttura: cinque file diretti nel modulo, Rust/Assembly in sottocartelle
 funzionali; moduli C principali 200/201 righe, test C 203/232.
 Header e adattatori compatti secondo la deroga esplicita dell'utente.
-Modifiche preesistenti a `.gitignore`, `direttive-locali`, `SKILL.md`, `.idea/` e `.vs/`
+Modifiche preesistenti a `.gitignore`, `SKILL.md`, `.idea/` e `.vs/`
 escluse dal checkpoint Git.
 
 Le fonti ufficiali e la procedura ripetibile sono in

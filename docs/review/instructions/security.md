@@ -1,6 +1,6 @@
 # R-003 — riferimento delle istruzioni OS
 
-Aggiornato il 5 ottobre 2026. Queste regole correggono gli esempi di direttive-locali, SKILL.md e REVIEW_INSTRUCTION.md; non descrivono nuove protezioni implementate nel kernel.
+Aggiornato il 5 ottobre 2026. Queste regole correggono gli esempi delle direttive locali, SKILL.md e REVIEW_INSTRUCTION.md; non descrivono nuove protezioni implementate nel kernel.
 
 ## Registri e prerequisiti
 

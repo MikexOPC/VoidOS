@@ -3,7 +3,7 @@
 20 ottobre 2026. Stato: contratto A approvato dall'utente e implementato
 nel diagnostico; [prove e limiti](validation.md).
 Prerequisito verificato: [mapping e capacita](../../registers/documentation/validation.md).
-La scelta di questo contratto ha preceduto l'implementazione, secondo direttive-locali §7.
+La scelta di questo contratto ha preceduto l'implementazione.
 
 ## Ricerca e motivazione
 
