@@ -3,8 +3,9 @@
 Versione completa precedente in `docs/design/k1-higher-half.md`, `docs/design/g7-smp-user.md`, `docs/design/project-direction.md` e `docs/design/k6-design.md` (Migrazione della build), al commit `efecb8b`.
 
 L'immagine Meson `ordinary` riunisce shell e programmi incorporati in
-ring 3. Il consolidamento richiede ancora un dispatcher permanente,
-preemption su tutte le CPU e una build avviabile con un solo comando.
+ring 3 e mantiene il dispatcher BSP dopo `exit` e senza PS/2.
+Il consolidamento richiede ancora preemption su tutte le CPU e una
+build avviabile con un solo comando.
 
 ## Layout e risorse
 
@@ -44,9 +45,10 @@ lo stack dopo la quiescenza.
 Il dispatcher BSP di B2 continua dopo `exit` e senza controller PS/2.
 La sessione rilascia task, stack, IRQ e binding. Il runtime mantiene
 timer LAPIC, watchdog HPET e servizio bridge. L'attesa usa il percorso
-HPET con interrupt attivi. Restano la chiusura B2-3 e la preemption AP.
+HPET con interrupt attivi. B2-3 chiude le prove di questo ciclo di vita.
+Il prossimo obiettivo è la preemption ordinaria sugli AP.
 [Design dello scheduler](scheduler-produzione.md) ·
-[Validazione della 3e](../validation/consolidamento.md#cpu-e-scheduler).
+[Validazione BSP](../validation/consolidamento.md#cpu-e-scheduler).
 
 ## Oggetti driver
 

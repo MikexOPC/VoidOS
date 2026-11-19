@@ -36,11 +36,11 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 ## Limiti e prossimo passo
 
 - La 3e chiude le prove della preemption nella sessione PS/2 sul BSP.
-  B2-2 porta il [dispatcher permanente sul BSP](design/scheduler-produzione.md#prossimo-passo-di-s1)
-  in `ordinary`, con cleanup della sessione e continuità senza PS/2.
-  Resta la verifica conclusiva B2-3 prevista dal design.
-  Poi restano la preemption ordinaria sugli AP e i limiti fissi di otto
-  task e quattro sottoscrizioni IRQ. L'heap è limitato a 16 MiB e c'è
+  B2 chiude il [dispatcher permanente sul BSP](design/scheduler-produzione.md#prossimo-passo-di-s1)
+  in `ordinary`, con cleanup verificato della sessione e continuità senza PS/2.
+  Il prossimo obiettivo è la preemption ordinaria sugli AP. Restano otto
+  task e quattro slot IRQ per dispositivi, più quello dedicato al timer.
+  L'heap è limitato a 16 MiB e c'è
   un solo processo attivo alla volta.
 - Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
   e circa 13,5 ms nel soak della 3e. Il quanto nominale è 10 ms.
@@ -64,13 +64,15 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-B2-2, Meson `ordinary`, kernel SHA-256 `9F6DA47B48075FAE7E763EF4750F71D450AB17AD87807470EFB9079CCDD13ED2`.
+B2-3, Meson `ordinary`, kernel SHA-256 `36C2995FDE351EBC4DE29942348D784F03F2E5646322E056F77E026E44D03D71`.
 QEMU/OVMF TCG/q35, 25 boot superati con shell, PS/2 assente, SMAP
 assente e configurazioni da una, quattro e otto vCPU. Soak superato con
-cinque minuti di shell e cinque minuti di dispatcher dopo `exit`,
-zero sforamenti e pagine libere invariate. Sei suite host e diagnostica
-ASan superate; Meson integrazione/log 2/2, runner 2/2 e `plan_parity` 1/1.
-[Risultati e limiti B2-2](validation/consolidamento.md#cpu-e-scheduler).
+15 minuti di shell e 15 di dispatcher dopo `exit`, 156 risposte bridge,
+zero sforamenti e 16.172 pagine libere invariate. Tre slot IRQ della
+sessione liberi nella VM, HPET e timer presenti. Sei suite host superate,
+PS/2 ripetuta dopo la correzione delle righe seriali della shell.
+Meson integrazione/log con ASan 2/2, runner 2/2 e `plan_parity` 1/1.
+[Risultati e limiti B2-3](validation/consolidamento.md#cpu-e-scheduler).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni
 [AP nel boot ordinario](validation/consolidamento.md#validazione-dei-backend-x86),

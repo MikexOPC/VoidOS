@@ -6,7 +6,7 @@ int kernel_shell_bridge_status(void);
 static KERNEL_SHELL_OUTPUT output;
 static void *output_context;
 static int exit_requested;
-#define TEXT(literal) text_private(literal, (uint32_t)(sizeof(literal) - 1U))
+#define NUMBER(literal, value) number_private(literal, (uint32_t)(sizeof(literal) - 1U), value)
 #define LOG(level, literal) log_private(level, literal, (uint32_t)(sizeof(literal) - 1U))
 
 // ====== kernel_shell_exit_requested ======
@@ -41,13 +41,6 @@ static int video_private(const char *data, uint32_t length)
     return !output || output(output_context, data, length);
 }
 
-// ====== text_private ======
-
-static int text_private(const char *data, uint32_t length)
-{
-    return data && length < 256 && kernel_text(data) && video_private(data, length);
-}
-
 // ====== log_private ======
 
 static int log_private(uint32_t level, const char *data, uint32_t length)
@@ -57,19 +50,23 @@ static int log_private(uint32_t level, const char *data, uint32_t length)
 
 // ====== number_private ======
 
-static int number_private(uint64_t value)
-{
+static int number_private(const char *label, uint32_t length, uint64_t value) {
     static const char digits[] = "0123456789abcdef";
-    char text[18] = {'0', 'x'};
+    char text[64];
+    if (length > sizeof(text) - 20) return 0;
+    for (uint32_t index = 0; index < length; ++index) text[index] = label[index];
+    text[length] = '0';
+    text[length + 1] = 'x';
     for (uint32_t index = 0; index < 16; ++index)
-        text[index + 2] = digits[(value >> (60 - 4 * index)) & 15];
-    return kernel_number(value) && video_private(text, sizeof(text));
+        text[length + index + 2] = digits[(value >> (60 - 4 * index)) & 15];
+    text[length + 18] = '\n';
+    text[length + 19] = 0;
+    return kernel_text(text) && video_private(text,length + 19);
 }
 
-// ====== kernel_ps2_shell_write ======
+// ====== serial_private ======
 
-int kernel_ps2_shell_write(const char *data, uint32_t length)
-{
+static int serial_private(const char *data, uint32_t length) {
     char chunk[129];
     if (!data || length > 256 || data[length]) return 0;
     for (uint32_t offset = 0; offset < length;) {
@@ -80,7 +77,21 @@ int kernel_ps2_shell_write(const char *data, uint32_t length)
         if (!kernel_text(chunk)) return 0;
         offset += count;
     }
-    return video_private(data, length);
+    return 1;
+}
+
+// ====== kernel_ps2_shell_write ======
+
+int kernel_ps2_shell_write(const char *data, uint32_t length) {
+    return serial_private(data,length) && video_private(data,length);
+}
+
+// ====== echo_private ======
+
+static int echo_private(const char *data, uint32_t length) {
+    static const char prefix[] = "SHELL_ECHO: ";
+    return kernel_text(prefix) && serial_private(data,length) && kernel_text("\n") &&
+        video_private(prefix,sizeof(prefix) - 1) && video_private(data,length) && video_private("\n",1);
 }
 
 // ====== remote_private ======
@@ -94,11 +105,9 @@ static int remote_private(const char *text, uint32_t length)
     if (value == UINT64_MAX) return LOG(2,"SHELL_BAD_ARGUMENTS");
 #ifdef KERNEL_AP_TASKS
     if (!kernel_shell_remote(value,result)) return LOG(2,"SHELL_AP_FAILED");
-    return TEXT("SHELL_AP_CPU: ") && number_private(result[0]) &&
-        TEXT("\nSHELL_AP_COUNT: ") && number_private(value) &&
-        TEXT("\nSHELL_AP_SUM: ") && number_private(result[1]) &&
-        TEXT("\nSHELL_AP_CHECKSUM: ") && number_private(result[2]) &&
-        TEXT("\nSHELL_AP_WAITS: ") && number_private(result[3]) && TEXT("\n");
+    return NUMBER("SHELL_AP_CPU: ",result[0]) && NUMBER("SHELL_AP_COUNT: ",value) &&
+        NUMBER("SHELL_AP_SUM: ",result[1]) && NUMBER("SHELL_AP_CHECKSUM: ",result[2]) &&
+        NUMBER("SHELL_AP_WAITS: ",result[3]);
 #else
     (void)result;
     return LOG(2,"SHELL_AP_UNAVAILABLE");
@@ -129,12 +138,10 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     if (kind == UINT32_MAX) return 0;
     if (!kind) return LOG(1,"SHELL_EMPTY");
     if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | ap <n> | exit");
-    if (kind == 2) return TEXT("SHELL_ECHO: ") &&
-        kernel_ps2_shell_write(line->Data + argument,line->Length - argument) && TEXT("\n");
+    if (kind == 2) return echo_private(line->Data + argument,line->Length - argument);
     if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, kernel tasks") &&
-        TEXT("SHELL_INPUT_BYTES: ") && number_private(status->Bytes) &&
-        TEXT("\nSHELL_INPUT_KEYS: ") && number_private(status->Keys) &&
-        TEXT("\nSHELL_INPUT_LINES: ") && number_private(status->Lines) && TEXT("\n");
+        NUMBER("SHELL_INPUT_BYTES: ",status->Bytes) && NUMBER("SHELL_INPUT_KEYS: ",status->Keys) &&
+        NUMBER("SHELL_INPUT_LINES: ",status->Lines);
     if (kind == 4) { exit_requested = 1; return LOG(1,"SHELL_EXIT_REQUEST") ? 2 : 0; }
     if (kind == 7) return remote_private(line->Data + argument,line->Length - argument);
     if (kind == 8) {

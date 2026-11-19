@@ -1,12 +1,20 @@
 use std::ffi::c_void;
 use std::io;
 use std::mem::size_of;
+use std::marker::PhantomData;
 use std::ptr::null;
 
 const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: i32 = 9;
 const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x2000;
 const PROCESS_SYNCHRONIZE: u32 = 0x0010_0000;
 const WAIT_TIMEOUT: u32 = 258;
+const ES_CONTINUOUS: u32 = 0x8000_0000;
+const ES_SYSTEM_REQUIRED: u32 = 1;
+
+pub struct SystemAwake {
+    previous: u32,
+    thread: PhantomData<*mut ()>,
+}
 
 #[repr(C)]
 #[derive(Default)]
@@ -48,6 +56,27 @@ unsafe extern "system" {
     fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
     fn WaitForSingleObject(handle: *mut c_void, milliseconds: u32) -> u32;
     fn CloseHandle(handle: *mut c_void) -> i32;
+    fn SetThreadExecutionState(flags: u32) -> u32;
+}
+
+// ====== SystemAwake ======
+
+impl SystemAwake {
+    pub fn new() -> io::Result<Self> {
+        let previous = unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED) };
+        if previous == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(Self { previous, thread: PhantomData })
+    }
+}
+
+// ====== Drop ======
+
+impl Drop for SystemAwake {
+    fn drop(&mut self) {
+        unsafe { SetThreadExecutionState(self.previous | ES_CONTINUOUS) };
+    }
 }
 
 // ====== bind_children_to_runner ======

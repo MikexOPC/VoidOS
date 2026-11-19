@@ -3,7 +3,7 @@ use qemu_runner_core::evidence::results::{Value, object, render};
 use qemu_runner_core::evidence::serial::{SerialLog, split_lines, strip_ansi};
 use qemu_runner_core::evidence::sha256::hash_bytes;
 use qemu_runner_core::evidence::trace;
-use qemu_runner_core::scenario::ordinary::{dispatcher_evidence, parse_cr4, parse_register, preemption_evidence};
+use qemu_runner_core::scenario::ordinary::{dispatcher_evidence, parse_cr4, parse_memory, parse_register, preemption_evidence};
 use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, arguments};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -279,6 +279,22 @@ fn ordinary_options_and_cr4() {
     assert_eq!(parse_cr4(b"CR4=00300ee8\n", 3), None);
 }
 
+// ====== monitor_memory ======
+
+#[test]
+fn monitor_memory() {
+    let dump = b"(qemu) x /4gx 0xffffffff80000000\r\n\
+        ffffffff80000000: 0xffffffff80000000 0x0000000000000040\r\n\
+        ffffffff80000010: 0x0000000000000000 0x00000000000000d1\r\n(qemu) ";
+    assert_eq!(parse_memory(dump, 0xffffffff80000000, 4), Some(vec![0xffffffff80000000, 0x40, 0, 0xd1]));
+    assert!(parse_memory(b"ffffffff80000000: 0x0000000000000000", 0xffffffff80000000, 1).is_none());
+    assert!(parse_memory(b"ffffffff80000000: 0x00000000\n", 0xffffffff80000000, 1).is_none());
+    assert!(parse_memory(dump, 0xffffffff80000000, 5).is_none());
+    assert!(parse_memory(dump, 0xffffffff80000008, 4).is_none());
+    assert!(parse_memory(b"ffffffff80000000: Cannot access memory\n", 0xffffffff80000000, 4).is_none());
+    assert!(parse_memory(b"ffffffff80000000: 0x1\nffffffff80000010: 0x2\n", 0xffffffff80000000, 2).is_none());
+}
+
 // ====== persistent_dispatcher_gate ======
 
 #[test]
@@ -331,4 +347,24 @@ fn production_preemption_gate() {
     ] {
         assert!(preemption_evidence(&SerialLog::parse(text.as_bytes())).is_err());
     }
+}
+
+// ====== host_execution_state ======
+
+#[test]
+fn host_execution_state() {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn SetThreadExecutionState(flags: u32) -> u32;
+    }
+    const CONTINUOUS: u32 = 0x8000_0000;
+    let previous = unsafe { SetThreadExecutionState(CONTINUOUS) };
+    assert_ne!(previous, 0);
+    {
+        let _awake = qemu_runner_core::vm::job::SystemAwake::new().expect("system wake request");
+        let state = unsafe { SetThreadExecutionState(CONTINUOUS | 1) };
+        assert_eq!(state & 1, 1);
+    }
+    let restored = unsafe { SetThreadExecutionState(previous | CONTINUOUS) };
+    assert_eq!(restored, CONTINUOUS);
 }
