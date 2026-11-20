@@ -474,6 +474,7 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     }
 #ifdef KERNEL_AP_TASKS
     if (irq_profile == 5 && xis_native.Count >= 2 && kernel_scheduler_configure(xis_native.Count,1)) return 0;
+    if (irq_profile == 5 && !x86_ap_dispatchers_start(pool,root)) return 0;
 #endif
     for (uint32_t index = 0; index < task_count; ++index) prepare_private(pool,root);
     if ((irq_profile == 2 || irq_profile == 4

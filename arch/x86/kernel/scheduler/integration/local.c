@@ -2,6 +2,12 @@
 
 static X86_SCHEDULER_LOCAL locals[X86_PERCPU_CAPACITY];
 
+// ====== x86_scheduler_local_cpu ======
+
+X86_SCHEDULER_LOCAL *x86_scheduler_local_cpu(uint32_t cpu) {
+    return cpu < X86_PERCPU_CAPACITY ? &locals[cpu] : NULL;
+}
+
 // ====== owner_private ======
 
 static const X86_CPU_LOCAL *owner_private(void)

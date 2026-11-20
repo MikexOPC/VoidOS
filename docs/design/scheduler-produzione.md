@@ -110,12 +110,18 @@ unificazione immediata degli ingressi IRQ BSP/AP, il 20 novembre.
 
 ### Strutture e ownership
 
-`X86_SCHEDULER_LOCAL`, già nella memoria per CPU, conserverà contesto,
-task corrente, generazione, stato del dispatcher e stato di preemption.
-Il runtime previsto possiederà admission, timer e autorità AP per tutta
-la durata del sistema. Il BSP prepara e pubblica il contesto condiviso prima di
-avviare i dispatcher AP. Ogni AP pubblica conferma di ingresso e stato
-locale tramite atomiche con semantica release/acquire.
+`X86_SCHEDULER_LOCAL` conserva contesto, task corrente, generazione e stato
+del dispatcher per CPU. Il runtime possiede admission e autorità AP per
+tutta la durata del sistema. Timer e preemption locali sono la task 4.
+Il BSP pubblica il contesto prima dell'avvio e ogni AP conferma l'ingresso
+tramite atomiche con semantica release/acquire.
+
+La task del runtime permanente è fatta. Dopo il binding nativo e
+la configurazione del core, il BSP ammette ogni AP una sola volta con
+token 1 e attende `runtime_ready`. L'ambito di autorità pubblicato resta
+immutabile fino alla fine del sistema. Ogni AP entra nello stesso motore
+continuo e conserva il contesto locale anche quando la coda è vuota.
+La selezione vuota avviene a IF=0 e precede `STI; HLT` contigui.
 
 Il core Rust mantiene la coda globale protetta da lock e un corrente
 per CPU. Le transizioni locali avvengono con IF=0. La selezione rispetta
@@ -129,6 +135,12 @@ Il job della shell conserva ownership e completamento propri. Il comando
 del contesto al dispatcher prima di raccogliere stack e generazione.
 `exit` raccoglie i job della sessione dopo quiescenza. Il runtime AP conserva
 i propri riferimenti anche dopo il rilascio del binding di notifica PS/2.
+Il mapping dello stack viene propagato prima di pubblicare il task READY.
+Dopo EXIT, AP1 restituisce il contesto al dispatcher, azzera corrente e
+generazione locali e pubblica la generazione in `Quiesced` con release.
+Il BSP la acquisisce prima di raccogliere stack e task. L'admission AP
+resta RUNNING fra i job e dopo `exit`. I job AP1 sono ancora a IF=0,
+in attesa della task di preemption ordinaria.
 
 Gli stati per CPU sono preparato, attivo e guasto. Un errore prima della
 pubblicazione consente rollback delle risorse ancora private. Dopo
@@ -164,9 +176,9 @@ La migrazione completa della build rimane un lavoro separato.
 2. Unificazione IRQ fatta. Ingresso e IDT comuni, registro per CPU,
    preservazione di timer, IPI e frame dei task esistenti. Prove host,
    22 boot ordinari, 12 diagnostici e 30 minuti di stress superati.
-3. Runtime AP permanente. Separare admission e autorità dal singolo job,
-   estendere il motore continuo alla CPU chiamante e mantenere il job AP1.
-   Prove host, dieci boot con shell e senza PS/2 e stress del ciclo di vita.
+3. Runtime AP permanente fatto. Admission e autorità indipendenti
+   dal singolo job, motore continuo sulla CPU chiamante e job AP1 mantenuto.
+   Cinque suite host, 25 boot ordinari e 30 minuti di stress superati.
 4. Preemption AP ordinaria. Stato e timer locali, frame di task generico,
    salvataggio e ritorno attraverso il dispatcher. Prove host, dieci boot
    e stress con lavoro che procede senza yield volontari.

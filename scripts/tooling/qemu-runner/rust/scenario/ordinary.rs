@@ -220,6 +220,41 @@ fn read_memory(vm: &mut Vm, address: u64, count: usize) -> Result<Vec<u64>, Stri
     Err("Missing IRQ registry memory snapshot".to_string())
 }
 
+// ====== ap_dispatchers ======
+
+fn ap_dispatchers(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
+    let log = vm.log();
+    let base = log.number("KERNEL_AP_DISPATCH_LOCALS",0)?;
+    let stride = log.number("KERNEL_AP_DISPATCH_LOCAL_BYTES",0)?;
+    let idle_rip = log.number("KERNEL_AP_DISPATCH_IDLE_RIP",0)?;
+    let jobs = log.numbers("KERNEL_AP_TASK_JOBS").first().copied().unwrap_or(0);
+    if stride != 704 || log.number("KERNEL_AP_DISPATCH_COUNT",0)? != u64::from(cpus - 1) {
+        return Err("Invalid permanent AP dispatcher storage".to_string());
+    }
+    let mut minimum_idle = u64::MAX;
+    for cpu in 1..cpus {
+        let deadline = Instant::now() + CR4_DEADLINE;
+        loop {
+            let registers = read_registers(vm,cpu,&[b"RFL=",b"HLT=",b"RIP="])?;
+            if registers[0] & IF != 0 && registers[1] == 1 && registers[2] == idle_rip { break; }
+            if Instant::now() >= deadline {
+                return Err(format!("AP {cpu} did not idle with interrupts enabled"));
+            }
+        }
+        let address = base.checked_add(stride * u64::from(cpu)).ok_or("AP storage overflow")?;
+        let words = read_memory(vm,address,(stride / 8) as usize)?;
+        let completed = words[74] >> 32;
+        if words[78] != 0 || words[80] != 0xffff_ffff_0000_0001 || words[81] != 0 ||
+            words[82] != address || words[83] == 0 || words[85] != 1 ||
+            completed != if cpu == 1 { jobs } else { 0 } {
+            return Err(format!("AP {cpu} lost its permanent dispatcher or job ownership"));
+        }
+        minimum_idle = minimum_idle.min(words[84]);
+    }
+    Ok(object(vec![("Cpus",Value::Number(u64::from(cpus - 1))),
+        ("CompletedJobs",Value::Number(jobs)),("MinimumIdleCycles",Value::Number(minimum_idle))]))
+}
+
 // ====== irq_ownership ======
 
 fn irq_ownership(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
@@ -259,6 +294,9 @@ fn irq_ownership(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
             ipi_subscriptions += 1;
         }
     }
+    let dispatchers = if log.has("KERNEL_AP_DISPATCHERS_READY") {
+        ap_dispatchers(vm,cpus)?
+    } else { object(vec![]) };
     Ok(object(vec![
         ("HpetSubscription", Value::Number(words[5])),
         ("TimerSubscription", Value::Number(words[25])),
@@ -266,6 +304,7 @@ fn irq_ownership(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
         ("RegistryBytes", Value::Number(bytes)),
         ("SharedIdtCpus", Value::Number(shared_cpus)),
         ("ApIpiSubscriptions", Value::Number(ipi_subscriptions)),
+        ("ApDispatchers", dispatchers),
     ]))
 }
 
@@ -305,13 +344,14 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         vm.wait(marker, count, None)?;
     }
     let remote = plan.smp > 1 && !fault;
-    if remote {
+    let jobs = if remote { 3 } else { 0 };
+    for _ in 0..jobs {
         shell_type(vm, "ap 1000");
     }
     shell_type(vm, "status");
     shell_type(vm, "exit");
     let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
-    if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 + u64::from(remote) ||
+    if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 + jobs ||
         !log.text.contains("SHELL_STATUS: BSP PS2, kernel tasks") ||
         !log.before("SHELL_EXIT_REQUEST", "KERNEL_PS2_INPUT_CLEANUP_OK") ||
         !log.before("KERNEL_PS2_INPUT_CLEANUP_OK", "KERNEL_READY") {
@@ -321,8 +361,9 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         !log.has("KERNEL_PS2_MOUSE_CLEANUP_OK") || !log.has("KERNEL_CONSOLE_SHELL_CLEAN") {
         return Err("Missing collected stacks, mouse or console cleanup".to_string());
     }
-    if remote && (log.number("SHELL_AP_CPU", 0)? != 1 || log.number("SHELL_AP_COUNT", 0)? != 1000 ||
-        log.number("SHELL_AP_SUM", 0)? != 500500 || log.number("KERNEL_AP_TASK_JOBS", 0)? != 1 ||
+    if remote && (log.numbers("SHELL_AP_CPU") != vec![1; jobs as usize] ||
+        log.numbers("SHELL_AP_COUNT") != vec![1000; jobs as usize] ||
+        log.numbers("SHELL_AP_SUM") != vec![500500; jobs as usize] || log.number("KERNEL_AP_TASK_JOBS", 0)? != jobs ||
         !log.before("KERNEL_AP_TASKS_CLEAN", "KERNEL_PS2_INPUT_CLEANUP_OK")) {
         return Err("AP job or its session cleanup is invalid".to_string());
     }
@@ -391,12 +432,22 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
         if !log.failures().is_empty() || log.terminal() {
             return Err(format!("Kernel failure after {rounds} rounds {:?}", log.failures()));
         }
+        if plan.smp > 1 {
+            shell_type(vm,"ap 1000");
+            let log = vm.wait_field("SHELL_AP_SUM",rounds)?;
+            if log.number("SHELL_AP_CPU",rounds - 1)? != 1 ||
+                log.number("SHELL_AP_COUNT",rounds - 1)? != 1000 ||
+                log.number("SHELL_AP_SUM",rounds - 1)? != 500500 {
+                return Err(format!("Invalid AP job after {rounds} rounds"));
+            }
+        }
         std::thread::sleep(SOAK_PAUSE);
     }
     shell_type(vm, "exit");
     let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
     let commands = log.number("SHELL_COMMAND_COUNT", 0)?;
-    if !log.failures().is_empty() || commands != rounds as u64 + 1 ||
+    if !log.failures().is_empty() || commands != rounds as u64 * if plan.smp > 1 { 2 } else { 1 } + 1 ||
+        (plan.smp > 1 && log.number("KERNEL_AP_TASK_JOBS",0)? != rounds as u64) ||
         !log.before("SHELL_EXIT_REQUEST", "KERNEL_PS2_INPUT_CLEANUP_OK") ||
         !log.before("KERNEL_PS2_INPUT_CLEANUP_OK", "KERNEL_READY") || log.has("KERNEL_IDLE") {
         return Err(format!("The long session did not close cleanly: {commands} commands, {rounds} rounds"));

@@ -64,7 +64,7 @@ static int dispatch_command_private(uint32_t cpu, uint32_t retained, const X86_D
     if (command->reason == X86_TASK_EXIT) {
         if (reply.state != KERNEL_TASK_FINISHED || !config->collect(&reply) ||
             (!retained && !dispatch_apply_private(cpu,KERNEL_SCHEDULER_COLLECT,task,&reply))) return 0;
-        ++stats->completed;
+        if (stats->completed != UINT32_MAX) ++stats->completed;
     }
     return 1;
 }
@@ -89,7 +89,7 @@ static int dispatch_private(uint32_t cpu, uint32_t retained, uint64_t group, uin
     if (cpu >= 64 || kernel_scheduler_context_valid_on(cpu) != 1 || entered[cpu] ||
         !config || !stats || !config->run || !config->collect || !config->reply || !config->release_actor ||
         (!config->task_count && !complete) || config->task_count > KERNEL_SCHEDULER_CAPACITY ||
-        (!!complete != !!idle) || (complete && (cpu || retained || group ||
+        (!!complete != !!idle) || (complete && (group ||
             config->step_limit != X86_DISPATCH_UNLIMITED || config->idle_limit != X86_DISPATCH_UNLIMITED)) ||
         !limit_valid_private(config->step_limit, config->task_count, 65536U) ||
         !limit_valid_private(config->idle_limit, 0, 32768U) || config->drain_irq > 1 ||
@@ -187,4 +187,12 @@ int x86_scheduler_dispatch_continuous(const X86_DISPATCH_CONFIG *config, X86_DIS
 {
     if (!complete || !idle) return 0;
     return dispatch_private(0,0,0,0,config,stats,complete,idle);
+}
+
+// ====== x86_scheduler_dispatch_continuous_on ======
+
+int x86_scheduler_dispatch_continuous_on(uint32_t cpu, const X86_DISPATCH_CONFIG *config,
+    X86_DISPATCH_STATS *stats, int (*complete)(void), int (*idle)(void)) {
+    if (!cpu || !complete || !idle) return 0;
+    return dispatch_private(cpu,1,0,0,config,stats,complete,idle);
 }

@@ -2,6 +2,10 @@
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "arch/x86/kernel/cpu/percpu/resources/resources.h"
 #include "kernel/sync/internal.h"
+#ifdef KERNEL_AP_TASKS
+#include "remote.h"
+#include "kernel/diagnostics/log.h"
+#endif
 
 static X86_AP_SCOPE bound;
 static uint64_t active;
@@ -112,3 +116,97 @@ int x86_ap_dispatcher_authority(void)
         kernel_physical_is_pinned(scope->Pool,&auth->Data) == 1 &&
         kernel_physical_is_pinned(scope->Pool,&auth->Tables) == 1;
 }
+
+#ifdef KERNEL_AP_TASKS
+// ====== runtime_wait_private ======
+
+static int runtime_wait_private(uint32_t cpu, uint64_t state, int ready) {
+    uint32_t start, now;
+    if (!xis_native_now(NULL,&start)) return 0;
+    for (;;) {
+        X86_SCHEDULER_LOCAL *local = x86_scheduler_local_cpu(cpu);
+        if (xad_value(cpu,bound.Root) == state &&
+            (!ready || ks_atomic_load_acquire(&local->runtime_ready))) return 1;
+        if (!xis_native_now(NULL,&now) ||
+            ((now - start) & xp_panic_native.Source.Mask) >= KERNEL_PM_TIMER_HZ) return 0;
+        ks_pause();
+    }
+}
+
+// ====== runtime_ping_private ======
+
+static int runtime_ping_private(uint32_t cpu) {
+    uint64_t generation = xis_publish(cpu,0);
+    XIS_WAIT wait = {xis_native_now,NULL,xp_panic_native.Source.Mask,KERNEL_PM_TIMER_HZ,1000000,0};
+    return generation && generation != XIS_INVALID && xis_native_send(cpu) &&
+        xis_wait(cpu,generation,&wait) == XIS_WAIT_ACK;
+}
+
+// ====== x86_ap_dispatchers_start ======
+
+int x86_ap_dispatchers_start(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root) {
+    X86_AP_SCOPE scope = {0};
+    if (!x86_percpu_bsp() || ks_irq_state() || active) return 0;
+    if (xis_native.Count < 2) return 1;
+    scope.Root = root;
+    scope.Token = 1;
+    scope.Pool = pool;
+    scope.Aps = xis_native.Count - 1;
+    if (!x86_ap_inputs(pool,root,(uint64_t)(uintptr_t)&scope.Arena,sizeof(scope.Arena),&scope.Arena) ||
+        !xad_configure(xis_native.Count,root,0) || !x86_ap_scope_bind(&scope)) return 0;
+    for (uint32_t cpu = 1; cpu < xis_native.Count; ++cpu) {
+        if (!xad_offer(cpu,0,scope.Token,root) || !runtime_ping_private(cpu) ||
+            !runtime_wait_private(cpu,scope.Token << 3 | XAD_ADMITTED,0) ||
+            !xad_transition(cpu,0,scope.Token,root,0) || !runtime_ping_private(cpu) ||
+            !runtime_wait_private(cpu,scope.Token << 3 | XAD_RUNNING,1)) return 0;
+    }
+    return kernel_text("KERNEL_AP_DISPATCH_LOCALS: ") &&
+        kernel_number((uint64_t)(uintptr_t)x86_scheduler_local_cpu(0)) &&
+        kernel_text("\nKERNEL_AP_DISPATCH_LOCAL_BYTES: ") && kernel_number(sizeof(X86_SCHEDULER_LOCAL)) &&
+        kernel_text("\nKERNEL_AP_DISPATCH_IDLE_RIP: ") &&
+        kernel_number((uint64_t)(uintptr_t)x86_ap_dispatcher_sleep_resume) &&
+        kernel_text("\nKERNEL_AP_DISPATCH_COUNT: ") && kernel_number(scope.Aps) &&
+        kernel_text("\n") && kernel_log(0,"KERNEL_AP_DISPATCHERS_READY");
+}
+
+// ====== runtime_ready_private ======
+
+static int runtime_ready_private(void) {
+    X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
+    if (!local || local->phase != 1 || local->current != KERNEL_SCHEDULER_NONE) return 0;
+    ks_atomic_store_release(&local->runtime_ready,1);
+    return 1;
+}
+
+// ====== runtime_idle_private ======
+
+static int runtime_idle_private(void) {
+    X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
+    if (!local || !x86_ap_actor() || !kernel_scheduler_context_valid()) return 0;
+    x86_ap_dispatcher_sleep();
+    uint64_t cycles = ks_atomic_load_relaxed(&local->idle_cycles);
+    if (cycles == UINT64_MAX) return 0;
+    ks_atomic_store_release(&local->idle_cycles,cycles + 1);
+    return 1;
+}
+
+// ====== x86_ap_dispatcher_run ======
+
+void x86_ap_dispatcher_run(void) {
+    X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
+    uint32_t cpu = xis_native_index();
+    if (!local ||
+        local->phase ||
+        local->current != KERNEL_SCHEDULER_NONE ||
+        !x86_ap_actor()
+    )
+        xis_native_abort(0x4b34415044535000ULL);
+    local->phase = 1;
+    X86_DISPATCH_CONFIG config = {0,X86_DISPATCH_UNLIMITED,X86_DISPATCH_UNLIMITED,0,
+        x86_scheduler_dispatch_run,x86_remote_dispatch_collect,x86_scheduler_dispatch_reply,
+        x86_remote_dispatch_release,runtime_idle_private};
+    (void)x86_scheduler_dispatch_continuous_on(cpu,&config,&local->stats,
+        runtime_ready_private,runtime_idle_private);
+    xis_native_abort(0x4b34415044535001ULL);
+}
+#endif

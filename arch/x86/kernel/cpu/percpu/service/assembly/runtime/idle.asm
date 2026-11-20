@@ -139,3 +139,16 @@ xis_service_loop:
 %endif
     jmp .idle
 %endif
+
+; ====== x86_ap_dispatcher_sleep ======
+
+; Intel SDM 253668-084US Vol. 3A 6.8.1: STI defers INTR through the next
+; instruction. Contiguous STI/HLT consumes pending wakeups before sleeping.
+; 6.14.3: IRETQ restores RFLAGS.IF[9]. CLI clears IF before returning.
+global x86_ap_dispatcher_sleep, x86_ap_dispatcher_sleep_resume
+x86_ap_dispatcher_sleep:
+    sti
+    hlt
+x86_ap_dispatcher_sleep_resume:
+    cli
+    ret

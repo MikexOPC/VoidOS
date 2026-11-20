@@ -317,6 +317,68 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   non provato. Deroga utente limitata ai riferimenti necessari negli
   script PowerShell esistenti, migrazione completa della build separata.
 
+- **Runtime AP permanente, 20 novembre 2026.** Task fatta.
+  In `ordinary`, il BSP ammette e avvia ogni AP una sola volta. Admission,
+  autorità e contesto del dispatcher persistono fra i job e dopo `exit`.
+  Il motore continuo seleziona con IF=0 e attende con `STI; HLT` contigui.
+  AP1 conserva i job finiti fino alla conferma di ritorno nel dispatcher,
+  pubblicata con release dopo il rilascio del corrente locale. Il BSP
+  acquisisce la generazione prima di raccogliere task e stack. Il mapping
+  viene propagato prima di pubblicare READY. La sessione PS/2 rilascia
+  il proprio binding di notifica senza revocare l'autorità AP.
+  Kernel ordinario Meson SHA-256
+  `1D12A5C3841B92E950D0CFFC6F53745061CADC7AD79E19DDF49C1CE655CFF652`,
+  ELF di 507.904 byte. Loader SHA-256
+  `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+  QEMU/OVMF TCG/q35, 25/25 boot conclusivi sulla stessa immagine, shell
+  10/10, PS/2 assente 10/10, SMAP assente 3/3, una vCPU 1/1 e otto vCPU
+  1/1. Nei casi shell con almeno due vCPU si eseguono tre job AP1 per boot,
+  42 job complessivi con CPU 1 e somma 500.500 verificati. Il runner legge
+  i contesti per CPU da 704 byte e confronta corrente, generazione,
+  identità, completamenti e flag di ingresso permanente. Verifica IF=1,
+  HLT=1 e RIP nel nuovo idle nello stesso snapshot di ciascun AP dopo
+  il cleanup. Tre AP attivi a quattro vCPU, sette a otto vCPU. Senza PS/2
+  gli AP restano nel primo idle e il contatore dei risvegli può essere zero.
+  Pagine libere a quattro vCPU, 16.032 dopo la shell e 16.034 senza PS/2.
+  Il contesto locale mantiene la dimensione precedente usando un campo
+  riservato. L'ELF cresce di una pagina rispetto alla task IRQ.
+  Cinque suite host superate, scheduler, x86-scheduler, ipi-service,
+  kernel e watchdog. Il test del motore esegue 23.767 controlli con 64
+  identità CPU sequenziali e core Rust reale protetto da lock. Per i 63 AP
+  prova ingresso con coda vuota, arrivo di un task, completamento trattenuto
+  e prosecuzione dell'attesa. CPU, stack e callback host sono simulati.
+  ASan nelle suite host esistenti superato. Cppcheck su motore, storage
+  locale, admission, servizio IRQ e ambito/job AP senza diagnostiche
+  bloccanti. `plan_parity` 1/1 e runner Meson
+  2/2, con 17 test unitari e sette di processo, superati.
+  Il primo giro host non trovava Cppcheck. Kernel e watchdog erano passati,
+  le altre tre suite sono state ripetute con `VOIDOS_CPPCHECK` impostato
+  sulla copia già disponibile nel checkout. Il primo stress falliva perché
+  avevo usato l'attesa di un marker per il campo numerico `SHELL_AP_SUM`,
+  già presente e corretto nel log. Dopo l'autorizzazione dell'utente,
+  `wait_field` conta i valori numerici usando la stessa gestione di timeout,
+  processo e panic di `wait`. La regressione di processo verifica marker
+  insufficiente, primo valore, secondo valore mancante e due valori presenti.
+  Questa regressione usa un processo VM simulato.
+  Stress conclusivo 1/1 sulla stessa immagine a quattro vCPU, 15 minuti
+  di shell con 144 risposte bridge e 144 job AP1, poi 15 minuti dopo `exit`.
+  Sospensioni BSP 17.538, delle quali 12.608 fuori finestra, zero sforamenti.
+  Il dispatcher BSP ha completato 111.400 cicli, con 166.168 tick LAPIC
+  complessivi e 16.032 pagine libere stabili. Lo snapshot finale legge tre
+  dispatcher AP con 144 completamenti su AP1 e nessun completamento sugli
+  altri due AP. Tutti e tre sono nel nuovo idle a IF=1, con almeno 292
+  risvegli ciascuno. Corrente e generazione sono rilasciati. Tre IPI AP
+  privati e IDT comune presenti, tre slot PS/2 azzerati e HPET/timer BSP
+  ancora sottoscritti. La VM posseduta è stata chiusa dal runner dopo PASS.
+  Le prove iniziali interrotte e gli smoke sono esclusi dai conteggi conclusivi.
+  Evidenze in `kernel/build/ap-dispatch-*`,
+  `test-run-753dee10d43c49fda57f1d0184df738b`,
+  `test-run-fbca158110db4ce796dbf9f214db3260`,
+  `test-run-8b1fd223006d432b9d35c23056f736e3` per le cinque suite finali,
+  `meson-qemu-runner/meson-logs` e `ap-dispatch-cppcheck.log`.
+  Restano timer e preemption AP ordinari, selezione senza affinità fissa,
+  capacità e prove su PC fisico. I job AP1 continuano a eseguire a IF=0.
+
 ## Build e runner
 
 | Passo | Risultato storico |

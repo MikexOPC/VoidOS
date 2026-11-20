@@ -21,4 +21,8 @@ int x86_ap_actor(void);
 int x86_ap_gate(const KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, const X86_TASK_CPU *cpu);
 int x86_ap_dispatcher_gate(void);
 int x86_ap_dispatcher_authority(void);
+int x86_ap_dispatchers_start(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root);
+void x86_ap_dispatcher_run(void);
+void x86_ap_dispatcher_sleep(void);
+extern const unsigned char x86_ap_dispatcher_sleep_resume[];
 #endif

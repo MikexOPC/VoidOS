@@ -7,6 +7,7 @@ static uint32_t stage, fail_run, replies, collected;
 static uint64_t observed;
 static KERNEL_SCHEDULER_REPLY handle;
 static X86_DISPATCH_CONFIG config;
+static uint32_t runtime_completions, runtime_idles;
 
 // ====== check_private ======
 
@@ -98,6 +99,23 @@ static void prepare_private(void)
     config = (X86_DISPATCH_CONFIG){1,16,0,0,run_private,collect_private,reply_private,release_private,0};
 }
 
+// ====== runtime_complete_private ======
+
+static int runtime_complete_private(void) {
+    ++runtime_completions;
+    return 1;
+}
+
+// ====== runtime_idle_private ======
+
+static int runtime_idle_private(void) {
+    if (++runtime_idles != 1) return 0;
+    X86_DISPATCH_CONFIG saved = config;
+    prepare_private();
+    config = saved;
+    return 1;
+}
+
 // ====== main ======
 
 int main(void)
@@ -141,6 +159,20 @@ int main(void)
         stats = (X86_DISPATCH_STATS){0};
         check_private(x86_scheduler_dispatch_on(cpu,&config,&stats));
         check_private(!stats.failure && stats.completed == 1);
+        if (cpu) {
+            runtime_completions = runtime_idles = 0;
+            config.task_count = 0;
+            config.step_limit = X86_DISPATCH_UNLIMITED;
+            config.idle_limit = X86_DISPATCH_UNLIMITED;
+            config.idle = runtime_idle_private;
+            stats = (X86_DISPATCH_STATS){0};
+            check_private(!x86_scheduler_dispatch_continuous_on(cpu,&config,&stats,
+                runtime_complete_private,runtime_idle_private));
+            check_private(runtime_completions == 1 && runtime_idles == 2 &&
+                stats.completed == 1 && stats.steps == 7 && stats.failure == 2);
+            check_private(apply_private(KERNEL_SCHEDULER_QUERY).state == KERNEL_TASK_FINISHED);
+            check_private(apply_private(KERNEL_SCHEDULER_COLLECT).status == 0);
+        }
     }
     check_private(!locked && acquired == released);
     printf("PASS: %u dispatcher checks, 64 sequential CPU identities, real locked Rust Owner; CPU/stacks MOCK\n",checks);

@@ -4,6 +4,9 @@
 #include "../../startup/private/frame.h"
 #include "arch/x86/kernel/interrupts/apic/control/masked.h"
 #include "arch/x86/kernel/stack/main.h"
+#ifdef KERNEL_AP_TASKS
+#include "arch/x86/kernel/scheduler/integration/local.h"
+#endif
 #if KERNEL_TEST_AP_SERVICE == 9
 #include "arch/x86/kernel/scheduler/batch/batch.h"
 #endif
@@ -174,6 +177,15 @@ int xis_irq_frame_valid(const X86_IRQ_FRAME *frame) {
     int valid = index && !ks_irq_state() &&
         x86_irq_saved_area(address,X86_AP_STACK_FLOOR(index),top) == 1 &&
         xis_idle_return_valid(address,top,frame->Rsp,frame->Cs,frame->Flags,frame->Ss,diagnostic) == 1;
+#ifdef KERNEL_AP_TASKS
+    const X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
+    if (!valid && index && !ks_irq_state() && local && local->phase == 1 &&
+        local->current == UINT32_MAX &&
+        x86_irq_saved_area(address,X86_AP_STACK_FLOOR(index),top) == 1) {
+        valid = frame->Rsp < top - XIS_IDLE_FRAME_BYTES &&
+            xis_task_return_valid(address,frame->Rsp,frame->Cs,frame->Flags,frame->Ss) == 1;
+    }
+#endif
 #if KERNEL_TEST_AP_SERVICE == 9
     if (!valid && index && !ks_irq_state()) valid = xat_irq_frame(index,frame);
 #endif

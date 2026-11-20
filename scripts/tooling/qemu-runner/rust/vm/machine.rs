@@ -221,21 +221,30 @@ impl Vm {
     }
 
     pub fn wait(&mut self, marker: &str, occurrences: usize, level: Option<&str>) -> Result<SerialLog, String> {
+        self.wait_count(marker,occurrences,|log| log.count(marker,level))
+    }
+
+    pub fn wait_field(&mut self, name: &str, occurrences: usize) -> Result<SerialLog, String> {
+        self.wait_count(name,occurrences,|log| log.numbers(name).len())
+    }
+
+    fn wait_count(&mut self, name: &str, occurrences: usize,
+        count: impl Fn(&SerialLog) -> usize) -> Result<SerialLog, String> {
         let deadline = Instant::now() + self.limits.wait;
         while Instant::now() < deadline {
             let log = self.log();
             if log.terminal() {
                 return Err(format!("Kernel failure: {}", self.serial.display()));
             }
-            if log.count(marker, level) >= occurrences {
+            if count(&log) >= occurrences {
                 return Ok(log);
             }
             if !self.alive() {
-                return Err(format!("Owned VM exited before {marker}"));
+                return Err(format!("Owned VM exited before {name}"));
             }
             std::thread::sleep(WAIT_POLL);
         }
-        Err(format!("Missing {marker}: {}", self.serial.display()))
+        Err(format!("Missing {name}: {}", self.serial.display()))
     }
 
     pub fn close(&mut self) -> Result<(), String> {

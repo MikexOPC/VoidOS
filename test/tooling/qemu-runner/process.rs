@@ -2,7 +2,7 @@ use qemu_runner_core::evidence::sha256::hash_bytes;
 use qemu_runner_core::parity;
 use qemu_runner_core::scenario::copy::run_copy;
 use qemu_runner_core::vm::job::process_alive;
-use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan};
+use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, Vm};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -297,6 +297,28 @@ fn runner_writes_results_and_exit_codes() {
 
     let status = Command::new(std::env::var("VOIDOS_RUNNER").expect("runner")).arg("--copy").output().expect("runner");
     assert_eq!(status.status.code(), Some(2));
+}
+
+// ====== numeric_wait_counts_fields ======
+
+#[test]
+fn numeric_wait_counts_fields() {
+    let bench = bench("numeric-wait");
+    let directory = bench.root.join("boot-1");
+    unsafe { std::env::set_var("VOIDOS_FAKE_CASE","silent") };
+    let plan = Plan { memory: 128, smp: 1, inject: Inject::None, cpu: "max", machine: "q35" };
+    let mut vm = Vm::start(&directory,&bench.image,&bench.paths,&plan,short_limits()).expect("VM");
+    fs::write(&vm.serial,b"[ OK ] SHELL_AP_SUM\n").expect("marker");
+    assert!(vm.wait("SHELL_AP_SUM",1,Some("OK")).is_ok());
+    assert!(vm.wait_field("SHELL_AP_SUM",1).is_err());
+    fs::write(&vm.serial,b"SHELL_AP_SUM: 0x000000000007a314\n").expect("first result");
+    assert_eq!(vm.wait_field("SHELL_AP_SUM",1).expect("numeric result").numbers("SHELL_AP_SUM"),[500500]);
+    assert!(vm.wait_field("SHELL_AP_SUM",2).is_err());
+    fs::write(&vm.serial,b"SHELL_AP_SUM: 0x000000000007a314\nSHELL_AP_SUM: 0x000000000007a315\n")
+        .expect("second result");
+    assert_eq!(vm.wait_field("SHELL_AP_SUM",2).expect("two results").numbers("SHELL_AP_SUM"),[500500,500501]);
+    vm.close().expect("close");
+    assert_cleaned(&directory);
 }
 
 // ====== killed_runner_takes_only_its_vm ======

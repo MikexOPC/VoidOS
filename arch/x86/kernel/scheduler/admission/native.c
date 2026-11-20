@@ -39,14 +39,16 @@ void xad_native_poll(void)
         uint64_t value = xad_value(index,root);
         if (value != XAD_INVALID && (value & 7) == XAD_START &&
             xad_transition(index,index,value >> 3,root,1)) {
-            x86_remote_ap_run();
-            if (!xad_transition(index,index,value >> 3,root,2)) fail_private(index,value >> 3,root);
+            x86_ap_dispatcher_run();
+            fail_private(index,value >> 3,root);
         }
 #endif
         return;
     }
     if (token == XAD_INVALID ||
-#ifdef KERNEL_TEST_AP_CONCURRENT
+#ifdef KERNEL_AP_TASKS
+        index < 1 || index >= xis_native.Count ||
+#elif defined(KERNEL_TEST_AP_CONCURRENT)
         index < 1 || index > XAT_APS ||
 #else
         index != 1 ||
@@ -67,14 +69,18 @@ void xad_native_poll(void)
     if (!local || local->phase || local->current != UINT32_MAX || local->generation || local->event ||
         local->stats.steps || local->stats.failure ||
         local->owner != (uint64_t)(uintptr_t)xp_panic_native.Contexts[index]) fail_private(index,token,root);
-#ifdef KERNEL_TEST_AP_CONCURRENT
+#ifdef KERNEL_AP_TASKS
+    volatile XAD_NATIVE_RECORD *record = index == 1 ? &xad_native_record : NULL;
+#elif defined(KERNEL_TEST_AP_CONCURRENT)
     volatile XAD_NATIVE_RECORD *record = index == 1 ? &xad_native_record : &peer_records[index - 2];
 #else
     volatile XAD_NATIVE_RECORD *record = &xad_native_record;
 #endif
-    record->Self = (uint64_t)(uintptr_t)record;
-    record->Group = root; record->Token = token; record->Cpu = index;
-    record->Rsp = rsp; record->Local = (uint64_t)(uintptr_t)local;
-    record->Root = root; record->Irq = ks_irq_state();
+    if (record) {
+        record->Self = (uint64_t)(uintptr_t)record;
+        record->Group = root; record->Token = token; record->Cpu = index;
+        record->Rsp = rsp; record->Local = (uint64_t)(uintptr_t)local;
+        record->Root = root; record->Irq = ks_irq_state();
+    }
     if (!xad_admit(index,index,token,root)) fail_private(index,token,root);
 }

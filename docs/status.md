@@ -6,7 +6,8 @@
   WP, GDT/TSS/IST, allocatore fisico, heap e interrupt. In QEMU è stato
   inizializzato anche il framebuffer GOP.
 - In QEMU con quattro vCPU, il core di avvio (BSP) avvia tre core secondari
-  (AP). Tutti e tre rispondono al PING inter-CPU e attendono parcheggiati.
+  (AP). Ogni AP entra in un dispatcher permanente e risponde al PING
+  inter-CPU. Il dispatcher persiste anche senza PS/2 e dopo `exit`.
   BSP e AP usano IDT e ingresso IRQ comuni, con sottoscrizioni per CPU.
   Lo scheduler gestisce la sessione PS/2 sul BSP con un timer di preemption
   da 10 ms (vettore D1h). I task della sessione partono con gli interrupt
@@ -39,7 +40,8 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 - La 3e chiude le prove della preemption nella sessione PS/2 sul BSP.
   B2 chiude il [dispatcher permanente sul BSP](design/scheduler-produzione.md#prossimo-passo-di-s1)
   in `ordinary`, con cleanup verificato della sessione e continuità senza PS/2.
-  Il prossimo obiettivo è la preemption ordinaria sugli AP. Restano otto
+  Il runtime AP permanente è chiuso. Il prossimo passo è la preemption
+  ordinaria sugli AP. I job AP1 eseguono ancora a IF=0. Restano otto
   task. Il registro IRQ copre 222 vettori sottoscrivibili per CPU.
   I record IRQ delle 64 CPU del bootstrap riservano 568 KiB nell'immagine.
   L'heap è limitato a 16 MiB e c'è
@@ -66,16 +68,16 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Ingressi IRQ comuni, Meson `ordinary`, kernel SHA-256
-`67B59CB4F414928B9A48CDBD6DAC9C3F07BC20FD12E24E199F6D79477C445499`.
-QEMU/OVMF TCG/q35, 22/22 boot con shell, PS/2 assente e configurazioni
-da una, quattro e otto vCPU. Stress superato con 15 minuti di shell e
-15 di dispatcher dopo `exit`, 155 risposte bridge, zero sforamenti e
-16.033 pagine libere invariate. IDT comune letta su tutte le CPU,
-tre IPI AP privati a quattro vCPU, tre slot PS/2 liberi e HPET/timer BSP
-presenti dopo il cleanup. Cinque suite host, ASan sul registro IRQ,
-runner Meson 2/2 e `plan_parity` 1/1 superati. Dodici boot diagnostici
-separati superati per timer e preemption BSP/AP.
+Runtime AP permanente, Meson `ordinary`, kernel SHA-256
+`1D12A5C3841B92E950D0CFFC6F53745061CADC7AD79E19DDF49C1CE655CFF652`.
+QEMU/OVMF TCG/q35, 25/25 boot con shell, PS/2 assente, SMAP assente e
+configurazioni da una, quattro e otto vCPU. Verificati 42 job AP1 nei boot.
+Stress superato con 15 minuti di shell e 15 dopo `exit`, 144 risposte
+bridge, 144 job AP1, zero sforamenti e 16.032 pagine libere invariate.
+Tre dispatcher AP a quattro vCPU e sette a otto vCPU, con IF/HLT/RIP e
+contesti letti dalla VM dopo il cleanup. IPI AP, HPET e timer BSP presenti,
+tre slot PS/2 liberi. Cinque suite host, runner Meson 2/2 con 17 test
+unitari e sette di processo, e `plan_parity` 1/1 superati.
 [Risultati, immagini e limiti](validation/consolidamento.md#cpu-e-scheduler).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni

@@ -51,8 +51,12 @@ La sessione rilascia task, stack, IRQ e binding. Il runtime mantiene
 timer LAPIC, watchdog HPET e servizio bridge. L'attesa usa il percorso
 HPET con interrupt attivi. B2-3 chiude le prove di questo ciclo di vita.
 Il prossimo obiettivo è la preemption ordinaria sugli AP.
+Il runtime permanente AP è fatto. Ogni AP mantiene admission e
+autorità fra i job e dopo la chiusura PS/2. Il BSP raccoglie lo stack del
+job soltanto dopo la conferma di ritorno nel dispatcher AP. L'attesa AP
+usa `STI; HLT`, con selezione della coda protetta prima di aprire IF.
 [Design dello scheduler](scheduler-produzione.md) ·
-[Validazione BSP](../validation/consolidamento.md#cpu-e-scheduler).
+[Validazione BSP/AP](../validation/consolidamento.md#cpu-e-scheduler).
 
 ## Oggetti driver
 
