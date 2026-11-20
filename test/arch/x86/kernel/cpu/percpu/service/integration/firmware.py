@@ -105,9 +105,10 @@ def verify(vm, log, case, count, batch_steps=8192, extra_shootdowns=0):
             raise RuntimeError("Diagnostic lease was not released")
     address = log.number("KERNEL_IPI_NATIVE")
     idtr = b"".join(word.to_bytes(8, "little") for word in cpu.memory(vm, log.number("KERNEL_IPI_IDTR"), 2))
-    if int.from_bytes(idtr[:2], "little") != 4095 or int.from_bytes(idtr[2:10], "little") != address:
+    shared_idt = log.number("KERNEL_IRQ_IDT_BASE")
+    if int.from_bytes(idtr[:2], "little") != 4095 or int.from_bytes(idtr[2:10], "little") != shared_idt:
         raise RuntimeError("Service IDTR geometry differs")
-    gates = cpu.memory(vm, address, 512)
+    gates = cpu.memory(vm, int.from_bytes(idtr[2:10], "little"), 512)
     panic_idtr = b"".join(word.to_bytes(8, "little") for word in cpu.memory(vm, log.number("KERNEL_AP_PANIC_IDTR"), 2))
     if gates[:64] != cpu.memory(vm, int.from_bytes(panic_idtr[2:10], "little"), 64):
         raise RuntimeError("Service IDT changed fault/NMI gates")
@@ -116,7 +117,8 @@ def verify(vm, log, case, count, batch_steps=8192, extra_shootdowns=0):
         target = (low & 0xffff) | ((low >> 48) << 16) | ((high & 0xffffffff) << 32)
         if (low >> 16) & 0xffffffff != 0x8e000008 or high >> 32 or not 0xffffffff80000000 <= target < 0xffffffff80400000:
             raise RuntimeError("Invalid service gate or target")
-    counters = cpu.memory(vm, address + 4160, 64 * 8)
+    counter_base = log.number("KERNEL_IPI_CPUS") if log.has_number("KERNEL_IPI_CPUS") else address + 4160
+    counters = cpu.memory(vm, counter_base, 64 * 8)
     generation_base = log.number("KERNEL_IPI_BASE_GENERATION") + extra_shootdowns
     if case in ("missing-ack", "stale-ack") and [counters[index] for index in (8, 12, 13)] != [generation_base + 99] * 3:
         raise RuntimeError("AP1 did not enter and finish EOI for the flush request")
@@ -198,6 +200,8 @@ def verify(vm, log, case, count, batch_steps=8192, extra_shootdowns=0):
         (vm.directory / f"cpu-{index}.txt").write_text(text, encoding="utf-8")
         if "HLT=1" not in text or launch.value(text, "CR3") != root:
             raise RuntimeError("CPU not halted on shared root")
+        if not re.search(rf"IDT=\s*{shared_idt:016x}\s+00000fff", text, re.I):
+            raise RuntimeError("CPU shared IDT differs")
         if launch.value(text, "CR0") & 0x80010001 != 0x80010001 or launch.value(text, "EFER") & 0xd00 != 0xd00 or launch.value(text, "CR4") & 0x40620 != 0x620:
             raise RuntimeError("Actual paging/WP/NX/FXSAVE prerequisites differ")
         if index == 0:
@@ -208,8 +212,8 @@ def verify(vm, log, case, count, batch_steps=8192, extra_shootdowns=0):
         top, meta = base + 17 * 4096 - 1024, base + 48 * 4096
         if cpu.gs_base(text) != first + (index - 1) * 448 or not re.search(rf"GDT=\s*{meta:016x}\s+00000037", text, re.I):
             raise RuntimeError("AP private context/GDT differs")
-        if not re.search(rf"IDT=\s*{address:016x}\s+00000fff", text, re.I) or not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
-            raise RuntimeError("AP IDTR/TR differs")
+        if not re.search(r"(?m)^TR\s*=\s*0018", text, re.I):
+            raise RuntimeError("AP TR differs")
         frame = cpu.memory(vm, top, 128)
         expected = list(final)
         expected[1], expected[2], expected[7:10] = index | index << 32, index << 9 | index << 3, [top + 1024, meta, first + (index - 1) * 448]

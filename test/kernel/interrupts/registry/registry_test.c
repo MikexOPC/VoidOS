@@ -117,7 +117,7 @@ static int invalid(void)
     if (!reset()) return 1;
     save();
     for (vector = 0; vector < 256; ++vector) {
-        if ((vector >= 0x40 && vector <= 0x43) || vector == X86_PREEMPT_VECTOR) continue;
+        if (vector >= 32 && vector != 0xf0 && vector != 0xff) continue;
         if (x86_irq_registry_bind(&registry,vector,handler,quiet,&output) || !unchanged()) return 2;
     }
     if (x86_irq_registry_bind(&registry,0x40,0,quiet,&output) ||
@@ -141,7 +141,7 @@ static int invalid(void)
 
 static int corruption(void)
 {
-    X86_IRQ_REGISTRY moved;
+    static X86_IRQ_REGISTRY moved;
     BOOT_U32 bit;
     if (!reset() || !x86_irq_registry_bind(&registry,0x40,handler,quiet,&first)) return 1;
     moved = registry;
@@ -279,6 +279,30 @@ static int timer_subscription(void)
 
 // ====== gruppi di verifiche con esito diagnostico distinto ===== //
 
+static int architectural_vectors(void) {
+    static X86_IRQ_TOKEN tokens[X86_IRQ_SLOTS];
+    BOOT_U32 count = 0;
+    if (!reset()) return 1;
+    for (BOOT_U32 vector = 32; vector < 256; ++vector) {
+        if (vector == 0xf0 || vector == 0xff) continue;
+        X86_IRQ_TOKEN *token = &tokens[vector - 32];
+        if (!x86_irq_registry_bind(&registry,vector,handler,quiet,token) ||
+            !x86_irq_registry_token_live(&registry,token)) return 2;
+        ++count;
+    }
+    if (count != 222) return 3;
+    for (BOOT_U32 vector = 32; vector < 256; ++vector) {
+        if (vector == 0xf0 || vector == 0xff) continue;
+        X86_IRQ_TOKEN *token = &tokens[vector - 32];
+        if (!x86_irq_registry_deliver(&registry,vector) ||
+            x86_irq_registry_deliveries(&registry,token) != 1 ||
+            !x86_irq_registry_unbind(&registry,token)) return 4;
+    }
+    return calls == count && x86_irq_registry_validate(&registry) ? 0 : 5;
+}
+
+// ====== run_irq_registry_tests ======
+
 __declspec(dllexport) int run_irq_registry_tests(void)
 {
     int result = lifecycle();
@@ -291,5 +315,6 @@ __declspec(dllexport) int run_irq_registry_tests(void)
     result = three_subscriptions(); if (result) return 700+result;
     result = fourth_subscription(); if (result) return 800+result;
     result = timer_subscription(); if (result) return 900+result;
+    result = architectural_vectors(); if (result) return 1000+result;
     return 0;
 }

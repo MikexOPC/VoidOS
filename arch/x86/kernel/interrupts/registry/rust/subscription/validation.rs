@@ -4,5 +4,6 @@
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_irq_subscription_fields(vector: u32, fault: u32, id: u64, next: u64) -> u32 {
-    u32::from(matches!(vector, 0x40..=0x43 | 0xD1) && fault <= 1 && id != 0 && id < next)
+    u32::from((32..=255).contains(&vector) && !matches!(vector,0xf0 | 0xff) &&
+        fault <= 1 && id != 0 && id < next)
 }

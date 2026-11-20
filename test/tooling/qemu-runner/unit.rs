@@ -283,6 +283,7 @@ fn ordinary_options_and_cr4() {
 
 #[test]
 fn monitor_memory() {
+    assert_eq!(parse_register(b"CPU#0\nIDT=     ffffffff80001000 00000fff\n",0,b"IDT="),Some(0xffffffff80001000));
     let dump = b"(qemu) x /4gx 0xffffffff80000000\r\n\
         ffffffff80000000: 0xffffffff80000000 0x0000000000000040\r\n\
         ffffffff80000010: 0x0000000000000000 0x00000000000000d1\r\n(qemu) ";

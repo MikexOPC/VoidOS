@@ -4,6 +4,7 @@
 #include "../../panic/native/runtime.h"
 #include "arch/x86/kernel/interrupts/return/table.h"
 #include "arch/x86/kernel/interrupts/apic/lvt.h"
+#include "arch/x86/kernel/interrupts/registry/registry.h"
 
 #if KERNEL_TEST_AP_SERVICE >= 1 && KERNEL_TEST_AP_SERVICE <= 3
 #define XIS_REMAP_TEST 1
@@ -51,7 +52,6 @@ typedef struct {
     uint64_t  Verified, Spurious, FrameRsp, Eois, Entered, Reserved[2];
 } XIS_CPU;
 typedef struct {
-    X86_IRQ_IDT  Idt;
     X86_KERNEL_IDTR  Idtr;
     unsigned char  Padding[6];
     uint32_t  Count, Reserved;
@@ -61,12 +61,12 @@ typedef struct {
     XIS_CPU  Cpus[64];
 } XIS_NATIVE;
 extern XIS_NATIVE xis_native;
-extern const BOOT_U64 xis_irq_targets[224];
-extern const unsigned char xis_irq_begin[], xis_irq_end[];
 int xis_native_prepare(void);
 uint32_t xis_native_enter(void *frame);
 int xis_native_flush_context(void);
-void xis_native_dispatch(const X86_IRQ_FRAME *frame);
+int xis_irq_frame_valid(const X86_IRQ_FRAME *frame);
+int xis_irq_handle(void);
+int xis_irq_bind(X86_IRQ_REGISTRY *registry, X86_IRQ_TOKEN *service, X86_IRQ_TOKEN *timer);
 void xis_irq_after(const X86_IRQ_FRAME *frame);
 void xis_native_verified(const unsigned char *fx);
 int xis_native_shootdown(void);
@@ -80,5 +80,5 @@ void xis_mmio_write(uint32_t offset, uint32_t value);
 __declspec(noreturn) void xis_native_abort(uint64_t reason);
 void xis_service_loop(void);
 _Static_assert(sizeof(XIS_CPU) == 64 && _Alignof(XIS_CPU) == 64, "IPI per-CPU counters");
-_Static_assert(offsetof(XIS_NATIVE, Cpus) == 4160 && sizeof(XIS_NATIVE) == 8256, "IPI diagnostic snapshot ABI");
+_Static_assert(offsetof(XIS_NATIVE, Cpus) == 64 && sizeof(XIS_NATIVE) == 4160, "IPI diagnostic snapshot ABI");
 #endif

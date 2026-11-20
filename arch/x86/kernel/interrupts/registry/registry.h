@@ -4,7 +4,8 @@
 #include "arch/x86/kernel/interrupts/apic/lvt.h"
 #define X86_IRQ_DEVICE_SLOTS 4U
 #define X86_IRQ_TIMER_SLOT   X86_IRQ_DEVICE_SLOTS
-#define X86_IRQ_SLOTS        (X86_IRQ_DEVICE_SLOTS + 1U)
+// Intel SDM Vol. 3A 7.2: vectors 0..31 are reserved for CPU exceptions.
+#define X86_IRQ_SLOTS        (256U - 32U)
 
 typedef int (*X86_IRQ_CALLBACK)(void);
 typedef struct { BOOT_U64 Id; BOOT_U32 Vector, Reserved; } X86_IRQ_TOKEN;
@@ -19,7 +20,7 @@ typedef struct {
     BOOT_U32 Busy, Reserved;
     X86_IRQ_SUBSCRIPTION Slots[X86_IRQ_SLOTS];
 } X86_IRQ_REGISTRY;
-_Static_assert(sizeof(X86_IRQ_REGISTRY) == 240, "Registro IRQ statico");
+_Static_assert(sizeof(X86_IRQ_REGISTRY) == 9000, "Registro dei vettori IRQ architetturali");
 _Static_assert(sizeof(X86_IRQ_TOKEN) == 16, "Identita subscription IRQ");
 BOOT_U32 x86_irq_subscription_fields(BOOT_U32 vector, BOOT_U32 fault, BOOT_U64 id, BOOT_U64 next);
 int x86_irq_registry_initialize(X86_IRQ_REGISTRY *registry, BOOT_U64 begin, BOOT_U64 end);

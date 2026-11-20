@@ -1,4 +1,4 @@
-# Stato di VoidOS — 19 novembre 2026
+# Stato di VoidOS — 20 novembre 2026
 
 ## Immagine ordinaria (`ordinary`, Meson)
 
@@ -7,6 +7,7 @@
   inizializzato anche il framebuffer GOP.
 - In QEMU con quattro vCPU, il core di avvio (BSP) avvia tre core secondari
   (AP). Tutti e tre rispondono al PING inter-CPU e attendono parcheggiati.
+  BSP e AP usano IDT e ingresso IRQ comuni, con sottoscrizioni per CPU.
   Lo scheduler gestisce la sessione PS/2 sul BSP con un timer di preemption
   da 10 ms (vettore D1h). I task della sessione partono con gli interrupt
   attivi e il timer li sospende anche fuori dalla finestra di attesa.
@@ -39,7 +40,8 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   B2 chiude il [dispatcher permanente sul BSP](design/scheduler-produzione.md#prossimo-passo-di-s1)
   in `ordinary`, con cleanup verificato della sessione e continuità senza PS/2.
   Il prossimo obiettivo è la preemption ordinaria sugli AP. Restano otto
-  task e quattro slot IRQ per dispositivi, più quello dedicato al timer.
+  task. Il registro IRQ copre 222 vettori sottoscrivibili per CPU.
+  I record IRQ delle 64 CPU del bootstrap riservano 568 KiB nell'immagine.
   L'heap è limitato a 16 MiB e c'è
   un solo processo attivo alla volta.
 - Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
@@ -64,15 +66,17 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-B2-3, Meson `ordinary`, kernel SHA-256 `36C2995FDE351EBC4DE29942348D784F03F2E5646322E056F77E026E44D03D71`.
-QEMU/OVMF TCG/q35, 25 boot superati con shell, PS/2 assente, SMAP
-assente e configurazioni da una, quattro e otto vCPU. Soak superato con
-15 minuti di shell e 15 di dispatcher dopo `exit`, 156 risposte bridge,
-zero sforamenti e 16.172 pagine libere invariate. Tre slot IRQ della
-sessione liberi nella VM, HPET e timer presenti. Sei suite host superate,
-PS/2 ripetuta dopo la correzione delle righe seriali della shell.
-Meson integrazione/log con ASan 2/2, runner 2/2 e `plan_parity` 1/1.
-[Risultati e limiti B2-3](validation/consolidamento.md#cpu-e-scheduler).
+Ingressi IRQ comuni, Meson `ordinary`, kernel SHA-256
+`67B59CB4F414928B9A48CDBD6DAC9C3F07BC20FD12E24E199F6D79477C445499`.
+QEMU/OVMF TCG/q35, 22/22 boot con shell, PS/2 assente e configurazioni
+da una, quattro e otto vCPU. Stress superato con 15 minuti di shell e
+15 di dispatcher dopo `exit`, 155 risposte bridge, zero sforamenti e
+16.033 pagine libere invariate. IDT comune letta su tutte le CPU,
+tre IPI AP privati a quattro vCPU, tre slot PS/2 liberi e HPET/timer BSP
+presenti dopo il cleanup. Cinque suite host, ASan sul registro IRQ,
+runner Meson 2/2 e `plan_parity` 1/1 superati. Dodici boot diagnostici
+separati superati per timer e preemption BSP/AP.
+[Risultati, immagini e limiti](validation/consolidamento.md#cpu-e-scheduler).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni
 [AP nel boot ordinario](validation/consolidamento.md#validazione-dei-backend-x86),

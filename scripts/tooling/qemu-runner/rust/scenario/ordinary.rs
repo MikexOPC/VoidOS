@@ -50,8 +50,10 @@ pub fn parse_register(bytes: &[u8], cpu: u32, name: &[u8]) -> Option<u64> {
         if let Some(index) = line.strip_prefix(b"CPU#") {
             matching_cpu = std::str::from_utf8(index).ok().and_then(|index| index.parse::<u32>().ok()) == Some(cpu);
         } else if matching_cpu {
-            for field in line.split(|byte| byte.is_ascii_whitespace()) {
+            let mut fields = line.split(|byte| byte.is_ascii_whitespace()).filter(|field| !field.is_empty());
+            while let Some(field) = fields.next() {
                 if let Some(value) = field.strip_prefix(name) {
+                    let value = if value.is_empty() { fields.next()? } else { value };
                     return u64::from_str_radix(std::str::from_utf8(value).ok()?, 16).ok();
                 }
             }
@@ -201,30 +203,70 @@ pub fn parse_memory(bytes: &[u8], address: u64, count: usize) -> Option<Vec<u64>
     None
 }
 
-// ====== irq_ownership ======
+// ====== read_memory ======
 
-fn irq_ownership(vm: &mut Vm) -> Result<Value, String> {
-    let address = vm.log().number("KERNEL_IRQ_REGISTRY", 0)?;
+fn read_memory(vm: &mut Vm, address: u64, count: usize) -> Result<Vec<u64>, String> {
     let offset = vm.monitor_size()? as usize;
     vm.command("cpu 0");
-    vm.command(&format!("x /30gx 0x{address:016x}"));
+    vm.command(&format!("x /{count}gx 0x{address:016x}"));
     let deadline = Instant::now() + CR4_DEADLINE;
     while Instant::now() < deadline {
         let bytes = vm.monitor_bytes()?;
-        if let Some(words) = bytes.get(offset..).and_then(|bytes| parse_memory(bytes, address, 30)) {
-            if words[0] != address || words[5] == 0 || words[9] != 0x40 ||
-                words[10..25].iter().any(|word| *word != 0) || words[25] == 0 || words[29] != 0xd1 {
-                return Err("IRQ ownership after PS/2 cleanup is invalid".to_string());
-            }
-            return Ok(object(vec![
-                ("HpetSubscription", Value::Number(words[5])),
-                ("TimerSubscription", Value::Number(words[25])),
-                ("ReleasedDeviceSlots", Value::Number(3)),
-            ]));
+        if let Some(words) = bytes.get(offset..).and_then(|bytes| parse_memory(bytes, address, count)) {
+            return Ok(words);
         }
         std::thread::sleep(CR4_POLL);
     }
     Err("Missing IRQ registry memory snapshot".to_string())
+}
+
+// ====== irq_ownership ======
+
+fn irq_ownership(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
+    let log = vm.log();
+    let address = log.number("KERNEL_IRQ_REGISTRY", 0)?;
+    let bytes = log.numbers("KERNEL_IRQ_REGISTRY_BYTES").first().copied().unwrap_or(240);
+    if bytes != 240 && bytes != 9000 {
+        return Err("Unsupported IRQ registry layout".to_string());
+    }
+    let words = read_memory(vm,address,(bytes / 8) as usize)?;
+    let mut shared_cpus = 0;
+    let mut ipi_subscriptions = 0;
+    if words[0] != address || words[5] == 0 || words[9] != 0x40 ||
+        words[10..25].iter().any(|word| *word != 0) || words[25] == 0 || words[29] != 0xd1 ||
+        words[30..].iter().any(|word| *word != 0) {
+        return Err("IRQ ownership after PS/2 cleanup is invalid".to_string());
+    }
+    if bytes == 9000 {
+        let base = log.number("KERNEL_IRQ_CPUS",0)?;
+        let stride = log.number("KERNEL_IRQ_CPU_BYTES",0)?;
+        if base != address || stride < bytes || stride % 64 != 0 {
+            return Err("Invalid per-CPU IRQ storage".to_string());
+        }
+        for cpu in 0..cpus {
+            if read_registers(vm,cpu,&[b"IDT="])?[0] != log.number("KERNEL_IRQ_IDT_BASE",0)? {
+                return Err(format!("CPU {cpu} did not load the shared IRQ IDT"));
+            }
+            shared_cpus += 1;
+            if cpu == 0 { continue; }
+            let address = base.checked_add(stride.checked_mul(u64::from(cpu)).ok_or("IRQ storage overflow")?)
+                .ok_or("IRQ storage overflow")?;
+            let registers = read_memory(vm,address,(bytes / 8) as usize)?;
+            let active: Vec<_> = registers[5..].chunks_exact(5).filter(|slot| slot[0] != 0).collect();
+            if registers[0] != address || active.len() != 1 || active[0][4] != 0xe1 || active[0][3] == 0 {
+                return Err(format!("Invalid IPI ownership on CPU {cpu}"));
+            }
+            ipi_subscriptions += 1;
+        }
+    }
+    Ok(object(vec![
+        ("HpetSubscription", Value::Number(words[5])),
+        ("TimerSubscription", Value::Number(words[25])),
+        ("ReleasedDeviceSlots", Value::Number(3)),
+        ("RegistryBytes", Value::Number(bytes)),
+        ("SharedIdtCpus", Value::Number(shared_cpus)),
+        ("ApIpiSubscriptions", Value::Number(ipi_subscriptions)),
+    ]))
 }
 
 // ====== wait_dispatcher ======
@@ -291,7 +333,7 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     }
     let preemption = preemption_evidence(&log)?;
     let dispatcher = wait_dispatcher(vm)?;
-    let ownership = irq_ownership(vm)?;
+    let ownership = irq_ownership(vm,plan.smp)?;
     Ok(object(vec![
         ("Process", Value::Bool(enabled)),
         ("Bridge", Value::Bool(enabled && !fault)),
@@ -326,7 +368,7 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {
         return Err("Unexpected fault without a PS/2 controller".to_string());
     }
-    let ownership = irq_ownership(vm)?;
+    let ownership = irq_ownership(vm,plan.smp)?;
     Ok(object(vec![("Ps2", Value::Bool(false)), ("Process", Value::Bool(enabled)),
         ("Dispatcher", dispatcher), ("IrqOwnership", ownership)]))
 }
@@ -375,7 +417,7 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
         })?;
         dispatcher = dispatcher_evidence(&log)?;
     }
-    let ownership = irq_ownership(vm)?;
+    let ownership = irq_ownership(vm,plan.smp)?;
     Ok(object(vec![
         ("Minutes", Value::Number(u64::from(minutes))),
         ("IdleMinutes", Value::Number(u64::from(minutes))),

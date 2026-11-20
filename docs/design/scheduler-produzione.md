@@ -101,19 +101,19 @@ Il dispatcher continua anche quando il controller PS/2 è assente.
 
 ## Obiettivo 2 di S1, runtime AP ordinario
 
-Proposta del 20 novembre 2026. L'implementazione è non fatta.
+Design del 20 novembre 2026. L'obiettivo AP è parziale.
 Ogni AP ammesso eseguirà un dispatcher permanente con timer locale e
 task interrompibili nell'immagine `ordinary`. La shell BSP resterà
 utilizzabile e la chiusura PS/2 rilascerà le sole risorse della sessione.
-La scelta S1 del 14 novembre resta la base. La scelta degli ingressi IRQ
-qui sotto richiede approvazione prima dell'implementazione.
+La scelta S1 del 14 novembre resta la base. L'utente ha approvato B,
+unificazione immediata degli ingressi IRQ BSP/AP, il 20 novembre.
 
 ### Strutture e ownership
 
 `X86_SCHEDULER_LOCAL`, già nella memoria per CPU, conserverà contesto,
 task corrente, generazione, stato del dispatcher e stato di preemption.
-Il runtime possiede admission, timer e autorità AP fino alla fine del
-sistema. Il BSP prepara e pubblica il contesto condiviso prima di
+Il runtime previsto possiederà admission, timer e autorità AP per tutta
+la durata del sistema. Il BSP prepara e pubblica il contesto condiviso prima di
 avviare i dispatcher AP. Ogni AP pubblica conferma di ingresso e stato
 locale tramite atomiche con semantica release/acquire.
 
@@ -137,34 +137,47 @@ diagnostica. Il timer sospende solo un frame valido del task corrente,
 con IF salvato attivo e senza lock tenuti. Un frame del dispatcher o un
 IPI di servizio viene gestito conservando il contesto del dispatcher.
 
-### Ingressi IRQ da scegliere
+### Decisione sugli ingressi IRQ
 
-- **A, proposta.** Estendere il percorso `xis_native_dispatch/after` per
-  usare il motore comune e stato per CPU. Conservare l'IDT AP e il
-  servizio IPI esistenti durante la promozione del percorso ordinario.
-  Richiede di mantenere coerenti i predicati dei frame BSP e AP.
-- **B.** Unificare subito IDT, dispatch e registri IRQ BSP/AP con ownership
-  per CPU. Concentra la gestione degli interrupt, ma coinvolge insieme
-  i percorsi di boot, timer e dispositivi già usati dal BSP.
+La scelta B unifica IDT, ingresso Assembly, dispatch e registri IRQ con
+ownership per CPU. BSP e AP caricano lo stesso operando IDTR. Il percorso
+comune valida il frame sullo stack della CPU corrente prima di consegnarlo
+alla sottoscrizione locale. Gli handler mantengono conferma della sorgente
+ed EOI. I vettori F0h e FFh mantengono self-test e gestione spurious.
+
+`X86_IRQ_CPU` contiene registro, token IPI/timer, frame preso in prestito
+durante la callback e stato di attivazione. Il registro copre i 224 vettori
+32–255 definiti dall'architettura. F0h e FFh sono riservati. Le prime cinque
+posizioni conservano i percorsi dispositivi e timer già esistenti.
+I record sono allineati a 64 byte e selezionati tramite GS. La riserva
+per le 64 CPU del bootstrap è 581.632 byte. L'IRQ BSP si inizializza prima
+dell'heap. L'IDT e i target sono comuni e immutabili dopo la pubblicazione.
+Il singolo AP inizializza registro e sottoscrizioni prima di abilitare IF.
+
+L'utente ha autorizzato una deroga limitata alla sezione 4.3 di AGENTS.md
+per aggiornare i riferimenti di build negli script PowerShell esistenti.
+La migrazione completa della build rimane un lavoro separato.
 
 ### Task e chiusura
 
-1. Design e scelta degli ingressi IRQ. Verifica dei contratti esistenti,
-   dei riferimenti e del diff documentale, poi commit locale.
-2. Runtime AP permanente. Separare admission e autorità dal singolo job,
+1. Design e scelta degli ingressi IRQ fatti, con scelta B dell'utente.
+2. Unificazione IRQ fatta. Ingresso e IDT comuni, registro per CPU,
+   preservazione di timer, IPI e frame dei task esistenti. Prove host,
+   22 boot ordinari, 12 diagnostici e 30 minuti di stress superati.
+3. Runtime AP permanente. Separare admission e autorità dal singolo job,
    estendere il motore continuo alla CPU chiamante e mantenere il job AP1.
    Prove host, dieci boot con shell e senza PS/2 e stress del ciclo di vita.
-3. Preemption AP ordinaria. Stato e timer locali, frame di task generico,
+4. Preemption AP ordinaria. Stato e timer locali, frame di task generico,
    salvataggio e ritorno attraverso il dispatcher. Prove host, dieci boot
    e stress con lavoro che procede senza yield volontari.
-4. Selezione senza affinità fissa e chiusura. Verificare pubblicazione,
+5. Selezione senza affinità fissa e chiusura. Verificare pubblicazione,
    risveglio, ripresa e raccolta su CPU diverse nel percorso ordinario,
    preservando il comando esistente. Dieci boot e trenta minuti di lavoro
    concorrente, shell reattiva e budget stabile, inclusi cleanup e idle.
 
-I limiti esistenti di otto task e quattro slot IRQ per dispositivi restano
-debito dell'obiettivo capacità già successivo. Le prove dovranno dichiarare
-quali CPU eseguono lavoro e quali sono in idle. La disponibilità di uno
+Il limite esistente di otto task resta debito dell'obiettivo capacità
+già successivo. Le prove dovranno dichiarare quali CPU eseguono lavoro
+e quali sono in idle. La disponibilità di uno
 slot non può produrre un risultato fittizio quando la capacità è esaurita.
 Ogni task registra l'immagine provata e lo stato delle prove su PC fisico.
 

@@ -225,13 +225,14 @@ $objects += ($output+'/uart-wait.obj')
 Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo'+$output+'/pm-read.obj'),
     (Join-Path $project 'arch/x86/kernel/timer/lapic/assembly/reference/port.asm'))
 $objects += ($output+'/pm-read.obj')
-foreach ($entry in @('entry/return','verification/registers')) {
-    $object = $output + '/irq-' + ($entry.Replace('/','-')) + '.obj'
-    $irqDefines = if ($TestSchedulerPeriodic -and $entry -eq 'entry/return') { @('/DKERNEL_TEST_SCHEDULER_PERIODIC=1') } else { @() }
-    Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') (@('/nologo','/W3','/WX','/c',('/Fo'+$object)) + $irqDefines +
-        @((Join-Path $project ('arch/x86/kernel/interrupts/return/assembly/'+$entry+'.asm'))))
-    $objects += $object
-}
+$irqAssembler = if ($PlanOnly) { @{Nasm = 'nasm.exe'} } else { & "$project/arch/x86/kernel/cpu/percpu/startup/scripts/assembler.ps1" }
+$irqDefines = if ($TestApService -ne 'none') { @('-DKERNEL_TEST_AP_SERVICE=1') } else { @() }
+Invoke-Compiler $irqAssembler.Nasm (@('-f','win64','-Wall','-Werror') + $irqDefines +
+    @('-o',"$output/irq-entry-return.obj","$project/arch/x86/kernel/interrupts/return/assembly/entry/interrupt.asm"))
+$objects += "$output/irq-entry-return.obj"
+Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',
+    "/Fo$output/irq-verification-registers.obj","$project/arch/x86/kernel/interrupts/return/assembly/verification/registers.asm")
+$objects += "$output/irq-verification-registers.obj"
 if ($TestCpuFault -ne 'none') {
     Invoke-Compiler (Join-Path $ToolchainBin 'ml64.exe') @('/nologo','/W3','/WX','/c',('/Fo' + $output + '/cpu-fault.obj'),
         (Join-Path $project 'test/kernel/exceptions/assembly/fault/probe.asm'))

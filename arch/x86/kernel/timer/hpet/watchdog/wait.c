@@ -39,8 +39,9 @@ static int wake_lapic_valid(const X86_HPET_WATCHDOG *owner)
     for (index = 1; index < X86_IRQ_SLOTS; ++index) {
         const X86_IRQ_SUBSCRIPTION *item = &registry->Slots[index];
         X86_IRQ_TOKEN token = {item->Id, item->Vector, 0};
-        BOOT_U32 vector = index == X86_IRQ_TIMER_SLOT ? X86_PREEMPT_VECTOR : 0x40 + index;
         if (item->Id) {
+            BOOT_U32 vector = index == X86_IRQ_TIMER_SLOT ? X86_PREEMPT_VECTOR : 0x40 + index;
+            if (index > X86_IRQ_TIMER_SLOT) return 0;
             if (item->Vector != vector || !x86_irq_registry_token_live(registry, &token)) return 0;
             allowed |= 1U << index;
         }

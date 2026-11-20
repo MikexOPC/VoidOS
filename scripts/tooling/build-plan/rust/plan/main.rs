@@ -169,15 +169,8 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
             }
             _ => return Err("Invalid build catalog row."),
         };
-        if profile == Profile::Periodic && fields.contains(&"/Fo{out}/irq-entry-return.obj") {
-            command.insert(
-                command.len() - 1,
-                "/DKERNEL_TEST_SCHEDULER_PERIODIC=1".into(),
-            );
-        }
         if profile == Profile::Ordinary
-            && (fields.contains(&"{out}/ipi-entry-interrupt.obj")
-                || fields.contains(&"{out}/ipi-runtime-idle.obj"))
+            && fields.contains(&"{out}/ipi-runtime-idle.obj")
         {
             let output = command
                 .iter()
@@ -197,7 +190,7 @@ fn compile_commands(profile: Profile) -> Result<Vec<Vec<String>>, &'static str> 
                     true,
                 ));
             }
-            if fields.contains(&"{out}/ipi-entry-interrupt.obj")
+            if fields.contains(&"{out}/irq-entry-return.obj")
                 || fields.contains(&"{out}/ipi-runtime-idle.obj")
             {
                 let output = fields

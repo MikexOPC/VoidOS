@@ -6,7 +6,8 @@ $objects = @()
 # ============ lifecycle degli handler IRQ senza accessi privilegiati ============ #
 
 foreach ($source in @('arch/x86/kernel/interrupts/registry/registry.c',
-    'test/kernel/interrupts/registry/registry_test.c','lib/memory/address_ranges.c')) {
+    'test/kernel/interrupts/registry/registry_test.c','lib/memory/address_ranges.c',
+    'arch/x86/kernel/scheduler/runtime/memory.c')) {
     $object = Join-Path $OutputDirectory ('registry-'+($source.Replace('/','-') -replace '\.c$','.obj'))
     & (Join-Path $ToolchainBin 'cl.exe') /nologo /TC /std:c11 /W4 /WX /GS- /Zl /O2 /c ('/I'+$project) `
         ('/I'+(Join-Path $ToolchainBin '../../../include')) ('/I'+$SdkInclude) (Join-Path $project $source) ('/Fo'+$object)
@@ -32,7 +33,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilazione test subscription IRQ Rust fallit
 & ($OutputDirectory+'/irq-registry-tests.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Test subscription IRQ Rust fallito.' }
 
-# ============ ASan on the actual four-slot registry ============
+# ============ ASan on the architectural vector registry ============
 
 . (Join-Path $project 'scripts/lib/common.ps1')
 $saved = Use-Msvc

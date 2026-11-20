@@ -263,6 +263,60 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   Restano preemption ordinaria AP, capacità e hardware fisico.
   Il dubbio storico `K4TLBACK` e la latenza a IF=0 restano nello stato.
 
+- **Ingressi IRQ comuni, 20 novembre 2026.** Task preparatoria del runtime
+  AP ordinario, scelta B approvata dall'utente. Un solo ingresso Assembly,
+  IDT e dispatch per BSP/AP, registri e token selezionati tramite GS.
+  Rimossa l'IDT duplicata AP. Ogni registro contiene 224 posizioni per i
+  vettori architetturali 32–255, con F0h e FFh riservati, quindi 222
+  sottoscrizioni simultanee. La numerazione segue Intel SDM 253668-085US,
+  Vol. 3A, §7.2. [Fonte Intel](https://cdrdv2-public.intel.com/835754/253668-sdm-vol-3a.pdf).
+  Il test host collega il registro C reale e
+  il validatore Rust, sottoscrive tutti i vettori consentiti, consegna un
+  interrupt logico a ciascuno e li rilascia. Questa prova host non esegue
+  istruzioni privilegiate. ASan sul registro reale superato.
+  Le cinque suite host kernel, ipi-service, build-plan, x86-scheduler e
+  watchdog sono passate. Il primo collegamento della suite kernel
+  falliva dopo l'ampliamento delle strutture. Il fixture grande è ora
+  statico e la DLL usa gli helper di memoria reali del runtime.
+  Suite kernel ripetuta con esito positivo. Runner Meson 2/2, con 17 test
+  unitari e sei di processo, e `plan_parity` 1/1. Cppcheck sui cinque
+  sorgenti C modificati senza diagnostiche bloccanti.
+  `ordinary` Meson, QEMU/OVMF TCG/q35, kernel SHA-256
+  `67B59CB4F414928B9A48CDBD6DAC9C3F07BC20FD12E24E199F6D79477C445499`.
+  Loader SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+  Boot conclusivi 22/22, shell 10/10, PS/2 assente 10/10, una vCPU 1/1
+  e otto vCPU 1/1. Nei casi shell con più CPU, il runner verifica il job AP1
+  e il cleanup PS/2. Legge l'IDTR effettivo di tutte le CPU e il registro IRQ
+  privato di ogni AP. Restano HPET e timer BSP, un IPI E1h per AP e tre slot PS/2
+  azzerati. A quattro vCPU le pagine fisiche libere sono 16.033.
+  La riserva iniziale IRQ è 581.632 byte, prima dell'heap, con record di
+  9.088 byte allineati a 64 e registro di 9.000 byte per CPU. La variazione
+  rispetto alle 16.172 pagine di B2-3 deriva dall'immagine ampliata.
+  I profili separati `meson-bsp-periodic`, `ap-timer`, `ap-preempt` e
+  `ap-four` passano 3/3 ciascuno. Gli ultimi tre sono stati ripetuti sulle
+  stesse immagini dopo aver aggiornato l'asserzione IDTR del checker,
+  che richiedeva ancora l'indirizzo dell'IDT AP rimossa. Il controllo
+  verifica ora l'IDT comune anche sul BSP e conserva le prove TR, GDT,
+  stack, root e registri salvati. Le tre campagne precedenti si erano
+  fermate al primo boot e sono escluse dal conteggio conclusivo.
+  Evidenze in `kernel/build/irq-unification-*`,
+  `test-run-2db97ea78fe544dd8d7002ded25fd2eb`,
+  `test-run-7ee40d3b48d145259a92702f155e185f`,
+  `ap-runtime-52db725bb0224c089ab7f729777667e5`,
+  `ipi-service-c65c5ad1b9054fc9b09178d9b2210d29`,
+  `ipi-service-1ff709770f6949d3a1b412f3a7a81991` e
+  `ipi-service-8f666d416dc340c5bbf5480e5f8f58a3`.
+  Stress conclusivo 1/1 sulla stessa immagine a quattro vCPU, 15 minuti
+  con shell e 15 dopo `exit`. Risposte bridge 155, sospensioni 11.470,
+  delle quali 8.864 fuori finestra, zero sforamenti. Nel dispatcher
+  62.400 cicli e 154.592 tick LAPIC complessivi. Pagine libere stabili
+  a 16.033 prima e dopo il cleanup. Snapshot finale con IDT comune sulle
+  quattro CPU, tre IPI AP privati, HPET e timer BSP e tre slot PS/2 liberi.
+  Il runtime AP permanente e la preemption AP nell'immagine ordinaria
+  restano nelle task successive. PC fisico
+  non provato. Deroga utente limitata ai riferimenti necessari negli
+  script PowerShell esistenti, migrazione completa della build separata.
+
 ## Build e runner
 
 | Passo | Risultato storico |

@@ -7,8 +7,7 @@
 
 XP_PANIC_NATIVE xp_panic_native;
 uint64_t xp_panic_armed, xp_panic_output, xp_panic_recursion;
-const BOOT_U64 xis_irq_targets[224] = {0};
-const unsigned char xis_irq_begin[1] = {0}, xis_irq_end[1] = {0};
+static X86_KERNEL_IDTR shared_descriptor;
 static X86_CPU_LOCAL owner;
 static X86_LAPIC_MAPPING lapic;
 static uint32_t irq, bad_table;
@@ -40,34 +39,34 @@ __declspec(noreturn) void xp_panic_voluntary(uint64_t value) { reason = value; l
 
 // ====== modeled_table_builder ======
 
-int x86_irq_prepare(X86_IRQ_IDT *table, X86_KERNEL_IDTR *pointer, const X86_KERNEL_IDT *exceptions,
-    const BOOT_U64 *targets, BOOT_U64 begin, BOOT_U64 end) {
-    assert(table == &xis_native.Idt && pointer == &xis_native.Idtr && exceptions == &xp_panic_native.Idt);
-    assert(targets == xis_irq_targets && begin == (uint64_t)xis_irq_begin && end == (uint64_t)xis_irq_end);
-    return !bad_table;
-}
-int x86_irq_verify(const X86_IRQ_IDT *table, const X86_KERNEL_IDTR *pointer, const X86_KERNEL_IDT *exceptions,
-    const BOOT_U64 *targets, BOOT_U64 begin, BOOT_U64 end) {
-    (void)table; (void)pointer; (void)exceptions; (void)targets; (void)begin; (void)end;
+const X86_KERNEL_IDTR *x86_irq_descriptor(void) { return &shared_descriptor; }
+int x86_irq_shared_valid(void) { return !bad_table; }
+int x86_irq_cpu_activate(void) { assert(0); return 0; }
+const X86_IRQ_FRAME *x86_irq_current_frame(void) { assert(0); return NULL; }
+int x86_irq_registry_bind(X86_IRQ_REGISTRY *registry, BOOT_U32 vector,
+    X86_IRQ_CALLBACK handle, X86_IRQ_CALLBACK quiet, X86_IRQ_TOKEN *token) {
+    (void)registry; (void)vector; (void)handle; (void)quiet; (void)token;
     assert(0); return 0;
 }
 
 // ====== rejected_private ======
 
 static void rejected_private(uint32_t operation) {
+    if (operation == 2 || operation == 4 || operation == 5) {
+        uintptr_t frame = operation == 2 ? 0 : operation == 4 ?
+            X86_AP_STACK_FLOOR(1) + 8 : X86_AP_FRAME(1) - 40;
+        assert(!xis_irq_frame_valid((const X86_IRQ_FRAME *)frame));
+        return;
+    }
     reason = 0;
     if (!setjmp(stopped)) {
         if (operation == 0) (void)xis_native_index();
         else if (operation == 1) (void)xis_native_enter(NULL);
-        else if (operation == 2) xis_native_dispatch(NULL);
         else if (operation == 3) xis_native_verified(NULL);
-        else if (operation == 4) xis_native_dispatch((const X86_IRQ_FRAME *)(uintptr_t)(X86_AP_STACK_FLOOR(1) + 8));
-        else if (operation == 5) xis_native_dispatch((const X86_IRQ_FRAME *)(uintptr_t)(X86_AP_FRAME(1) - 40));
         else xad_native_poll();
         assert(0);
     }
     assert(reason);
-    if (operation == 2 || operation == 4 || operation == 5) assert(reason == 0x4b3449504946524dULL);
     if (operation == 6) assert(reason == 0x4b3441444d464149ULL);
 }
 

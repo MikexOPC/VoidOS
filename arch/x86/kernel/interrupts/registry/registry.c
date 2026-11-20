@@ -49,7 +49,9 @@ static int callback(const X86_IRQ_REGISTRY *registry, X86_IRQ_CALLBACK function)
 static BOOT_U32 slot(BOOT_U32 vector)
 {
     if (vector >= 0x40 && vector <= 0x43) return vector - 0x40;
-    return vector == X86_PREEMPT_VECTOR ? X86_IRQ_TIMER_SLOT : X86_IRQ_SLOTS;
+    if (vector == X86_PREEMPT_VECTOR) return X86_IRQ_TIMER_SLOT;
+    if (vector < 32 || vector > 255 || vector == 0xf0 || vector == 0xff) return X86_IRQ_SLOTS;
+    return 5 + vector - 32 - (vector > 0x43 ? 4 : 0) - (vector > X86_PREEMPT_VECTOR ? 1 : 0);
 }
 
 // ====== registro e ogni subscription verificati prima di invocare callback ===== //
@@ -76,9 +78,11 @@ int x86_irq_registry_validate(const X86_IRQ_REGISTRY *registry)
             return 0;
         }
     }
-    for (index = 0; index < X86_IRQ_SLOTS; ++index)
+    for (index = 0; index < X86_IRQ_SLOTS; ++index) {
+        if (!registry->Slots[index].Id) continue;
         for (BOOT_U32 other = index + 1; other < X86_IRQ_SLOTS; ++other)
             if (registry->Slots[index].Id && registry->Slots[index].Id == registry->Slots[other].Id) return 0;
+    }
     return 1;
 }
 

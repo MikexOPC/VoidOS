@@ -36,11 +36,12 @@ uint32_t xis_native_index(void) {
 // ====== xis_native_prepare ======
 
 int xis_native_prepare(void) {
+    const X86_KERNEL_IDTR *descriptor = x86_irq_descriptor();
     if (ks_irq_state() || !ks_boot_cpu() || ks_atomic_load_acquire(&xis_native.Published) ||
         xp_panic_native.Count < 2 || xp_panic_native.Count > 64 ||
         !ks_atomic_load_acquire(&xp_panic_armed) || !x86_lapic_authority(xp_panic_native.Lapic) ||
-        !x86_irq_prepare(&xis_native.Idt, &xis_native.Idtr, &xp_panic_native.Idt,
-            xis_irq_targets, (uint64_t)xis_irq_begin, (uint64_t)xis_irq_end) || !xis_configure(xp_panic_native.Count)) return 0;
+        !descriptor || !x86_irq_shared_valid() || !xis_configure(xp_panic_native.Count)) return 0;
+    xis_native.Idtr = *descriptor;
     xis_native.Count = xp_panic_native.Count;
     ks_atomic_store_release(&xis_native.Published, 1);
     return 1;
@@ -63,8 +64,7 @@ uint32_t xis_native_enter(void *private_frame) {
     uint64_t rsp = x86_kernel_stack_pointer();
     if (!index || (uint64_t)frame != X86_AP_FRAME(index) || frame->Phase != 6 || frame->Error ||
         rsp < X86_AP_STACK_FLOOR(index) || rsp >= (uint64_t)frame || !x86_irq_cpu_state() || !empty_private() ||
-        !x86_irq_verify(&xis_native.Idt, &xis_native.Idtr, &xp_panic_native.Idt,
-            xis_irq_targets, (uint64_t)xis_irq_begin, (uint64_t)xis_irq_end)) xis_native_abort(0x4b34495049454e00ULL);
+        !x86_irq_shared_valid()) xis_native_abort(0x4b34495049454e00ULL);
     uint32_t version = xis_mmio_read(0x30), maximum = (version >> 16) & 255;
     if (!x86_apic_lapic_version(version)) xis_native_abort(0x4b344950494c5600ULL);
     for (uint32_t lvt = 0; lvt <= maximum; ++lvt) {
@@ -73,7 +73,7 @@ uint32_t xis_native_enter(void *private_frame) {
         xis_mmio_write(offset, X86_LVT_MASKED_IDLE);
         if (xis_mmio_read(offset) != X86_LVT_MASKED_IDLE) xis_native_abort(0x4b344950494c5602ULL);
     }
-    x86_exception_load_idt(&xis_native.Idtr);
+    if (!x86_irq_cpu_activate()) xis_native_abort(0x4b34495049494454ULL);
     X86_KERNEL_IDTR actual;
     x86_exception_read_idt(&actual);
     for (uint32_t byte = 0; byte < sizeof(actual); ++byte)
@@ -161,9 +161,9 @@ void xis_irq_after(const X86_IRQ_FRAME *frame) {
 #endif
 }
 
-// ====== xis_native_dispatch ======
+// ====== xis_irq_frame_valid ======
 
-void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
+int xis_irq_frame_valid(const X86_IRQ_FRAME *frame) {
     uint32_t index = xis_native_index();
     uint64_t top = X86_AP_FRAME(index), address = (uint64_t)frame;
 #ifdef KERNEL_TEST_AP_SERVICE
@@ -177,8 +177,15 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
 #if KERNEL_TEST_AP_SERVICE == 9
     if (!valid && index && !ks_irq_state()) valid = xat_irq_frame(index,frame);
 #endif
-    if (!valid || !xp_image_contains(frame->Rip, 1))
-        xis_native_abort(0x4b3449504946524dULL);
+    return valid && xp_image_contains(frame->Rip, 1);
+}
+
+// ====== xis_irq_handle ======
+
+int xis_irq_handle(void) {
+    const X86_IRQ_FRAME *frame = x86_irq_current_frame();
+    uint32_t index = xis_native_index();
+    if (!frame) xis_native_abort(0x4b3449504946524dULL);
     XIS_CPU *cpu = &xis_native.Cpus[index];
     if (frame->Vector == 0xff) {
         for (uint32_t word = 0; word < 8; ++word)
@@ -186,18 +193,18 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
         uint64_t previous = ks_atomic_load_relaxed(&cpu->Spurious);
         if (previous == UINT64_MAX) xis_native_abort(0x4b34495049535752ULL);
         ks_atomic_store_release(&cpu->Spurious, previous + 1);
-        return;
+        return 1;
     }
 #if KERNEL_TEST_AP_SERVICE == 7
     if (frame->Vector == XIS_TIMER_VECTOR) {
         timer_interrupt(index);
-        return;
+        return 1;
     }
 #endif
 #ifdef KERNEL_TEST_AP_PREEMPTION
     if (frame->Vector == XIS_TIMER_VECTOR) {
         xat_preempt_interrupt(frame);
-        return;
+        return 1;
     }
 #endif
     if (frame->Vector != XIS_VECTOR) xis_native_abort(0x4b34495049564543ULL);
@@ -251,7 +258,7 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     if (operation == XIS_K5_IRQ) x86_k5_ap_run(index);
 #endif
 #if KERNEL_TEST_AP_SERVICE == 2
-    if (index == 1 && round == XIS_FLUSH_ROUND) return;
+    if (index == 1 && round == XIS_FLUSH_ROUND) return 1;
 #elif KERNEL_TEST_AP_SERVICE == 3
     if (index == 1 && round == XIS_FLUSH_ROUND) {
         if (!xis_complete(index, index, generation + 1)) xis_native_abort(0x4b34495049424144ULL);
@@ -259,9 +266,22 @@ void xis_native_dispatch(const X86_IRQ_FRAME *frame) {
     }
 #elif KERNEL_TEST_AP_SERVICE == 6
     // Release diagnostic: AP1 completes EOI for the flush and withholds the ACK.
-    if (index == 1 && operation == XIS_FLUSH_CONTEXT && ks_atomic_load_acquire(&xis_release_armed)) return;
+    if (index == 1 && operation == XIS_FLUSH_CONTEXT && ks_atomic_load_acquire(&xis_release_armed)) return 1;
 #endif
     if (!xis_complete(index, index, generation)) xis_native_abort(0x4b3449504941434bULL);
+    return 1;
+}
+
+// ====== xis_irq_bind ======
+
+int xis_irq_bind(X86_IRQ_REGISTRY *registry, X86_IRQ_TOKEN *service, X86_IRQ_TOKEN *timer) {
+    if (!x86_irq_registry_bind(registry,XIS_VECTOR,xis_irq_handle,empty_private,service)) return 0;
+#if KERNEL_TEST_AP_SERVICE == 7 || defined(KERNEL_TEST_AP_PREEMPTION)
+    return x86_irq_registry_bind(registry,XIS_TIMER_VECTOR,xis_irq_handle,empty_private,timer);
+#else
+    (void)timer;
+    return 1;
+#endif
 }
 
 #ifdef KERNEL_TEST_AP_SERVICE

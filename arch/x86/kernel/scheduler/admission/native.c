@@ -62,8 +62,7 @@ void xad_native_poll(void)
         if (actual.Bytes[byte] != xis_native.Idtr.Bytes[byte]) fail_private(index,token,root);
     const XS_PRIVATE_FRAME *frame = (const XS_PRIVATE_FRAME *)(uintptr_t)X86_AP_FRAME(index);
     if (frame->Phase != 6 || frame->Error || root != xp_panic_native.Root ||
-        !x86_irq_verify(&xis_native.Idt,&xis_native.Idtr,&xp_panic_native.Idt,
-            xis_irq_targets,(uint64_t)xis_irq_begin,(uint64_t)xis_irq_end)) fail_private(index,token,root);
+        !x86_irq_shared_valid()) fail_private(index,token,root);
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_prepare();
     if (!local || local->phase || local->current != UINT32_MAX || local->generation || local->event ||
         local->stats.steps || local->stats.failure ||

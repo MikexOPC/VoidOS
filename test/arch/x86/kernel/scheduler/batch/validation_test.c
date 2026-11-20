@@ -157,3 +157,7 @@ int main(void)
     printf("AP_GATE_PASS: %u checks, real C validator/Rust protocol, privileged reads and mapping views MOCK\n",checks);
     return 0;
 }
+
+// ====== x86_irq_shared_valid ======
+
+int x86_irq_shared_valid(void) { return 1; }

@@ -145,7 +145,7 @@ ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/stack-switch.obj	{repo}/arch/x86/kernel/sta
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/apic-capture.obj	{repo}/arch/x86/kernel/interrupts/apic/assembly/profile/capture.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/uart-wait.obj	{repo}/arch/x86/kernel/interrupts/registry/assembly/wait/bounded.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/pm-read.obj	{repo}/arch/x86/kernel/timer/lapic/assembly/reference/port.asm
-ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/irq-entry-return.obj	{repo}/arch/x86/kernel/interrupts/return/assembly/entry/return.asm
+nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/irq-entry-return.obj	{repo}/arch/x86/kernel/interrupts/return/assembly/entry/interrupt.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/irq-verification-registers.obj	{repo}/arch/x86/kernel/interrupts/return/assembly/verification/registers.asm
 ml64.exe	/nologo	/c	/Fo{out}/retirement.obj	{repo}/arch/x86/mm/paging/retirement/assembly/retire/state.asm
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/scheduler-assembly-irq-compute.obj	{repo}/arch/x86/kernel/scheduler/assembly/irq/compute.asm
@@ -290,7 +290,6 @@ ordinary	c	arch/x86/kernel/drivers/video/framebuffer/console/wake/notify.c
 ordinary	c	arch/x86/kernel/drivers/video/framebuffer/console/wake/hardware.c
 ordinary	c	arch/x86/kernel/drivers/input/ps2/shell/remote.c
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	no-vectorize-loops	-C	no-vectorize-slp	{repo}/arch/x86/kernel/cpu/percpu/service/rust/mailbox/api.rs	-o	{out}/ipi-mailbox.obj
-nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/ipi-entry-interrupt.obj	{repo}/arch/x86/kernel/cpu/percpu/service/assembly/entry/interrupt.asm
 nasm.exe	-f	win64	-Wall	-Werror	-o	{out}/ipi-runtime-idle.obj	{repo}/arch/x86/kernel/cpu/percpu/service/assembly/runtime/idle.asm
 c	arch/x86/kernel/cpu/percpu/startup/entry.c
 c	arch/x86/kernel/cpu/percpu/startup/blob/package.c

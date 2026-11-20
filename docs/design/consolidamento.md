@@ -33,6 +33,10 @@ conserva le lease dopo il punto irreversibile. Gli AP ammessi rispondono
 a PING e shootdown. Il panic coordinato usa NMI e attese limitate.
 [Design per CPU](../../arch/x86/kernel/cpu/percpu/documentation/design.md).
 
+BSP e AP condividono IDT, ingresso Assembly e dispatch IRQ. GS seleziona
+il registro di sottoscrizioni e i token della CPU corrente. Gli AP
+possiedono il proprio IPI di servizio. I dispositivi restano sul BSP.
+
 La scelta K4-C usa una coda globale con lock, stato e affinità in Rust,
 dispatcher per CPU e switch all'uscita dell'IRQ in Assembly. In
 `ordinary` il timer LAPIC D1h sospende i task della sessione PS/2 sul

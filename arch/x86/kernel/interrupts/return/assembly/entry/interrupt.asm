@@ -8,23 +8,23 @@
 bits 64
 default rel
 section .text
-global xis_irq_begin, xis_irq_end
-extern xis_native_dispatch, xis_irq_after
+global x86_irq_begin, x86_irq_end
+extern x86_irq_dispatch, x86_irq_after
 
 ; ====== vector_entries ======
 
-xis_irq_begin:
+x86_irq_begin:
 %assign v 32
 %rep 224
-xis_vector_%+v:
+x86_irq_vector_%+v:
     push qword v
-    jmp xis_common
+    jmp irq_common
 %assign v v+1
 %endrep
 
-; ====== xis_common ======
+; ====== irq_common ======
 
-xis_common:
+irq_common:
     push rax
     push rcx
     push rdx
@@ -45,6 +45,11 @@ xis_common:
     and rsp, -16
     sub rsp, 544
     fxsave64 [rsp+32]
+    cmp qword [r12+120], 0xf0
+    jne .profile
+    pxor xmm0, xmm0
+    pxor xmm15, xmm15
+.profile:
 %ifdef KERNEL_TEST_AP_SERVICE
     fninit
 %assign i 0
@@ -55,11 +60,11 @@ xis_common:
 %endif
     cld
     [warning -reloc-rel-dword]
-    call xis_native_dispatch
+    call x86_irq_dispatch
     [warning +reloc-rel-dword]
     lea rcx, [r12+120]
     [warning -reloc-rel-dword]
-    call xis_irq_after
+    call x86_irq_after
     [warning +reloc-rel-dword]
     fxrstor64 [rsp+32]
     mov rsp, r12
@@ -80,17 +85,46 @@ xis_common:
     pop rax
     add rsp, 8
     iretq
-xis_irq_end:
+x86_irq_end:
+
+; ====== x86_irq_cpu_state ======
+
+; Intel SDM Vol. 2A CPUID.01H:EDX[26:24] SSE2/SSE/FXSR.
+; Vol. 3A 2.5: CR0.EM2/TS3 clear, CR4.OSFXSR9/OSXMMEXCPT10 set, OSXSAVE18 clear.
+global x86_irq_cpu_state
+x86_irq_cpu_state:
+    push rbx
+    mov eax, 1
+    cpuid
+    and edx, 0x7000000
+    cmp edx, 0x7000000
+    jne .bad
+    mov rax, cr0
+    test eax, 0xc
+    jnz .bad
+    mov rax, cr4
+    test eax, 0x40000
+    jnz .bad
+    and eax, 0x600
+    cmp eax, 0x600
+    jne .bad
+    mov eax, 1
+    pop rbx
+    ret
+.bad:
+    xor eax, eax
+    pop rbx
+    ret
 
 ; ====== immutable_target_registry ======
 
 section .rdata align=8
-global xis_irq_targets
-xis_irq_targets:
+global x86_irq_targets
+x86_irq_targets:
 [warning -reloc-abs-qword]
 %assign v 32
 %rep 224
-    dq xis_vector_%+v
+    dq x86_irq_vector_%+v
 %assign v v+1
 %endrep
 [warning +reloc-abs-qword]

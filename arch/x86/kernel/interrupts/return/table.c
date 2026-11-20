@@ -4,6 +4,10 @@
 #include "lib/memory/address_ranges.h"
 #include "arch/x86/kernel/descriptors/stacks.h"
 #include "arch/x86/kernel/interrupts/registry/registry.h"
+#include "arch/x86/kernel/cpu/percpu/percpu.h"
+#ifdef KERNEL_AP_RUNTIME
+#include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#endif
 #ifdef KERNEL_PS2_INPUT
 #include "arch/x86/kernel/scheduler/irq/preempt.h"
 #endif
@@ -16,9 +20,32 @@ extern const unsigned char x86_irq_begin[], x86_irq_end[];
 extern const BOOT_U64 x86_kernel_fault_targets[32];
 static X86_IRQ_IDT irq_idt;
 static X86_KERNEL_IDTR irq_idtr;
-static X86_IRQ_REGISTRY irq_registry;
+typedef __declspec(align(64)) struct {
+    X86_IRQ_REGISTRY       Registry;
+    X86_IRQ_TOKEN          Service, Timer;
+    const X86_IRQ_FRAME   *Frame;
+    BOOT_U32              Ready;
+    BOOT_U32              Reserved[11];
+} X86_IRQ_CPU;
+_Static_assert(sizeof(X86_IRQ_CPU) % 64 == 0, "IRQ ownership uses separate cache lines");
+
+static X86_IRQ_CPU irq_cpus[X86_PERCPU_CAPACITY];
+static const X86_KERNEL_IDT *irq_exceptions;
 static BOOT_U32 installed, armed, returned, spurious;
 static int exceptions_valid(const X86_KERNEL_IDT *exceptions);
+
+// ====== local_private ======
+
+static X86_IRQ_CPU *local_private(void) {
+#ifdef KERNEL_AP_RUNTIME
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    if (!owner || owner->Index >= X86_PERCPU_CAPACITY || owner->State != X86_PERCPU_ACTIVE ||
+        owner->Self != (BOOT_U64)owner) return NULL;
+    return &irq_cpus[owner->Index];
+#else
+    return &irq_cpus[0];
+#endif
+}
 
 // ====== intervalli bounded disgiunti prima di costruire la tabella ===== //
 
@@ -146,15 +173,18 @@ int x86_irq_initialize(void)
     X86_KERNEL_IDTR old = {{0}};
     const X86_KERNEL_IDT *exceptions;
     int result;
-    if (installed || !x86_exception_environment() || !x86_irq_cpu_state()) return 0;
+    X86_IRQ_CPU *local = local_private();
+    if (!local || installed || !x86_exception_environment() || !x86_irq_cpu_state()) return 0;
     x86_exception_read_idt(&old);
     if (!x86_exception_idtr(base(&old),old.Bytes[0] | ((BOOT_U64)old.Bytes[1] << 8))) return 0;
     exceptions = (const X86_KERNEL_IDT *)base(&old);
+    irq_exceptions = exceptions;
     if (!x86_irq_prepare(&irq_idt,&irq_idtr,exceptions,x86_irq_targets,(BOOT_U64)x86_irq_begin,(BOOT_U64)x86_irq_end)) return 0;
     result = x86_irq_activate(&irq_idtr);
     if (result < 0) x86_kernel_stop(0x4b49525142410001ULL);
     if (!result) return 0;
-    if (!x86_irq_registry_initialize(&irq_registry,X86_KERNEL_IMAGE_BASE,X86_KERNEL_IMAGE_LIMIT)) return 0;
+    if (!x86_irq_registry_initialize(&local->Registry,X86_KERNEL_IMAGE_BASE,X86_KERNEL_IMAGE_LIMIT)) return 0;
+    local->Ready = 1;
     installed = 1; armed = 1;
     result = x86_irq_return_test();
     armed = 0;
@@ -170,16 +200,62 @@ int x86_irq_initialize(void)
         !x86_irq_verify(&irq_idt,&irq_idtr,exceptions,x86_irq_targets,(BOOT_U64)x86_irq_begin,(BOOT_U64)x86_irq_end)) return 0;
     if (!kernel_section("IDT e ritorno interrupt ring zero") ||
         !kernel_text("KERNEL_IRQ_IDT_BASE: ") || !kernel_number((BOOT_U64)&irq_idt) ||
+        !kernel_text("\nKERNEL_IRQ_REGISTRY_BYTES: ") || !kernel_number(sizeof(X86_IRQ_REGISTRY)) ||
+        !kernel_text("\nKERNEL_IRQ_CPUS: ") || !kernel_number((BOOT_U64)irq_cpus) ||
+        !kernel_text("\nKERNEL_IRQ_CPU_BYTES: ") || !kernel_number(sizeof(X86_IRQ_CPU)) ||
         !kernel_text("\nKERNEL_IRQ_RETURN_COUNT: ") || !kernel_number(returned) ||
         !kernel_text("\nKERNEL_IRQ_SPURIOUS_COUNT: ") || !kernel_number(spurious) ||
         !kernel_text("\n") || !kernel_log(0,"KERNEL_IRQ_RETURN_OK")) return 0;
     return 1;
 }
 
+// ====== x86_irq_descriptor ======
+
+const X86_KERNEL_IDTR *x86_irq_descriptor(void) {
+    return installed ? &irq_idtr : NULL;
+}
+
+// ====== x86_irq_shared_valid ======
+
+int x86_irq_shared_valid(void) {
+    return installed && irq_exceptions && x86_irq_verify(&irq_idt,&irq_idtr,irq_exceptions,
+        x86_irq_targets,(BOOT_U64)x86_irq_begin,(BOOT_U64)x86_irq_end);
+}
+
+// ====== x86_irq_cpu_activate ======
+
+int x86_irq_cpu_activate(void) {
+#ifdef KERNEL_AP_RUNTIME
+    X86_IRQ_CPU *local = local_private();
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    if (!local || !owner || !owner->Index || local->Ready || !x86_irq_shared_valid() ||
+        !x86_irq_cpu_state() ||
+        !x86_irq_registry_initialize(&local->Registry,X86_KERNEL_IMAGE_BASE,X86_KERNEL_IMAGE_LIMIT) ||
+        !xis_irq_bind(&local->Registry,&local->Service,&local->Timer) ||
+        x86_irq_activate(&irq_idtr) != 1) return 0;
+    local->Ready = 1;
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+// ====== x86_irq_current_frame ======
+
+const X86_IRQ_FRAME *x86_irq_current_frame(void) {
+    X86_IRQ_CPU *local = local_private();
+    return local && local->Ready ? local->Frame : NULL;
+}
+
 // ====== frame preso in prestito da stack principale o task attiva pinned ===== //
 
 static int frame_owner(const X86_IRQ_FRAME *frame)
 {
+#ifdef KERNEL_AP_RUNTIME
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    if (!owner) return 0;
+    if (owner->Index) return xis_irq_frame_valid(frame);
+#endif
     BOOT_U64 address = (BOOT_U64)frame;
     BOOT_U64 floor = X86_KERNEL_MAIN_BASE, top = X86_KERNEL_MAIN_TOP;
 #ifdef KERNEL_SCHEDULER_IRQ
@@ -208,7 +284,9 @@ static int increment(BOOT_U32 *counter)
 int x86_irq_ready(void)
 {
     X86_KERNEL_IDTR actual = {{0}};
-    if (!installed || armed || returned != 1 || !x86_exception_environment() || !x86_irq_cpu_state()) return 0;
+    X86_IRQ_CPU *local = local_private();
+    if (!local || !local->Ready || !installed || armed || returned != 1 ||
+        !x86_exception_environment() || !x86_irq_cpu_state()) return 0;
     x86_exception_read_idt(&actual);
     return equal(&actual,&irq_idtr);
 }
@@ -217,27 +295,46 @@ int x86_irq_ready(void)
 
 void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
 {
-    if (!installed || !frame_owner(frame) || !x86_irq_frame(frame->Vector,frame->Cs,frame->Flags,frame->Ss))
+    X86_IRQ_CPU *local = local_private();
+    if (!local || !local->Ready || local->Frame || !installed || !frame_owner(frame) ||
+        !x86_irq_frame(frame->Vector,frame->Cs,frame->Flags,frame->Ss))
         x86_kernel_stop(0x4b495251554e0001ULL);
+    local->Frame = frame;
+#ifdef KERNEL_AP_RUNTIME
+    if (x86_percpu_current_local()->Index) {
+        int delivered = frame->Vector == 0xff ? xis_irq_handle() :
+            x86_irq_registry_deliver(&local->Registry,(BOOT_U32)frame->Vector);
+        local->Frame = NULL;
+        if (!delivered) x86_kernel_stop(0x4b495251554e0004ULL);
+        return;
+    }
+#endif
 #ifdef KERNEL_SCHEDULER_IRQ
     if ((frame->Rsp < X86_KERNEL_MAIN_BASE || frame->Rsp > X86_KERNEL_MAIN_TOP) &&
         !x86_scheduler_irq_record(frame->Vector,frame->Rip,frame->Rsp,frame->Flags))
         x86_kernel_stop(0x4b495251554e0005ULL);
 #endif
-    if ((frame->Vector >= 0x40 && frame->Vector <= 0x43) || frame->Vector == X86_PREEMPT_VECTOR) {
-        if (!x86_irq_registry_deliver(&irq_registry,(BOOT_U32)frame->Vector)) x86_kernel_stop(0x4b495251554e0004ULL);
-    } else if (frame->Vector == 0xf0) {
+    if (frame->Vector == 0xf0) {
         if (!armed || returned) x86_kernel_stop(0x4b495251554e0002ULL);
         if (!increment(&returned)) x86_kernel_stop(0x4b495251554e0003ULL);
-    } else {
+    } else if (frame->Vector == 0xff) {
         if (!increment(&spurious)) x86_kernel_stop(0x4b495251554e0003ULL);
-    }
+    } else if (!x86_irq_registry_deliver(&local->Registry,(BOOT_U32)frame->Vector))
+        x86_kernel_stop(0x4b495251554e0004ULL);
+    local->Frame = NULL;
 }
 
 // ====== x86_irq_after ======
 
 void x86_irq_after(const X86_IRQ_FRAME *frame)
 {
+#ifdef KERNEL_AP_RUNTIME
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    if (owner && owner->Index) {
+        xis_irq_after(frame);
+        return;
+    }
+#endif
 #ifdef KERNEL_PS2_INPUT
     if (frame->Vector == X86_PREEMPT_VECTOR) {
         x86_preempt_after(frame);
@@ -255,5 +352,7 @@ void x86_irq_after(const X86_IRQ_FRAME *frame)
 
 X86_IRQ_REGISTRY *x86_irq_registry(void)
 {
-    return installed && x86_exception_environment() && x86_irq_registry_validate(&irq_registry) ? &irq_registry : 0;
+    X86_IRQ_CPU *local = local_private();
+    return local && local->Ready && installed && x86_exception_environment() &&
+        x86_irq_registry_validate(&local->Registry) ? &local->Registry : NULL;
 }

@@ -115,7 +115,7 @@ def main():
                             raise RuntimeError('Missing AP console completion')
                     proof = service.verify(vm, log, 'ap-console-incomplete' if negative else 'ap-batch',
                                            4, batch_steps=65536, extra_shootdowns=1 if args.ipi else 0)
-                    counters = service.cpu.memory(vm, log.number('KERNEL_IPI_NATIVE') + 4160, 64 * 8)
+                    counters = service.cpu.memory(vm, log.number('KERNEL_IPI_CPUS') if log.has_number('KERNEL_IPI_CPUS') else log.number('KERNEL_IPI_NATIVE') + 4160, 64 * 8)
                     base = log.number('KERNEL_IPI_BASE_GENERATION')
                     if any(counters[i * 8] != counters[i * 8 + 4] or
                            counters[i * 8] != counters[i * 8 + 5] or counters[i * 8] < base for i in range(1, 4)):

@@ -88,6 +88,7 @@ __declspec(noreturn) void xis_service_probe(const KERNEL_STARTUP *startup) {
 #endif
     if (ks_irq_state() || xis_native_index() != 0 || xis_native.Count < 2) xis_native_abort(0x4b34495049425350ULL);
     number_private("KERNEL_IPI_NATIVE: ", (uint64_t)&xis_native);
+    number_private("KERNEL_IPI_CPUS: ", (uint64_t)xis_native.Cpus);
     number_private("KERNEL_IPI_IDTR: ", (uint64_t)&xis_native.Idtr);
     for (uint32_t index = 1; index < xis_native.Count; ++index)
         if (!xis_native_wait(index, 0, XIS_READY)) xis_native_abort(0x4b34495049524459ULL);
