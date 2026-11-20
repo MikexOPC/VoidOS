@@ -99,7 +99,83 @@ Il dispatcher continua anche quando il controller PS/2 è assente.
 - Dieci boot per i due percorsi principali, scenario shell completo e
   stress di quindici minuti nella shell più quindici dopo `exit`.
 
-## Alternative
+## Obiettivo 2 di S1, runtime AP ordinario
+
+Proposta del 20 novembre 2026. L'implementazione è non fatta.
+Ogni AP ammesso eseguirà un dispatcher permanente con timer locale e
+task interrompibili nell'immagine `ordinary`. La shell BSP resterà
+utilizzabile e la chiusura PS/2 rilascerà le sole risorse della sessione.
+La scelta S1 del 14 novembre resta la base. La scelta degli ingressi IRQ
+qui sotto richiede approvazione prima dell'implementazione.
+
+### Strutture e ownership
+
+`X86_SCHEDULER_LOCAL`, già nella memoria per CPU, conserverà contesto,
+task corrente, generazione, stato del dispatcher e stato di preemption.
+Il runtime possiede admission, timer e autorità AP fino alla fine del
+sistema. Il BSP prepara e pubblica il contesto condiviso prima di
+avviare i dispatcher AP. Ogni AP pubblica conferma di ingresso e stato
+locale tramite atomiche con semantica release/acquire.
+
+Il core Rust mantiene la coda globale protetta da lock e un corrente
+per CPU. Le transizioni locali avvengono con IF=0. La selezione rispetta
+l'affinità; i task dei driver rimangono sul BSP. Durante l'attesa gli AP
+abilitano gli interrupt e continuano a servire PING, shootdown e panic.
+Il protocollo di risveglio deve coprire la pubblicazione di lavoro fra
+la selezione vuota e l'ingresso in attesa.
+
+Il job della shell conserva ownership e completamento propri. Il comando
+`ap <n>` mantiene il contratto su AP1. Il suo cleanup attende la restituzione
+del contesto al dispatcher prima di raccogliere stack e generazione.
+`exit` raccoglie i job della sessione dopo quiescenza. Il runtime AP conserva
+i propri riferimenti anche dopo il rilascio del binding di notifica PS/2.
+
+Gli stati per CPU sono preparato, attivo e guasto. Un errore prima della
+pubblicazione consente rollback delle risorse ancora private. Dopo
+l'ingresso AP, un errore conserva le risorse raggiungibili e termina con
+diagnostica. Il timer sospende solo un frame valido del task corrente,
+con IF salvato attivo e senza lock tenuti. Un frame del dispatcher o un
+IPI di servizio viene gestito conservando il contesto del dispatcher.
+
+### Ingressi IRQ da scegliere
+
+- **A, proposta.** Estendere il percorso `xis_native_dispatch/after` per
+  usare il motore comune e stato per CPU. Conservare l'IDT AP e il
+  servizio IPI esistenti durante la promozione del percorso ordinario.
+  Richiede di mantenere coerenti i predicati dei frame BSP e AP.
+- **B.** Unificare subito IDT, dispatch e registri IRQ BSP/AP con ownership
+  per CPU. Concentra la gestione degli interrupt, ma coinvolge insieme
+  i percorsi di boot, timer e dispositivi già usati dal BSP.
+
+### Task e chiusura
+
+1. Design e scelta degli ingressi IRQ. Verifica dei contratti esistenti,
+   dei riferimenti e del diff documentale, poi commit locale.
+2. Runtime AP permanente. Separare admission e autorità dal singolo job,
+   estendere il motore continuo alla CPU chiamante e mantenere il job AP1.
+   Prove host, dieci boot con shell e senza PS/2 e stress del ciclo di vita.
+3. Preemption AP ordinaria. Stato e timer locali, frame di task generico,
+   salvataggio e ritorno attraverso il dispatcher. Prove host, dieci boot
+   e stress con lavoro che procede senza yield volontari.
+4. Selezione senza affinità fissa e chiusura. Verificare pubblicazione,
+   risveglio, ripresa e raccolta su CPU diverse nel percorso ordinario,
+   preservando il comando esistente. Dieci boot e trenta minuti di lavoro
+   concorrente, shell reattiva e budget stabile, inclusi cleanup e idle.
+
+I limiti esistenti di otto task e quattro slot IRQ per dispositivi restano
+debito dell'obiettivo capacità già successivo. Le prove dovranno dichiarare
+quali CPU eseguono lavoro e quali sono in idle. La disponibilità di uno
+slot non può produrre un risultato fittizio quando la capacità è esaurita.
+Ogni task registra l'immagine provata e lo stato delle prove su PC fisico.
+
+Il confronto con xv6 riguarda il dispatcher per CPU e la separazione fra
+corrente e contesto dello scheduler. Il timer locale segue Intel SDM
+Vol. 3A, §12.5.4 nella revisione 253668-085US. Le citazioni §11.5.4 dei
+sorgenti esistenti si riferiscono alle revisioni precedenti.
+[xv6, scheduler](https://github.com/mit-pdos/xv6-riscv/blob/riscv/kernel/proc.c),
+[Intel SDM](https://cdrdv2-public.intel.com/835754/253668-sdm-vol-3a.pdf).
+
+## Alternative S1 e S2
 
 **S1. Portare in produzione il meccanismo K4-C (consigliata).**
 Si promuovono i pezzi già provati, in tre obiettivi in fila:
