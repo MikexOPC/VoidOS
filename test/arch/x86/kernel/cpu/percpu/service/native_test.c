@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <setjmp.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #include "arch/x86/kernel/cpu/percpu/startup/private/frame.h"
 #include "arch/x86/kernel/scheduler/admission/admission.h"
@@ -36,6 +37,38 @@ uint32_t xis_mmio_read(uint32_t offset) { (void)offset; assert(0); return 0; }
 void xis_mmio_write(uint32_t offset, uint32_t value) { (void)offset; (void)value; assert(0); }
 int xis_native_now(void *context, uint32_t *now) { (void)context; (void)now; assert(0); return 0; }
 __declspec(noreturn) void xp_panic_voluntary(uint64_t value) { reason = value; longjmp(stopped, 1); }
+
+// ====== kernel_deadline_start ======
+
+int kernel_deadline_start(const KERNEL_CLOCK *clock, uint32_t ticks, KERNEL_DEADLINE *deadline) {
+    (void)clock;
+    (void)ticks;
+    (void)deadline;
+    abort();
+}
+
+// ====== kernel_deadline_expired ======
+
+int kernel_deadline_expired(const KERNEL_CLOCK *clock, const KERNEL_DEADLINE *deadline) {
+    (void)clock;
+    (void)deadline;
+    abort();
+}
+
+// ====== ks_atomic_compare ======
+
+uint32_t ks_atomic_compare(uint64_t *value, uint64_t expected, uint64_t next) {
+    (void)value;
+    (void)expected;
+    (void)next;
+    abort();
+}
+
+// ====== ks_pause ======
+
+void ks_pause(void) {
+    abort();
+}
 
 // ====== modeled_table_builder ======
 

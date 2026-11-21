@@ -540,6 +540,36 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   La task 4 è fatta. La task 5, la capacità e le prove su PC fisico
   restano da eseguire.
 
+- **S1, task 5 — selezione senza affinità fissa e migrazione, 22 novembre 2026. Fatta.**
+  I job generici (`ap <n> auto`) possono essere eseguiti sul BSP oppure
+  migrare tra le CPU ammesse. Prima della correzione al rendering console,
+  otto suite host e dieci boot a quattro vCPU (80 job, 57 migrazioni reali)
+  erano passati, ma lo stress a otto vCPU rilevava un overflow della FIFO
+  PS/2 dopo 27 job (byte prodotto 2.472) mentre il BSP rendeva gruppi di
+  celle a interrupt disabilitati.
+  `x86_fb_live_group_pointer` in
+  `arch/x86/kernel/drivers/video/framebuffer/live/group.c` ora esegue la
+  sezione critica a interrupt spenti una cella alla volta, ripristinando IF
+  e verificando l'ownership del framebuffer tra una cella e la successiva.
+  Sull'immagine finale Meson `ordinary`, kernel SHA-256
+  `53F4FFD226CC5CD3F83CB0798F4616420EFC2088FD3C89374AF7005FDA710AF3`,
+  loader SHA-256
+  `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`:
+  test unitari `qemu_runner_unit` 21/21 PASS, smoke `--ordinary-shell` 1/1
+  a 4 vCPU PASS, e stress completo `--ordinary-soak 30 --smp 8` 1/1 PASS
+  (30 minuti di shell + 30 minuti di idle dopo `exit`): 235 job completati,
+  67 job migrati, 261 migrazioni totali, `VisitedCpus=255` e
+  `MigratingCpus=255` (tutte le otto CPU), 21.162 byte PS/2 generati e
+  21.162 ricevuti con picco FIFO 3, 7.001 sospensioni BSP (6.988 fuori
+  finestra), zero sforamenti, sospensioni e riprese uguali su ciascuno dei
+  sette AP (423–1.197) e 15.813 pagine libere stabili.
+  Evidenze in `kernel/build/s1-task5-smoke-fix` e
+  `kernel/build/s1-task5-soak-30m-fix`.
+  Limiti non provati dopo la correzione a `group.c`: le otto suite host
+  PowerShell 7 non sono state ripetute su questo checkout (PowerShell 7 non
+  presente nel PATH dell'ambiente) e hardware fisico non verificato.
+  Restano capacità (rimozione limite 8 task) e prove su PC fisico.
+
 ## Build e runner
 
 | Passo | Risultato storico |

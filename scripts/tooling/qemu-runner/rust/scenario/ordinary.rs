@@ -276,8 +276,10 @@ fn ap_preemption(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
             }
             std::thread::sleep(CR4_POLL);
         };
-        let long_job = log.numbers("SHELL_AP_CPU").iter().zip(log.numbers("SHELL_AP_COUNT"))
-            .any(|(owner,count)| *owner == u64::from(cpu) && *count == 100_000_000);
+        let visits = log.numbers("SHELL_AP_CPUS");
+        let long_job = log.numbers("SHELL_AP_CPU").iter().zip(log.numbers("SHELL_AP_COUNT")).enumerate()
+            .any(|(index,(owner,count))| *owner == u64::from(cpu) && *count == 100_000_000 &&
+                visits.get(index).map_or(true,|mask| mask.count_ones() == 1));
         if words[0] == 0 || words[1] == 0 || words[2] != 0xd1 || words[4] == 0 || words[11] == 0 ||
             words[6] != words[14] || words[7] != 0 || words[8] != 0 || words[9] != 0 ||
             words[15] != 0x0000_0001_0000_0001 || (long_job && words[6] == 0) {
@@ -288,6 +290,47 @@ fn ap_preemption(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
             ("Resumed",Value::Number(words[14]))]));
     }
     Ok(Value::List(records))
+}
+
+// ====== migration_evidence ======
+
+pub fn migration_evidence(log: &SerialLog, cpus: u32) -> Result<Value,String> {
+    if !log.has("KERNEL_AP_MIGRATION_READY") { return Ok(object(vec![])); }
+    if cpus == 0 || cpus > 64 { return Err("Invalid migration CPU count".to_string()); }
+    let allowed = if cpus == 64 { u64::MAX } else { (1u64 << cpus) - 1 };
+    let owners = log.numbers("SHELL_AP_CPU");
+    let counts = log.numbers("SHELL_AP_COUNT");
+    let checksums = log.numbers("SHELL_AP_CHECKSUM");
+    let visits = log.numbers("SHELL_AP_CPUS");
+    let migrations = log.numbers("SHELL_AP_MIGRATIONS");
+    if [counts.len(),checksums.len(),visits.len(),migrations.len()].iter().any(|length| *length != owners.len()) {
+        return Err("Incomplete migration job records".to_string());
+    }
+    let mut checks = std::collections::BTreeMap::new();
+    let (mut total,mut migrated_jobs,mut visited,mut migrating_cpus) = (0,0,0,0);
+    for index in 0..owners.len() {
+        let mask = visits[index];
+        let moves = migrations[index];
+        if owners[index] >= u64::from(cpus) || mask == 0 || mask & !allowed != 0 ||
+            mask & (1u64 << owners[index]) == 0 ||
+            moves < u64::from(mask.count_ones() - 1) || (mask.count_ones() == 1 && moves != 0) {
+            return Err(format!("Invalid native task migration at job {index}"));
+        }
+        if let Some(expected) = checks.insert(counts[index],checksums[index]) {
+            if expected != checksums[index] {
+                return Err(format!("Job checksum changed across CPU contexts at job {index}"));
+            }
+        }
+        total += moves;
+        visited |= mask;
+        if moves != 0 {
+            migrated_jobs += 1;
+            migrating_cpus |= mask;
+        }
+    }
+    Ok(object(vec![("Jobs",Value::Number(owners.len() as u64)),
+        ("MigratedJobs",Value::Number(migrated_jobs)),("Migrations",Value::Number(total)),
+        ("VisitedCpus",Value::Number(visited)),("MigratingCpus",Value::Number(migrating_cpus))]))
 }
 
 // ====== irq_ownership ======
@@ -399,6 +442,15 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
             expected_counts.push(100_000_000);
         }
     }
+    if remote && vm.log().has("KERNEL_AP_MIGRATION_READY") {
+        shell_type(vm,"ap 100000000 0")?;
+        expected_cpus.push(0);
+        expected_counts.push(100_000_000);
+        shell_type(vm,"ap 100000000 auto")?;
+        let log = vm.wait_field("SHELL_AP_SUM",expected_cpus.len() + 1)?;
+        expected_cpus.push(log.number("SHELL_AP_CPU",expected_cpus.len())?);
+        expected_counts.push(100_000_000);
+    }
     let jobs = expected_cpus.len() as u64;
     shell_type(vm, "status")?;
     shell_type(vm, "exit")?;
@@ -428,6 +480,7 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     let preemption = preemption_evidence(&log)?;
     let dispatcher = wait_dispatcher(vm)?;
     let ownership = irq_ownership(vm,plan.smp)?;
+    let migration = migration_evidence(&log,plan.smp)?;
     Ok(object(vec![
         ("Process", Value::Bool(enabled)),
         ("Bridge", Value::Bool(enabled && !fault)),
@@ -435,6 +488,7 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         ("Dispatcher", dispatcher),
         ("IrqOwnership", ownership),
         ("ApJob", Value::Bool(remote)),
+        ("Migration", migration),
     ]))
 }
 
@@ -482,6 +536,7 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
     vm.inject_on("sendkey b 20");
     let deadline = Instant::now() + Duration::from_secs(u64::from(minutes) * 60);
     let preemptive = log.has("KERNEL_AP_PREEMPT_READY");
+    let migrating = log.has("KERNEL_AP_MIGRATION_READY");
     let mut rounds = 0usize;
     while Instant::now() < deadline {
         shell_type(vm, "bridge status")?;
@@ -491,12 +546,16 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
             return Err(format!("Kernel failure after {rounds} rounds {:?}", log.failures()));
         }
         if plan.smp > 1 {
-            let cpu = if preemptive { (rounds as u32 - 1) % (plan.smp - 1) + 1 } else { 1 };
+            let cpu = if migrating && rounds % 3 == 2 { 0 }
+                else if preemptive { (rounds as u32 - 1) % (plan.smp - 1) + 1 } else { 1 };
             let count = if preemptive { 100_000_000 } else { 1000 };
-            let command = if preemptive { format!("ap {count} {cpu}") } else { format!("ap {count}") };
+            let automatic = migrating && rounds % 3 == 0;
+            let command = if automatic { format!("ap {count} auto") }
+                else if preemptive { format!("ap {count} {cpu}") } else { format!("ap {count}") };
             shell_type(vm,&command)?;
             let log = vm.wait_field("SHELL_AP_SUM",rounds)?;
-            if log.number("SHELL_AP_CPU",rounds - 1)? != u64::from(cpu) ||
+            let actual_cpu = log.number("SHELL_AP_CPU",rounds - 1)?;
+            if actual_cpu >= u64::from(plan.smp) || (!automatic && actual_cpu != u64::from(cpu)) ||
                 log.number("SHELL_AP_COUNT",rounds - 1)? != count ||
                 log.number("SHELL_AP_SUM",rounds - 1)? != count * (count + 1) / 2 {
                 return Err(format!("Invalid AP job after {rounds} rounds"));
@@ -530,6 +589,10 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
         dispatcher = dispatcher_evidence(&log)?;
     }
     let ownership = irq_ownership(vm,plan.smp)?;
+    let migration = migration_evidence(&log,plan.smp)?;
+    if migrating && plan.smp > 1 && !log.numbers("SHELL_AP_MIGRATIONS").iter().any(|moves| *moves != 0) {
+        return Err("No native task migration observed during the soak".to_string());
+    }
     let file = std::fs::File::open(&vm.trace).map_err(|error| format!("PS/2 trace: {error}"))?;
     let size = file.metadata().map_err(|error| format!("PS/2 trace size: {error}"))?.len();
     let snapshot = std::io::Read::take(file,size);
@@ -541,6 +604,7 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
         ("Preemption", preemption),
         ("Dispatcher", dispatcher),
         ("IrqOwnership", ownership),
+        ("Migration", migration),
         ("Ps2GeneratedBytes", Value::Number(generated)),
         ("Ps2ReceivedBytes", Value::Number(received)),
         ("Ps2FifoPeak", Value::Number(peak as u64)),

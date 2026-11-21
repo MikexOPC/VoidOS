@@ -42,9 +42,9 @@ static int prepare(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected, BOOT_U
     return 1;
 }
 
-// ====== x86_fb_live_group_pointer ======
+// ====== group_private ======
 
-int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
+static __declspec(noinline) int group_private(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
     const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background,
     BOOT_U64 *ticks, BOOT_U32 caret, const KERNEL_POINTER_IMAGE *pointer)
 {
@@ -71,6 +71,36 @@ int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 r
         budget_matches(owner, original, pages);
     kernel_preempt_section_leave(saved_if);
     return result;
+}
+
+// ====== x86_fb_live_group_pointer ======
+
+int x86_fb_live_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
+    const BOOT_U32 *scalars, BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background,
+    BOOT_U64 *ticks, BOOT_U32 caret, const KERNEL_POINTER_IMAGE *pointer)
+{
+    if (!ticks ||
+        !scalars ||
+        !count ||
+        count > 8 ||
+        column > UINT32_MAX - count ||
+        (caret != UINT32_MAX && caret >= count)
+    )
+        return 0;
+
+    *ticks = 0;
+    for (BOOT_U32 cell = 0; cell < count; ++cell) {
+        BOOT_U64 elapsed = 0;
+        BOOT_U32 cell_caret = caret == cell ? 0 : UINT32_MAX;
+        if (!group_private(owner,column + cell,row,scalars + cell,1,
+                foreground,background,&elapsed,cell_caret,pointer) ||
+            elapsed > UINT64_MAX - *ticks
+        )
+            return 0;
+
+        *ticks += elapsed;
+    }
+    return 1;
 }
 
 // ====== audit_sample ======

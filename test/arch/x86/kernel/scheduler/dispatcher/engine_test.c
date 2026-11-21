@@ -178,6 +178,46 @@ static void continuous_private(void)
     check_private(stats.failure == 3 && !completions && !runtime_waits);
 }
 
+static uint32_t deferred_current;
+
+// ====== deferred_run_private ======
+
+static int deferred_run_private(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_COMMAND *command) {
+    check_private(task->index < 2 && task->generation == handles[task->index].generation);
+    deferred_current = task->index;
+    command->reason = X86_TASK_EXIT;
+    return 1;
+}
+
+// ====== deferred_collect_private ======
+
+static int deferred_collect_private(const KERNEL_SCHEDULER_REPLY *task) {
+    check_private(apply_private(KERNEL_SCHEDULER_QUERY,task).state == KERNEL_TASK_FINISHED);
+    ++collected;
+    return task->index ? X86_DISPATCH_COLLECT_DEFAULT : X86_DISPATCH_COLLECT_DEFERRED;
+}
+
+// ====== deferred_release_private ======
+
+static int deferred_release_private(void) {
+    if (!deferred_current)
+        check_private(apply_private(KERNEL_SCHEDULER_COLLECT,&handles[0]).status == 0);
+    return 1;
+}
+
+// ====== deferred_case_private ======
+
+static void deferred_case_private(void) {
+    X86_DISPATCH_STATS stats = {0};
+    prepare_private(2);
+    config.task_count = 1;
+    config.run = deferred_run_private;
+    config.collect = deferred_collect_private;
+    config.release_actor = deferred_release_private;
+    check_private(x86_scheduler_dispatch(&config,&stats));
+    check_private(stats.completed == 1 && collected == 2 && stats.steps == 2 && !stats.failure);
+}
+
 // ====== main ======
 
 int main(int argc, char **argv)
@@ -225,6 +265,7 @@ int main(int argc, char **argv)
         stats = (X86_DISPATCH_STATS){0};
         check_private(x86_scheduler_dispatch(&config,&stats) && stats.completed == 1);
         continuous_private();
+        deferred_case_private();
     } else if (mode == 9) {
         // B1: an operational session has no fixed length; per-operation timeouts live in idle().
         prepare_private(1);

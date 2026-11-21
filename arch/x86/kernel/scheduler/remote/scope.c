@@ -168,7 +168,8 @@ int x86_ap_dispatchers_start(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root) {
         kernel_number((uint64_t)(uintptr_t)x86_ap_dispatcher_sleep_resume) &&
         kernel_text("\nKERNEL_AP_DISPATCH_COUNT: ") && kernel_number(scope.Aps) &&
         kernel_text("\n") && kernel_log(0,"KERNEL_AP_DISPATCHERS_READY") &&
-        kernel_log(0,"KERNEL_AP_PREEMPT_READY");
+        kernel_log(0,"KERNEL_AP_PREEMPT_READY") &&
+        kernel_log(0,"KERNEL_AP_MIGRATION_READY");
 }
 
 // ====== runtime_ready_private ======

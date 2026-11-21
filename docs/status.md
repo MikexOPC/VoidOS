@@ -1,4 +1,4 @@
-# Stato di VoidOS — 21 novembre 2026
+# Stato di VoidOS — 22 novembre 2026
 
 ## Immagine ordinaria (`ordinary`, Meson)
 
@@ -44,8 +44,10 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   Runtime AP permanente e preemption AP sono fatti. Il timer one-shot
   drena il vecchio tick prima del riarmo. I job sono a IF=1.
   Il budget lock è un secondo senza progresso, con cap di un
-  milione di poll. Il prossimo passo è la selezione senza affinità fissa,
-  task 5. Restano otto
+  milione di poll. La task 5 (selezione senza affinità fissa e migrazione
+  tra le CPU ammesse) è fatta; il rendering della console spezza la sezione
+  a interrupt spenti per singola cella, azzerando gli overflow della FIFO
+  PS/2 sotto carico. Restano otto
   task. Il registro IRQ copre 222 vettori sottoscrivibili per CPU.
   I record IRQ delle 64 CPU del bootstrap riservano 568 KiB nell'immagine.
   L'heap è limitato a 16 MiB e c'è
@@ -72,16 +74,17 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Preemption AP, Meson `ordinary`, kernel SHA-256
-`8F24D4FF84B55534CC204D54AFE5B2D7D3F29EBCDEA9B5B4F35142C29DFB7BE7`.
-QEMU/OVMF TCG/q35, 25/25 boot della matrice e due boot mirati superati,
-con shell, PS/2 assente, SMAP assente e una, quattro oppure otto vCPU.
-Stress PASS con 15 minuti di shell e 15 dopo `exit`, 116 job su sette AP,
-10.105 byte PS/2 prodotti e letti, zero sforamenti e 15.814 pagine stabili.
-Otto suite host e runner Meson 2/2, con 20 casi unitari e otto di processo.
-Il report della VM parallela fallisce per il vecchio gate del drenaggio.
-Il gate corretto supera una ripetizione mirata di quattro minuti e i
-due boot che richiedono avanzamento dei timer AP dopo il cleanup.
+Task 5 (selezione e migrazione), Meson `ordinary`, kernel SHA-256
+`53F4FFD226CC5CD3F83CB0798F4616420EFC2088FD3C89374AF7005FDA710AF3`,
+loader SHA-256
+`8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+QEMU/OVMF TCG/q35, 8 vCPU: stress PASS con 30 minuti di shell e 30 dopo
+`exit`, 235 job completati (67 migrati, 261 migrazioni, tutte le 8 CPU
+visitate e migranti), 21.162 byte PS/2 prodotti e letti, picco FIFO 3,
+7.001 sospensioni BSP (6.988 fuori finestra), zero sforamenti e 15.813
+pagine libere stabili. Smoke shell 1/1 a 4 vCPU e 21/21 test unitari del
+runner dopo la correzione del rendering console; otto suite host e 10 boot
+a 4 vCPU (80 job, 57 migrazioni) superati prima della correzione a `group.c`.
 [Risultati, immagini e limiti](validation/consolidamento.md#cpu-e-scheduler).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni

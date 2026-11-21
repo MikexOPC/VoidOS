@@ -3,10 +3,30 @@ use qemu_runner_core::evidence::results::{Value, object, render};
 use qemu_runner_core::evidence::serial::{SerialLog, split_lines, strip_ansi};
 use qemu_runner_core::evidence::sha256::hash_bytes;
 use qemu_runner_core::evidence::trace;
-use qemu_runner_core::scenario::ordinary::{dispatcher_evidence, input_prefix_valid, parse_cr4, parse_memory, parse_register, preemption_evidence, writable_image_ranges};
+use qemu_runner_core::scenario::ordinary::{dispatcher_evidence, input_prefix_valid, migration_evidence, parse_cr4, parse_memory, parse_register, preemption_evidence, writable_image_ranges};
 use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, arguments};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+// ====== migration_records_validate_context_handoff ======
+
+#[test]
+fn migration_records_validate_context_handoff() {
+    let prefix = "[ OK ] KERNEL_AP_MIGRATION_READY\n";
+    let first = "SHELL_AP_CPU: 0x0000000000000000\nSHELL_AP_COUNT: 0x0000000000000064\nSHELL_AP_CHECKSUM: 0x0000000000000063\nSHELL_AP_CPUS: 0x0000000000000001\nSHELL_AP_MIGRATIONS: 0x0000000000000000\n";
+    let second = "SHELL_AP_CPU: 0x0000000000000001\nSHELL_AP_COUNT: 0x0000000000000064\nSHELL_AP_CHECKSUM: 0x0000000000000063\nSHELL_AP_CPUS: 0x0000000000000003\nSHELL_AP_MIGRATIONS: 0x0000000000000001\n";
+    let valid = format!("{prefix}{first}{second}");
+    assert!(migration_evidence(&SerialLog::parse(valid.as_bytes()),2).is_ok());
+    for invalid in [
+        valid.replace("SHELL_AP_CPU: 0x0000000000000001","SHELL_AP_CPU: 0x0000000000000002"),
+        valid.replace("SHELL_AP_CPUS: 0x0000000000000003","SHELL_AP_CPUS: 0x0000000000000004"),
+        valid.replace("SHELL_AP_MIGRATIONS: 0x0000000000000001","SHELL_AP_MIGRATIONS: 0x0000000000000000"),
+        valid.replace("SHELL_AP_MIGRATIONS: 0x0000000000000001\n",""),
+        valid.replacen("SHELL_AP_CHECKSUM: 0x0000000000000063","SHELL_AP_CHECKSUM: 0x0000000000000062",1),
+    ] {
+        assert!(migration_evidence(&SerialLog::parse(invalid.as_bytes()),2).is_err());
+    }
+}
 
 // ====== ps2_fifo_detects_transport_loss ======
 

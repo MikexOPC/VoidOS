@@ -4,6 +4,7 @@
 #include "kernel/sync/internal.h"
 #include "kernel/diagnostics/log.h"
 #include "../irq/preempt.h"
+#include "../integration/local.h"
 
 static X86_REMOTE remote;
 static const KERNEL_PHYSICAL_ALLOCATOR *owner_pool;
@@ -54,14 +55,17 @@ int x86_remote_open(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, uint32_t eve
 int x86_remote_request(uint32_t cpu, X86_TASK_ENTRY entry, uint64_t argument)
 {
     if (!remote.Self ||
-        !cpu ||
-        cpu >= xis_native.Count ||
+        (cpu != X86_REMOTE_ANY && cpu >= xis_native.Count) ||
         !entry ||
         !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry) ||
         ks_atomic_load_acquire(&remote.State) != X86_REMOTE_IDLE
     )
         return 0;
     remote.Cpu = cpu; remote.Entry = entry; remote.Argument = argument;
+    remote.Allowed = cpu == X86_REMOTE_ANY ?
+        (xis_native.Count == 64 ? UINT64_MAX : (1ULL << xis_native.Count) - 1) : 1ULL << cpu;
+    remote.Visits = 0;
+    remote.Migrations = 0;
     for (uint32_t index = 0; index < 4; ++index) remote.Result[index] = 0;
     ks_atomic_store_release(&remote.State,X86_REMOTE_REQUESTED);
     return 1;
@@ -99,8 +103,8 @@ static void launch_private(void)
     }
     uint32_t index = reply.index;
     uint64_t generation = reply.generation;
-    if (!x86_scheduler_task_assign(index,remote.Cpu,remote.Entry) ||
-        kernel_scheduler_affinity_on(0,index,generation,1ULL << remote.Cpu) ||
+    if (!x86_scheduler_task_assign_mask(index,remote.Allowed,remote.Entry) ||
+        kernel_scheduler_affinity_on(0,index,generation,remote.Allowed) ||
         !x86_task_stack_acquire(&x86_task_stacks[index],(KERNEL_PHYSICAL_ALLOCATOR *)owner_pool,remote.Root,
             index,generation) ||
         !x86_scheduler_context_prepare(&x86_task_contexts[index],x86_task_stack_base(index),65536) ||
@@ -113,8 +117,11 @@ static void launch_private(void)
     if (!xis_native_shootdown()) kernel_panic("REMOTE_SHOOTDOWN_FAILED");
     if (kernel_scheduler_apply_on(0,KERNEL_SCHEDULER_PUBLISH,index,generation).state != KERNEL_TASK_READY)
         kernel_panic("REMOTE_PUBLISH_FAILED");
-    if (!ping_private(remote.Cpu)) kernel_panic("REMOTE_PING_FAILED");
-    remote.Progress = x86_preempt_cpu_progress(remote.Cpu);
+    for (uint32_t cpu = 1; cpu < xis_native.Count; ++cpu) {
+        if ((remote.Allowed & (1ULL << cpu)) && !ping_private(cpu))
+            kernel_panic("REMOTE_PING_FAILED");
+    }
+    remote.Progress = ks_atomic_load_acquire(&x86_scheduler_task_binding(index)->Dispatches);
     remote.ProgressAt = now_private();
     ks_atomic_store_release(&remote.State,X86_REMOTE_STARTED);
 }
@@ -124,6 +131,15 @@ static void launch_private(void)
 static void finish_private(void)
 {
     uint32_t index = remote.Index;
+    const X86_TASK_BINDING *binding = x86_scheduler_task_binding(index);
+    if (!binding ||
+        ks_atomic_load_acquire(&binding->Owner) ||
+        binding->LastCpu >= xis_native.Count
+    )
+        kernel_panic("REMOTE_OWNER_RETAINED");
+    remote.Result[0] = binding->LastCpu;
+    remote.Visits = binding->Visits;
+    remote.Migrations = binding->Migrations;
     KERNEL_SCHEDULER_REPLY query = kernel_scheduler_apply_on(0,KERNEL_SCHEDULER_QUERY,index,remote.Generation);
     if (query.status || query.state != KERNEL_TASK_FINISHED ||
         (x86_watchdog_budget_active() && !x86_watchdog_budget_return(&x86_task_stacks[index].lease)) ||
@@ -147,14 +163,15 @@ void x86_remote_service(void)
     else if (state == X86_REMOTE_STARTED) {
         if (ks_atomic_load_acquire(&remote.Quiesced) == remote.Generation) finish_private();
         else {
-            uint64_t progress = x86_preempt_cpu_progress(remote.Cpu);
+            const X86_TASK_BINDING *binding = x86_scheduler_task_binding(remote.Index);
+            uint64_t progress = ks_atomic_load_acquire(&binding->Dispatches);
             if (progress != remote.Progress) {
                 remote.Progress = progress;
                 remote.ProgressAt = now_private();
             }
             else if (expired_private(remote.ProgressAt)
             ) {
-                progress = x86_preempt_cpu_progress(remote.Cpu);
+                progress = ks_atomic_load_acquire(&binding->Dispatches);
                 if (ks_atomic_load_acquire(&remote.Quiesced) == remote.Generation
                 )
                     finish_private();
@@ -192,6 +209,21 @@ int x86_remote_take(uint64_t result[4])
     return state == X86_REMOTE_DONE ? 1 : -1;
 }
 
+// ====== x86_remote_statistics ======
+
+int x86_remote_statistics(uint64_t result[2]) {
+    if (!result ||
+        !remote.Self ||
+        x86_remote_state() != X86_REMOTE_IDLE ||
+        !remote.Jobs
+    )
+        return 0;
+
+    result[0] = remote.Visits;
+    result[1] = remote.Migrations;
+    return 1;
+}
+
 // ====== x86_remote_close ======
 
 int x86_remote_close(void)
@@ -209,21 +241,23 @@ int x86_remote_dispatch_collect(const KERNEL_SCHEDULER_REPLY *task) {
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     return local && task && task->index == remote.Index && task->generation == remote.Generation &&
         task->state == KERNEL_TASK_FINISHED && local->current == task->index &&
-        local->generation == task->generation && xis_native_index() == remote.Cpu;
+        local->generation == task->generation &&
+        (remote.Allowed & (1ULL << xis_native_index())) != 0;
 }
 
 // ====== x86_remote_dispatch_release ======
 
 int x86_remote_dispatch_release(void) {
-    X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
-    if (!local) return 0;
-    uint32_t index = local->current;
-    uint64_t generation = local->generation;
-    KERNEL_SCHEDULER_REPLY task = kernel_scheduler_apply_on(xis_native_index(),
-        KERNEL_SCHEDULER_QUERY,index,generation);
-    if (task.status || !x86_scheduler_dispatch_release()) return 0;
-    if (task.state == KERNEL_TASK_FINISHED) ks_atomic_store_release(&remote.Quiesced,generation);
-    return 1;
+    return x86_scheduler_dispatch_release();
+}
+
+// ====== x86_remote_depart ======
+
+void x86_remote_depart(uint32_t index, uint64_t generation, uint32_t reason) {
+    if (reason == X86_TASK_EXIT &&
+        remote.Self && index == remote.Index && generation == remote.Generation
+    )
+        ks_atomic_store_release(&remote.Quiesced,generation);
 }
 
 // ====== x86_remote_jobs ======

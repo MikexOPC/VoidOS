@@ -62,7 +62,10 @@ static int dispatch_command_private(uint32_t cpu, uint32_t retained, const X86_D
     if (!dispatch_apply_private(cpu,command->reason == X86_TASK_EXIT ? KERNEL_SCHEDULER_EXIT :
         KERNEL_SCHEDULER_YIELD,task,&reply)) return 0;
     if (command->reason == X86_TASK_EXIT) {
-        if (reply.state != KERNEL_TASK_FINISHED || !config->collect(&reply) ||
+        if (reply.state != KERNEL_TASK_FINISHED) return 0;
+        int collected = config->collect(&reply);
+        if (collected == X86_DISPATCH_COLLECT_DEFERRED) return 1;
+        if (collected != X86_DISPATCH_COLLECT_DEFAULT ||
             (!retained && !dispatch_apply_private(cpu,KERNEL_SCHEDULER_COLLECT,task,&reply))) return 0;
         if (stats->completed != UINT32_MAX) ++stats->completed;
     }

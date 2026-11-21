@@ -229,11 +229,14 @@ void x86_preempt_after(const X86_IRQ_FRAME *frame)
         ++preempt.OutsideWindow;
 
 
-    x86_scheduler_tick_suspend();
     BOOT_U64 *resumed = &preempt.Resumed;
+    x86_scheduler_tick_suspend();
     BOOT_U64 completed = ks_atomic_load_relaxed(resumed);
-    if (completed != UINT64_MAX)
-        ks_atomic_store_release(resumed,completed + 1);
+    while (completed != UINT64_MAX) {
+        if (ks_atomic_compare(resumed,completed,completed + 1))
+            break;
+        completed = ks_atomic_load_relaxed(resumed);
+    }
 
     if (!x86_preempt_rearm()
     )

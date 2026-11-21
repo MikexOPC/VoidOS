@@ -13,8 +13,8 @@ static DWORD WINAPI consumer_private(void *context) {
     assert(xis_ready(index, index) == 1);
     DWORD wait = WaitForSingleObject(start_event, 5000);
     assert(wait == WAIT_OBJECT_0);
-    ULONGLONG deadline = GetTickCount64() + 10000;
     for (uint64_t expected = 1; expected <= REQUESTS; ++expected) {
+        ULONGLONG deadline = GetTickCount64() + 10000;
         uint64_t token = 0;
         for (uint32_t poll = 0; poll < 10000000 && !token; ++poll) {
             assert(GetTickCount64() < deadline);
@@ -50,6 +50,7 @@ int main(void) {
     }
     for (uint64_t expected = 1; expected <= REQUESTS; ++expected) {
         for (uint32_t index = 1; index < 4; ++index) {
+            deadline = GetTickCount64() + 10000;
             uint64_t token = 0;
             for (uint32_t poll = 0; poll < 10000000 && !token; ++poll) {
                 assert(GetTickCount64() < deadline);

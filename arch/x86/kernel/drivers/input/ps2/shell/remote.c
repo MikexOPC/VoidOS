@@ -14,7 +14,7 @@ static void job_private(uint32_t index)
     X86_REMOTE *job = x86_remote_job();
     if (!job ||
         index != job->Index ||
-        xis_native_index() != job->Cpu ||
+        !(job->Allowed & (1ULL << xis_native_index())) ||
         !x86_scheduler_task_valid() ||
         x86_scheduler_driver_task_valid() ||
         !job->Argument ||
@@ -76,4 +76,11 @@ int kernel_shell_remote_on(uint32_t cpu, uint64_t argument, uint64_t result[4])
 
 int kernel_shell_remote(uint64_t argument, uint64_t result[4]) {
     return kernel_shell_remote_on(1,argument,result);
+}
+
+// ====== kernel_shell_remote_run ======
+
+int kernel_shell_remote_run(uint32_t cpu, uint64_t argument, uint64_t result[6]) {
+    return result && kernel_shell_remote_on(cpu,argument,result) &&
+        x86_remote_statistics(&result[4]);
 }

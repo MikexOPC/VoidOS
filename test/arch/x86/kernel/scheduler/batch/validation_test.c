@@ -23,6 +23,38 @@ static X86_TASK_CPU cpu;
 static uint64_t entries[4][512], rsp;
 static uint32_t checks, reads, corrupt_gdt, corrupt_idt, pinned = 1, shared_valid = 1;
 
+// ====== kernel_deadline_start ======
+
+int kernel_deadline_start(const KERNEL_CLOCK *clock, uint32_t ticks, KERNEL_DEADLINE *deadline) {
+    (void)clock;
+    (void)ticks;
+    (void)deadline;
+    abort();
+}
+
+// ====== kernel_deadline_expired ======
+
+int kernel_deadline_expired(const KERNEL_CLOCK *clock, const KERNEL_DEADLINE *deadline) {
+    (void)clock;
+    (void)deadline;
+    abort();
+}
+
+// ====== ks_atomic_compare ======
+
+uint32_t ks_atomic_compare(uint64_t *value, uint64_t expected, uint64_t next) {
+    (void)value;
+    (void)expected;
+    (void)next;
+    abort();
+}
+
+// ====== ks_pause ======
+
+void ks_pause(void) {
+    abort();
+}
+
 // ====== check_private ======
 
 static void check_private(int value)

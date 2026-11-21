@@ -7,6 +7,7 @@
 #include "kernel/scheduler/kernel.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/sync/lock.h"
+#include "kernel/sync/internal.h"
 #include "kernel/diagnostics/log.h"
 #include "arch/x86/kernel/cpu/percpu/resources/geometry.h"
 #if KERNEL_TEST_AP_SERVICE == 9
@@ -17,6 +18,7 @@
 #endif
 #ifdef KERNEL_AP_TASKS
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
+#include "../remote/remote.h"
 #endif
 #ifdef KERNEL_PS2_INPUT
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
@@ -29,7 +31,6 @@ uint32_t x86_scheduler_machine_mask;
 
 static uint64_t budget;
 static KERNEL_EVENT_REPLY event_replies[8];
-static uint32_t task_cpus[8];
 static X86_TASK_ENTRY task_entries[8];
 static uint32_t irq_profile;
 static const X86_SCHEDULER_PROFILE *active_profile;
@@ -164,7 +165,10 @@ int x86_scheduler_binding_open(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root)
     x86_scheduler_machine_mask = (uint32_t)fx[28] | ((uint32_t)fx[29] << 8) |
         ((uint32_t)fx[30] << 16) | ((uint32_t)fx[31] << 24);
     if (!x86_scheduler_machine_mask) x86_scheduler_machine_mask = 0xFFBF;
-    for (uint32_t index = 0; index < 8; ++index) { task_cpus[index] = 0; task_entries[index] = NULL; }
+    for (uint32_t index = 0; index < X86_TASK_STACK_SLOTS; ++index) {
+        *x86_scheduler_task_binding(index) = (X86_TASK_BINDING){0};
+        task_entries[index] = NULL;
+    }
     return 1;
 }
 
@@ -174,7 +178,26 @@ int x86_scheduler_task_assign(uint32_t index, uint32_t cpu, X86_TASK_ENTRY entry
 {
     if (index >= 8 || cpu >= 64 || !entry || !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry) ||
         x86_task_stacks[index].self || !x86_percpu_bsp()) return 0;
-    task_cpus[index] = cpu;
+    if (!x86_scheduler_task_binding_init(index,1ULL << cpu,cpu == 0)
+    )
+        return 0;
+
+    task_entries[index] = entry;
+    return 1;
+}
+
+// ====== x86_scheduler_task_assign_mask ======
+
+int x86_scheduler_task_assign_mask(uint32_t index, uint64_t mask, X86_TASK_ENTRY entry) {
+    if (index >= X86_TASK_STACK_SLOTS ||
+        !entry ||
+        !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry) ||
+        x86_task_stacks[index].self ||
+        !x86_percpu_bsp() ||
+        !x86_scheduler_task_binding_init(index,mask,0)
+    )
+        return 0;
+
     task_entries[index] = entry;
     return 1;
 }
@@ -221,7 +244,9 @@ int x86_scheduler_task_valid(void)
     if (!local) return 0;
     uint64_t rsp = x86_kernel_stack_pointer(), base;
     uint32_t index = local->current;
-    if (local->phase != 2 || index >= 8 || task_cpus[index] != cpu_private() ||
+    X86_TASK_BINDING *binding = x86_scheduler_task_binding(index);
+    if (local->phase != 2 || !binding ||
+        ks_atomic_load_acquire(&binding->Owner) != (uint64_t)cpu_private() + 1 ||
         x86_task_stacks[index].generation != local->generation || !x86_scheduler_native_gate()) return 0;
     base = x86_task_stack_base(index);
     return rsp >= base && rsp < base + 65536 && live_private(index);
@@ -233,7 +258,8 @@ int x86_scheduler_driver_task_valid(void)
 {
     uint64_t saved_if = kernel_preempt_section_enter();
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
-    int valid = local && local->current < X86_TASK_STACK_SLOTS && !task_cpus[local->current] &&
+    X86_TASK_BINDING *binding = local ? x86_scheduler_task_binding(local->current) : NULL;
+    int valid = binding && binding->Driver && binding->Allowed == 1 &&
         !cpu_private() && x86_percpu_bsp() && x86_scheduler_task_valid();
     kernel_preempt_section_leave(saved_if);
     return valid;
@@ -362,8 +388,13 @@ int x86_scheduler_dispatch_run(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_
     X86_SCHEDULER_LOCAL *local = local_private();
     uint32_t cpu = cpu_private();
     if (!task || !command || local->current != KERNEL_SCHEDULER_NONE || !kernel_scheduler_context_valid() || task->index >= 8 ||
-        task_cpus[task->index] != cpu || x86_task_stacks[task->index].generation != task->generation ||
-        !resume_private(task->index)) return 0;
+        x86_task_stacks[task->index].generation != task->generation) return 0;
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    if (!owner ||
+        !x86_scheduler_task_claim(task->index,cpu,owner->Locks.Wait) ||
+        !resume_private(task->index)
+    )
+        return 0;
     local->current = task->index; local->generation = task->generation; local->event = 0;
     local->phase = 2;
     if (!switch_private(&local->dispatcher,&x86_task_contexts[local->current],UINT64_C(0x2003))) kernel_scheduler_fail_stop();
@@ -373,7 +404,6 @@ int x86_scheduler_dispatch_run(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_
     command->reason = local->event;
     command->target = local->event >= X86_TASK_OBSERVE && local->event <= X86_TASK_STOP_QUERY ? local->requested_event : 0;
     command->token = local->event >= X86_TASK_OBSERVE && local->event <= X86_TASK_STOP_QUERY ? local->requested_epoch : 0;
-    local->event = 0;
     return 1;
 }
 
@@ -382,6 +412,10 @@ int x86_scheduler_dispatch_run(const KERNEL_SCHEDULER_REPLY *task, X86_DISPATCH_
 static int native_dispatch_collect_private(const KERNEL_SCHEDULER_REPLY *task)
 {
     X86_SCHEDULER_LOCAL *local = local_private();
+#ifdef KERNEL_AP_TASKS
+    if (x86_remote_dispatch_collect(task))
+        return X86_DISPATCH_COLLECT_DEFERRED;
+#endif
 #ifdef KERNEL_PS2_INPUT
     if (irq_profile == 5 && !x86_ps2_before_collect()) return 0;
 #endif
@@ -406,7 +440,24 @@ int x86_scheduler_dispatch_release(void)
 {
     X86_SCHEDULER_LOCAL *local = local_private();
     if (!kernel_scheduler_context_valid()) return 0;
+    uint32_t index = local->current, reason = local->event;
+    uint64_t generation = local->generation;
     local->current = KERNEL_SCHEDULER_NONE; local->generation = 0;
+    local->event = 0;
+#ifdef KERNEL_PS2_INPUT
+    if (reason == X86_TASK_TICK && !x86_preempt_rearm()
+    )
+        return 0;
+#endif
+    if (!x86_scheduler_task_release(index,cpu_private())
+    )
+        return 0;
+#ifdef KERNEL_AP_TASKS
+    x86_remote_depart(index,generation,reason);
+#else
+    (void)generation;
+    (void)reason;
+#endif
 #ifdef KERNEL_PS2_INPUT
     if (x86_percpu_bsp() && irq_profile == 5 && x86_ps2_session()->Active && !x86_ps2_after_dispatch()) return 0;
 #endif

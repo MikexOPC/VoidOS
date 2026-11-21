@@ -292,6 +292,60 @@ con input concorrente e confronto fra byte prodotti e letti. Sono
 verificati preemption su ogni AP, servizio dei device, memoria stabile,
 bridge, `exit` e idle senza PS/2. Nessuna prova su PC fisico eseguita.
 
+### Task 5, selezione e migrazione ordinarie
+
+Task in corso, scelta S1 già approvata. La coda globale Rust seleziona
+il lavoro sulle CPU ammesse. I task dei driver restano assegnati al BSP.
+`ap <n>` mantiene AP1 come destinazione predefinita, `ap <n> <cpu>`
+mantiene l'assegnazione esplicita e accetta anche CPU zero, il BSP.
+`ap <n> auto` pubblica il lavoro con la maschera di tutte le CPU attive.
+
+I metadati nativi del task conservano maschera ammessa, entry point,
+proprietario corrente, ultima CPU, CPU visitate e numero di migrazioni.
+Sostituiscono le assegnazioni statiche esistenti. Il limite attuale di
+otto slot rimane il debito già assegnato all'obiettivo capacità.
+
+La selezione Rust riserva il task a una CPU. Prima di leggere il suo
+contesto, il dispatcher acquisisce con CAS il proprietario nativo libero.
+Il CAS esistente è relaxed. Una lettura acquire dopo il CAS acquisisce
+la sequenza di rilascio del proprietario precedente prima dei dati del task.
+Se il dispatcher precedente sta ancora completando il rilascio, attende
+entro il budget del clock per CPU. L'attesa avviene senza il lock globale.
+Il task mantiene un solo proprietario nativo fino al ritorno al dispatcher.
+Il rilascio completa risposte agli eventi e riferimenti locali prima
+dello store release che rende disponibile il contesto alla CPU seguente.
+Yield e ritorno dall'IRQ ricavano nuovamente lo stato locale dopo la ripresa.
+Una transizione invalida o un handoff fermo arrestano il kernel con motivo.
+
+La terminazione conserva indice, generazione e motivo di uscita fino al
+rilascio nativo. Per i job della shell, l'ultimo dispatcher pubblica
+quiescenza dopo aver liberato l'ownership. Il BSP acquisisce la quiescenza,
+legge i risultati e raccoglie stack e slot Rust. Un job terminato sul BSP
+usa la stessa raccolta differita e non incrementa il conteggio dei task
+PS/2 della sessione. Maschera visitata e migrazioni derivano dalle prese
+di ownership del contesto. Il watchdog osserva gli avanzamenti del task.
+Le riprese da IRQ aggiornano atomicamente il contatore della CPU che
+aveva sospeso il task, anche quando il ritorno avviene su un altro core.
+Il dispatcher sorgente riarma il proprio timer prima di rendere libero
+il contesto. Il timer resta operativo anche se il task riprende altrove.
+Sul BSP, la validazione IRQ distingue il task generico dai driver PS/2.
+
+Linux ordina il rilascio finale del task sulla CPU e la successiva
+acquisizione remota attraverso `on_cpu`. xv6 mantiene l'esclusione del
+processo attraverso il cambio di contesto. Il confronto riguarda
+l'ownership del contesto. L'implementazione riusa le atomiche di VoidOS.
+[Linux v6.12](https://github.com/torvalds/linux/blob/v6.12/kernel/sched/core.c),
+[xv6](https://github.com/mit-pdos/xv6-riscv/blob/riscv/kernel/proc.c).
+Gli ordinamenti seguono il modello delle atomiche Rust.
+[Rustonomicon, Acquire-Release](https://doc.rust-lang.org/nomicon/atomics.html#acquire-release).
+
+La chiusura richiede test host su selezione e passaggio di ownership,
+dieci boot dell'immagine ordinaria e trenta minuti di carico con input,
+job migrabili, bridge, `exit` e idle. Le prove devono mostrare lo stesso
+task ripreso su CPU diverse, risultati invariati e risorse recuperate.
+Il percorso BSP viene verificato anche con assegnazione esplicita a CPU zero.
+Le prove su PC fisico restano da eseguire.
+
 ## Alternative S1 e S2
 
 **S1. Portare in produzione il meccanismo K4-C (consigliata).**

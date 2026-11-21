@@ -25,6 +25,14 @@ extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_
 
 int x86_scheduler_irq_record(uint64_t vector, uint64_t rip, uint64_t rsp, uint64_t flags)
 {
+#ifdef KERNEL_AP_TASKS
+    if (x86_scheduler_task_valid() && !x86_scheduler_driver_task_valid()) {
+        uint64_t base = x86_task_stack_base(x86_scheduler_index());
+        return (flags & 0x600) == 0x200 &&
+            rsp >= base + 4096 && rsp < base + X86_TASK_STACK_BYTES &&
+            x86_scheduler_code_valid(rip);
+    }
+#endif
 #ifdef KERNEL_PS2_INPUT
     if (x86_ps2_session()->Active) return x86_ps2_irq_record(vector,rip,rsp,flags);
 #endif

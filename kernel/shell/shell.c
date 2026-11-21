@@ -113,24 +113,31 @@ static uint64_t decimal_private(const char *text, uint32_t length) {
 
 static int remote_private(const char *text, uint32_t length)
 {
-    uint64_t value, cpu = 1, result[4] = {0};
+    uint64_t value, cpu = 1, result[6] = {0};
+    int automatic = 0;
     uint32_t first = 0;
     while (first < length && text[first] != ' ')
         ++first;
     value = decimal_private(text,first);
     if (first < length) {
         uint32_t start = first + 1;
-        cpu = decimal_private(text + start,length - start);
+        automatic = length - start == 4 && text[start] == 'a' && text[start + 1] == 'u' &&
+            text[start + 2] == 't' && text[start + 3] == 'o';
+        if (!automatic)
+            cpu = decimal_private(text + start,length - start);
+        if (length - start == 1 && text[start] == '0')
+            cpu = 0;
     }
     if (value == UINT64_MAX ||
         cpu >= 64
     )
         return LOG(2,"SHELL_BAD_ARGUMENTS");
 #ifdef KERNEL_AP_TASKS
-    if (!kernel_shell_remote_on((uint32_t)cpu,value,result)
+    if (!kernel_shell_remote_run(automatic ? KERNEL_SHELL_CPU_ANY : (uint32_t)cpu,value,result)
     )
         return LOG(2,"SHELL_AP_FAILED");
-    return NUMBER("SHELL_AP_CPU: ",result[0]) && NUMBER("SHELL_AP_COUNT: ",value) &&
+    return NUMBER("SHELL_AP_CPUS: ",result[4]) && NUMBER("SHELL_AP_MIGRATIONS: ",result[5]) &&
+        NUMBER("SHELL_AP_CPU: ",result[0]) && NUMBER("SHELL_AP_COUNT: ",value) &&
         NUMBER("SHELL_AP_SUM: ",result[1]) && NUMBER("SHELL_AP_CHECKSUM: ",result[2]) &&
         NUMBER("SHELL_AP_WAITS: ",result[3]);
 #else
@@ -162,7 +169,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     kind = kernel_ps2_shell_classify(word,end - start,argument != line->Length);
     if (kind == UINT32_MAX) return 0;
     if (!kind) return LOG(1,"SHELL_EMPTY");
-    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | ap <n> [cpu] | exit");
+    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | ap <n> [cpu|auto] | exit");
     if (kind == 2) return echo_private(line->Data + argument,line->Length - argument);
     if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, kernel tasks") &&
         NUMBER("SHELL_INPUT_BYTES: ",status->Bytes) && NUMBER("SHELL_INPUT_KEYS: ",status->Keys) &&
