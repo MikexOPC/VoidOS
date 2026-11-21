@@ -674,3 +674,39 @@ periodico, che certifica le sei sospensioni e l'arresto del timer.
 Il boot che si ferma alla shell per verificare le protezioni e il caso
 senza PS/2 mantengono i rispettivi criteri. Il gate sui contatori viene
 applicato dopo la chiusura di una sessione di task BSP.
+
+### Capacità task oltre 8 (buffer su heap del kernel)
+
+- **Obiettivo:** rimuovere il limite fisso a 8 task dallo scheduler comune
+  (Rust) e dal backend x86, senza aumentare `.bss` dell'immagine e senza
+  copie di grandi dimensioni sullo stack del kernel.
+- **Core Rust (`kernel/scheduler/rust/state/`):**
+  - `Owner`, `Lot` e `Ring` operano su un buffer contiguo fornito dal
+    chiamante (`MIN_CAPACITY = 8`, `MAX_CAPACITY = 256`, allineamento
+    `STORAGE_ALIGN = 8`). I campi `slots`, `waits`, `stops` e le tabelle di
+    `Lot` usano viste tipizzate (`Table<T>`) e `ready` usa `Ring` sullo
+    stesso buffer; `size_of::<Owner>()` resta entro il budget di 4096 byte.
+  - Il buffer contiene due bank contigui (`active` e `scratch`).
+    `transaction()` copia il bank attivo nel bank scratch dentro il buffer
+    esterno (O(1) stack), valida il candidato e committa scambiando il
+    bank attivo. In caso di errore il bank attivo resta immutato.
+  - Il gateway FFI esporta `kernel_scheduler_storage_bytes(capacity)` e
+    `kernel_scheduler_init_storage(buffer, bytes, capacity)`. Il comando
+    `INIT` di `kernel_scheduler_apply` mantiene temporaneamente un buffer
+    di ripiego da 8 slot fino alla migrazione del backend x86 (Task 1.3).
+- **Backend x86 (Task 1.3):**
+  - `x86_task_stacks`, `x86_task_contexts`, `event_replies` e `task_entries`
+    vengono allocati dall'heap del kernel (allineati a 16 byte per
+    `X86_TASK_CONTEXT`) e passati a `x86_scheduler_bind`.
+  - **Spazio virtuale degli stack:** gli 8 stack nella PT di boot
+    (`X86_TASK_STACK_LEAF` 320..463) non bastano oltre 8 task. Gli stack
+    passano a un range dedicato nello slot `X86_LAYOUT_WINDOWS_SLOT`
+    (PD index 1+, `X86_LAYOUT_WINDOWS_VIRTUAL + 0x200000ULL`), con passo
+    di 32 pagine (128 KiB): 1 guard page inferiore, 16 pagine stack (64 KiB
+    RW/NX) e 15 pagine non mappate (inclusa guard superiore). Ogni PT da
+    512 pagine ospita esattamente 16 stack senza attraversare confini di PT
+    (`pt = index / 16`, `leaf = (index % 16) * 32`).
+- **Errori e limiti:** capacità fuori `[8, 256]`, puntatore nullo o non
+  allineato a 8, buffer corto o doppio init vengono rifiutati senza toccare
+  il buffer. `EVENT_CAPACITY` e i canali payload restano a 8 in questa
+  fase. Hardware fisico non verificato.

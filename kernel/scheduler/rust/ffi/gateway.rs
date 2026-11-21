@@ -42,6 +42,15 @@ unsafe impl Sync for Storage {}
 static STORAGE: Storage = Storage(UnsafeCell::new(None));
 static PENDING: pending::Pending = pending::Pending::new();
 
+// Owner storage of the legacy INIT command: the default capacity, until a backend supplies
+// heap storage through kernel_scheduler_init_storage.
+const FALLBACK_WORDS: usize = state::default_storage_bytes().div_ceil(8);
+struct Fallback(UnsafeCell<[u64; FALLBACK_WORDS]>);
+
+// SAFETY: the array is handed to the owner once, by the one-shot INIT under the core_lock guard.
+unsafe impl Sync for Fallback {}
+static FALLBACK: Fallback = Fallback(UnsafeCell::new([0; FALLBACK_WORDS]));
+
 unsafe extern "C" {
     // Trusted backend must verify BSP/IF=0/DF=0 and dispatcher, outside IRQ/NMI.
     // Host tests mock this predicate; no CPU verification is claimed by Rust.
@@ -113,8 +122,13 @@ fn apply_on(cpu: u32, operation: u32, index: u32, generation: u64, limit: u32) -
     let storage = unsafe { &mut *STORAGE.0.get() };
     if operation == 0 {
         if storage.is_some() { return reply(13); }
-        *storage = Some(Owner::new());
-        return reply(0);
+        let base = FALLBACK.0.get().cast::<u8>();
+        // SAFETY: FALLBACK is 8-aligned, spans default_storage_bytes and is used only by this
+        // one-shot under the core_lock guard.
+        return match unsafe { Owner::from_storage(base, state::default_storage_bytes(), state::CAPACITY) } {
+            Ok(owner) => { *storage = Some(owner); reply(0) }
+            Err(error) => reply(error as u32),
+        };
     }
     let Some(owner) = storage.as_mut() else { return reply(11); };
     let handle = Handle { index, generation };
@@ -149,6 +163,38 @@ fn apply_on(cpu: u32, operation: u32, index: u32, generation: u64, limit: u32) -
         output.events = events;
     }
     output
+}
+
+// ====== gateway_storage_bytes ======
+
+// Bytes of storage that an owner of `capacity` tasks needs; 0 when the capacity is not supported.
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_scheduler_storage_bytes(capacity: u32) -> u64 {
+    state::storage_bytes(capacity as usize).map_or(0, |bytes| bytes as u64)
+}
+
+// ====== gateway_init_storage ======
+
+/// One-shot initialization of the owner on caller storage, like INIT with a chosen capacity.
+///
+/// # Safety
+///
+/// `buffer` must be valid for reads and writes of `bytes` bytes and stay valid and unused by
+/// anything else for as long as the scheduler runs. Null, a buffer that is not 8-aligned, a short
+/// buffer and a capacity outside the supported range are rejected without touching the buffer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kernel_scheduler_init_storage(buffer: *mut u8, bytes: u64, capacity: u32) -> Reply {
+    let Some(_guard) = core_lock::enter() else { return reply(9); };
+    if !context_valid_on(0) { return reply(10); }
+    // SAFETY: the core_lock guard owns Storage; no callbacks during this borrow.
+    let storage = unsafe { &mut *STORAGE.0.get() };
+    if storage.is_some() { return reply(13); }
+    let Ok(bytes) = usize::try_from(bytes) else { return reply(12); };
+    // SAFETY: the caller contract above; from_storage validates before touching the buffer.
+    match unsafe { Owner::from_storage(buffer, bytes, capacity as usize) } {
+        Ok(owner) => { *storage = Some(owner); reply(0) }
+        Err(error) => reply(error as u32),
+    }
 }
 
 // ====== gateway_event_apply ======

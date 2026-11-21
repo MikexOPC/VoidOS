@@ -1,4 +1,4 @@
-use super::{Error, Handle, Owner, State, CAPACITY};
+use super::{Error, Handle, Owner, State, Table};
 const MAX_PARTICIPANTS: u32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -10,8 +10,16 @@ pub(super) struct Lot {
     pub completed: u64,
     pub quiesced: u64,
     pub failed: bool,
-    tasks: [Option<Handle>; CAPACITY],
-    cpus: [u32; CAPACITY],
+    tasks: Table<Option<Handle>>,
+    cpus: Table<u32>,
+}
+
+// ====== lot_rebound ======
+
+impl Lot {
+    pub(super) fn rebound(self, tasks: Table<Option<Handle>>, cpus: Table<u32>) -> Self {
+        Self { tasks, cpus, ..self }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +38,8 @@ impl Owner {
 
     pub(super) fn validate_lot(&self) -> bool {
         let Some(lot) = self.lot else { return true; };
+        let Some((tasks, cpus)) = self.lot_tables() else { return false; };
+        if !lot.tasks.is_bound(tasks.ptr, tasks.len) || !lot.cpus.is_bound(cpus.ptr, cpus.len) { return false; }
         if lot.group == 0 || lot.token == 0 || lot.token != self.last_lot ||
             lot.participants & 1 != 0 || !(2..=MAX_PARTICIPANTS).contains(&lot.participants.count_ones()) ||
             lot.participants & !self.all_cpus() != 0 ||
@@ -70,8 +80,11 @@ impl Owner {
                 !(2..=MAX_PARTICIPANTS).contains(&participants.count_ones()) || participants & !next.all_cpus() != 0 {
                 return Err(Error::InvalidState);
             }
+            let (mut tasks, mut cpus) = next.lot_tables().ok_or(Error::Corrupt)?;
+            tasks.fill(None);
+            cpus.fill(0);
             let mut lot = Lot { group, token, participants, entered: 0, completed: 0,
-                quiesced: 0, failed: false, tasks: [None; CAPACITY], cpus: [0; CAPACITY] };
+                quiesced: 0, failed: false, tasks, cpus };
             let mut counts = [0u32; 64];
             for (index, slot) in next.slots.iter().enumerate() {
                 if matches!(slot.state, State::Free | State::Retired) { continue; }

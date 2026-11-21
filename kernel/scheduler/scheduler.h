@@ -5,6 +5,8 @@
 #include <stddef.h>
 
 #define KERNEL_SCHEDULER_CAPACITY 8U
+#define KERNEL_SCHEDULER_MIN_CAPACITY 8U
+#define KERNEL_SCHEDULER_MAX_CAPACITY 256U
 #define KERNEL_SCHEDULER_NONE UINT32_MAX
 
 #define KERNEL_SCHEDULER_INIT 0U
@@ -95,6 +97,16 @@ _Static_assert(offsetof(KERNEL_SCHEDULER_REPLY, events) == 24, "Reply events ABI
 // Caller and linked context predicate must enforce BSP/IF=0/DF=0, outside IRQ/NMI.
 KERNEL_SCHEDULER_REPLY kernel_scheduler_apply(uint32_t operation, uint32_t index,
                                              uint64_t generation);
+
+// ====== kernel_scheduler_storage ======
+
+// INIT through kernel_scheduler_apply runs the default capacity on internal storage. A backend
+// that needs more tasks asks storage_bytes (0 = capacity outside MIN..MAX) and hands that many
+// bytes, 8-aligned, to init_storage once, instead of INIT. Same one-shot, context and error
+// rules as INIT; null, misalignment, a short buffer or a bad capacity return BAD_ARGUMENT
+// without touching the buffer. The buffer belongs to the scheduler from then on.
+uint64_t kernel_scheduler_storage_bytes(uint32_t capacity);
+KERNEL_SCHEDULER_REPLY kernel_scheduler_init_storage(void *buffer, uint64_t bytes, uint32_t capacity);
 
 // ====== kernel_scheduler_event_apply ======
 
