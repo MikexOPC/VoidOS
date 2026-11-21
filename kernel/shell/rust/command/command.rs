@@ -21,14 +21,22 @@ pub fn classify(word: u64, length: u32, arguments: u32) -> u32 {
 // ====== count ======
 
 pub fn count(word: u64, length: u32) -> u64 {
-    if length == 0 || length > 7 || word >> (length * 8) != 0 { return u64::MAX; }
+    number(word,0,length)
+}
+
+// ====== number ======
+
+pub fn number(low: u64, high: u64, length: u32) -> u64 {
+    if length == 0 || length > 9 { return u64::MAX; }
+    let word = u128::from(low) | (u128::from(high) << 64);
+    if word >> (length * 8) != 0 { return u64::MAX; }
     let mut value = 0u64;
     for index in 0..length {
         let digit = (word >> (index * 8)) & 0xff;
         if !(0x30..=0x39).contains(&digit) { return u64::MAX; }
-        value = value * 10 + digit - 0x30;
+        value = value * 10 + digit as u64 - 0x30;
     }
-    if value == 0 || value > 1_000_000 { u64::MAX } else { value }
+    if value == 0 || value > 100_000_000 { u64::MAX } else { value }
 }
 
 #[cfg(test)]

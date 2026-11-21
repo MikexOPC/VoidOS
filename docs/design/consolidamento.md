@@ -39,22 +39,25 @@ possiedono il proprio IPI di servizio. I dispositivi restano sul BSP.
 
 La scelta K4-C usa una coda globale con lock, stato e affinità in Rust,
 dispatcher per CPU e switch all'uscita dell'IRQ in Assembly. In
-`ordinary` il timer LAPIC D1h sospende i task della sessione PS/2 sul
-BSP anche fuori dalla finestra di attesa. I task partono con IF=1 e il
+`ordinary` il timer LAPIC D1h sospende i task BSP e AP
+anche fuori dalla finestra di attesa. I task partono con IF=1 e il
 quanto nominale è 10 ms. Il runner verifica i contatori di preemption
 nelle sessioni shell e soak. I driver e gli IRQ dei dispositivi restano
-sul BSP. Il comando `ap <n>` inoltra un job fidato ad AP1 e ne raccoglie
-lo stack dopo la quiescenza.
+sul BSP. Il comando `ap <n> [cpu]` inoltra un job fidato all'AP scelto,
+con AP1 come valore predefinito, e ne raccoglie lo stack dopo la quiescenza.
 
 Il dispatcher BSP di B2 continua dopo `exit` e senza controller PS/2.
 La sessione rilascia task, stack, IRQ e binding. Il runtime mantiene
 timer LAPIC, watchdog HPET e servizio bridge. L'attesa usa il percorso
 HPET con interrupt attivi. B2-3 chiude le prove di questo ciclo di vita.
-Il prossimo obiettivo è la preemption ordinaria sugli AP.
+La preemption AP della task 4 è fatta. La selezione senza affinità
+fissa resta la task 5.
 Il runtime permanente AP è fatto. Ogni AP mantiene admission e
 autorità fra i job e dopo la chiusura PS/2. Il BSP raccoglie lo stack del
 job soltanto dopo la conferma di ritorno nel dispatcher AP. L'attesa AP
 usa `STI; HLT`, con selezione della coda protetta prima di aprire IF.
+Ogni AP calibra e possiede il proprio timer D1h. La sessione PS/2
+mantiene ownership e raccolta dei job, mentre i timer restano al runtime.
 [Design dello scheduler](scheduler-produzione.md) ·
 [Validazione BSP/AP](../validation/consolidamento.md#cpu-e-scheduler).
 

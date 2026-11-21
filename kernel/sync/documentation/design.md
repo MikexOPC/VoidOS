@@ -6,6 +6,12 @@ Il ticket lock mantiene Next e Serving e usa le atomiche Rust
 per pubblicazione e acquisizione. Il contesto corrente appartiene
 alla CPU. L'acquisizione con irqsave registra IF e un guard, verifica
 rango e profondità e attende il ticket entro il budget del clock.
+Il budget decorre dopo la prenotazione e si rinnova quando `Serving`
+avanza. Misura il mancato progresso del proprietario corrente. Un'attesa
+in coda può attraversare più proprietari prima di ricevere il proprio
+ticket. La scadenza e il limite di poll restano applicati a ogni intervallo
+senza avanzamento. Un ultimo acquire di `Serving` copre il passaggio di
+proprietà contemporaneo alla scadenza.
 La release è LIFO e ripristina IF dal guard. Il contesto ha
 profondità massima otto. Lock con owner e rango validi delimitano
 i metadati di memoria e altri oggetti condivisi. Hardware o

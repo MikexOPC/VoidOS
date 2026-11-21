@@ -38,7 +38,7 @@ fn bench(name: &str) -> Bench {
 
 fn short_limits() -> Limits {
     Limits {
-        wait: Duration::from_millis(1500),
+        wait: Duration::from_secs(5),
         window: Duration::from_millis(1500),
         window_poll: Duration::from_millis(300),
         negative: Duration::from_millis(1500),
@@ -176,6 +176,7 @@ fn deadlines_on_a_blocked_vm() {
     let (_bench, directory, outcome) = run_injected("nowindow", "copy-ok", None, Inject::Drop);
     let error = outcome.expect_err("no NMI, no continuation");
     assert_eq!(error, format!("Missing KERNEL_READY: {}", directory.join("serial.log").display()));
+    assert!(fs::read_to_string(directory.join("serial.log")).expect("serial").contains("KERNEL_K5_NMI_ARMED"));
     assert_cleaned(&directory);
 }
 
@@ -297,6 +298,31 @@ fn runner_writes_results_and_exit_codes() {
 
     let status = Command::new(std::env::var("VOIDOS_RUNNER").expect("runner")).arg("--copy").output().expect("runner");
     assert_eq!(status.status.code(), Some(2));
+}
+
+// ====== campaign_detects_rebuilt_inputs ======
+
+#[test]
+fn campaign_detects_rebuilt_inputs() {
+    let bench = bench("rebuilt-inputs");
+    let out = bench.root.join("out");
+    let child = spawn_runner(&bench,&out,"copy-ok",&["--copy","--boots","2"]);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !out.join("boot-1/vm.json").exists() {
+        assert!(Instant::now() < deadline,"missing first VM manifest");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    fs::write(&bench.image,b"rebuilt image").expect("rebuild image");
+    fs::write(&bench.paths.loader,b"rebuilt loader").expect("rebuild loader");
+    let output = child.wait_with_output().expect("runner");
+    let results = fs::read_to_string(out.join("results.json")).expect("results");
+    assert_eq!(output.status.code(),Some(1),"{results}");
+    assert!(results.contains(&format!("\"Image\": \"{}\"",hash_bytes(b"image bytes"))),"{results}");
+    assert!(results.contains(&format!("\"Loader\": \"{}\"",hash_bytes(b"loader bytes"))),"{results}");
+    assert!(results.contains("\"Passed\": 1"),"{results}");
+    assert!(results.contains("Boot artifact kernel.elf differs from campaign image"),"{results}");
+    assert_cleaned(&out.join("boot-1"));
+    assert_cleaned(&out.join("boot-2"));
 }
 
 // ====== numeric_wait_counts_fields ======

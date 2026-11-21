@@ -10,6 +10,18 @@ diagnostici, 10/10 ordinari e due negativi. La chiusura K2 registra
 La contesa host con ASan non prova concorrenza del guest di quel
 checkpoint, che esegue il runtime sul BSP.
 
+Il 21 novembre 2026 la regressione FIFO della preemption AP usa due
+passaggi di proprietà reali e un clock host controllato. La somma delle
+attese supera un budget, mentre ciascun proprietario avanza entro il
+proprio intervallo. Il sorgente `acquire.c` precedente termina con
+`LOCK_WAIT_FAILED`, exit 86. Il sorgente corretto acquisisce il ticket 2
+e rilascia il lock. Le prove di deadline senza progresso, clock fermo,
+clock fallito e assenza di clock restano negative. La suite ripete
+140.000 acquisizioni su 2, 4 e 8 thread con ASan. Cppcheck passa dopo la
+correzione di un incremento scritto dentro `assert` nel nuovo test.
+Clock e IF sono simulati in queste prove host. Le prove del guest SMP
+sono nel [report della preemption AP](../../../docs/validation/consolidamento.md#cpu-e-scheduler).
+
 [Design del modulo](design.md).
 
 <details>

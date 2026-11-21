@@ -186,9 +186,9 @@ cleanup:
     return 1;
 }
 
-// ====== x86_timer_measure ======
+// ====== measure_private ======
 
-int x86_timer_measure(X86_LAPIC_TIMER *timer)
+static int measure_private(X86_LAPIC_TIMER *timer, int report)
 {
     BOOT_U32 value, reload, attempt;
     int first, second;
@@ -212,13 +212,31 @@ int x86_timer_measure(X86_LAPIC_TIMER *timer)
         reload = first == 1 && second == 1 ?
             x86_timer_sample_consensus(samples[0].Reload,samples[1].Reload) : 0;
         if (reload) {
-            if (!kernel_text("KERNEL_TIMER_CALIBRATION_ATTEMPT: ") ||
-                !kernel_number(attempt) || !kernel_text("\n")) { return 0; }
+            if (report &&
+                (!kernel_text("KERNEL_TIMER_CALIBRATION_ATTEMPT: ") ||
+                 !kernel_number(attempt) ||
+                 !kernel_text("\n"))
+            )
+                return 0;
             timer->Samples[0] = samples[0]; timer->Samples[1] = samples[1];
             timer->Reload = reload;
             return 1;
         }
-        if (attempt < 3 && !kernel_log(2,"TIMER_CALIBRATION_RETRY")) { return 0; }
+        if (report && attempt < 3 && !kernel_log(2,"TIMER_CALIBRATION_RETRY")
+        )
+            return 0;
     }
     return 0;
+}
+
+// ====== x86_timer_measure ======
+
+int x86_timer_measure(X86_LAPIC_TIMER *timer) {
+    return measure_private(timer,1);
+}
+
+// ====== x86_timer_measure_local ======
+
+int x86_timer_measure_local(X86_LAPIC_TIMER *timer) {
+    return measure_private(timer,0);
 }

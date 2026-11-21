@@ -254,6 +254,11 @@ void x86_scheduler_yield(void)
     local = local_private();
     if (!x86_scheduler_task_valid() || local->current != index || local->generation != gen || local->event)
         kernel_scheduler_fail_stop();
+#ifdef KERNEL_PS2_INPUT
+    if (!x86_preempt_rearm()
+    )
+        kernel_panic("PREEMPT_YIELD_REARM_FAILED");
+#endif
     kernel_preempt_section_leave(saved_if);
 }
 
@@ -305,6 +310,11 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
         event_replies[index].reply.index != (reason >= 6 ? id : index) ||
         event_replies[index].reply.generation != (reason >= 6 ? token : gen)) kernel_scheduler_fail_stop();
     KERNEL_EVENT_REPLY reply = event_replies[index];
+#ifdef KERNEL_PS2_INPUT
+    if (!x86_preempt_rearm()
+    )
+        kernel_panic("PREEMPT_EVENT_REARM_FAILED");
+#endif
     kernel_preempt_section_leave(saved_if);
     return reply;
 }
@@ -318,9 +328,14 @@ void x86_scheduler_task_start(void)
     if (!x86_scheduler_task_valid() || local->event || !entry || !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry))
         kernel_scheduler_fail_stop();
 #if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
-    if (irq_profile == 5 && !cpu_private()
-    )
+    if (irq_profile == 5
+    ) {
+        if (!x86_preempt_rearm()
+        )
+            kernel_panic("PREEMPT_START_REARM_FAILED");
+
         kernel_preempt_section_leave(0x200);
+    }
 #endif
     entry(local->current);
 #if !defined(KERNEL_TEST_SCHEDULER_FAULT) || KERNEL_TEST_SCHEDULER_FAULT != 6

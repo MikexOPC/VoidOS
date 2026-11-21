@@ -379,6 +379,167 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   Restano timer e preemption AP ordinari, selezione senza affinità fissa,
   capacità e prove su PC fisico. I job AP1 continuano a eseguire a IF=0.
 
+- **S1, task 4 — preemption AP ordinaria, 21 novembre 2026. Fatta.**
+  L'immagine conclusiva `8F24D4FF` passa 25 boot della matrice, due boot
+  mirati, otto suite host, trenta minuti di stress e la ripetizione
+  mirata del runner. Il timer one-shot drena le richieste precedenti
+  prima di riarmare. Restano task 5, capacità e prove su PC fisico.
+  Il primo candidato usa timer periodico e policy per CPU. Il calcolo dei job AP parte
+  a IF=1 e non contiene yield volontari. `ap <n>` usa AP1, mentre
+  `ap <n> <cpu>` permette di verificare ogni AP ammesso. Il massimo è
+  100.000.000 iterazioni. Un milione terminava fra due tick e aveva
+  prodotto zero sospensioni, quindi quella prova iniziale era insufficiente.
+  Kernel ordinario Meson SHA-256
+  `724894CE3F4583A5FAEF43F7EEBF51EC73BFDFDC86B477D84BF413E6791F5938`,
+  ELF di 507.904 byte. Loader SHA-256
+  `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+  QEMU/OVMF TCG/q35, 25/25 boot, shell 10/10, PS/2 assente 10/10,
+  SMAP assente 3/3, una vCPU 1/1 e otto vCPU 1/1. Sono completati 88 job,
+  42 da mille e 46 da cento milioni di iterazioni. Tutte le somme sono
+  corrette. I 46 record AP con lavoro lungo riportano da 22 a 54
+  sospensioni e altrettante riprese. A otto vCPU lavorano tutti i sette AP.
+  A quattro vCPU restano 16.027 pagine dopo la shell e 16.029 senza PS/2.
+  I record di preemption riservano 20 KiB, cinque pagine in più della
+  task precedente. Il timer e il token D1h restano attivi su ogni AP dopo
+  cleanup e senza PS/2. Il runner legge policy, timer, contatori, ownership
+  IRQ e dispatcher per CPU, incluso IF/HLT/RIP dallo stesso snapshot.
+  Otto suite host superate, scheduler, x86-scheduler, ipi-service, kernel,
+  watchdog, ps2, sync e percpu-clock. Runner Meson 2/2 e `plan_parity` 1/1.
+  La prima estensione ad AP2 usava impropriamente la notifica console
+  riservata ad AP1. Il completamento ora viene raccolto dal servizio BSP
+  dopo la quiescenza AP, prima di pubblicare l'evento della shell.
+  Lo stress ha poi trovato `LOCK_WAIT_FAILED`. I breakpoint prima del
+  panic mostrano un proprietario vivo e ticket in coda. Le verifiche
+  hardware del dispatcher ora precedono il lock globale. La regressione
+  con due handoff reali riproduce il timeout aggregato nel sorgente
+  precedente e passa rinnovando il budget quando avanza `Serving`.
+  Deadline senza progresso e clock guasti continuano a fallire.
+  Cppcheck ha trovato un incremento dentro `assert` nel nuovo test,
+  corretto e verificato nella ripetizione host conclusiva.
+  Una sessione parallela a otto vCPU ha ricevuto `ridge status`, con la
+  prima lettera mancante, e non ha prodotto il marker atteso. In quel
+  checkpoint la causa era indeterminata. La ripetizione isolata a otto
+  vCPU è passata. Un'osservazione successiva con trace ha completato
+  25 job AP a otto vCPU senza perdere caratteri. Le prove fallite,
+  gli smoke e le sessioni interrotte sono esclusi dai conteggi conclusivi.
+  Lo stress isolato ripetuto dopo il rinnovo degli strumenti supera
+  15 minuti di shell e 15 dopo `exit`, con 130 risposte bridge, 130 job,
+  zero sforamenti e 16.027 pagine libere stabili. Due successive VM
+  parallele a otto vCPU hanno però riprodotto `LOCK_WAIT_FAILED`.
+  Il solo rinnovo del budget e il campionamento ogni 64 poll non bastano.
+  Quel candidato lasciava la chiusura aperta.
+  Evidenze in `kernel/build/ap-preempt-progress-final-*`,
+  `ap-preempt-progress-soak-resumed`, `ap-preempt-input-trace`,
+  `ap-preempt-input-parallel`, `ap-preempt-lock-gdb*`,
+  `test-run-7a42f3f500dd448c98abeea48a7aac15`,
+  `test-run-38ae702c11374d78bff39b19f6be5e3a` e
+  `sync-host-3c94127a5b184999bc1bc99ffad0c172` per il confronto rosso/verde.
+  Il candidato successivo, SHA-256
+  `7B5AB7C91E24FB39F5A45DB9E69F82D853A3FFF04031A2D704FC7662919FA38B`,
+  usa un secondo senza progresso al posto dei 100 ms di bring-up.
+  Conserva un milione di poll e campiona il clock ogni 64 iterazioni.
+  Sul candidato sono passati altri 25 boot della stessa matrice e otto
+  suite host, in `ap-preempt-runtime-final-*` e
+  `test-run-5970269473504062aab9c8fd27941e2f`. Runner Meson 2/2.
+  Due VM parallele a otto CPU completano ciascuna 15 minuti di shell e
+  15 dopo `exit`, 128 risposte bridge e 128 job AP. Le pagine libere
+  restano 15.815 in entrambe. Sospensioni BSP 32.355 e 32.861, zero
+  sforamenti. Tutti i sette AP sospendono e riprendono i propri task.
+  Il trace confronta eventi input, byte generati e letture effettive
+  tramite `pckbd_kbd_read_data`. In ciascuna VM tutti i 3.717 tasti
+  risultano decodificati e gli 11.151 byte generati corrispondono in
+  ordine ai byte letti. Seguono cinque letture aggiuntive di cleanup.
+  Evidenze in `ap-preempt-runtime-final-soak-eight` e
+  `ap-preempt-runtime-final-soak-peer`, con `input-audit.json`.
+  Il 21 novembre una nuova prova riproduce la perdita sul medesimo
+  candidato `7B5AB7C9`, con otto CPU e carico host concorrente.
+  `ap-input-current-load-eight` fallisce sul prefisso di `ap 100000000 4`,
+  ricevuto come `ap 10000000 `. Il trace registra 342 byte prodotti e
+  337 letti. La ricostruzione della FIFO da 16 byte coincide con tutte
+  le letture e individua cinque scarti, con una raffica massima di
+  19 byte fra letture. Il dump della memoria scrivibile, 986.880 byte,
+  conserva decoder senza errori, zero resync e la riga incompleta.
+  Durante il riempimento arrivano ripetuti D1h allo stesso RIP
+  `audit_checkpoint+0x36`, prima dell'IRQ 41h. Il meccanismo indicato
+  è starvation della tastiera durante il timer periodico. Quel run
+  fornisce il riproduttore usato nella correzione successiva.
+  La cattura negativa con perdita intenzionale del primo `b` ferma
+  correttamente il runner e produce il dump. Questa prova valida
+  l'acquisizione del guasto. I due test Meson del runner passano.
+  Otto suite host passano in `test-run-e1fa07e123d7460ab1aea34749a77615`.
+  Il candidato precedente `724894CE`, sotto lo stesso carico, fallisce
+  a otto CPU per `LOCK_WAIT_FAILED`, mentre la prova a quattro CPU
+  completa 37 round in cinque minuti e altri cinque dopo `exit`.
+  Dopo l'approvazione dell'opzione A, il primo candidato one-shot
+  `24132AC5` passa il boot ma fallisce uno stress parallelo per input
+  incompleto. Il riarmo prima del context switch lascia scadere il
+  quanto durante le verifiche di ripresa a IF=0. La FIFO scarta
+  16 byte. Il riarmo viene spostato dopo quelle verifiche, prima di
+  ripristinare IF, nei percorsi di avvio, yield ed evento. Il ritorno
+  dall'IRQ e dalla sospensione per riga seriale riarmano in coda.
+  Il candidato successivo, SHA-256
+  `0B628CBBF72CAAE029A24452E4289F84DB42C4C3A3E02E048245F9868ACD3897`,
+  passa 25 boot della matrice ordinaria, otto suite host e i due test
+  Meson del runner, inclusi 20 casi unitari. La prova preliminare
+  `ap-oneshot-tail-pilot` completa 42 job su sette AP in cinque minuti
+  di shell e altri cinque dopo `exit`, con 15.814 pagine libere stabili.
+  Lo stesso controllo FIFO del runner applicato ai trace reali fallisce
+  sui due candidati difettosi, ai byte prodotti 302 e 111, e passa sul
+  trace preliminare con 3.669 byte prodotti e letti, picco FIFO 8.
+  Evidenze in `ap-oneshot-fifo-red-green.log`, `ap-oneshot-final-*`,
+  `ap-oneshot-runner-final-tests.log` e
+  `test-run-f09272d835354f50993446783be6e6fc`.
+  I due stress conclusivi su `0B628CBB` falliscono prima della chiusura.
+  `ap-oneshot-final-soak-eight` termina per `REMOTE_TASK_FAILED`. Il dump
+  mostra due riprese AP successive all'ultimo progresso osservato dal
+  BSP. `ap-oneshot-final-soak-peer` perde parte di `ap 100000000 6` e
+  il controllo FIFO rileva lo scarto al byte prodotto 6.584. Il trace
+  conserva D1h immediati dopo il ripristino di IF su task diversi.
+  Il candidato `8F24D4FF` drena il vecchio IRR/ISR prima del riarmo
+  e ricontrolla il progresso AP alla scadenza.
+  Durante l'indagine emerge che il runner calcolava gli hash a fine
+  campagna. Il JSON di `ap-oneshot-soak-eight` riporta `0B628CBB`,
+  mentre la copia ESP provata ha hash `24132AC5`. Gli hash di tutte
+  le 25 copie ESP della matrice successiva coincidono con `0B628CBB`.
+  Il runner conserva ora gli hash iniziali e confronta le copie di
+  ciascun boot. La regressione con VM simulata ricompila kernel e loader
+  fra due boot e richiede il fallimento del secondo. Un test esistente
+  del runner supera la scadenza del marker iniziale sotto carico. La
+  ripetizione isolata passa 2/2 in `ap-oneshot-runner-hash-retest.log`.
+  Il runner viene corretto anche nella lettura del timer AP. Il primo
+  boot senza PS/2 su `8F24D4FF` fotografa `Open=1, Running=0` durante
+  il drenaggio e viene respinto dal vecchio gate. Il gate aggiornato
+  attende lo stato attivo entro la deadline. Passano dieci boot senza
+  PS/2, dieci shell, tre senza SMAP, uno a CPU singola e il pilota a
+  otto CPU sulla stessa immagine, 25/25 complessivi. Otto suite host
+  passano in `test-run-d2c2c506a77a440685a7ceb303fd0e98`.
+  Nei test con VM simulata l'attesa di avvio passa da 1,5 a 5 secondi.
+  La finestra diagnostica resta 1,5 secondi e viene verificato che il
+  marker iniziale preceda la scadenza del marker finale. I limiti di
+  attesa del runner ordinario restano quelli esistenti. Le due suite
+  Meson passano sotto carico in `ap-oneshot-drain-runner-tests.log`.
+  Lo stress conclusivo `ap-oneshot-drain-soak-eight` su `8F24D4FF`
+  passa quindici minuti di shell e quindici dopo `exit`. Esegue 116
+  risposte bridge e 116 job distribuiti sui sette AP. Le pagine libere
+  restano 15.814. Il BSP registra 161 sospensioni, 144 fuori finestra,
+  zero sforamenti. Ogni AP registra sospensioni e riprese uguali,
+  da 431 a 614. I 10.105 byte prodotti sono letti in ordine, picco
+  FIFO 10. Il dispatcher completa 108.400 cicli e 112.853 tick BSP.
+  La VM parallela completa 115 job e l'idle con memoria stabile, poi
+  il vecchio runner respinge AP6 durante il drenaggio. Il suo report
+  resta FAIL. Il controllo FIFO applicato alla traccia completa passa
+  con 10.020 byte prodotti e letti, picco 10. L'errore di fotografia è
+  coperto dal gate corretto e da `ap-oneshot-drain-runner-retest`,
+  PASS con due minuti di shell e due di idle, 17 job su sette AP,
+  1.494 byte prodotti e letti, picco 4 e memoria stabile a 15.814 pagine.
+  Due ulteriori boot, `ap-oneshot-drain-tick-shell` a otto CPU e
+  `ap-oneshot-drain-tick-no-ps2` a quattro, richiedono l'avanzamento
+  effettivo del timer di ogni AP dopo il cleanup. Passano entrambi.
+  Le suite Meson finali passano 2/2, con 20 casi unitari e otto di
+  processo, in `ap-oneshot-drain-final-runner-tests.log`.
+  La task 4 è fatta. La task 5, la capacità e le prove su PC fisico
+  restano da eseguire.
+
 ## Build e runner
 
 | Passo | Risultato storico |

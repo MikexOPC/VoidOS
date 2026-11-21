@@ -1,5 +1,7 @@
 #include "internal.h"
 
+#define LOCK_CLOCK_POLL_INTERVAL 64U
+
 typedef struct {
     uint32_t  Started, Polls;
     KERNEL_DEADLINE  Deadline;
@@ -16,12 +18,15 @@ static int wait_private(const KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_PROGRESS
         if (!started) return 0;
         progress->Started = 1;
     }
-    int expired = kernel_deadline_expired(&wait->Clock, &progress->Deadline);
-    if (ks_irq_state()) ks_fail_stop("LOCK_CLOCK_IRQ_ENABLED");
-    if (progress->Polls >= wait->MaxPolls ||
-        expired
-    )
+    if (progress->Polls >= wait->MaxPolls)
         return 0;
+    if (!(progress->Polls % LOCK_CLOCK_POLL_INTERVAL)) {
+        int expired = kernel_deadline_expired(&wait->Clock, &progress->Deadline);
+        if (ks_irq_state())
+            ks_fail_stop("LOCK_CLOCK_IRQ_ENABLED");
+        if (expired)
+            return 0;
+    }
     ++progress->Polls;
     ks_pause();
     return 1;
@@ -85,14 +90,23 @@ static int acquire_private(KERNEL_LOCK *lock, KERNEL_LOCK_CONTEXT *context,
             return 0;
         }
     }
+    progress = (KERNEL_LOCK_PROGRESS){0};
+    uint64_t observed = ks_atomic_load_acquire(&lock->Serving.Value);
     for (;;) {
         uint64_t serving = ks_atomic_load_acquire(&lock->Serving.Value);
         if (serving == ticket) break;
         if (serving > ticket) ks_fail_stop("LOCK_TICKET_PASSED");
+        if (serving != observed) {
+            observed = serving;
+            progress = (KERNEL_LOCK_PROGRESS){0};
+        }
         if (attempt_only ||
             !wait_private(context, &progress)
         ) {
-            if (ks_atomic_load_acquire(&lock->Serving.Value) == ticket) break;
+            uint64_t latest = ks_atomic_load_acquire(&lock->Serving.Value);
+            if (latest == ticket) break;
+            if (!attempt_only && latest != serving)
+                continue;
             ks_fail_stop("LOCK_WAIT_FAILED");
         }
     }

@@ -48,6 +48,7 @@ int x86_timer_write(const X86_LAPIC_MAPPING *mapping, BOOT_U32 offset, BOOT_U32 
 BOOT_U32 x86_pm_read(unsigned short port);
 int x86_timer_measure(X86_LAPIC_TIMER *timer);
 int x86_timer_owner_valid(const X86_LAPIC_TIMER *timer);
+int x86_timer_measure_local(X86_LAPIC_TIMER *timer);
 int x86_timer_service(X86_LAPIC_TIMER *timer);
 int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     const KERNEL_ACPI_DIRECTORY *directory, const X86_LAPIC_MAPPING *mapping,

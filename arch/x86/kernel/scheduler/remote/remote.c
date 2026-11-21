@@ -3,6 +3,7 @@
 #include "arch/x86/kernel/timer/hpet/watchdog/watchdog.h"
 #include "kernel/sync/internal.h"
 #include "kernel/diagnostics/log.h"
+#include "../irq/preempt.h"
 
 static X86_REMOTE remote;
 static const KERNEL_PHYSICAL_ALLOCATOR *owner_pool;
@@ -52,9 +53,14 @@ int x86_remote_open(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, uint32_t eve
 
 int x86_remote_request(uint32_t cpu, X86_TASK_ENTRY entry, uint64_t argument)
 {
-    if (!remote.Self || cpu != 1 || cpu >= xis_native.Count || !entry ||
+    if (!remote.Self ||
+        !cpu ||
+        cpu >= xis_native.Count ||
+        !entry ||
         !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry) ||
-        ks_atomic_load_acquire(&remote.State) != X86_REMOTE_IDLE) return 0;
+        ks_atomic_load_acquire(&remote.State) != X86_REMOTE_IDLE
+    )
+        return 0;
     remote.Cpu = cpu; remote.Entry = entry; remote.Argument = argument;
     for (uint32_t index = 0; index < 4; ++index) remote.Result[index] = 0;
     ks_atomic_store_release(&remote.State,X86_REMOTE_REQUESTED);
@@ -108,7 +114,8 @@ static void launch_private(void)
     if (kernel_scheduler_apply_on(0,KERNEL_SCHEDULER_PUBLISH,index,generation).state != KERNEL_TASK_READY)
         kernel_panic("REMOTE_PUBLISH_FAILED");
     if (!ping_private(remote.Cpu)) kernel_panic("REMOTE_PING_FAILED");
-    remote.Started = now_private();
+    remote.Progress = x86_preempt_cpu_progress(remote.Cpu);
+    remote.ProgressAt = now_private();
     ks_atomic_store_release(&remote.State,X86_REMOTE_STARTED);
 }
 
@@ -139,7 +146,26 @@ void x86_remote_service(void)
     if (state == X86_REMOTE_REQUESTED) launch_private();
     else if (state == X86_REMOTE_STARTED) {
         if (ks_atomic_load_acquire(&remote.Quiesced) == remote.Generation) finish_private();
-        else if (expired_private(remote.Started)) kernel_panic("REMOTE_TASK_FAILED");
+        else {
+            uint64_t progress = x86_preempt_cpu_progress(remote.Cpu);
+            if (progress != remote.Progress) {
+                remote.Progress = progress;
+                remote.ProgressAt = now_private();
+            }
+            else if (expired_private(remote.ProgressAt)
+            ) {
+                progress = x86_preempt_cpu_progress(remote.Cpu);
+                if (ks_atomic_load_acquire(&remote.Quiesced) == remote.Generation
+                )
+                    finish_private();
+                else if (progress != remote.Progress) {
+                    remote.Progress = progress;
+                    remote.ProgressAt = now_private();
+                }
+                else
+                    kernel_panic("REMOTE_TASK_FAILED");
+            }
+        }
     }
 }
 

@@ -44,11 +44,28 @@ fn ap_command_and_count() {
         let word = text.bytes().enumerate().fold(0u64,|acc,(i,b)| acc | (u64::from(b) << (8 * i)));
         assert_eq!(count(word,text.len() as u32),value);
     }
-    for text in ["0","1000001","9999999","12a","-1"," 1"] {
+    for text in ["0","12a","-1"," 1"] {
         let word = text.bytes().enumerate().fold(0u64,|acc,(i,b)| acc | (u64::from(b) << (8 * i)));
         assert_eq!(count(word,text.len() as u32),u64::MAX);
     }
     assert_eq!(count(0,0),u64::MAX);
     assert_eq!(count(0x3131,1),u64::MAX);
-    assert_eq!(count(0x3131313131313131,8),u64::MAX);
+    assert_eq!(count(0x3131313131313131,8),11_111_111);
+}
+
+// ====== extended_ap_count ======
+
+#[test]
+fn extended_ap_count() {
+    for (text, expected) in [("1000001",1_000_001),("100000000",100_000_000),
+        ("100000001",u64::MAX),("999999999",u64::MAX),("1000000000",u64::MAX),
+        ("10000000x",u64::MAX)] {
+        let word = text.bytes().enumerate().fold(0u128,|value,(index,byte)|
+            value | (u128::from(byte) << (index * 8)));
+        assert_eq!(number(word as u64,(word >> 64) as u64,text.len() as u32),expected);
+    }
+    assert_eq!(number(0x3030303030303031,0x30,9),100_000_000);
+    assert_eq!(number(0x3030303030303031,0x130,9),u64::MAX);
+    assert_eq!(number(0x31,1,1),u64::MAX);
+    assert_eq!(number(0,0,0),u64::MAX);
 }

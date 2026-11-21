@@ -7,6 +7,80 @@ static uint64_t sequence, payload[16];
 static HANDLE start_event;
 static KERNEL_LOCK_WAIT wait;
 
+typedef struct {
+    KERNEL_LOCK          Lock;
+    KERNEL_LOCK_CONTEXT  Owner;
+    KERNEL_LOCK_GUARD    Guard;
+    HANDLE              Owned, Release, Worker;
+    uint32_t            Ticks;
+} PROGRESS_TEST;
+
+// ====== progress_worker_private ======
+
+static DWORD WINAPI progress_worker_private(void *parameter) {
+    PROGRESS_TEST *test = parameter;
+    KERNEL_LOCK_CONTEXT context = {0};
+    KERNEL_LOCK_GUARD guard = {0};
+    KERNEL_LOCK_WAIT clock = {{test_clock,NULL,UINT32_MAX,1000},5000,10000000};
+    assert(kernel_lock_context_initialize(&context,&clock));
+    assert(kernel_lock_acquire(&test->Lock,&context,&guard));
+    assert(guard.Ticket == 1);
+    assert(SetEvent(test->Owned));
+    assert(WaitForSingleObject(test->Release,10000) == WAIT_OBJECT_0);
+    assert(kernel_lock_release(&context,&guard));
+    return 0;
+}
+
+// ====== progress_clock_private ======
+
+static int progress_clock_private(void *context, uint32_t *value) {
+    PROGRESS_TEST *test = context;
+    *value = test->Ticks;
+    ++test->Ticks;
+    if (*value == 2) {
+        assert(kernel_lock_release(&test->Owner,&test->Guard));
+        assert(WaitForSingleObject(test->Owned,10000) == WAIT_OBJECT_0);
+    }
+    if (*value == 6) {
+        assert(SetEvent(test->Release));
+        assert(WaitForSingleObject(test->Worker,10000) == WAIT_OBJECT_0);
+    }
+    return 1;
+}
+
+// ====== test_progress_wait ======
+
+void test_progress_wait(void) {
+    PROGRESS_TEST test = {0};
+    KERNEL_LOCK_CONTEXT waiter = {0};
+    KERNEL_LOCK_GUARD guard = {0};
+    KERNEL_LOCK_WAIT clock = {{progress_clock_private,&test,UINT32_MAX,1000},4,1000000};
+    assert(kernel_lock_initialize(&test.Lock,10));
+    assert(kernel_lock_context_initialize(&test.Owner,NULL));
+    assert(kernel_lock_context_initialize(&waiter,&clock));
+    test_set_if(0);
+    assert(kernel_lock_acquire(&test.Lock,&test.Owner,&test.Guard));
+    test.Owned = CreateEventW(NULL,TRUE,FALSE,NULL);
+    test.Release = CreateEventW(NULL,TRUE,FALSE,NULL);
+    assert(test.Owned && test.Release);
+    test.Worker = CreateThread(NULL,0,progress_worker_private,&test,0,NULL);
+    assert(test.Worker);
+    ULONGLONG start = GetTickCount64();
+    while (ks_atomic_load_relaxed(&test.Lock.Next.Value) != 2) {
+        assert(GetTickCount64() - start < 10000);
+        SwitchToThread();
+    }
+    assert(kernel_lock_acquire(&test.Lock,&waiter,&guard));
+    assert(guard.Ticket == 2 && test.Ticks == 7);
+    assert(kernel_lock_release(&waiter,&guard));
+    DWORD code;
+    assert(GetExitCodeThread(test.Worker,&code) && !code);
+    assert(CloseHandle(test.Worker));
+    assert(CloseHandle(test.Owned));
+    assert(CloseHandle(test.Release));
+    puts("PASS: two real FIFO handoffs exceed one deadline while each owner makes progress; clock and IF mocked");
+}
+
 // ====== worker_private ======
 
 static DWORD WINAPI worker_private(void *parameter) {

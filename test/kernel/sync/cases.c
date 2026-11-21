@@ -6,7 +6,15 @@ static uint32_t pauses;
 // ====== handoff_private ======
 
 static void handoff_private(void) {
-    if (++pauses == 4) assert(kernel_lock_release(&handoff_context, &handoff_guard));
+    if (++pauses == 4)
+        assert(kernel_lock_release(&handoff_context, &handoff_guard));
+}
+
+// ====== deadline_private ======
+
+static void deadline_private(void) {
+    ++pauses;
+    assert(pauses <= 64);
 }
 
 // ====== fake_clock_private ======
@@ -126,6 +134,7 @@ void test_cases(void) {
     test_set_pause(handoff_private);
     assert(kernel_lock_acquire(&lock, &waiting, &guard) && guard.Ticket == 1);
     assert(pauses == 4 && !handoff_context.Depth);
+    assert(ticks == UINT32_MAX);
     test_set_pause(NULL);
     assert(kernel_lock_release(&waiting, &guard));
     assert(!ks_irq_state());
@@ -141,6 +150,10 @@ void test_fatal(const char *name) {
     KERNEL_LOCK_GUARD guard = {0}, other = {0};
     uint32_t ticks = 0;
     KERNEL_LOCK_WAIT wait = {{fake_clock_private, &ticks, UINT32_MAX, 1000}, 2, 4};
+    if (!strcmp(name, "deadline")) {
+        wait.MaxPolls = 128;
+        test_set_pause(deadline_private);
+    }
     if (!strcmp(name, "stopped")) wait.Clock.Read = stopped_clock_private;
     if (!strcmp(name, "failed")) wait.Clock.Read = failed_clock_private;
     if (!strcmp(name, "clock-if")) wait.Clock.Read = bad_irq_clock_private;

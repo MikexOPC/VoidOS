@@ -13,6 +13,7 @@ void test_watch_fatal(KERNEL_LOCK *lock);
 void test_cases(void);
 void test_provider(void);
 void test_threads(uint32_t count);
+void test_progress_wait(void);
 void test_fatal(const char *name);
 int test_clock(void *context, uint32_t *value);
 #endif

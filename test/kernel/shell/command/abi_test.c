@@ -85,6 +85,15 @@ int main(void)
     CHECK(kernel_ps2_shell_execute(&command,&status) == 1 && strstr(output,"SHELL_BAD_ARGUMENTS"));
     fixture(&command,"status");
     CHECK(kernel_ps2_shell_execute(&command,&status) == 1 && strstr(output,"SHELL_STATUS"));
+    const char *bad_ap[] = {"ap 0", "ap 100000001", "ap 1 0", "ap 1 64", "ap 1 -1", "ap 1 2 3"};
+    for (uint32_t index = 0; index < sizeof(bad_ap) / sizeof(bad_ap[0]); ++index) {
+        fixture(&command,bad_ap[index]);
+        CHECK(kernel_ps2_shell_execute(&command,&status) == 1 && strstr(output,"SHELL_BAD_ARGUMENTS"));
+    }
+    fixture(&command,"ap 1 63");
+    CHECK(kernel_ps2_shell_execute(&command,&status) == 1 && strstr(output,"SHELL_AP_UNAVAILABLE"));
+    fixture(&command,"ap 100000000 63");
+    CHECK(kernel_ps2_shell_execute(&command,&status) == 1 && strstr(output,"SHELL_AP_UNAVAILABLE"));
     fixture(&command,"exit"); CHECK(kernel_ps2_shell_execute(&command,&status) == 2);
     fixture(&command,"echo exit");
     CHECK(kernel_ps2_shell_execute(&command,&status) == 1 && strstr(output,"SHELL_ECHO: exit"));

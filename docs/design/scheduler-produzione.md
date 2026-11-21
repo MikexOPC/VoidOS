@@ -15,10 +15,10 @@ numero di task.
 
 | Pezzo | Dove | In produzione |
 |---|---|---|
-| Core Rust: stati, coda globale sotto lock, `current` per CPU, affinità | `kernel/scheduler/rust/` | Sì, usato dal BSP |
-| Preemption all'uscita dell'IRQ verso il dispatcher | `arch/x86/kernel/scheduler/`, `arch/x86/kernel/interrupts/return/` | Attiva nella sessione PS/2 sul BSP, anche fuori dalla finestra di attesa |
-| Dispatcher sugli AP, task concorrenti, preemption AP | `arch/x86/kernel/scheduler/batch/`, `arch/x86/kernel/scheduler/admission/` | Solo diagnostici `KERNEL_TEST_AP_*`. L'ordinaria offre il job fidato `ap <n>` su AP1 |
-| Timer LAPIC periodico | `arch/x86/kernel/scheduler/irq/preempt.c` | D1h posseduto dal runtime BSP, quanto nominale di 10 ms, attivo dopo `exit` e senza PS/2 |
+| Core Rust: stati, coda globale sotto lock, `current` per CPU, affinità | `kernel/scheduler/rust/` | Usato da BSP e AP |
+| Preemption all'uscita dell'IRQ verso il dispatcher | `arch/x86/kernel/scheduler/`, `arch/x86/kernel/interrupts/return/` | Attiva sui task BSP e AP nell'immagine ordinaria, anche fuori dalla finestra di attesa |
+| Dispatcher permanenti e job AP preemptive | `arch/x86/kernel/scheduler/remote/`, `arch/x86/kernel/scheduler/admission/` | `ap <n> [cpu]`, affinità fissa. La migrazione è la task successiva |
+| Timer LAPIC one-shot | `arch/x86/kernel/scheduler/irq/preempt.c` | D1h per CPU, quanto nominale di 10 ms con drenaggio e riarmo esplicito, attivo dopo `exit` e senza PS/2 |
 | Modello di esecuzione | Dispatcher BSP permanente | `exit` rilascia la sessione PS/2. Il dispatcher continua con attese HPET e interrupt attivi anche senza PS/2 |
 | Capacità | 8 task: coda, registro IRQ e canali Rust da 8; stack in 8 posizioni da 18 pagine nella tabella delle finestre (voci 320-463) | 8 |
 | Driver | console, PS/2, shell, watchdog presuppongono il BSP | BSP |
@@ -131,16 +131,23 @@ Il protocollo di risveglio deve coprire la pubblicazione di lavoro fra
 la selezione vuota e l'ingresso in attesa.
 
 Il job della shell conserva ownership e completamento propri. Il comando
-`ap <n>` mantiene il contratto su AP1. Il suo cleanup attende la restituzione
+`ap <n>` mantiene il contratto su AP1. `ap <n> <cpu>` seleziona un altro AP
+ammesso, con affinità fissa. Il parser accetta da 1 a 100.000.000 iterazioni
+e rifiuta CPU zero, indici fuori capacità e argomenti aggiuntivi.
+Il suo cleanup attende la restituzione
 del contesto al dispatcher prima di raccogliere stack e generazione.
 `exit` raccoglie i job della sessione dopo quiescenza. Il runtime AP conserva
 i propri riferimenti anche dopo il rilascio del binding di notifica PS/2.
 Il mapping dello stack viene propagato prima di pubblicare il task READY.
-Dopo EXIT, AP1 restituisce il contesto al dispatcher, azzera corrente e
+Dopo EXIT, l'AP restituisce il contesto al dispatcher, azzera corrente e
 generazione locali e pubblica la generazione in `Quiesced` con release.
 Il BSP la acquisisce prima di raccogliere stack e task. L'admission AP
-resta RUNNING fra i job e dopo `exit`. I job AP1 sono ancora a IF=0,
-in attesa della task di preemption ordinaria.
+resta RUNNING fra i job e dopo `exit`. Il bootstrap del job valida i
+metadati a IF=0 e abilita gli interrupt prima del calcolo.
+Il BSP raccoglie il completamento dal servizio ordinario dopo dispatch
+e risveglio HPET, quindi pubblica l'evento della shell. Il timeout del job
+misura un secondo senza ripresa del task AP. La somma e il checksum
+hanno un numero finito di iterazioni definito dall'argomento validato.
 
 Gli stati per CPU sono preparato, attivo e guasto. Un errore prima della
 pubblicazione consente rollback delle risorse ancora private. Dopo
@@ -179,7 +186,7 @@ La migrazione completa della build rimane un lavoro separato.
 3. Runtime AP permanente fatto. Admission e autorità indipendenti
    dal singolo job, motore continuo sulla CPU chiamante e job AP1 mantenuto.
    Cinque suite host, 25 boot ordinari e 30 minuti di stress superati.
-4. Preemption AP ordinaria. Stato e timer locali, frame di task generico,
+4. Preemption AP ordinaria fatta. Stato e timer locali, frame di task generico,
    salvataggio e ritorno attraverso il dispatcher. Prove host, dieci boot
    e stress con lavoro che procede senza yield volontari.
 5. Selezione senza affinità fissa e chiusura. Verificare pubblicazione,
@@ -193,12 +200,97 @@ e quali sono in idle. La disponibilità di uno
 slot non può produrre un risultato fittizio quando la capacità è esaurita.
 Ogni task registra l'immagine provata e lo stato delle prove su PC fisico.
 
+La task 4 è fatta. La policy di preemption usa record separati per CPU.
+Ogni AP calibra il LAPIC contro il clock PM già validato, con gli stessi
+campioni e criteri di consenso del BSP. Il timer D1h appartiene al runtime
+permanente e resta attivo in idle e dopo `exit`. I task partono a IF=1.
+Il percorso IRQ valida stack, frame, task e generazione, completa EOI e
+sospende il contesto prima di FXRSTOR/IRETQ. La ripresa ritorna nel medesimo
+task. L'output seriale resta un servizio BSP. Le prove usano il lavoro di
+somma e checksum del comando `ap`, senza yield volontari nel calcolo.
+
+Il lock globale autentica CPU e dispatcher prima di prenotare il ticket.
+A IF=0, il controllo dentro il lock verifica GS, guard e frame di ownership.
+La release usa lo stesso guard. Le verifiche hardware complete precedono
+la sezione che protegge la coda Rust. L'attesa distingue l'avanzamento
+di `Serving` dall'assenza di progresso, con un nuovo budget a ogni cambio
+di proprietario. Il candidato runtime usa un secondo e un milione di poll
+per ticket servito fermo, senza cancellare ticket già prenotati. Il clock
+viene campionato ogni 64 poll. La scadenza può essere osservata fino a
+63 poll dopo il superamento. Il budget di 100 ms apparteneva al bring-up.
+
 Il confronto con xv6 riguarda il dispatcher per CPU e la separazione fra
 corrente e contesto dello scheduler. Il timer locale segue Intel SDM
 Vol. 3A, §12.5.4 nella revisione 253668-085US. Le citazioni §11.5.4 dei
 sorgenti esistenti si riferiscono alle revisioni precedenti.
 [xv6, scheduler](https://github.com/mit-pdos/xv6-riscv/blob/riscv/kernel/proc.c),
 [Intel SDM](https://cdrdv2-public.intel.com/835754/253668-sdm-vol-3a.pdf).
+
+### Task 4, perdita di input sotto carico
+
+Indagine del 21 novembre 2026, conclusa con la task 4. Sull'immagine ordinaria
+`7B5AB7C9` a otto CPU il comando `ap 100000000 4` perde uno zero.
+Il trace contiene 342 byte prodotti e 337 letti dal guest. La ricostruzione
+della FIFO da 16 byte coincide con tutte le letture e individua cinque
+byte scartati. Il dump della sessione conferma la riga incompleta, senza
+errori del device o risincronizzazioni del decoder.
+
+Durante il riempimento arrivano ripetuti IRQ D1h allo stesso RIP del
+checkpoint dell'audit. L'IRQ 41h della tastiera arriva dopo il riempimento.
+Il trace indica starvation del vettore inferiore durante il carico del
+timer periodico. Le prove con drenaggio e riarmo one-shot verificano
+la consegna dei byte nello stesso scenario.
+
+L'utente approva A il 21 novembre 2026.
+
+- **A, timer one-shot con riarmo esplicito, consigliata.** Il runtime
+  per CPU conserva mapping, calibrazione e binding D1h. Un quanto nominale
+  di 10 ms viene armato dopo le verifiche di avvio o ripresa del task,
+  appena prima di ripristinare IF, e al ritorno dall'IRQ dopo il lavoro
+  del relativo percorso. Anche l'idle riabilita il proprio
+  timer. Un task sospeso non deve lasciare senza timer il task successivo.
+  Pausa, drenaggio, bridge e chiusura impediscono il riarmo fino alla
+  ripresa autorizzata del runtime. Un errore di programmazione del timer
+  arresta il kernel con motivo. La modifica richiede verificare tutti i
+  passaggi fra task, dispatcher e IRQ sul BSP e sugli AP.
+- **B, timer periodico con riduzione del costo del percorso IRQ.** Si
+  rivedono validazioni e accessi LAPIC per contenere il costo di ogni tick.
+  La verifica deve dimostrare che il carico non mantiene D1h pendente
+  abbastanza a lungo da affamare gli IRQ dei device.
+
+Il primo tentativo armava prima del context switch. La verifica di
+ripresa poteva consumare il quanto a IF=0 e lasciare D1h già pendente
+alla riapertura degli IRQ. Il candidato successivo arma dopo quelle
+verifiche nei percorsi di avvio, yield, evento, IRQ e riga seriale.
+La ricarica del contatore lascia però intatto un tick già pendente.
+Il riarmo deve prima marcare il timer fermo, mascherarlo e drenare
+IRR/ISR con il percorso esistente, poi avviare il nuovo quanto e
+pubblicare lo stato attivo. Durante il drenaggio il vecchio IRQ riceve
+EOI e incrementa le consegne, con la preemption sospesa. Il timeout
+del job AP ricontrolla progresso e quiescenza dopo aver letto il clock
+di scadenza, coprendo l'avanzamento concorrente all'osservazione.
+Il runner attende entro la propria deadline quando la fotografia trova
+`Open=1, Running=0` durante il drenaggio. Poi richiede lo stato attivo e
+gli invarianti di ownership. Un drenaggio che resta fermo fa fallire la
+prova.
+
+Per A, l'LVT a offset 320h usa il vettore D1h, bit 16 di maschera e
+modalità 00b nei bit 18:17. Il bit 18 riservato resta zero sulle CPU prive
+di TSC-deadline. Initial Count a 380h è R/W e avvia il conteggio, Current
+Count a 390h è R/O. Le capacità APIC e la mappatura sono quelle già
+validate dal runtime. Letture di conferma e gestione dei bit riservati
+seguono le API LAPIC esistenti. Riferimento Intel SDM Vol. 3A,
+§11.5.4 e §11.5.4.1 nella revisione 253668-082US.
+[Intel SDM](https://cdrdv2-public.intel.com/812386/253668-sdm-vol-3a.pdf).
+
+La capacità effettiva della FIFO e lo scarto a coda piena sono dichiarati
+nel sorgente della versione QEMU impiegata.
+[QEMU 11.1.0, PS/2](https://github.com/qemu/qemu/blob/v11.1.0/hw/input/ps2.c).
+
+Test host, boot e stress dell'immagine ordinaria chiudono la task,
+con input concorrente e confronto fra byte prodotti e letti. Sono
+verificati preemption su ogni AP, servizio dei device, memoria stabile,
+bridge, `exit` e idle senza PS/2. Nessuna prova su PC fisico eseguita.
 
 ## Alternative S1 e S2
 

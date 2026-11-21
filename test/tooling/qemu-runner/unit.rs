@@ -3,15 +3,68 @@ use qemu_runner_core::evidence::results::{Value, object, render};
 use qemu_runner_core::evidence::serial::{SerialLog, split_lines, strip_ansi};
 use qemu_runner_core::evidence::sha256::hash_bytes;
 use qemu_runner_core::evidence::trace;
-use qemu_runner_core::scenario::ordinary::{dispatcher_evidence, parse_cr4, parse_memory, parse_register, preemption_evidence};
+use qemu_runner_core::scenario::ordinary::{dispatcher_evidence, input_prefix_valid, parse_cr4, parse_memory, parse_register, preemption_evidence, writable_image_ranges};
 use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, arguments};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+// ====== ps2_fifo_detects_transport_loss ======
+
+#[test]
+fn ps2_fifo_detects_transport_loss() {
+    let input = "pckbd_kbd_read_data 0xfa\ninput_event_key_qcode con -1, key qcode b, down 1\n";
+    let byte = "ps2_put_keycode device keycode 0x32\n";
+    let read = "pckbd_kbd_read_data 0x32\n";
+    let valid = format!("{input}{byte}{read}pckbd_kbd_read_data 0xfa\n");
+    assert_eq!(trace::ps2_fifo(valid.as_bytes()).unwrap(),(1,1,1));
+    for invalid in [
+        String::new(),
+        format!("{input}{byte}"),
+        format!("{input}{byte}pckbd_kbd_read_data 0x33\n"),
+        format!("{input}{}",byte.repeat(17)),
+        format!("{input}ps2_put_keycode malformed\n"),
+    ] {
+        assert!(trace::ps2_fifo(invalid.as_bytes()).is_err());
+    }
+    let full = format!("{input}{}{}",byte.repeat(16),read.repeat(16));
+    assert_eq!(trace::ps2_fifo(full.as_bytes()).unwrap(),(16,16,16));
+}
 
 // ====== strings ======
 
 fn strings(items: &[&str]) -> Vec<String> {
     items.iter().map(|item| item.to_string()).collect()
+}
+
+// ====== input_capture_detects_missing_first_character ======
+
+#[test]
+fn input_capture_detects_missing_first_character() {
+    let pending = SerialLog::parse(b"PS2_UNICODE: 0x0000000000000078\nPS2_UNICODE: 0x0000000000000062\n");
+    assert!(input_prefix_valid(&pending,"bridge status",1));
+    let missing = SerialLog::parse(b"PS2_UNICODE: 0x0000000000000078\nPS2_UNICODE: 0x0000000000000072\n");
+    assert!(!input_prefix_valid(&missing,"bridge status",1));
+    assert!(!input_prefix_valid(&pending,"",1));
+    assert!(!input_prefix_valid(&pending,"bridge status",3));
+}
+
+// ====== image_capture_requires_bounded_writable_load_segments ======
+
+#[test]
+fn image_capture_requires_bounded_writable_load_segments() {
+    let mut bytes = vec![0u8;120];
+    bytes[..6].copy_from_slice(b"\x7fELF\x02\x01");
+    bytes[32..40].copy_from_slice(&64u64.to_le_bytes());
+    bytes[54..56].copy_from_slice(&56u16.to_le_bytes());
+    bytes[56..58].copy_from_slice(&1u16.to_le_bytes());
+    bytes[64..68].copy_from_slice(&1u32.to_le_bytes());
+    bytes[68..72].copy_from_slice(&6u32.to_le_bytes());
+    bytes[80..88].copy_from_slice(&0xffffffff80000000u64.to_le_bytes());
+    bytes[104..112].copy_from_slice(&8192u64.to_le_bytes());
+    assert_eq!(writable_image_ranges(&bytes),Some(vec![(0xffffffff80000000,8192)]));
+    assert_eq!(writable_image_ranges(&bytes[..119]),None);
+    bytes[104..112].copy_from_slice(&u64::MAX.to_le_bytes());
+    assert_eq!(writable_image_ranges(&bytes),None);
 }
 
 // ====== sha256_matches_standard_vectors ======

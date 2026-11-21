@@ -56,6 +56,13 @@ pub extern "C" fn kernel_ps2_shell_count(word: u64, length: u32) -> u64 {
     command::count(word, length)
 }
 
+// ====== kernel_ps2_shell_number ======
+
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_ps2_shell_number(low: u64, high: u64, length: u32) -> u64 {
+    command::number(low,high,length)
+}
+
 // ====== kernel_ps2_queue_plan ======
 
 #[unsafe(no_mangle)]

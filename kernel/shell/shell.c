@@ -94,17 +94,42 @@ static int echo_private(const char *data, uint32_t length) {
         video_private(prefix,sizeof(prefix) - 1) && video_private(data,length) && video_private("\n",1);
 }
 
+// ====== decimal_private ======
+
+static uint64_t decimal_private(const char *text, uint32_t length) {
+    uint64_t low = 0, high = 0;
+    if (length > 9)
+        return UINT64_MAX;
+    for (uint32_t index = 0; index < length; ++index) {
+        if (index < 8)
+            low |= (uint64_t)(uint8_t)text[index] << (index * 8);
+        else
+            high = (uint8_t)text[index];
+    }
+    return kernel_ps2_shell_number(low,high,length);
+}
+
 // ====== remote_private ======
 
 static int remote_private(const char *text, uint32_t length)
 {
-    uint64_t word = 0, value, result[4] = {0};
-    for (uint32_t index = 0; index < length && index < 8; ++index)
-        word |= (uint64_t)(uint8_t)text[index] << (index * 8);
-    value = length <= 8 ? kernel_ps2_shell_count(word,length) : UINT64_MAX;
-    if (value == UINT64_MAX) return LOG(2,"SHELL_BAD_ARGUMENTS");
+    uint64_t value, cpu = 1, result[4] = {0};
+    uint32_t first = 0;
+    while (first < length && text[first] != ' ')
+        ++first;
+    value = decimal_private(text,first);
+    if (first < length) {
+        uint32_t start = first + 1;
+        cpu = decimal_private(text + start,length - start);
+    }
+    if (value == UINT64_MAX ||
+        cpu >= 64
+    )
+        return LOG(2,"SHELL_BAD_ARGUMENTS");
 #ifdef KERNEL_AP_TASKS
-    if (!kernel_shell_remote(value,result)) return LOG(2,"SHELL_AP_FAILED");
+    if (!kernel_shell_remote_on((uint32_t)cpu,value,result)
+    )
+        return LOG(2,"SHELL_AP_FAILED");
     return NUMBER("SHELL_AP_CPU: ",result[0]) && NUMBER("SHELL_AP_COUNT: ",value) &&
         NUMBER("SHELL_AP_SUM: ",result[1]) && NUMBER("SHELL_AP_CHECKSUM: ",result[2]) &&
         NUMBER("SHELL_AP_WAITS: ",result[3]);
@@ -137,7 +162,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     kind = kernel_ps2_shell_classify(word,end - start,argument != line->Length);
     if (kind == UINT32_MAX) return 0;
     if (!kind) return LOG(1,"SHELL_EMPTY");
-    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | ap <n> | exit");
+    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | ap <n> [cpu] | exit");
     if (kind == 2) return echo_private(line->Data + argument,line->Length - argument);
     if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, kernel tasks") &&
         NUMBER("SHELL_INPUT_BYTES: ",status->Bytes) && NUMBER("SHELL_INPUT_KEYS: ",status->Keys) &&

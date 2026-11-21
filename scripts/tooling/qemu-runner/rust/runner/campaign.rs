@@ -59,6 +59,8 @@ fn report_boots(results: &[Value], total: u32) {
 // ====== run ======
 
 pub fn run(campaign: &Campaign) -> Result<bool, String> {
+    let image = hash_file(campaign.image).map_err(|error| format!("Image hash: {error}"))?;
+    let loader = hash_file(&campaign.paths.loader).map_err(|error| format!("Loader hash: {error}"))?;
     let mut results = Vec::new();
     for index in 1..=campaign.boots {
         let directory = campaign.out.join(format!("boot-{index}"));
@@ -76,7 +78,16 @@ pub fn run(campaign: &Campaign) -> Result<bool, String> {
             &campaign.plan,
             campaign.limits,
             campaign.negative,
-        );
+        ).and_then(|value| {
+            let boot = directory.join("esp/EFI/BOOT");
+            for (name,expected) in [("kernel.elf",&image),("BOOTX64.EFI",&loader)] {
+                let actual = hash_file(&boot.join(name)).map_err(|error| format!("Boot artifact {name}: {error}"))?;
+                if &actual != expected {
+                    return Err(format!("Boot artifact {name} differs from campaign image"));
+                }
+            }
+            Ok(value)
+        });
         match outcome {
             Ok(value) => results.push(value),
             Err(error) => {
@@ -87,8 +98,6 @@ pub fn run(campaign: &Campaign) -> Result<bool, String> {
     }
     let passed = results.iter().filter(|result| failure_text(result).is_none()).count() as u64;
     let total = u64::from(campaign.boots);
-    let image = hash_file(campaign.image).map_err(|error| format!("Image hash: {error}"))?;
-    let loader = hash_file(&campaign.paths.loader).map_err(|error| format!("Loader hash: {error}"))?;
     let name = if campaign.ordinary { "k6-ordinary" } else if campaign.process { "k6-process" } else { RUNNER };
     let report = object(vec![
         ("Runner", Value::Text(name.to_string())),

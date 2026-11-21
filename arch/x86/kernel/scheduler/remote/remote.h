@@ -11,7 +11,7 @@
 typedef struct {
     uint64_t       Self, Root, Generation;
     uint64_t       Argument, Result[4];
-    uint64_t       Started, Done, EventSource, EventBinding, State, Quiesced;
+    uint64_t       ProgressAt, Progress, Done, EventSource, EventBinding, State, Quiesced;
     uint32_t       Cpu, Index, Failure, Event, Jobs, Reserved;
     X86_TASK_ENTRY Entry;
 } X86_REMOTE;

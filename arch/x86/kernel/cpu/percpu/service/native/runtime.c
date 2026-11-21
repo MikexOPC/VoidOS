@@ -6,6 +6,7 @@
 #include "arch/x86/kernel/stack/main.h"
 #ifdef KERNEL_AP_TASKS
 #include "arch/x86/kernel/scheduler/integration/local.h"
+#include "arch/x86/kernel/scheduler/irq/preempt.h"
 #endif
 #if KERNEL_TEST_AP_SERVICE == 9
 #include "arch/x86/kernel/scheduler/batch/batch.h"
@@ -157,7 +158,9 @@ static void timer_interrupt(uint32_t index)
 // ====== xis_irq_after ======
 
 void xis_irq_after(const X86_IRQ_FRAME *frame) {
-#ifdef KERNEL_TEST_AP_PREEMPTION
+#ifdef KERNEL_AP_TASKS
+    x86_preempt_after(frame);
+#elif defined(KERNEL_TEST_AP_PREEMPTION)
     xat_preempt_after(frame);
 #else
     (void)frame;
@@ -184,6 +187,9 @@ int xis_irq_frame_valid(const X86_IRQ_FRAME *frame) {
         x86_irq_saved_area(address,X86_AP_STACK_FLOOR(index),top) == 1) {
         valid = frame->Rsp < top - XIS_IDLE_FRAME_BYTES &&
             xis_task_return_valid(address,frame->Rsp,frame->Cs,frame->Flags,frame->Ss) == 1;
+    }
+    if (!valid && index && !ks_irq_state() && local && local->phase == 2) {
+        valid = x86_preempt_task_frame_valid(frame);
     }
 #endif
 #if KERNEL_TEST_AP_SERVICE == 9
