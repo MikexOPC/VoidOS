@@ -41,6 +41,7 @@ static KERNEL_EVENT_REPLY *event_replies = fallback_replies;
 static X86_TASK_ENTRY *task_entries = fallback_entries;
 static void *rust_storage;
 static uint64_t rust_storage_bytes;
+static uint32_t core_upgraded;
 static uint32_t irq_profile;
 static const X86_SCHEDULER_PROFILE *active_profile;
 static KERNEL_PHYSICAL_ALLOCATOR *saved_pool;
@@ -409,7 +410,8 @@ KERNEL_EVENT_REPLY x86_scheduler_event_request(uint32_t reason, uint32_t id, uin
 void x86_scheduler_task_start(void)
 {
     X86_SCHEDULER_LOCAL *local = local_private();
-    X86_TASK_ENTRY entry = local->current < 8 ? task_entries[local->current] : NULL;
+    uint32_t index = local->current;
+    X86_TASK_ENTRY entry = index < scheduler_capacity ? task_entries[index] : NULL;
     if (!x86_scheduler_task_valid() || local->event || !entry || !x86_scheduler_code_valid((uint64_t)(uintptr_t)entry))
         kernel_scheduler_fail_stop();
 #if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
@@ -422,7 +424,7 @@ void x86_scheduler_task_start(void)
         kernel_preempt_section_leave(0x200);
     }
 #endif
-    entry(local->current);
+    entry(index);
 #if !defined(KERNEL_TEST_SCHEDULER_FAULT) || KERNEL_TEST_SCHEDULER_FAULT != 6
     x86_scheduler_exit();
 #endif
@@ -591,6 +593,10 @@ int kernel_scheduler_run(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
     continuous = irq_profile == 5 && x86_ps2_session()->Persistent;
     if (continuous && !x86_ps2_session()->Active) task_count = 0;
 #endif
+    if (irq_profile && !core_upgraded && rust_storage && scheduler_capacity > X86_TASK_STACK_SLOTS) {
+        init_core_private();
+        core_upgraded = 1;
+    }
     if (!irq_profile) {
         init_core_private();
         saved_pool = pool; saved_root = root;

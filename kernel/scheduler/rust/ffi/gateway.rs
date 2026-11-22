@@ -188,7 +188,10 @@ pub unsafe extern "C" fn kernel_scheduler_init_storage(buffer: *mut u8, bytes: u
     if !context_valid_on(0) { return reply(10); }
     // SAFETY: the core_lock guard owns Storage; no callbacks during this borrow.
     let storage = unsafe { &mut *STORAGE.0.get() };
-    if storage.is_some() { return reply(13); }
+    if let Some(existing) = storage.as_ref()
+        && (!existing.is_pristine() || (capacity as usize) <= existing.capacity()) {
+        return reply(13);
+    }
     let Ok(bytes) = usize::try_from(bytes) else { return reply(12); };
     // SAFETY: the caller contract above; from_storage validates before touching the buffer.
     match unsafe { Owner::from_storage(buffer, bytes, capacity as usize) } {

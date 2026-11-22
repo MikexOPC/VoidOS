@@ -47,8 +47,11 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   milione di poll. La task 5 (selezione senza affinità fissa e migrazione
   tra le CPU ammesse) è fatta; il rendering della console spezza la sezione
   a interrupt spenti per singola cella, azzerando gli overflow della FIFO
-  PS/2 sotto carico. Restano otto
-  task. Il registro IRQ copre 222 vettori sottoscrivibili per CPU.
+  PS/2 sotto carico. Il limite fisso a otto task è stato rimosso: il core
+  Rust e il backend x86 supportano 64 task (fino a 256 nel core Rust) con
+  tabelle allocate su `kernel_heap()` e quattro PT dedicate per gli stack
+  con guard page nello slot heap (`ap <n> [cpu|auto] [tasks]`). Il registro
+  IRQ copre 222 vettori sottoscrivibili per CPU.
   I record IRQ delle 64 CPU del bootstrap riservano 568 KiB nell'immagine.
   L'heap è limitato a 16 MiB e c'è
   un solo processo attivo alla volta.
@@ -74,17 +77,20 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Task 5 (selezione e migrazione), Meson `ordinary`, kernel SHA-256
-`53F4FFD226CC5CD3F83CB0798F4616420EFC2088FD3C89374AF7005FDA710AF3`,
+Capacità oltre 8 task (64 task su heap + batch simultanei), Meson `ordinary`,
+kernel SHA-256
+`DC4ECB82F9035FFF61251EAFE09C2D51076AF302156883894009A46D8A3E04AF`,
 loader SHA-256
 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
-QEMU/OVMF TCG/q35, 8 vCPU: stress PASS con 30 minuti di shell e 30 dopo
-`exit`, 235 job completati (67 migrati, 261 migrazioni, tutte le 8 CPU
-visitate e migranti), 21.162 byte PS/2 prodotti e letti, picco FIFO 3,
-7.001 sospensioni BSP (6.988 fuori finestra), zero sforamenti e 15.813
-pagine libere stabili. Smoke shell 1/1 a 4 vCPU e 21/21 test unitari del
-runner dopo la correzione del rendering console; otto suite host e 10 boot
-a 4 vCPU (80 job, 57 migrazioni) superati prima della correzione a `group.c`.
+QEMU/OVMF TCG/q35: 10/10 boot `--ordinary-shell` a 4 vCPU (`FreePages: 16016`
+stabili) e 3/3 boot a 8 vCPU (`FreePages: 15804` stabili), ciascuno con
+`ap 1000000 auto 16` (20 task vivi contemporaneamente, `SHELL_AP_MAX_INDEX = 19`,
+oltre il vecchio limite 8 e oltre il confine di PT a 16, somma e checksum
+verificati su tutti i 16 task e cleanup completo delle 256 pagine di stack).
+Test host Rust dello scheduler 54/54 PASS (capacità fino a 256, `clippy` 0
+warning) e `qemu_runner_unit` 21/21 PASS. Stress lungo da 30 minuti su questa
+nuova immagine e hardware fisico non ancora eseguiti (lo stress da 60 minuti
+è stato superato sulla task 5 precedente `53F4FFD2`).
 [Risultati, immagini e limiti](validation/consolidamento.md#cpu-e-scheduler).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni

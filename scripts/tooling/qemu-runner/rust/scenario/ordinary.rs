@@ -232,6 +232,8 @@ fn ap_dispatchers(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
         return Err("Invalid permanent AP dispatcher storage".to_string());
     }
     let mut minimum_idle = u64::MAX;
+    let has_batch = !log.numbers("SHELL_AP_TASKS").is_empty();
+    let mut total_completed = 0u64;
     for cpu in 1..cpus {
         let deadline = Instant::now() + CR4_DEADLINE;
         loop {
@@ -244,15 +246,18 @@ fn ap_dispatchers(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
         let address = base.checked_add(stride * u64::from(cpu)).ok_or("AP storage overflow")?;
         let words = read_memory(vm,address,(stride / 8) as usize)?;
         let completed = words[74] >> 32;
+        let expected_cpu = log.numbers("SHELL_AP_CPU").iter().filter(|owner| **owner == u64::from(cpu)).count() as u64;
+        let count_ok = if has_batch { completed >= expected_cpu } else { completed == expected_cpu };
         if words[78] != 0 || words[80] != 0xffff_ffff_0000_0001 || words[81] != 0 ||
-            words[82] != address || words[83] == 0 || words[85] != 1 ||
-            completed != log.numbers("SHELL_AP_CPU").iter().filter(|owner| **owner == u64::from(cpu)).count() as u64 {
+            words[82] != address || words[83] == 0 || words[85] != 1 || !count_ok {
             return Err(format!("AP {cpu} lost its permanent dispatcher or job ownership"));
         }
+        total_completed += completed;
         minimum_idle = minimum_idle.min(words[84]);
     }
     Ok(object(vec![("Cpus",Value::Number(u64::from(cpus - 1))),
-        ("CompletedJobs",Value::Number(jobs)),("MinimumIdleCycles",Value::Number(minimum_idle))]))
+        ("CompletedJobs",Value::Number(if has_batch { total_completed } else { jobs })),
+        ("MinimumIdleCycles",Value::Number(minimum_idle))]))
 }
 
 // ====== ap_preemption ======
@@ -306,14 +311,16 @@ pub fn migration_evidence(log: &SerialLog, cpus: u32) -> Result<Value,String> {
     if [counts.len(),checksums.len(),visits.len(),migrations.len()].iter().any(|length| *length != owners.len()) {
         return Err("Incomplete migration job records".to_string());
     }
+    let batch_record = !log.numbers("SHELL_AP_TASKS").is_empty();
     let mut checks = std::collections::BTreeMap::new();
     let (mut total,mut migrated_jobs,mut visited,mut migrating_cpus) = (0,0,0,0);
     for index in 0..owners.len() {
         let mask = visits[index];
         let moves = migrations[index];
+        let is_batch = batch_record && index + 1 == owners.len();
         if owners[index] >= u64::from(cpus) || mask == 0 || mask & !allowed != 0 ||
             mask & (1u64 << owners[index]) == 0 ||
-            moves < u64::from(mask.count_ones() - 1) || (mask.count_ones() == 1 && moves != 0) {
+            (!is_batch && moves < u64::from(mask.count_ones() - 1)) || (mask.count_ones() == 1 && moves != 0) {
             return Err(format!("Invalid native task migration at job {index}"));
         }
         if let Some(expected) = checks.insert(counts[index],checksums[index]) {
@@ -450,6 +457,13 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         let log = vm.wait_field("SHELL_AP_SUM",expected_cpus.len() + 1)?;
         expected_cpus.push(log.number("SHELL_AP_CPU",expected_cpus.len())?);
         expected_counts.push(100_000_000);
+        shell_type(vm,"ap 1000000 auto 16")?;
+        let log = vm.wait_field("SHELL_AP_SUM",expected_cpus.len() + 1)?;
+        if log.number("SHELL_AP_TASKS", 0)? != 16 || log.number("SHELL_AP_MAX_INDEX", 0)? < 16 {
+            return Err("Batch of 16 simultaneous tasks did not exceed the old 8-task and 16-slot PT bounds".to_string());
+        }
+        expected_cpus.push(log.number("SHELL_AP_CPU",expected_cpus.len())?);
+        expected_counts.push(1_000_000);
     }
     let jobs = expected_cpus.len() as u64;
     shell_type(vm, "status")?;

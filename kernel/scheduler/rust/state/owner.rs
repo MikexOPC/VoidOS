@@ -581,6 +581,19 @@ impl Owner {
         if !self.validate() { return Err(Error::Corrupt); }
         Ok((self.ready.len() as u32, self.events))
     }
+
+    // ====== owner_is_pristine ======
+
+    // True only when no mutation has ever occurred and capacity can still be upgraded before use.
+    pub fn is_pristine(&self) -> bool {
+        self.validate() && self.events == 0 && self.cpus == 1 && self.lot.is_none() &&
+            self.ready.len() == 0 && self.current.iter().all(Option::is_none) &&
+            self.slots.iter().all(|slot| slot.state == State::Free && slot.generation == 0)
+    }
+
+    // ====== owner_capacity ======
+
+    pub fn capacity(&self) -> usize { self.capacity }
 }
 
 #[cfg(test)]

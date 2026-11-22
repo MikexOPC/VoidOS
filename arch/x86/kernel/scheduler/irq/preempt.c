@@ -331,7 +331,7 @@ int x86_preempt_task_frame_valid(const X86_IRQ_FRAME *frame) {
     X86_SCHEDULER_LOCAL *local = x86_scheduler_local_current();
     if (!local ||
         !cpu_private() ||
-        local->current >= X86_TASK_STACK_SLOTS ||
+        local->current >= x86_scheduler_capacity() ||
         !x86_scheduler_task_valid()
     )
         return 0;

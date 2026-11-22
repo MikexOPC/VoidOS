@@ -570,6 +570,37 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   presente nel PATH dell'ambiente) e hardware fisico non verificato.
   Restano capacità (rimozione limite 8 task) e prove su PC fisico.
 
+- **Capacità scheduler oltre 8 task, 22 novembre 2026. Fatta (stress lungo da ripetere).**
+  Il core Rust (`kernel/scheduler/rust/state/`) passa a buffer esterno a
+  doppio bank (`MIN_CAPACITY = 8`, `MAX_CAPACITY = 256`, `STORAGE_ALIGN = 8`,
+  `transaction()` O(1) stack). Il backend x86 alloca su `kernel_heap()` 64
+  slot (`x86_task_stacks`, `x86_task_contexts`, `event_replies`, `task_entries`,
+  `bindings` e storage Rust), aggiunge 4 PT dedicate per 64 stack con guard
+  page nello slot heap (`X86_HEAP_TABLES = 14`, `X86_AP_TAG = 64`), estende
+  `X86_WATCHDOG_LOANS` a 64 e aggiunge `ap <n> [cpu|auto] [tasks]` (fino a
+  32 task simultanei).
+  Difetti reali trovati e corretti durante la validazione dal vivo con 16
+  task simultanei: (1) ordine di boot tra `kernel_scheduler_prepare` (pre-heap)
+  e `x86_heap_kernel_start` risolto con upgrade one-shot `8 -> 64` su owner
+  intonso (`is_pristine`); (2) tre controlli residui fissi a 8 rimossi in
+  `engine.c:131`, `kernel.c:413` e `preempt.c:334`; (3) race SMP in
+  `x86_scheduler_task_start` (`entry(local->current)` dopo `IF=1` leggeva il
+  `current` della vecchia CPU dopo migrazione, causando `REMOTE_BATCH_MISMATCH`
+  su 8 vCPU): corretto salvando `index` prima di abilitare gli interrupt.
+  Prove sull'immagine finale Meson `ordinary`, kernel SHA-256
+  `DC4ECB82F9035FFF61251EAFE09C2D51076AF302156883894009A46D8A3E04AF`,
+  loader SHA-256
+  `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`:
+  test host Rust `owner.rs` 54/54 PASS (inclusi 7 nuovi test fino a 256 task)
+  con `clippy` 0 warning; `qemu_runner_unit` 21/21 PASS; QEMU/OVMF TCG/q35
+  10/10 boot `--ordinary-shell` a 4 vCPU (`FreePages: 16016` stabili) e 3/3
+  boot a 8 vCPU (`FreePages: 15804` stabili), ciascuno con `ap 1000000 auto 16`
+  (20 task vivi contemporaneamente, `SHELL_AP_MAX_INDEX = 19`, cleanup di
+  tutte le 256 pagine di stack confermato).
+  Evidenze in `kernel/build/cap-task14-final-4` e `cap-task14-shell-8-v2`.
+  Non ancora eseguiti sull'immagine `DC4ECB82`: stress lungo da 30 minuti,
+  suite host PowerShell 7 (PowerShell 7 assente dal PATH) e hardware fisico.
+
 ## Build e runner
 
 | Passo | Risultato storico |

@@ -91,7 +91,7 @@ static int dispatch_private(uint32_t cpu, uint32_t retained, uint64_t group, uin
     int completed = 0;
     if (cpu >= 64 || kernel_scheduler_context_valid_on(cpu) != 1 || entered[cpu] ||
         !config || !stats || !config->run || !config->collect || !config->reply || !config->release_actor ||
-        (!config->task_count && !complete) || config->task_count > KERNEL_SCHEDULER_CAPACITY ||
+        (!config->task_count && !complete) || config->task_count > KERNEL_SCHEDULER_MAX_CAPACITY ||
         (!!complete != !!idle) || (complete && (group ||
             config->step_limit != X86_DISPATCH_UNLIMITED || config->idle_limit != X86_DISPATCH_UNLIMITED)) ||
         !limit_valid_private(config->step_limit, config->task_count, 65536U) ||
@@ -128,7 +128,7 @@ static int dispatch_private(uint32_t cpu, uint32_t retained, uint64_t group, uin
             continue; // SELECT again; a provider return is not proof of a READY task.
         }
         stats->failure = 3;
-        if (task.status != KERNEL_SCHEDULER_OK || task.index >= KERNEL_SCHEDULER_CAPACITY ||
+        if (task.status != KERNEL_SCHEDULER_OK || task.index >= KERNEL_SCHEDULER_MAX_CAPACITY ||
             !task.generation || task.state != KERNEL_TASK_RUNNING) goto failure;
         if (stats->steps != UINT32_MAX) ++stats->steps;
         stats->failure = 4;

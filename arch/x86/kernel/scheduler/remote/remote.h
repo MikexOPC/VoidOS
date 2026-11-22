@@ -8,12 +8,18 @@
 #define X86_REMOTE_DONE 4U
 #define X86_REMOTE_FAILED 5U
 #define X86_REMOTE_ANY UINT32_MAX
+#define X86_REMOTE_BATCH_MAX 32U
 
 typedef struct {
     uint64_t       Self, Root, Generation;
     uint64_t       Argument, Result[4], Allowed, Visits, Migrations;
     uint64_t       ProgressAt, Progress, Done, EventSource, EventBinding, State, Quiesced;
-    uint32_t       Cpu, Index, Failure, Event, Jobs, Reserved;
+    uint32_t       Cpu, Index, Failure, Event, Jobs, BatchCount;
+    uint32_t       MaxIndex, Reserved;
+    uint32_t       Indices[X86_REMOTE_BATCH_MAX];
+    uint64_t       Generations[X86_REMOTE_BATCH_MAX];
+    uint64_t       QuiescedBatch[X86_REMOTE_BATCH_MAX];
+    uint64_t       BatchResults[X86_REMOTE_BATCH_MAX][3];
     X86_TASK_ENTRY Entry;
 } X86_REMOTE;
 
@@ -22,10 +28,12 @@ typedef struct {
 int x86_remote_open(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, uint32_t event,
     uint64_t source, uint64_t binding);
 int x86_remote_request(uint32_t cpu, X86_TASK_ENTRY entry, uint64_t argument);
+int x86_remote_request_batch(uint32_t cpu, uint32_t count, X86_TASK_ENTRY entry, uint64_t argument);
 void x86_remote_service(void);
 uint32_t x86_remote_state(void);
 int x86_remote_take(uint64_t result[4]);
 int x86_remote_statistics(uint64_t result[2]);
+int x86_remote_batch_info(uint64_t result[2]);
 X86_REMOTE *x86_remote_job(void);
 int x86_remote_close(void);
 uint32_t x86_remote_jobs(void);
