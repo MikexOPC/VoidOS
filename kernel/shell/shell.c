@@ -2,7 +2,7 @@
 #include "kernel/diagnostics/log.h"
 #ifdef KERNEL_USER_PROCESS
 int kernel_shell_bridge_status(void);
-int kernel_shell_proc_run(uint64_t result[5]);
+int kernel_shell_proc_run(uint64_t result[6]);
 #endif
 static KERNEL_SHELL_OUTPUT output;
 static void *output_context;
@@ -206,7 +206,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     }
     if (kind == 9) {
 #ifdef KERNEL_USER_PROCESS
-        uint64_t proc_result[5] = {0};
+        uint64_t proc_result[6] = {0};
         if (!kernel_shell_proc_run(proc_result))
             return LOG(2,"SHELL_PROC_FAILED");
         return NUMBER("SHELL_PROC_SPAWNED: ",proc_result[0]) &&
@@ -214,6 +214,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
             NUMBER("SHELL_PROC_IPC_OK: ",proc_result[2]) &&
             NUMBER("SHELL_PROC_FAULT_VECTOR: ",proc_result[3]) &&
             NUMBER("SHELL_PROC_REAPED: ",proc_result[4]) &&
+            NUMBER("SHELL_PROC_AP_CPU: ",proc_result[5]) &&
             LOG(0,"SHELL_PROC_OK");
 #else
         return LOG(2,"SHELL_PROC_UNAVAILABLE");

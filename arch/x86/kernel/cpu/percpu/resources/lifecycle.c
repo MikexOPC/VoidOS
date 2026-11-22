@@ -116,7 +116,7 @@ int x86_ap_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window, con
 
     for (BOOT_U32 byte = 0; byte < sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
 
-    if (!capture(context, window->Pool, lapic, inventory) || !kernel_physical_budget_at_least(window->Pool, ((cpus - 1U) * 29U) + x86_ap_tables(cpus))) return 0;
+    if (!capture(context, window->Pool, lapic, inventory) || !kernel_physical_budget_at_least(window->Pool, ((cpus - 1U) * X86_AP_MAPPED_PAGES) + x86_ap_tables(cpus))) return 0;
 
     KERNEL_PHYSICAL_ALLOCATOR *pool = window->Pool;
 
@@ -126,7 +126,7 @@ int x86_ap_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window, con
     owner->Authority.Self = (BOOT_U64)&owner->Authority; owner->Authority.Root = cpu.Root;
     owner->Authority.Pat = cpu.Pat; owner->Authority.PhysicalBits = cpu.PhysicalBits; owner->Authority.Cpus = cpus;
 
-    if (!kernel_physical_allocate(pool, ((cpus - 1U) * 29U), &owner->Authority.Data)) goto rollback;
+    if (!kernel_physical_allocate(pool, ((cpus - 1U) * X86_AP_MAPPED_PAGES), &owner->Authority.Data)) goto rollback;
     owner->DataAllocated = 1;
     if (!kernel_physical_pin(pool, &owner->Authority.Data, 1)) goto rollback;
     owner->DataPinned = 1;

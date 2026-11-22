@@ -20,6 +20,7 @@ typedef struct {
 
 int x86_process_stack_prepare(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root);
 int x86_process_runtime_start(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer);
+int x86_process_ap_activate(void);
 int x86_process_runtime_ready(void);
 int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer);
 int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result);

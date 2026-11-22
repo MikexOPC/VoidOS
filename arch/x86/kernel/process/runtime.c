@@ -1,5 +1,5 @@
 #include "internal.h"
-#include "kernel/mm/physical/holdings.h"
+#include "arch/x86/kernel/cpu/percpu/resources/geometry.h"
 
 #ifdef KERNEL_TEST_K6_PROCESS
 volatile BOOT_U64 process_window, process_window_budget, process_negative = KERNEL_K6_NEGATIVE;
@@ -200,6 +200,37 @@ int x86_process_runtime_start(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     process_rt.Permanent = 1;
     process_rt.Opened = 1;
     return 1;
+}
+
+// ====== x86_process_ap_activate ======
+
+int x86_process_ap_activate(void)
+{
+    if (!x86_user_mode_allowed())
+        return 1;
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    if (!owner || !owner->Index || owner->Index >= X86_PERCPU_CAPACITY || !owner->Locks.Wait ||
+        __readmsr(MSR_GS_BASE) != (BOOT_U64)owner || (__readmsr(MSR_EFER) & EFER_SCE))
+        return 0;
+    BOOT_U64 syscall_base = X86_AP_SYSCALL_BASE(owner->Index);
+    BOOT_U64 syscall_top = X86_AP_SYSCALL_TOP(owner->Index);
+    X86_PROCESS_CPU *cpu = &x86_process_cpus[owner->Index];
+    for (BOOT_U32 index = 0; index < sizeof(*cpu); ++index) ((unsigned char *)cpu)[index] = 0;
+    cpu->KernelRoot = __readcr3();
+    cpu->SyscallTop = syscall_top;
+    cpu->Owner = (BOOT_U64)owner;
+    cpu->BudgetClock = &owner->Locks.Wait->Clock;
+    *(volatile BOOT_U64 *)syscall_base = STACK_CANARY;
+    if (!x86_percpu_bind_process_cpu(syscall_top, (BOOT_U64)cpu))
+        return 0;
+    // Intel SDM 3A §6.8.8: per-AP SYSCALL MSR setup matching BSP permanent configuration.
+    __writemsr(MSR_KERNEL_GS, 0);
+    __writemsr(MSR_STAR, STAR_VALUE);
+    __writemsr(MSR_LSTAR, (BOOT_U64)x86_process_syscall);
+    __writemsr(MSR_CSTAR, (BOOT_U64)x86_process_stop);
+    __writemsr(MSR_FMASK, FLAGS_MASK);
+    __writemsr(MSR_EFER, __readmsr(MSR_EFER) | EFER_SCE);
+    return (__readmsr(MSR_EFER) & EFER_SCE) != 0;
 }
 
 // ====== x86_process_open ======

@@ -8,6 +8,9 @@
 #include "arch/x86/kernel/scheduler/integration/local.h"
 #include "arch/x86/kernel/scheduler/irq/preempt.h"
 #endif
+#ifdef KERNEL_USER_PROCESS
+#include "arch/x86/kernel/process/process.h"
+#endif
 #if KERNEL_TEST_AP_SERVICE == 9
 #include "arch/x86/kernel/scheduler/batch/batch.h"
 #endif
@@ -78,6 +81,9 @@ uint32_t xis_native_enter(void *private_frame) {
         if (xis_mmio_read(offset) != X86_LVT_MASKED_IDLE) xis_native_abort(0x4b344950494c5602ULL);
     }
     if (!x86_irq_cpu_activate()) xis_native_abort(0x4b34495049494454ULL);
+#ifdef KERNEL_USER_PROCESS
+    if (!x86_process_ap_activate()) xis_native_abort(0x4b34495049535953ULL);
+#endif
     X86_KERNEL_IDTR actual;
     x86_exception_read_idt(&actual);
     for (uint32_t byte = 0; byte < sizeof(actual); ++byte)

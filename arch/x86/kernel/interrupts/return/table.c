@@ -261,6 +261,20 @@ static int frame_owner(const X86_IRQ_FRAME *frame)
             (BOOT_U64)frame == user_owner->SyscallTop - sizeof(*frame) &&
             frame->Rip < (1ULL << 47) && frame->Rsp < (1ULL << 47);
     }
+#ifdef KERNEL_USER_PROCESS
+    if (x86_process_in_syscall()) {
+        const X86_CPU_LOCAL *sys_owner = x86_percpu_current_local();
+        BOOT_U64 address = (BOOT_U64)frame;
+        if (sys_owner && sys_owner->SyscallTop) {
+            BOOT_U64 top = sys_owner->SyscallTop;
+            BOOT_U64 floor = top - X86_KERNEL_SYSCALL_BYTES;
+            if (address >= floor && address <= top - sizeof(*frame))
+                return x86_irq_saved_area(address, floor, top) &&
+                    frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= top &&
+                    frame->Rip >= X86_KERNEL_IMAGE_BASE && frame->Rip < X86_KERNEL_IMAGE_LIMIT;
+        }
+    }
+#endif
 #ifdef KERNEL_AP_RUNTIME
     const X86_CPU_LOCAL *owner = x86_percpu_current_local();
     if (!owner) return 0;
@@ -268,13 +282,6 @@ static int frame_owner(const X86_IRQ_FRAME *frame)
 #endif
     BOOT_U64 address = (BOOT_U64)frame;
     BOOT_U64 floor = X86_KERNEL_MAIN_BASE, top = X86_KERNEL_MAIN_TOP;
-#ifdef KERNEL_USER_PROCESS
-    if (x86_process_in_syscall() && address >= X86_KERNEL_SYSCALL_BASE &&
-        address <= X86_KERNEL_SYSCALL_TOP - sizeof(*frame)) {
-        floor = X86_KERNEL_SYSCALL_BASE;
-        top = X86_KERNEL_SYSCALL_TOP;
-    } else
-#endif
 #ifdef KERNEL_SCHEDULER_IRQ
     if (address < floor || address > top - sizeof(*frame)) {
         top = x86_scheduler_irq_stack_top(address);

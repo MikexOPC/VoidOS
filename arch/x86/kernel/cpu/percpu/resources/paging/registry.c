@@ -13,9 +13,9 @@ const X86_AP_AUTH *x86_ap_owner(void) { return registered; }
 static int auth_valid(const X86_AP_AUTH *owner)
 {
     return owner && owner->Self == (BOOT_U64)owner && owner->Ready == 1 && !owner->Reserved && owner->Cpus >= 2 && owner->Cpus <= 64 &&
-        owner->Data.Pages == (owner->Cpus - 1U) * 29U && owner->Tables.Pages == x86_ap_tables(owner->Cpus) && (owner->Pat & 255) == 6 &&
+        owner->Data.Pages == (owner->Cpus - 1U) * X86_AP_MAPPED_PAGES && owner->Tables.Pages == x86_ap_tables(owner->Cpus) && (owner->Pat & 255) == 6 &&
         owner->PhysicalBits >= 32 && owner->PhysicalBits <= 52 &&
-        !kernel_regions_overlap(owner->Tables.Base, x86_ap_tables(owner->Cpus), owner->Data.Base, (owner->Cpus - 1U) * 29U);
+        !kernel_regions_overlap(owner->Tables.Base, x86_ap_tables(owner->Cpus), owner->Data.Base, (owner->Cpus - 1U) * X86_AP_MAPPED_PAGES);
 }
 
 // ====== x86_ap_register ======
@@ -92,7 +92,7 @@ BOOT_U32 x86_ap_leaf(BOOT_U64 entry, BOOT_U64 address)
 
     BOOT_U64 physical = entry & 0x000ffffffffff000ULL;
 
-    return kernel_regions_overlap(physical, 1, owner->Data.Base, (owner->Cpus - 1U) * 29U) ||
+    return kernel_regions_overlap(physical, 1, owner->Data.Base, (owner->Cpus - 1U) * X86_AP_MAPPED_PAGES) ||
         kernel_regions_overlap(physical, 1, owner->Tables.Base, x86_ap_tables(owner->Cpus)) ? 0 : 1;
 }
 

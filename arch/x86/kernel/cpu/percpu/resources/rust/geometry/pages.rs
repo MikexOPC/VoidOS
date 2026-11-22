@@ -21,10 +21,11 @@ pub extern "C" fn xa_geometry_page(cpus: u32, page: u64) -> u32 {
         19..=22 => local - 3,
         25..=28 => local - 5,
         31..=34 => local - 7,
-        48 => 28,
+        37..=40 => local - 9,
+        48 => 32,
         _ => return u32::MAX,
     };
-    ((cpu - 1) * 29 + offset) as u32
+    ((cpu - 1) * 33 + offset) as u32
 }
 
 // ====== tests ======
@@ -35,14 +36,14 @@ mod tests {
     #[test]
     fn all_cpu_and_page_bounds() {
         for cpus in 1..=64 {
-            let mut seen = [false; 1827];
+            let mut seen = [false; 2079];
             for page in 0..4096 {
                 let value = xa_geometry_page(cpus, page);
                 if value != u32::MAX {
                     assert!(!seen[value as usize]); seen[value as usize] = true;
                 }
             }
-            assert_eq!(seen.iter().filter(|&&v| v).count(), ((cpus - 1) * 29) as usize);
+            assert_eq!(seen.iter().filter(|&&v| v).count(), ((cpus - 1) * 33) as usize);
         }
         for cpus in [0, 65, u32::MAX] {
             assert_eq!(xa_geometry_page(cpus, u64::MAX), u32::MAX);
@@ -54,9 +55,9 @@ mod tests {
         assert_eq!(xa_geometry_tables(1), 0);
         assert_eq!(xa_geometry_tables(4), 3);
         assert_eq!(xa_geometry_tables(64), 10);
-        for local in [0, 17, 18, 23, 24, 29, 30, 35, 47, 49, 63] {
+        for local in [0, 17, 18, 23, 24, 29, 30, 35, 36, 41, 47, 49, 63] {
             assert_eq!(xa_geometry_page(4, 64 + local), u32::MAX);
         }
-        assert_eq!(xa_geometry_page(64, 63 * 64 + 48), 1826);
+        assert_eq!(xa_geometry_page(64, 63 * 64 + 48), 2078);
     }
 }

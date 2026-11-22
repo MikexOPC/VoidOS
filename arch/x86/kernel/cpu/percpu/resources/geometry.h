@@ -12,8 +12,9 @@
 // ====== per_cpu_layout ======
 
 // Software layout of one 64-page AP slot; page 0 and the gaps are unmapped guards.
-//   1-16  main stack (TSS RSP0), private frame in its top 1024 bytes
+//   1-16  main stack, private frame in its top 1024 bytes
 //   19-22 IST1, 25-28 IST2, 31-34 IST3
+//   37-40 syscall / TSS RSP0 stack (4 pages, guarded below and above)
 //   48    metadata: GDT at +0, TSS at +64, panic record at +256
 #define X86_AP_PAGE                 4096ULL
 #define X86_AP_SLOT_PAGES           64ULL
@@ -37,20 +38,26 @@
 #define X86_AP_IST_BASE(cpu, ist)   X86_AP_PAGE_ADDRESS(cpu, X86_AP_IST_FIRST(ist))
 #define X86_AP_IST_TOP(cpu, ist)    (X86_AP_IST_BASE(cpu, ist) + X86_AP_IST_BYTES)
 
+#define X86_AP_SYSCALL_FIRST        37ULL
+#define X86_AP_SYSCALL_PAGES        4ULL
+#define X86_AP_SYSCALL_BASE(cpu)    X86_AP_PAGE_ADDRESS(cpu, X86_AP_SYSCALL_FIRST)
+#define X86_AP_SYSCALL_TOP(cpu)     (X86_AP_SYSCALL_BASE(cpu) + X86_AP_SYSCALL_PAGES * X86_AP_PAGE)
+
 #define X86_AP_METADATA_PAGE        48ULL
 #define X86_AP_METADATA(cpu)        X86_AP_PAGE_ADDRESS(cpu, X86_AP_METADATA_PAGE)
 #define X86_AP_TSS_OFFSET           64ULL
 #define X86_AP_RECORD_OFFSET        256ULL
-// Mapped pages per AP: stack, three IST stacks and metadata (29, mirrored in rust/geometry/pages.rs).
-#define X86_AP_MAPPED_PAGES         (uint32_t)(X86_AP_STACK_PAGES + 3 * X86_AP_IST_PAGES + 1)
+// Mapped pages per AP: stack, three IST stacks, syscall stack and metadata (33, mirrored in rust/geometry/pages.rs).
+#define X86_AP_MAPPED_PAGES         (uint32_t)(X86_AP_STACK_PAGES + 3 * X86_AP_IST_PAGES + X86_AP_SYSCALL_PAGES + 1)
 
 _Static_assert(X86_AP_STRIDE == X86_AP_SLOT_PAGES * X86_AP_PAGE, "AP slot is 64 pages");
 _Static_assert(X86_AP_STACK_FIRST + X86_AP_STACK_PAGES < X86_AP_IST_FIRST(1), "guard after stack");
 _Static_assert(X86_AP_IST_FIRST(1) + X86_AP_IST_PAGES < X86_AP_IST_FIRST(2), "guard after IST1");
 _Static_assert(X86_AP_IST_FIRST(2) + X86_AP_IST_PAGES < X86_AP_IST_FIRST(3), "guard after IST2");
-_Static_assert(X86_AP_IST_FIRST(3) + X86_AP_IST_PAGES < X86_AP_METADATA_PAGE, "guard after IST3");
+_Static_assert(X86_AP_IST_FIRST(3) + X86_AP_IST_PAGES < X86_AP_SYSCALL_FIRST, "guard after IST3");
+_Static_assert(X86_AP_SYSCALL_FIRST + X86_AP_SYSCALL_PAGES < X86_AP_METADATA_PAGE, "guard after syscall stack");
 _Static_assert(X86_AP_METADATA_PAGE < X86_AP_SLOT_PAGES, "metadata inside the slot");
-_Static_assert(X86_AP_MAPPED_PAGES == 29, "matches rust/geometry/pages.rs");
+_Static_assert(X86_AP_MAPPED_PAGES == 33, "matches rust/geometry/pages.rs");
 
 // ====== x86_ap_tables ======
 
@@ -70,8 +77,10 @@ static inline uint32_t x86_ap_page(uint32_t cpus, uint64_t page) {
         offset = X86_AP_STACK_PAGES + X86_AP_IST_PAGES + local - X86_AP_IST_FIRST(2);
     else if (local >= X86_AP_IST_FIRST(3) && local < X86_AP_IST_FIRST(3) + X86_AP_IST_PAGES)
         offset = X86_AP_STACK_PAGES + 2 * X86_AP_IST_PAGES + local - X86_AP_IST_FIRST(3);
+    else if (local >= X86_AP_SYSCALL_FIRST && local < X86_AP_SYSCALL_FIRST + X86_AP_SYSCALL_PAGES)
+        offset = X86_AP_STACK_PAGES + 3 * X86_AP_IST_PAGES + local - X86_AP_SYSCALL_FIRST;
     else if (local == X86_AP_METADATA_PAGE)
-        offset = X86_AP_STACK_PAGES + 3 * X86_AP_IST_PAGES;
+        offset = X86_AP_STACK_PAGES + 3 * X86_AP_IST_PAGES + X86_AP_SYSCALL_PAGES;
     else return UINT32_MAX;
     return ((uint32_t)cpu - 1) * X86_AP_MAPPED_PAGES + (uint32_t)offset;
 }

@@ -30,6 +30,10 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
     tables[0] = (base + PAGE_BYTES) | branch;
     tables[SLOT_IMAGE] = x86_window_entries(0)[SLOT_IMAGE];
     tables[X86_LAYOUT_WINDOWS_SLOT] = x86_window_entries(0)[X86_LAYOUT_WINDOWS_SLOT];
+    if (process_rt.Permanent) {
+        tables[X86_LAYOUT_HEAP_SLOT] = x86_window_entries(0)[X86_LAYOUT_HEAP_SLOT];
+        tables[X86_LAYOUT_AP_SLOT] = x86_window_entries(0)[X86_LAYOUT_AP_SLOT];
+    }
     tables[512] = (base + 2 * PAGE_BYTES) | branch;
     tables[1024 + 2] = (base + 3 * PAGE_BYTES) | branch;
     for (BOOT_U64 index = 0; index < plan->Count; ++index) {
@@ -205,20 +209,33 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
     KERNEL_PROCESS_TABLE *table, BOOT_U64 pid, BOOT_U64 initial_arg,
     BOOT_U64 *wait_handle_io, int renew_budget)
 {
+    uint64_t saved_if = ks_irq_save();
     X86_PROCESS_CPU *cpu = x86_process_cpu_current();
     if (!process_rt.Opened || !cpu || cpu->Current || !slot || !slot->Lease.Id || !result || result->Kind ||
-        !table || !pid || !wait_handle_io) return 0;
+        !table || !pid || !wait_handle_io) {
+        ks_irq_restore(saved_if);
+        return 0;
+    }
     if (slot->KernelRoot != cpu->KernelRoot || slot->ImageEntry != process_rt.ExpectedImage ||
-        slot->WindowEntry != process_rt.ExpectedWindows || !roots_stable()) return 0;
+        slot->WindowEntry != process_rt.ExpectedWindows || !roots_stable()) {
+        ks_irq_restore(saved_if);
+        return 0;
+    }
     if (renew_budget) {
         BOOT_U32 ticks = kernel_clock_ms(cpu->BudgetClock, PROCESS_BUDGET_MS);
-        if (ticks == UINT32_MAX) return 0;
+        if (ticks == UINT32_MAX) {
+            ks_irq_restore(saved_if);
+            return 0;
+        }
         slot->RemainingTicks = ticks;
         slot->RemainingIrqs = x86_process_budget_initial();
     }
     if (slot->Waiting) {
         BOOT_U64 ready = kernel_ipc_receive_ready(table, pid, *wait_handle_io);
-        if (ready == KERNEL_IPC_WOULD_BLOCK) return 0;
+        if (ready == KERNEL_IPC_WOULD_BLOCK) {
+            ks_irq_restore(saved_if);
+            return 0;
+        }
         GPR(slot->Frame, GPR_RAX) = ready;
         slot->Waiting = 0;
         *wait_handle_io = 0;
@@ -247,7 +264,8 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
     cpu->Table = 0;
     cpu->Pid = 0;
     turn_finish(cpu, result);
-    if (__readcr3() != cpu->KernelRoot || !roots_stable() || STACK_WORD != STACK_CANARY)
+    BOOT_U64 canary_addr = cpu->SyscallTop - X86_KERNEL_SYSCALL_BYTES;
+    if (__readcr3() != cpu->KernelRoot || !roots_stable() || *(volatile BOOT_U64 *)canary_addr != STACK_CANARY)
         process_die("PROCESS_ROOT_CHANGED");
     slot->Written = cpu->WrittenBytes;
     slot->RemainingIrqs = cpu->BudgetLeft;
@@ -258,6 +276,7 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
         if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
         else slot->RemainingTicks -= elapsed;
     }
+    ks_irq_restore(saved_if);
     return 1;
 }
 

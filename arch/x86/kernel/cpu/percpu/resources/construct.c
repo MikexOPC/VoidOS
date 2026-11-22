@@ -27,8 +27,8 @@ static int write_private(void *opaque) {
         view[slot] = value;
         if (view[slot] != value) return 0;
     }
-    if (request->Data && request->Index % 29 == 28) {
-        BOOT_U32 cpu = request->Index / 29 + 1;
+    if (request->Data && request->Index % X86_AP_MAPPED_PAGES == X86_AP_MAPPED_PAGES - 1) {
+        BOOT_U32 cpu = request->Index / X86_AP_MAPPED_PAGES + 1;
         return x86_ap_descriptor_prepare((X86_KERNEL_SEGMENTS *)view, cpu) &&
             x86_ap_descriptor_verify((const X86_KERNEL_SEGMENTS *)view, cpu);
     }

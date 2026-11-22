@@ -76,8 +76,6 @@ xs_private_resume:
     cmp byte [rsi + 29], 0x8b
     jne xsr_reject
     mov rax, [r15 + 56]
-    cmp [rsi + 68], rax
-    jne xsr_reject
     add rax, 24576
     cmp [rsi + 100], rax
     jne xsr_reject
@@ -86,6 +84,9 @@ xs_private_resume:
     jne xsr_reject
     add rax, 24576
     cmp [rsi + 116], rax
+    jne xsr_reject
+    add rax, 24576
+    cmp [rsi + 68], rax
     jne xsr_reject
 
 ; ====== final_idt_before_unblocking ======

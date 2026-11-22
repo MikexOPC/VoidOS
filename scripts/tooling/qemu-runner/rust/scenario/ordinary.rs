@@ -436,11 +436,13 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     if enabled && !fault {
         shell_type(vm, "proc")?;
         let proc_log = vm.wait("SHELL_PROC_OK", 1, Some("OK"))?;
+        let expected_ap_cpu = if plan.smp > 1 { 1 } else { 0 };
         if proc_log.number("SHELL_PROC_SPAWNED", 0)? != 5
             || proc_log.number("SHELL_PROC_PEAK_ACTIVE", 0)? != 6
             || proc_log.number("SHELL_PROC_IPC_OK", 0)? != 4
             || proc_log.number("SHELL_PROC_FAULT_VECTOR", 0)? != 6
             || proc_log.number("SHELL_PROC_REAPED", 0)? != 5
+            || proc_log.number("SHELL_PROC_AP_CPU", 0)? != expected_ap_cpu
         {
             return Err("Unexpected multi-process IPC/fault counts".to_string());
         }
@@ -495,9 +497,10 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         return Err("Missing collected stacks, mouse or console cleanup".to_string());
     }
     let sums: Vec<u64> = expected_counts.iter().map(|count| count * (count + 1) / 2).collect();
+    let proc_ap_jobs = if enabled && !fault && remote { 1 } else { 0 };
     if remote && (log.numbers("SHELL_AP_CPU") != expected_cpus ||
         log.numbers("SHELL_AP_COUNT") != expected_counts ||
-        log.numbers("SHELL_AP_SUM") != sums || log.number("KERNEL_AP_TASK_JOBS", 0)? != jobs ||
+        log.numbers("SHELL_AP_SUM") != sums || log.number("KERNEL_AP_TASK_JOBS", 0)? != jobs + proc_ap_jobs ||
         !log.before("KERNEL_AP_TASKS_CLEAN", "KERNEL_PS2_INPUT_CLEANUP_OK")) {
         return Err("AP job or its session cleanup is invalid".to_string());
     }
