@@ -326,3 +326,11 @@ block_cache_host = executable(
     include_directories: inc,
 )
 test('block_cache_host', block_cache_host, env: runtime)
+
+virtio_blk_protocol_rust = executable(
+    'virtio_blk_protocol_rust',
+    repo / 'kernel/drivers/storage/virtio_blk/rust/protocol.rs',
+    rust_args: ['--test', '-C', 'overflow-checks=yes'],
+    override_options: ['b_sanitize=none'],
+)
+test('virtio_blk_protocol_rust', virtio_blk_protocol_rust)

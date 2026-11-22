@@ -283,6 +283,8 @@ fn vm_arguments_match_python() {
             "-drive", "if=pflash,format=raw,readonly=on,file=C:/Program Files/qemu/share/edk2-x86_64-code.fd",
             "-drive", "if=pflash,format=raw,file=D:/out/boot-1/vars.fd",
             "-drive", "format=raw,file=fat:rw:D:/out/boot-1/esp",
+            "-drive", "if=none,id=vblk0,format=raw,file=D:/out/boot-1/vblk.img",
+            "-device", "virtio-blk-pci,drive=vblk0,disable-legacy=on",
         ])
     );
 }

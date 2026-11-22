@@ -1,0 +1,429 @@
+#include "native.h"
+#include <intrin.h>
+#include "arch/x86/configs/layout.h"
+#include "arch/x86/kernel/interrupts/apic/probe.h"
+#include "arch/x86/mm/heap/binding.h"
+#include "arch/x86/mm/paging/heap/authority.h"
+#include "arch/x86/mm/window/access.h"
+#include "kernel/diagnostics/log.h"
+#include "kernel/sync/internal.h"
+
+typedef struct {
+    X86_PAGE_WINDOW            *Window;
+    const KERNEL_BOOT_CONTEXT  *Context;
+} ACPI_READ_CTX;
+
+typedef struct {
+    uint32_t  InPageOffset;
+    uint32_t  Width;
+    int       Write;
+    uint32_t  Value;
+} MMIO_BORROW_REQ;
+
+typedef struct {
+    uintptr_t              Self;
+    X86_PAGE_WINDOW       *Window;
+    X86_PM_CLOCK           Clock;
+    uint64_t               UcCacheBits;
+    VIRTIO_BLK_PCI_LAYOUT  Layout;
+    uint32_t               Segment;
+    uint32_t               Bus;
+    uint32_t               Device;
+    uint32_t               Function;
+    uint32_t               Present;
+    uint32_t               Ready;
+    KERNEL_LOCK            DeviceLock;
+    KERNEL_VIRTIO_BLK      Driver;
+    KERNEL_BLOCK_CACHE     Cache;
+} X86_VIRTIO_BLK_RUNTIME;
+
+static X86_VIRTIO_BLK_RUNTIME vblk_rt;
+static unsigned char mcfg_scratch[X86_MCFG_BYTES];
+static X86_MCFG vblk_mcfg;
+
+// ====== acpi_read_private ======
+
+static int acpi_read_private(void *state, BOOT_U64 physical, BOOT_U32 bytes, unsigned char *output)
+{
+    const ACPI_READ_CTX *ctx = (const ACPI_READ_CTX *)state;
+    return x86_page_window_read_acpi(ctx->Window, ctx->Context, physical, bytes, output);
+}
+
+// ====== mmio_window_cb ======
+
+// Intel SDM Vol. 3A §11.3 / Vol. 2B MFENCE: Strong Uncacheable (UC) scalar MMIO register access.
+static int mmio_window_cb(void *opaque)
+{
+    MMIO_BORROW_REQ *req = (MMIO_BORROW_REQ *)opaque;
+    volatile uint8_t *base = (volatile uint8_t *)x86_window_bytes();
+    if (!base)
+        return 0;
+
+    volatile uint8_t *ptr = base + req->InPageOffset;
+    _ReadWriteBarrier();
+    if (req->Width == 1U) {
+        if (req->Write)
+            *ptr = (uint8_t)req->Value;
+        else
+            req->Value = *ptr;
+    } else if (req->Width == 2U) {
+        volatile uint16_t *reg16 = (volatile uint16_t *)ptr;
+        if (req->Write)
+            *reg16 = (uint16_t)req->Value;
+        else
+            req->Value = *reg16;
+    } else if (req->Width == 4U) {
+        volatile uint32_t *reg32 = (volatile uint32_t *)ptr;
+        if (req->Write)
+            *reg32 = req->Value;
+        else
+            req->Value = *reg32;
+    } else {
+        return 0;
+    }
+    _ReadWriteBarrier();
+    return 1;
+}
+
+// ====== transport_mmio_private ======
+
+static int transport_mmio_private(
+    void *context,
+    uint32_t region_index,
+    uint32_t offset,
+    uint32_t width,
+    int write,
+    uint32_t *value
+)
+{
+    X86_VIRTIO_BLK_RUNTIME *rt = (X86_VIRTIO_BLK_RUNTIME *)context;
+    if (!rt || rt->Self != (uintptr_t)rt || !value || region_index >= 4U)
+        return 0;
+    if (width != 1U && width != 2U && width != 4U)
+        return 0;
+
+    const VIRTIO_BLK_PCI_REGION *region = &rt->Layout.Regions[region_index];
+    uint64_t byte_offset = offset;
+    if (region_index == VIRTIO_REGION_NOTIFY)
+        byte_offset = (uint64_t)offset * region->Multiplier;
+
+    if (byte_offset > region->Length || width > region->Length - byte_offset)
+        return 0;
+
+    uint64_t phys_addr = region->Address + byte_offset;
+    if (phys_addr & (width - 1ULL))
+        return 0;
+
+    uint64_t page_phys = phys_addr & ~4095ULL;
+    uint32_t in_page = (uint32_t)(phys_addr & 4095ULL);
+    if (in_page + width > 4096U)
+        return 0;
+
+    MMIO_BORROW_REQ req = {in_page, width, write != 0, write ? *value : 0U};
+    uint64_t saved_if = ks_irq_save();
+    int ok = x86_apic_borrow(rt->Window, page_phys, rt->UcCacheBits, write != 0, mmio_window_cb, &req);
+    ks_irq_restore(saved_if);
+    if (!ok)
+        return 0;
+
+    if (!write)
+        *value = req.Value;
+    return 1;
+}
+
+// ====== transport_clock_private ======
+
+static int transport_clock_private(void *context, uint32_t *ticks_out)
+{
+    const X86_VIRTIO_BLK_RUNTIME *rt = (const X86_VIRTIO_BLK_RUNTIME *)context;
+    if (!rt || rt->Self != (uintptr_t)rt || !ticks_out || !rt->Clock.Ready)
+        return 0;
+    *ticks_out = x86_pm_read((unsigned short)rt->Clock.Port) & rt->Clock.Mask;
+    return 1;
+}
+
+// ====== transport_barrier_private ======
+
+static void transport_barrier_private(void *context)
+{
+    (void)context;
+    _ReadWriteBarrier();
+    _mm_mfence();
+    _ReadWriteBarrier();
+}
+
+// ====== ecam_rw_private ======
+
+static int ecam_rw_private(
+    X86_PAGE_WINDOW *window,
+    uint64_t uc_cache,
+    uint64_t range_base,
+    uint32_t bus,
+    uint32_t dev,
+    uint32_t fn,
+    uint32_t offset,
+    uint32_t width,
+    int write,
+    uint32_t *value
+)
+{
+    uint64_t page = x86_ecam_page(range_base, bus, dev, fn);
+    if (!page || offset + width > 4096U || (offset & (width - 1U)))
+        return 0;
+
+    MMIO_BORROW_REQ req = {offset, width, write != 0, write ? *value : 0U};
+    uint64_t saved_if = ks_irq_save();
+    int ok = x86_apic_borrow(window, page, uc_cache, write != 0, mmio_window_cb, &req);
+    ks_irq_restore(saved_if);
+    if (!ok)
+        return 0;
+    if (!write)
+        *value = req.Value;
+    return 1;
+}
+
+// ====== discover_pci_private ======
+
+static int discover_pci_private(
+    const X86_WATCHDOG_ENV *env,
+    const KERNEL_ACPI_DIRECTORY *directory,
+    uint64_t uc_cache,
+    uint8_t config_out[256]
+)
+{
+    ACPI_READ_CTX acpi_ctx = {env->Window, env->Context};
+    uint32_t bits = env->Window->Pool->PhysicalBits;
+
+    int found_mcfg = x86_mcfg_find(
+        directory,
+        bits,
+        acpi_read_private,
+        &acpi_ctx,
+        mcfg_scratch,
+        sizeof(mcfg_scratch),
+        &vblk_mcfg
+    );
+    if (found_mcfg == 2)
+        return 0;
+    if (found_mcfg != 1)
+        return -1;
+
+    int found = 0;
+    for (uint32_t r = 0; r < vblk_mcfg.Count && !found; ++r) {
+        const X86_ECAM_RANGE *range = &vblk_mcfg.Ranges[r];
+        uint32_t last_bus = range->Last > range->First + 3U ? range->First + 3U : range->Last;
+
+        for (uint32_t bus = range->First; bus <= last_bus && !found; ++bus) {
+            for (uint32_t dev = 0; dev < 32U && !found; ++dev) {
+                for (uint32_t fn = 0; fn < 8U && !found; ++fn) {
+                    uint32_t id = 0xFFFFFFFFU;
+                    if (!ecam_rw_private(env->Window, uc_cache, range->Base, bus, dev, fn, 0x00U, 4U, 0, &id))
+                        continue;
+                    if ((id & 0xFFFFU) == 0xFFFFU) {
+                        if (fn == 0U)
+                            break;
+                        continue;
+                    }
+
+                    uint16_t vendor = (uint16_t)(id & 0xFFFFU);
+                    uint16_t device_id = (uint16_t)(id >> 16);
+                    if (vendor == 0x1AF4U && (device_id == 0x1042U || device_id == 0x1001U)) {
+                        // PCI Local Bus Spec 3.0 §6.2.2: Command bit 1 (Memory Space) | bit 2 (Bus Master).
+                        uint32_t cmd = 0;
+                        if (!ecam_rw_private(env->Window, uc_cache, range->Base, bus, dev, fn, 0x04U, 2U, 0, &cmd))
+                            return -1;
+                        cmd |= 0x06U;
+                        if (!ecam_rw_private(env->Window, uc_cache, range->Base, bus, dev, fn, 0x04U, 2U, 1, &cmd))
+                            return -1;
+
+                        for (uint32_t word = 0; word < 64U; ++word) {
+                            uint32_t val = 0;
+                            if (!ecam_rw_private(env->Window, uc_cache, range->Base, bus, dev, fn, word * 4U, 4U, 0, &val))
+                                return -1;
+                            config_out[word * 4U + 0U] = (uint8_t)(val & 0xFFU);
+                            config_out[word * 4U + 1U] = (uint8_t)((val >> 8) & 0xFFU);
+                            config_out[word * 4U + 2U] = (uint8_t)((val >> 16) & 0xFFU);
+                            config_out[word * 4U + 3U] = (uint8_t)((val >> 24) & 0xFFU);
+                        }
+                        vblk_rt.Segment = range->Segment;
+                        vblk_rt.Bus = bus;
+                        vblk_rt.Device = dev;
+                        vblk_rt.Function = fn;
+                        found = 1;
+                        break;
+                    }
+
+                    if (fn == 0U) {
+                        uint32_t hdr = 0;
+                        if (!ecam_rw_private(env->Window, uc_cache, range->Base, bus, dev, 0U, 0x0CU, 4U, 0, &hdr) ||
+                            !((hdr >> 16) & 0x80U))
+                            break;
+                    }
+                }
+            }
+        }
+    }
+
+    return found;
+}
+
+// ====== verify_io_private ======
+
+static int verify_io_private(KERNEL_BLOCK_CACHE *cache)
+{
+    uint8_t sector0[512];
+    uint8_t pattern[512];
+    uint8_t readback[512];
+
+    if (kernel_block_cache_read_sectors(cache, 0ULL, 1U, sector0) != KERNEL_STORAGE_OK)
+        return 0;
+    if (sector0[0] != 'V' || sector0[1] != 'O' || sector0[2] != 'I' || sector0[3] != 'D')
+        return 0;
+
+    if (!cache->Device->ReadOnly && cache->Device->TotalSectors >= 2ULL) {
+        if (kernel_block_cache_read_sectors(cache, 1ULL, 1U, readback) != KERNEL_STORAGE_OK)
+            return 0;
+
+        for (uint32_t i = 0; i < 512U; ++i)
+            pattern[i] = (uint8_t)((i * 37U + 0x5AU) & 0xFFU);
+
+        if (kernel_block_cache_write_sectors(cache, 1ULL, 1U, pattern) != KERNEL_STORAGE_OK ||
+            kernel_block_cache_flush(cache) != KERNEL_STORAGE_OK ||
+            kernel_block_cache_invalidate(cache) != KERNEL_STORAGE_OK)
+            return 0;
+
+        uint8_t check[512];
+        for (uint32_t i = 0; i < 512U; ++i)
+            check[i] = 0;
+
+        if (kernel_block_cache_read_sectors(cache, 1ULL, 1U, check) != KERNEL_STORAGE_OK)
+            return 0;
+
+        for (uint32_t i = 0; i < 512U; ++i) {
+            if (check[i] != pattern[i])
+                return 0;
+        }
+
+        // Restore original LBA 1 content so filesystem structures on disk remain untouched.
+        if (kernel_block_cache_write_sectors(cache, 1ULL, 1U, readback) != KERNEL_STORAGE_OK ||
+            kernel_block_cache_flush(cache) != KERNEL_STORAGE_OK)
+            return 0;
+    }
+    return 1;
+}
+
+// ====== x86_virtio_blk_start ======
+
+int x86_virtio_blk_start(
+    const X86_WATCHDOG_ENV *env,
+    const KERNEL_ACPI_DIRECTORY *directory,
+    const X86_PM_CLOCK *clock
+)
+{
+    if (vblk_rt.Ready)
+        return 1;
+    if (!env || !env->Context || !env->Window || !env->Window->Pool || !env->Inventory ||
+        !directory || !clock || !clock->Ready)
+        return 0;
+
+    const X86_HEAP_AUTH *heap_auth = x86_heap_owner();
+    KERNEL_HEAP *heap = kernel_heap();
+    if (!heap_auth || !heap)
+        return 0;
+
+    X86_FB_CPU cpu;
+    if (!x86_fb_cpu(&cpu) || !x86_apic_uc_slot(cpu.Pat))
+        return 0;
+
+    for (uint32_t i = 0; i < sizeof(vblk_rt); ++i)
+        ((uint8_t *)&vblk_rt)[i] = 0;
+
+    uint64_t uc_cache = x86_apic_cache_bits(x86_apic_uc_slot(cpu.Pat) - 1U);
+    uint8_t pci_cfg[256];
+    int found = discover_pci_private(env, directory, uc_cache, pci_cfg);
+    if (found < 0)
+        return 0;
+    if (found == 0)
+        return kernel_log(1, "KERNEL_VIRTIO_BLK_ABSENT");
+
+    uint32_t probe = kvblk_pci_probe(
+        pci_cfg,
+        256U,
+        env->Window->Pool->PhysicalBits,
+        &vblk_rt.Layout
+    );
+    if (probe != KVBLK_PCI_READY)
+        return 0;
+
+    uint8_t *dma_pages = (uint8_t *)kernel_heap_pages(heap, 2U);
+    if (!dma_pages)
+        return 0;
+
+    uintptr_t dma_virt = (uintptr_t)dma_pages;
+    if (dma_virt < X86_HEAP_VIRTUAL ||
+        dma_virt + 8192ULL > X86_HEAP_VIRTUAL + (uint64_t)X86_HEAP_PAGES * 4096ULL)
+        return 0;
+
+    uint64_t control_phys = heap_auth->Data.Base + (dma_virt - X86_HEAP_VIRTUAL);
+    uint64_t data_phys = control_phys + 4096ULL;
+
+    if (!kernel_lock_initialize(&vblk_rt.DeviceLock, KERNEL_BLOCK_DEVICE_LOCK_RANK))
+        return 0;
+
+    vblk_rt.Window = env->Window;
+    vblk_rt.Clock = *clock;
+    vblk_rt.UcCacheBits = x86_apic_cache_bits(x86_apic_uc_slot(cpu.Pat) - 1U);
+    vblk_rt.Present = 1U;
+    vblk_rt.Self = (uintptr_t)&vblk_rt;
+
+    VIRTIO_BLK_TRANSPORT transport = {
+        &vblk_rt,
+        transport_mmio_private,
+        transport_clock_private,
+        transport_barrier_private,
+        clock->Mask,
+        3579545U,
+        1000000U
+    };
+
+    if (kernel_virtio_blk_init(
+            &vblk_rt.Driver,
+            &transport,
+            dma_pages,
+            control_phys,
+            dma_pages + 4096U,
+            data_phys
+        ) != KERNEL_STORAGE_OK)
+        return 0;
+
+    if (kernel_block_cache_init(
+            &vblk_rt.Cache,
+            heap,
+            &vblk_rt.Driver.BlockDevice,
+            64U
+        ) != KERNEL_STORAGE_OK)
+        return 0;
+
+    if (!verify_io_private(&vblk_rt.Cache))
+        return 0;
+
+    vblk_rt.Ready = 1U;
+    uint64_t bdf = ((uint64_t)vblk_rt.Bus << 8) | ((uint64_t)vblk_rt.Device << 3) | vblk_rt.Function;
+    return kernel_text("KERNEL_VIRTIO_BLK_BDF: ") && kernel_number(bdf) &&
+        kernel_text("\nKERNEL_VIRTIO_BLK_SECTORS: ") && kernel_number(vblk_rt.Driver.CapacitySectors) &&
+        kernel_text("\n") && kernel_log(0, "KERNEL_VIRTIO_BLK_READY");
+}
+
+// ====== x86_virtio_blk_device ======
+
+KERNEL_BLOCK_DEVICE *x86_virtio_blk_device(void)
+{
+    return (vblk_rt.Self == (uintptr_t)&vblk_rt && vblk_rt.Ready) ? &vblk_rt.Driver.BlockDevice : NULL;
+}
+
+// ====== x86_virtio_blk_cache ======
+
+KERNEL_BLOCK_CACHE *x86_virtio_blk_cache(void)
+{
+    return (vblk_rt.Self == (uintptr_t)&vblk_rt && vblk_rt.Ready) ? &vblk_rt.Cache : NULL;
+}

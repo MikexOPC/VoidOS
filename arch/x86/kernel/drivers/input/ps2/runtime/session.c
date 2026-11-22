@@ -15,6 +15,7 @@
 #include "kernel/scheduler/payload.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "arch/x86/kernel/scheduler/irq/preempt.h"
+#include "arch/x86/kernel/drivers/storage/virtio_blk/native.h"
 #include "kernel/diagnostics/log.h"
 #ifdef KERNEL_AP_TASKS
 #include "arch/x86/kernel/scheduler/remote/remote.h"
@@ -177,6 +178,9 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         !x86_watchdog_valid() || env->Window != watchdog->Env.Window || env->Mapping != watchdog->Env.Mapping) return 0;
     session.Env = *env; session.Clock = *clock;
     session.Persistent = persistent != 0;
+    if (!x86_virtio_blk_start(env, directory, clock)) {
+        kernel_log(3, "VIRTIO_BLK_START_FAILED"); return 0;
+    }
     if (!kernel_ps2_discover(directory,env->Window->Pool->PhysicalBits,firmware_read,&session,&description)) {
         kernel_log(3,"PS2_DISCOVERY_FAILED"); return 0;
     }

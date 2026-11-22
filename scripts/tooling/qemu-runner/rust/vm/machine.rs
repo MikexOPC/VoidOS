@@ -95,6 +95,11 @@ fn prepare_esp(directory: &Path, image: &Path, paths: &Paths) -> Result<PathBuf,
         return Err("ESP image mismatch".to_string());
     }
     fs::write(boot.join("boot-check.txt"), b"OS boot check\r\n").map_err(|error| format!("ESP file: {error}"))?;
+    let mut vblk = vec![0u8; 128 * 512];
+    vblk[..19].copy_from_slice(b"VOIDOS_VBLK_DISK_V1");
+    vblk[510] = 0x55;
+    vblk[511] = 0xAA;
+    fs::write(directory.join("vblk.img"), &vblk).map_err(|error| format!("VirtIO disk: {error}"))?;
     Ok(esp)
 }
 
@@ -123,6 +128,10 @@ pub fn arguments(directory: &Path, paths: &Paths, plan: &Plan) -> Vec<String> {
     list.push(format!("if=pflash,format=raw,file={}", posix(&directory.join("vars.fd"))));
     list.push("-drive".to_string());
     list.push(format!("format=raw,file=fat:rw:{}", posix(&directory.join("esp"))));
+    list.push("-drive".to_string());
+    list.push(format!("if=none,id=vblk0,format=raw,file={}", posix(&directory.join("vblk.img"))));
+    list.push("-device".to_string());
+    list.push("virtio-blk-pci,drive=vblk0,disable-legacy=on".to_string());
     list
 }
 
