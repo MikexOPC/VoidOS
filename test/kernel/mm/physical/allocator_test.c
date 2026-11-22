@@ -1,7 +1,7 @@
 #include "kernel/mm/physical/allocator.h"
 static KERNEL_PHYSICAL_ALLOCATOR owner, other_owner;
 static unsigned char map[48 * 129];
-static KERNEL_PHYSICAL_LEASE leases[64];
+static KERNEL_PHYSICAL_LEASE leases[KERNEL_PHYSICAL_LEASES];
 
 // ====== fixture locale e reset volatile senza dipendenze da CRT ====== //
 
@@ -69,17 +69,18 @@ static int ownership(void)
 static int exhaustion(void)
 {
     BOOT_U32 index;
+    const BOOT_U64 total = KERNEL_PHYSICAL_LEASES * 2U;
     KERNEL_PHYSICAL_LEASE extra = {0}, empty = {0};
     clear(&owner, sizeof(owner)); clear(leases, sizeof(leases));
-    region(0, 7, 0x1000, 128, 8);
+    region(0, 7, 0x1000, total, 8);
     if (!kernel_physical_initialize(&owner, map, 48, 48, 32)) return 1;
-    for (index = 0; index < 64; ++index) if (!kernel_physical_allocate(&owner, 1, &leases[index])) return 2;
-    if (kernel_physical_allocate(&owner, 1, &extra) || extra.Id || owner.FreePages != 64) return 3;
-    for (index = 0; index < 64; index += 2) if (!kernel_physical_release(&owner, &leases[index])) return 4;
-    for (index = 1; index < 64; index += 2) if (!kernel_physical_release(&owner, &leases[index])) return 5;
-    if (owner.Count != 1 || owner.FreePages != 128 || !kernel_physical_allocate(&owner, 128, &extra) ||
+    for (index = 0; index < KERNEL_PHYSICAL_LEASES; ++index) if (!kernel_physical_allocate(&owner, 1, &leases[index])) return 2;
+    if (kernel_physical_allocate(&owner, 1, &extra) || extra.Id || owner.FreePages != KERNEL_PHYSICAL_LEASES) return 3;
+    for (index = 0; index < KERNEL_PHYSICAL_LEASES; index += 2) if (!kernel_physical_release(&owner, &leases[index])) return 4;
+    for (index = 1; index < KERNEL_PHYSICAL_LEASES; index += 2) if (!kernel_physical_release(&owner, &leases[index])) return 5;
+    if (owner.Count != 1 || owner.FreePages != total || !kernel_physical_allocate(&owner, total, &extra) ||
         owner.Count || owner.FreePages || !kernel_physical_validate(&owner) || kernel_physical_allocate(&owner, 1, &empty) ||
-        !kernel_physical_release(&owner, &extra) || owner.FreePages != 128) return 6;
+        !kernel_physical_release(&owner, &extra) || owner.FreePages != total) return 6;
     clear(&owner, sizeof(owner));
     region(0, 7, 0x1000, 1, 8); region(1, 7, 0x4000, 1, 8);
     if (!kernel_physical_initialize(&owner, map, 96, 48, 32) || kernel_physical_allocate(&owner, 2, &empty) ||
@@ -139,3 +140,9 @@ __declspec(dllexport) int run_physical_tests(void)
     result = rejected_maps(); if (result) return 300 + result;
     result = sequences(); return result ? 400 + result : 0;
 }
+#ifdef VOIDOS_HOST_MAIN
+int main(void)
+{
+    return run_physical_tests();
+}
+#endif

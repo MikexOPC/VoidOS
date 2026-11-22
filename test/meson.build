@@ -237,3 +237,49 @@ log_boundary = executable(
     c_args: ['-DKERNEL_PS2_INPUT'],
 )
 test('log_boundary', log_boundary, env: runtime)
+
+# ====== physical allocator ======
+
+physical_placement_obj = custom_target(
+    'physical_placement_obj',
+    input: files(repo / 'kernel/mm/physical/rust/alignment/placement.rs'),
+    output: 'physical_placement.obj',
+    depfile: 'physical_placement.d',
+    command: [
+        rustc, '--edition=2024', '-D', 'warnings', '--crate-type=lib',
+        '-C', 'panic=abort', '-C', 'opt-level=2',
+        '--emit=obj=@OUTPUT@,dep-info=@DEPFILE@', '@INPUT@',
+    ],
+)
+
+mm_regions_obj = custom_target(
+    'mm_regions_obj',
+    input: files(repo / 'kernel/mm/rust/regions/validation.rs'),
+    output: 'mm_regions.obj',
+    depfile: 'mm_regions.d',
+    command: [
+        rustc, '--edition=2024', '-D', 'warnings', '--crate-type=lib',
+        '-C', 'panic=abort', '-C', 'opt-level=2',
+        '--emit=obj=@OUTPUT@,dep-info=@DEPFILE@', '@INPUT@',
+    ],
+)
+
+physical_allocator_host = executable(
+    'physical_allocator_host',
+    'kernel/mm/physical/allocator_test.c',
+    'kernel/mm/physical/synchronization/backend.c',
+    repo / 'kernel/mm/physical/allocator.c',
+    repo / 'kernel/mm/physical/allocation/guard.c',
+    repo / 'kernel/mm/physical/allocation/state.c',
+    repo / 'kernel/mm/physical/allocation/queries.c',
+    repo / 'kernel/mm/inventory.c',
+    repo / 'kernel/sync/lock.c',
+    repo / 'kernel/sync/acquire.c',
+    repo / 'kernel/time/clock.c',
+    sync_atomics_obj,
+    physical_placement_obj,
+    mm_regions_obj,
+    include_directories: inc,
+    c_args: ['-DVOIDOS_HOST_MAIN'],
+)
+test('physical_allocator_host', physical_allocator_host, env: runtime)
