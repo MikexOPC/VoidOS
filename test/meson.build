@@ -406,3 +406,41 @@ libvoid_rust = executable(
     override_options: ['b_sanitize=none'],
 )
 test('libvoid_rust', libvoid_rust)
+
+# ====== security entropy & CSPRNG ======
+
+security_csprng_rust = executable(
+    'security_csprng_rust',
+    repo / 'kernel/security/rust/csprng.rs',
+    rust_args: ['--test', '-C', 'overflow-checks=yes'],
+    override_options: ['b_sanitize=none'],
+)
+test('security_csprng_rust', security_csprng_rust)
+
+security_csprng_lib = custom_target(
+    'security_csprng_lib',
+    input: files(repo / 'kernel/security/rust/csprng.rs'),
+    output: 'security_csprng.lib',
+    depfile: 'security_csprng.d',
+    command: [
+        rustc, '--edition=2024', '-D', 'warnings', '--crate-type=staticlib',
+        '--crate-name', 'security_csprng',
+        '-C', 'panic=abort', '-C', 'opt-level=2',
+        '-C', 'lto=fat', '-C', 'codegen-units=1',
+        '--emit=link=@OUTPUT@,dep-info=@DEPFILE@', '@INPUT@',
+    ],
+)
+
+security_random_host = executable(
+    'security_random_host',
+    'kernel/security/random_test.c',
+    'kernel/mm/physical/synchronization/backend.c',
+    repo / 'kernel/security/random.c',
+    repo / 'kernel/sync/lock.c',
+    repo / 'kernel/sync/acquire.c',
+    repo / 'kernel/time/clock.c',
+    sync_atomics_obj,
+    security_csprng_lib,
+    include_directories: inc,
+)
+test('security_random_host', security_random_host, env: runtime)

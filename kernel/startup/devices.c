@@ -14,6 +14,7 @@ void xp_panic_integration_probe(void);
 #include "arch/x86/kernel/serial/interrupts/route.h"
 #include "arch/x86/kernel/timer/hpet/watchdog/integration/kernel.h"
 #include "arch/x86/mm/heap/binding.h"
+#include "kernel/security/random.h"
 
 // ====== video_private ======
 
@@ -41,6 +42,9 @@ static void video_private(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTE
 // before the LAPIC timer, because the input session runs inside the watchdog start and needs it.
 void kernel_startup_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTEXT *context, X86_PAGING_INVENTORY *paging)
 {
+    if (!kernel_random_init()) {
+        kernel_panic("KERNEL_ENTROPY_INIT_FAILED");
+    }
     if (context->Info.Acpi.Source && !x86_ap_resources_start(context, &startup->Memory->Window,
         x86_uart_lapic_mapping(), paging)) kernel_panic("AP_RESOURCES_FAILED");
 

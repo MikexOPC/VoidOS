@@ -110,6 +110,10 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     if !full && (printed || log.has("KERNEL_PROCESS_OK") || !log.has("PROCESS_DISABLED")) {
         return Err("A CPU without protections ran a process".to_string());
     }
+    if !log.before("KERNEL_ENTROPY_READY", SHELL_READY) ||
+        log.number("KERNEL_ENTROPY_SOURCE", 0)? < 1 {
+        return Err("Hardware entropy or CSPRNG failed to initialize".to_string());
+    }
     if !log.before("KERNEL_VIRTIO_BLK_READY", SHELL_READY) ||
         log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 2048 {
         return Err("VirtIO-blk block device did not start".to_string());
@@ -580,6 +584,10 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     if enabled && !log.before("KERNEL_PROCESS_OK", "KERNEL_READY") {
         return Err("The first process did not run".to_string());
+    }
+    if !log.before("KERNEL_ENTROPY_READY", "KERNEL_READY") ||
+        log.number("KERNEL_ENTROPY_SOURCE", 0)? < 1 {
+        return Err("Hardware entropy or CSPRNG failed without PS/2".to_string());
     }
     if !log.before("KERNEL_VIRTIO_BLK_READY", "KERNEL_READY") ||
         log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 2048 {

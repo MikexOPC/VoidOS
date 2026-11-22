@@ -224,6 +224,9 @@ ordinary	rustc	--edition=2024	--crate-type=lib	--emit=obj	--target=x86_64-pc-win
 ordinary	rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/input/integration/rust/ffi/ps2.rs	-o	{out}/ps2-decoder.obj
 c	kernel/sync/lock.c
 c	kernel/sync/acquire.c
+rustc.exe	--edition=2024	--crate-type=staticlib	--crate-name	security_csprng	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	lto=fat	-C	codegen-units=1	{repo}/kernel/security/rust/csprng.rs	-o	{out}/kernel-security-csprng.lib
+c	kernel/security/random.c	kernel-security-random.obj
+c	arch/x86/kernel/security/entropy.c	arch-x86-kernel-security-entropy.obj
 c	arch/x86/kernel/cpu/percpu/startup/commit/retention.c
 c	arch/x86/kernel/cpu/percpu/transition/lifecycle.c
 c	arch/x86/kernel/cpu/percpu/transition/tables.c
