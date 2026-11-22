@@ -142,6 +142,14 @@ line_abi = executable(
 )
 test('line_abi', line_abi, env: runtime)
 
+shell_command_rust = executable(
+    'shell_command_rust',
+    repo / 'kernel/shell/rust/command/command.rs',
+    rust_args: ['--test', '-C', 'overflow-checks=yes'],
+    override_options: ['b_sanitize=none'],
+)
+test('shell_command_rust', shell_command_rust)
+
 # ====== process policy & elf parser ======
 
 hello_elf = custom_target(

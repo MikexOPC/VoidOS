@@ -462,6 +462,25 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         }
         shell_type(vm, "bridge status")?;
         vm.wait(marker, 3, None)?;
+        shell_type(vm, "ls")?;
+        let ls_log = vm.wait("SHELL_LS_OK", 1, Some("OK"))?;
+        if ls_log.number("SHELL_LS_COUNT", 0)? < 1 {
+            return Err("Expected at least 1 root entry in ls".to_string());
+        }
+        shell_type(vm, "write note voidos")?;
+        let write_log = vm.wait("SHELL_WRITE_OK", 1, Some("OK"))?;
+        if write_log.number("SHELL_WRITE_BYTES", 0)? != 6 {
+            return Err("Unexpected byte count written by shell write".to_string());
+        }
+        shell_type(vm, "cat note")?;
+        let cat_log = vm.wait("SHELL_CAT_OK", 1, Some("OK"))?;
+        if cat_log.number("SHELL_CAT_BYTES", 0)? != 6 || !cat_log.text.contains("SHELL_CAT: voidos") {
+            return Err("Unexpected content returned by shell cat".to_string());
+        }
+        shell_type(vm, "rm note")?;
+        vm.wait("SHELL_RM_OK", 1, Some("OK"))?;
+        shell_type(vm, "sync")?;
+        vm.wait("SHELL_SYNC_OK", 1, Some("OK"))?;
     }
     let remote = plan.smp > 1 && !fault;
     let preemptive = vm.log().has("KERNEL_AP_PREEMPT_READY");
@@ -499,7 +518,7 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     shell_type(vm, "status")?;
     shell_type(vm, "exit")?;
     let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
-    let proc_cmds = if enabled && !fault { 2 } else { 0 };
+    let proc_cmds = if enabled && !fault { 7 } else { 0 };
     if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 + proc_cmds + jobs ||
         !log.text.contains("SHELL_STATUS: BSP PS2, kernel tasks") ||
         !log.before("SHELL_EXIT_REQUEST", "KERNEL_PS2_INPUT_CLEANUP_OK") ||

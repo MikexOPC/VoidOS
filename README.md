@@ -16,9 +16,12 @@ profilo.
 ## Cosa non funziona ancora
 
 La shell gira in una sessione sul dispatcher BSP permanente con capacità fino
-a 64 task su heap e migrazione/preemption ordinaria su BSP e AP. Mancano più
-processi utente attivi contemporaneamente, driver a blocchi, VFS, esecuzione
-di ELF da file, entropia e stack canary. Vedi lo [stato del progetto](docs/status.md).
+a 64 task su heap e migrazione/preemption ordinaria su BSP e AP. Il kernel
+include più processi utente isolati su BSP e AP con IPC cross-CPU, driver a
+blocchi VirtIO-blk e AHCI SATA, cache a blocchi LRU write-through e VFS
+FAT32/FAT16 in lettura e scrittura. Mancano `exec` di ELF da file (i programmi
+utente sono ancora incorporati nell'immagine), `init` e shell in Ring 3,
+entropia e stack canary. Vedi lo [stato del progetto](docs/status.md).
 
 ## Prerequisiti su Windows x64
 

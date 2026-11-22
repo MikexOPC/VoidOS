@@ -14,9 +14,14 @@ pub fn classify(word: u64, length: u32, arguments: u32) -> u32 {
         (2, 0x7061) => 7,
         (6, 0x656764697262) => 8, // bridge
         (4, 0x636f7270) => 9, // proc
+        (2, 0x736c) => 10, // ls
+        (3, 0x746163) => 11, // cat
+        (5, 0x6574697277) => 12, // write
+        (2, 0x6d72) => 13, // rm
+        (4, 0x636e7973) => 14, // sync
         _ => 5,
     };
-    if (arguments != 0 && matches!(command, 1 | 3 | 4 | 9)) || (arguments == 0 && matches!(command, 7 | 8)) { 6 } else { command }
+    if (arguments != 0 && matches!(command, 1 | 3 | 4 | 9 | 14)) || (arguments == 0 && matches!(command, 7 | 8 | 11 | 12 | 13)) { 6 } else { command }
 }
 
 // ====== count ======

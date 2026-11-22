@@ -2,6 +2,7 @@
 #include "internal.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/mm/physical/holdings.h"
+#include "kernel/vfs/vfs.h"
 
 typedef struct {
     X86_PROCESS_SLOT    Slot;
@@ -161,6 +162,8 @@ int x86_process_step(uint64_t pid, int renew_budget, uint32_t *state_out)
         return 0;
     if (arch->Result.Kind) {
         uint32_t wake_count = 0;
+        if (kernel_vfs())
+            kernel_vfs_close_owned(kernel_vfs(), pid);
         (void)kernel_process_terminate(&manager_table, pid,
             exit_kind_private(arch->Result.Kind), arch->Result.Code,
             arch->Result.Vector, arch->Result.Error, arch->Result.Rip, arch->Result.Cr2,
@@ -184,6 +187,8 @@ int x86_process_kill(uint64_t pid)
     uint32_t wake_count = 0;
     if (!manager_ready || !pid)
         return 0;
+    if (kernel_vfs())
+        kernel_vfs_close_owned(kernel_vfs(), pid);
     return kernel_process_terminate(&manager_table, pid, KERNEL_PROC_EXIT_KILLED, 0,
         0, 0, 0, 0, NULL, 0, &wake_count);
 }
@@ -197,6 +202,8 @@ int x86_process_reap(uint64_t pid, KERNEL_PROCESS_INFO *info_out)
     X86_PROCESS_ARCH *arch = arch_lookup_private(pid, &info);
     if (!heap || !arch || (info.State != KERNEL_PROC_ZOMBIE && info.State != KERNEL_PROC_CREATED))
         return 0;
+    if (kernel_vfs())
+        kernel_vfs_close_owned(kernel_vfs(), pid);
     uint64_t pages = arch->Slot.Lease.Pages;
     if (!x86_process_slot_reap(&arch->Slot))
         return 0;

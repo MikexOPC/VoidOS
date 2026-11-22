@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "kernel/vfs/vfs.h"
 
 // ====== copy_checked ======
 
@@ -85,6 +86,107 @@ static BOOT_U64 sys_recv(X86_PROCESS_CPU *cpu, BOOT_U64 handle, BOOT_U64 pointer
     return len;
 }
 
+// ====== copy_user_path_private ======
+
+static BOOT_U64 copy_user_path_private(
+    X86_PROCESS_CPU *cpu,
+    BOOT_U64 pointer,
+    BOOT_U64 length,
+    char *path_out
+)
+{
+    if (!length || length >= KERNEL_VFS_PATH_CAPACITY - 1U) return RESULT_LENGTH;
+    BOOT_U32 range = x86_process_copy_range(pointer, length);
+    if (range == 3) return RESULT_LENGTH;
+    if (range != 1) return RESULT_RANGE;
+    unsigned char raw[KERNEL_VFS_PATH_CAPACITY] = {0};
+    if (copy_checked(cpu, raw, (const void *)pointer, pointer, length, 0))
+        return RESULT_RANGE;
+    uint32_t out_idx = 0;
+    if (raw[0] != '/') path_out[out_idx++] = '/';
+    for (BOOT_U64 idx = 0; idx < length; ++idx) {
+        if (!raw[idx] || raw[idx] < 32 || raw[idx] >= 127)
+            return RESULT_RANGE;
+        path_out[out_idx++] = (char)raw[idx];
+    }
+    path_out[out_idx] = 0;
+    return 0;
+}
+
+// ====== sys_open ======
+
+static BOOT_U64 sys_open(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path_len, BOOT_U64 flags)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs || !cpu->Pid) return RESULT_UNKNOWN;
+    char path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    BOOT_U64 err = copy_user_path_private(cpu, path_ptr, path_len, path);
+    if (err) return err;
+    uint32_t fd = 0;
+    if (kernel_vfs_open(vfs, cpu->Pid, path, (uint32_t)flags, &fd) != KERNEL_STORAGE_OK)
+        return RESULT_UNKNOWN;
+    return (BOOT_U64)fd;
+}
+
+// ====== sys_read ======
+
+static BOOT_U64 sys_read(X86_PROCESS_CPU *cpu, BOOT_U64 fd, BOOT_U64 buf_ptr, BOOT_U64 length)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs || !cpu->Pid) return RESULT_UNKNOWN;
+    if (!length) return 0;
+    BOOT_U32 range = x86_process_copy_range(buf_ptr, length);
+    if (range == 3) return RESULT_LENGTH;
+    if (range != 1) return RESULT_RANGE;
+    unsigned char data[MAX_COPY] = {0};
+    uint32_t bytes_read = 0;
+    if (kernel_vfs_read(vfs, cpu->Pid, (uint32_t)fd, data, (uint32_t)length, &bytes_read) != KERNEL_STORAGE_OK)
+        return RESULT_UNKNOWN;
+    if (bytes_read && copy_checked(cpu, (void *)buf_ptr, data, buf_ptr, bytes_read, 1))
+        return RESULT_RANGE;
+    return (BOOT_U64)bytes_read;
+}
+
+// ====== sys_write_file ======
+
+static BOOT_U64 sys_write_file(X86_PROCESS_CPU *cpu, BOOT_U64 fd, BOOT_U64 buf_ptr, BOOT_U64 length)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs || !cpu->Pid) return RESULT_UNKNOWN;
+    if (!length) return 0;
+    BOOT_U32 range = x86_process_copy_range(buf_ptr, length);
+    if (range == 3) return RESULT_LENGTH;
+    if (range != 1) return RESULT_RANGE;
+    unsigned char data[MAX_COPY] = {0};
+    if (copy_checked(cpu, data, (const void *)buf_ptr, buf_ptr, length, 0))
+        return RESULT_RANGE;
+    uint32_t written = 0;
+    if (kernel_vfs_write(vfs, cpu->Pid, (uint32_t)fd, data, (uint32_t)length, &written) != KERNEL_STORAGE_OK)
+        return RESULT_UNKNOWN;
+    return (BOOT_U64)written;
+}
+
+// ====== sys_close ======
+
+static BOOT_U64 sys_close(X86_PROCESS_CPU *cpu, BOOT_U64 fd)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs || !cpu->Pid) return RESULT_UNKNOWN;
+    return kernel_vfs_close(vfs, cpu->Pid, (uint32_t)fd) == KERNEL_STORAGE_OK ? 0ULL : RESULT_UNKNOWN;
+}
+
+// ====== sys_unlink ======
+
+static BOOT_U64 sys_unlink(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path_len)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs || !cpu->Pid) return RESULT_UNKNOWN;
+    char path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    BOOT_U64 err = copy_user_path_private(cpu, path_ptr, path_len, path);
+    if (err) return err;
+    return kernel_vfs_unlink(vfs, path) == KERNEL_STORAGE_OK ? 0ULL : RESULT_UNKNOWN;
+}
+
 // ====== process_budget_expired ======
 
 int process_budget_expired(BOOT_U64 rip)
@@ -152,6 +254,21 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
     } else if (ipc_enabled && (number == SYS_SEND || number == SYS_RECV)) {
         BOOT_U64 handle = GPR(frame, GPR_RDI), pointer = GPR(frame, GPR_RSI), length = GPR(frame, GPR_RDX);
         GPR(frame, GPR_RAX) = number == SYS_SEND ? sys_send(cpu, handle, pointer, length) : sys_recv(cpu, handle, pointer, length);
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_OPEN) {
+        GPR(frame, GPR_RAX) = sys_open(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI), GPR(frame, GPR_RDX));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_READ) {
+        GPR(frame, GPR_RAX) = sys_read(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI), GPR(frame, GPR_RDX));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_WRITE_FILE) {
+        GPR(frame, GPR_RAX) = sys_write_file(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI), GPR(frame, GPR_RDX));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_CLOSE) {
+        GPR(frame, GPR_RAX) = sys_close(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_UNLINK) {
+        GPR(frame, GPR_RAX) = sys_unlink(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else {
         GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;

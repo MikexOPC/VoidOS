@@ -64,6 +64,18 @@ extern "C" fn worker_main(handle: u64) -> ! {
     if response[0] != 1 || response[1] != 0 {
         exit(13);
     }
+    let path = b"/HELLO.TXT";
+    let fd = syscall(6, path.as_ptr() as u64, path.len() as u64, 0);
+    if fd > 0 {
+        let mut file_buf: [u8; 32] = [0; 32];
+        let read_len = syscall(7, fd as u64, file_buf.as_mut_ptr() as u64, 21);
+        if read_len != 21 || file_buf[0] != b'V' || file_buf[7] != b'F' {
+            exit(21);
+        }
+        if syscall(9, fd as u64, 0, 0) != 0 {
+            exit(22);
+        }
+    }
     let written = syscall(1, MESSAGE.as_ptr() as u64, MESSAGE.len() as u64, 0);
     exit(if written == MESSAGE.len() as i64 { 0 } else { 14 });
 }

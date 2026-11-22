@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "kernel/diagnostics/log.h"
 #ifdef KERNEL_USER_PROCESS
+#include "kernel/vfs/vfs.h"
 int kernel_shell_bridge_status(void);
 int kernel_shell_proc_run(uint64_t result[6]);
 #endif
@@ -162,6 +163,134 @@ static int remote_private(const char *text, uint32_t length)
 #endif
 }
 
+// ====== normalize_vfs_path_private ======
+
+#ifdef KERNEL_USER_PROCESS
+static int normalize_vfs_path_private(
+    const char *text,
+    uint32_t length,
+    int allow_empty_root,
+    char *path_out
+)
+{
+    while (length && text[length - 1] == ' ')
+        --length;
+    if (!length) {
+        if (!allow_empty_root)
+            return 0;
+        path_out[0] = '/';
+        path_out[1] = 0;
+        return 1;
+    }
+    if (length >= KERNEL_VFS_PATH_CAPACITY - 2U)
+        return 0;
+    uint32_t out_idx = 0;
+    if (text[0] != '/')
+        path_out[out_idx++] = '/';
+    for (uint32_t idx = 0; idx < length; ++idx) {
+        if (text[idx] == ' ')
+            return 0;
+        path_out[out_idx++] = text[idx];
+    }
+    path_out[out_idx] = 0;
+    return 1;
+}
+
+// ====== vfs_ls_private ======
+
+static int vfs_ls_private(const char *text, uint32_t length)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs)
+        return LOG(2,"SHELL_VFS_UNAVAILABLE");
+    char path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    if (!normalize_vfs_path_private(text, length, 1, path))
+        return LOG(2,"SHELL_BAD_ARGUMENTS");
+    uint32_t count = 0;
+    KERNEL_VFS_STAT st;
+    while (count < 64U && kernel_vfs_readdir(vfs, path, count, &st) == KERNEL_STORAGE_OK)
+        ++count;
+    return NUMBER("SHELL_LS_COUNT: ", count) && LOG(0,"SHELL_LS_OK");
+}
+
+// ====== vfs_cat_private ======
+
+static int vfs_cat_private(const char *text, uint32_t length)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs)
+        return LOG(2,"SHELL_VFS_UNAVAILABLE");
+    char path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    if (!normalize_vfs_path_private(text, length, 0, path))
+        return LOG(2,"SHELL_BAD_ARGUMENTS");
+    char buf[129] = {0};
+    uint32_t bytes_read = 0;
+    if (kernel_vfs_read_file(vfs, path, 0, buf, 128U, &bytes_read) != KERNEL_STORAGE_OK)
+        return LOG(2,"SHELL_VFS_FAILED");
+    uint32_t text_len = bytes_read;
+    while (text_len && (buf[text_len - 1] == '\n' || buf[text_len - 1] == '\r'))
+        --text_len;
+    for (uint32_t idx = 0; idx < text_len; ++idx) {
+        if ((uint8_t)buf[idx] < 32U || (uint8_t)buf[idx] >= 127U)
+            buf[idx] = '?';
+    }
+    buf[text_len] = 0;
+    static const char prefix[] = "SHELL_CAT: ";
+    return kernel_text(prefix) && serial_private(buf, text_len) && kernel_text("\n") &&
+        video_private(prefix, sizeof(prefix) - 1) && video_private(buf, text_len) && video_private("\n", 1) &&
+        NUMBER("SHELL_CAT_BYTES: ", bytes_read) && LOG(0,"SHELL_CAT_OK");
+}
+
+// ====== vfs_write_private ======
+
+static int vfs_write_private(const char *text, uint32_t length)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs)
+        return LOG(2,"SHELL_VFS_UNAVAILABLE");
+    uint32_t split = 0;
+    while (split < length && text[split] != ' ')
+        ++split;
+    uint32_t payload = split;
+    while (payload < length && text[payload] == ' ')
+        ++payload;
+    if (!split || payload >= length)
+        return LOG(2,"SHELL_BAD_ARGUMENTS");
+    char path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    if (!normalize_vfs_path_private(text, split, 0, path))
+        return LOG(2,"SHELL_BAD_ARGUMENTS");
+    uint32_t payload_len = length - payload;
+    uint32_t written = 0;
+    if (kernel_vfs_write_file(vfs, path, 0, text + payload, payload_len, 1, 1, &written) != KERNEL_STORAGE_OK ||
+        written != payload_len)
+        return LOG(2,"SHELL_VFS_FAILED");
+    return NUMBER("SHELL_WRITE_BYTES: ", written) && LOG(0,"SHELL_WRITE_OK");
+}
+
+// ====== vfs_rm_private ======
+
+static int vfs_rm_private(const char *text, uint32_t length)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs)
+        return LOG(2,"SHELL_VFS_UNAVAILABLE");
+    char path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    if (!normalize_vfs_path_private(text, length, 0, path))
+        return LOG(2,"SHELL_BAD_ARGUMENTS");
+    return kernel_vfs_unlink(vfs, path) == KERNEL_STORAGE_OK ? LOG(0,"SHELL_RM_OK") : LOG(2,"SHELL_VFS_FAILED");
+}
+
+// ====== vfs_sync_private ======
+
+static int vfs_sync_private(void)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs)
+        return LOG(2,"SHELL_VFS_UNAVAILABLE");
+    return kernel_vfs_sync(vfs) == KERNEL_STORAGE_OK ? LOG(0,"SHELL_SYNC_OK") : LOG(2,"SHELL_VFS_FAILED");
+}
+#endif
+
 // ====== kernel_ps2_shell_execute ======
 
 int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2_SHELL_STATUS *status)
@@ -185,7 +314,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     kind = kernel_ps2_shell_classify(word,end - start,argument != line->Length);
     if (kind == UINT32_MAX) return 0;
     if (!kind) return LOG(1,"SHELL_EMPTY");
-    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | proc | ap <n> [cpu|auto] | exit");
+    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | proc | ls [dir] | cat <file> | write <file> <testo> | rm <file> | sync | ap <n> [cpu|auto] | exit");
     if (kind == 2) return echo_private(line->Data + argument,line->Length - argument);
     if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, kernel tasks") &&
         NUMBER("SHELL_INPUT_BYTES: ",status->Bytes) && NUMBER("SHELL_INPUT_KEYS: ",status->Keys) &&
@@ -220,5 +349,14 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
         return LOG(2,"SHELL_PROC_UNAVAILABLE");
 #endif
     }
+#ifdef KERNEL_USER_PROCESS
+    if (kind == 10) return vfs_ls_private(line->Data + argument, line->Length - argument);
+    if (kind == 11) return vfs_cat_private(line->Data + argument, line->Length - argument);
+    if (kind == 12) return vfs_write_private(line->Data + argument, line->Length - argument);
+    if (kind == 13) return vfs_rm_private(line->Data + argument, line->Length - argument);
+    if (kind == 14) return vfs_sync_private();
+#else
+    if (kind >= 10 && kind <= 14) return LOG(2,"SHELL_VFS_UNAVAILABLE");
+#endif
     return kind == 6 ? LOG(2,"SHELL_BAD_ARGUMENTS") : LOG(2,"SHELL_UNKNOWN_COMMAND");
 }

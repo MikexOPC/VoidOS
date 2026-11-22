@@ -10,6 +10,16 @@ fn builtins_and_arguments() {
         if matches!(kind,1 | 3 | 4) { assert_eq!(classify(word,len,1),6); }
     }
     assert_eq!(classify(0x6f686365,4,1),2);
+    assert_eq!(classify(0x736c,2,0),10);
+    assert_eq!(classify(0x736c,2,1),10);
+    assert_eq!(classify(0x746163,3,1),11);
+    assert_eq!(classify(0x746163,3,0),6);
+    assert_eq!(classify(0x6574697277,5,1),12);
+    assert_eq!(classify(0x6574697277,5,0),6);
+    assert_eq!(classify(0x6d72,2,1),13);
+    assert_eq!(classify(0x6d72,2,0),6);
+    assert_eq!(classify(0x636e7973,4,0),14);
+    assert_eq!(classify(0x636e7973,4,1),6);
     assert_eq!(classify(0,0,1),u32::MAX);
     assert_eq!(classify(1,0,0),u32::MAX);
     assert_eq!(classify(0x100706c6568,4,0),u32::MAX);
@@ -23,7 +33,7 @@ fn bounds_and_mutated_tokens() {
         for arguments in 0..=2 {
             for word in [0,u64::MAX,0x706c6568,0x737574617473] {
                 let result = classify(word,length,arguments);
-                assert!(result <= 8 || result == u32::MAX);
+                assert!(result <= 14 || result == u32::MAX);
                 if length > 256 || arguments > 1 { assert_eq!(result,u32::MAX); }
             }
         }
