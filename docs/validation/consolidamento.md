@@ -570,7 +570,7 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   presente nel PATH dell'ambiente) e hardware fisico non verificato.
   Restano capacità (rimozione limite 8 task) e prove su PC fisico.
 
-- **Capacità scheduler oltre 8 task, 22 novembre 2026. Fatta (stress lungo da ripetere).**
+- **Capacità scheduler oltre 8 task, 22 novembre 2026. Fatta.**
   Il core Rust (`kernel/scheduler/rust/state/`) passa a buffer esterno a
   doppio bank (`MIN_CAPACITY = 8`, `MAX_CAPACITY = 256`, `STORAGE_ALIGN = 8`,
   `transaction()` O(1) stack). Il backend x86 alloca su `kernel_heap()` 64
@@ -597,9 +597,17 @@ e [code DMA VirtIO](../../kernel/drivers/video/virtio/queues/documentation/valid
   boot a 8 vCPU (`FreePages: 15804` stabili), ciascuno con `ap 1000000 auto 16`
   (20 task vivi contemporaneamente, `SHELL_AP_MAX_INDEX = 19`, cleanup di
   tutte le 256 pagine di stack confermato).
-  Evidenze in `kernel/build/cap-task14-final-4` e `cap-task14-shell-8-v2`.
-  Non ancora eseguiti sull'immagine `DC4ECB82`: stress lungo da 30 minuti,
-  suite host PowerShell 7 (PowerShell 7 assente dal PATH) e hardware fisico.
+  Evidenze in `kernel/build/cap-task14-final-4`, `cap-task14-shell-8-v2` e
+  `cap-task14-soak-30m`.
+  Stress completo `--ordinary-soak 30 --smp 8` sulla stessa immagine finale
+  `DC4ECB82`: **PASS (1/1)**, 30 minuti di shell + 30 minuti di idle dopo
+  `exit`, 235 job completati (66 migrati, 232 migrazioni, `VisitedCpus=255`,
+  `MigratingCpus=255`), 21.162 byte PS/2 prodotti e ricevuti (picco FIFO 4),
+  8.750 sospensioni BSP (8.720 fuori finestra, 0 sforamenti), sospensioni ==
+  riprese su tutti i 7 AP (303–759), `MinimumIdleCycles=259.556` e `FreePages`
+  stabili a 15.804.
+  Non eseguiti su `DC4ECB82`: suite host PowerShell 7 (assente dal PATH) e
+  hardware fisico.
 
 ## Build e runner
 

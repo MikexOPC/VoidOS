@@ -88,9 +88,12 @@ stabili) e 3/3 boot a 8 vCPU (`FreePages: 15804` stabili), ciascuno con
 oltre il vecchio limite 8 e oltre il confine di PT a 16, somma e checksum
 verificati su tutti i 16 task e cleanup completo delle 256 pagine di stack).
 Test host Rust dello scheduler 54/54 PASS (capacità fino a 256, `clippy` 0
-warning) e `qemu_runner_unit` 21/21 PASS. Stress lungo da 30 minuti su questa
-nuova immagine e hardware fisico non ancora eseguiti (lo stress da 60 minuti
-è stato superato sulla task 5 precedente `53F4FFD2`).
+warning) e `qemu_runner_unit` 21/21 PASS. Stress completo `--ordinary-soak 30
+--smp 8` PASS (1/1): 30 minuti di shell + 30 di idle dopo `exit`, 235 job
+(66 migrati, 232 migrazioni su tutte le 8 CPU), 21.162 byte PS/2 prodotti e
+letti (picco FIFO 4), 8.750 sospensioni BSP (8.720 fuori finestra, 0
+sforamenti), sospensioni == riprese su tutti i 7 AP e 15.804 pagine libere
+stabili. Hardware fisico non verificato.
 [Risultati, immagini e limiti](validation/consolidamento.md#cpu-e-scheduler).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni
