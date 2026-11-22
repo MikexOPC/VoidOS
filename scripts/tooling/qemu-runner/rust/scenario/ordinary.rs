@@ -539,7 +539,13 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         return Err("AP job or its session cleanup is invalid".to_string());
     }
     let trace_bytes = vm.trace_bytes()?;
-    let expected = if fault || enabled { vec![("06".to_string(), "0000".to_string())] } else { Vec::new() };
+    let expected = if enabled {
+        vec![("06".to_string(), "0000".to_string()), ("06".to_string(), "0000".to_string())]
+    } else if fault {
+        vec![("06".to_string(), "0000".to_string())]
+    } else {
+        Vec::new()
+    };
     if trace::user_faults(&trace_bytes) != expected || trace::triple_fault(&trace_bytes) {
         return Err("Unexpected fault during the shell session".to_string());
     }
@@ -594,7 +600,8 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     let dispatcher = wait_dispatcher(vm)?;
     let bytes = vm.trace_bytes()?;
-    if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {
+    let expected = if enabled { vec![("06".to_string(), "0000".to_string())] } else { Vec::new() };
+    if trace::user_faults(&bytes) != expected || trace::triple_fault(&bytes) {
         return Err("Unexpected fault without a PS/2 controller".to_string());
     }
     let ownership = irq_ownership(vm,plan.smp)?;

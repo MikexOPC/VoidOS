@@ -284,3 +284,19 @@ int x86_process_stats(KERNEL_PROCESS_STATS *stats_out)
         return 0;
     return kernel_process_table_stats(&manager_table, stats_out);
 }
+
+// ====== x86_process_step_children ======
+
+int x86_process_step_children(uint64_t parent_pid)
+{
+    if (!manager_ready || !parent_pid)
+        return 0;
+    uint64_t children[16] = {0};
+    uint32_t count = kernel_process_list_children(&manager_table, parent_pid, children, 16U);
+    for (uint32_t index = 0; index < count; ++index) {
+        uint32_t state = 0;
+        if (!x86_process_step(children[index], 0, &state))
+            return 0;
+    }
+    return 1;
+}

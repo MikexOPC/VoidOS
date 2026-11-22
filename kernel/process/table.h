@@ -167,6 +167,8 @@ int kernel_process_create_with_budget(KERNEL_PROCESS_TABLE *table, uint64_t pare
     uint64_t *pid_out);
 int kernel_process_get_budget(KERNEL_PROCESS_TABLE *table, uint64_t pid,
     KERNEL_PROCESS_BUDGET *out);
+uint32_t kernel_process_list_children(KERNEL_PROCESS_TABLE *table, uint64_t parent_pid,
+    uint64_t *pids_out, uint32_t capacity);
 int kernel_process_bind_task(KERNEL_PROCESS_TABLE *table, uint64_t pid, uint32_t task_index);
 int kernel_process_set_state(KERNEL_PROCESS_TABLE *table, uint64_t pid, uint32_t expected, uint32_t next);
 int kernel_process_info(KERNEL_PROCESS_TABLE *table, uint64_t pid, KERNEL_PROCESS_INFO *out);

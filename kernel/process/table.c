@@ -530,6 +530,25 @@ int kernel_process_get_budget(KERNEL_PROCESS_TABLE *table, uint64_t pid,
     return result;
 }
 
+// ====== kernel_process_list_children ======
+
+uint32_t kernel_process_list_children(KERNEL_PROCESS_TABLE *table, uint64_t parent_pid,
+    uint64_t *pids_out, uint32_t capacity)
+{
+    PROCESS_ACCESS access;
+    if (!parent_pid || !pids_out || !capacity || !enter_private(table, &access))
+        return 0U;
+    uint32_t count = 0U;
+    for (uint32_t index = 0; index < table->ProcessCapacity && count < capacity; ++index) {
+        const KERNEL_PROCESS *proc = &table->Processes[index];
+        if (proc->State == KERNEL_PROC_RUNNABLE && proc->ParentPid == parent_pid) {
+            pids_out[count++] = proc->Pid;
+        }
+    }
+    leave_private(&access);
+    return count;
+}
+
 // ====== kernel_process_bind_task ======
 
 int kernel_process_bind_task(KERNEL_PROCESS_TABLE *table, uint64_t pid, uint32_t task_index)

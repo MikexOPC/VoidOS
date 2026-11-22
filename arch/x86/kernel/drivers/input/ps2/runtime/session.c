@@ -195,18 +195,25 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     }
 #ifdef KERNEL_USER_PROCESS
     if (x86_user_mode_allowed() && x86_process_manager_ready()) {
+        BOOT_U64 free_before = 0;
         uint64_t init_pid = 0;
         uint32_t init_state = 0;
         KERNEL_PROCESS_INFO init_info = {0};
-        if (!x86_process_spawn_vfs("/bin/init.elf", KERNEL_PID_KERNEL, 0, NULL, &init_pid)) {
+        if (!kernel_physical_budget_read(env->Window->Pool, &free_before) ||
+            !x86_process_spawn_vfs("/bin/init.elf", KERNEL_PID_KERNEL, 0, NULL, &init_pid) ||
+            !x86_process_set_arg(init_pid, 1ULL)) {
             kernel_log(3, "VFS_EXEC_SPAWN_FAILED"); return 0;
         }
         int stepped = 1;
         while (stepped && init_state != KERNEL_PROC_ZOMBIE) {
             stepped = x86_process_step(init_pid, 0, &init_state);
+            if (stepped && init_state != KERNEL_PROC_ZOMBIE) {
+                stepped = x86_process_step_children(init_pid);
+            }
         }
         if (!stepped || !x86_process_reap(init_pid, &init_info) ||
-            init_info.ExitKind != KERNEL_PROC_EXIT_NORMAL || init_info.ExitCode != 0) {
+            init_info.ExitKind != KERNEL_PROC_EXIT_NORMAL || init_info.ExitCode != 0 ||
+            !kernel_physical_budget_matches(env->Window->Pool, free_before)) {
             kernel_log(3, "VFS_EXEC_RUN_FAILED"); return 0;
         }
         kernel_log(0, "KERNEL_VFS_EXEC_OK");

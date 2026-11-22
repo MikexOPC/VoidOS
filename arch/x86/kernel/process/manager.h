@@ -17,6 +17,7 @@ int x86_process_set_arg(uint64_t pid, uint64_t initial_arg);
 int x86_process_channel_create(uint64_t pid0, uint64_t pid1,
     uint64_t *handle0_out, uint64_t *handle1_out);
 int x86_process_step(uint64_t pid, int renew_budget, uint32_t *state_out);
+int x86_process_step_children(uint64_t parent_pid);
 int x86_process_kill(uint64_t pid);
 int x86_process_reap(uint64_t pid, KERNEL_PROCESS_INFO *info_out);
 int x86_process_query(uint64_t pid, KERNEL_PROCESS_INFO *info_out);
