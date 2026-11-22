@@ -334,3 +334,11 @@ virtio_blk_protocol_rust = executable(
     override_options: ['b_sanitize=none'],
 )
 test('virtio_blk_protocol_rust', virtio_blk_protocol_rust)
+
+ahci_protocol_rust = executable(
+    'ahci_protocol_rust',
+    repo / 'kernel/drivers/storage/ahci/rust/protocol.rs',
+    rust_args: ['--test', '-C', 'overflow-checks=yes'],
+    override_options: ['b_sanitize=none'],
+)
+test('ahci_protocol_rust', ahci_protocol_rust)

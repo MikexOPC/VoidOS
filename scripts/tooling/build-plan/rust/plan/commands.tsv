@@ -312,9 +312,12 @@ ordinary	c	arch/x86/kernel/drivers/bus/pci/ecam/reader.c
 ordinary	c	arch/x86/kernel/drivers/bus/pci/ecam/validation.c
 ordinary	c	arch/x86/kernel/drivers/bus/pci/ecam/backend/access.c
 ordinary	c	kernel/storage/cache.c	storage-cache.obj
-ordinary	rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	{repo}/kernel/drivers/storage/virtio_blk/rust/protocol.rs	-o	{out}/virtio-blk-protocol.obj
+ordinary	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	virtio_blk_protocol	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	{repo}/kernel/drivers/storage/virtio_blk/rust/protocol.rs	-o	{out}/virtio-blk-protocol.obj
 ordinary	c	kernel/drivers/storage/virtio_blk/virtio_blk.c	virtio-blk.obj
 ordinary	c	arch/x86/kernel/drivers/storage/virtio_blk/native.c	virtio-blk-native.obj
+ordinary	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	ahci_protocol	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	{repo}/kernel/drivers/storage/ahci/rust/protocol.rs	-o	{out}/ahci-protocol.obj
+ordinary	c	kernel/drivers/storage/ahci/ahci.c	ahci.obj
+ordinary	c	arch/x86/kernel/drivers/storage/ahci/native.c	ahci-native.obj
 user	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	k6_process	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	codegen-units=1	{repo}/kernel/process/rust/lib.rs	-o	{out}/k6-policy.obj
 user	c	kernel/process/table.c	process-table.obj
 user	c	arch/x86/kernel/process/runtime.c	k6-process.obj
