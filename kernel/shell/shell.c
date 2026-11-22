@@ -314,7 +314,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     kind = kernel_ps2_shell_classify(word,end - start,argument != line->Length);
     if (kind == UINT32_MAX) return 0;
     if (!kind) return LOG(1,"SHELL_EMPTY");
-    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | proc | ls [dir] | cat <file> | write <file> <testo> | rm <file> | sync | ap <n> [cpu|auto] | exit");
+    if (kind == 1) return LOG(1,"SHELL_HELP: help | print <testo> | status | bridge status | proc | fl [dir] | rp <file> | write <file> <testo> | rm <file> | sync | ap <n> [cpu|auto] | exit");
     if (kind == 2) return echo_private(line->Data + argument,line->Length - argument);
     if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, kernel tasks") &&
         NUMBER("SHELL_INPUT_BYTES: ",status->Bytes) && NUMBER("SHELL_INPUT_KEYS: ",status->Keys) &&

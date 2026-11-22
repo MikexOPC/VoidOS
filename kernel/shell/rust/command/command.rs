@@ -8,14 +8,14 @@ pub fn classify(word: u64, length: u32, arguments: u32) -> u32 {
     if length < 8 && word >> (length * 8) != 0 { return u32::MAX; }
     let command = match (length, word) {
         (4, 0x706c6568) => 1, // help, little-endian token
-        (4, 0x6f686365) => 2, // echo
+        (5, 0x746e697270) => 2, // print
         (6, 0x737574617473) => 3, // status
         (4, 0x74697865) => 4, // exit
         (2, 0x7061) => 7,
         (6, 0x656764697262) => 8, // bridge
         (4, 0x636f7270) => 9, // proc
-        (2, 0x736c) => 10, // ls
-        (3, 0x746163) => 11, // cat
+        (2, 0x6c66) => 10, // fl
+        (2, 0x7072) => 11, // rp
         (5, 0x6574697277) => 12, // write
         (2, 0x6d72) => 13, // rm
         (4, 0x636e7973) => 14, // sync

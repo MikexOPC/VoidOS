@@ -463,20 +463,20 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         }
         shell_type(vm, "bridge status")?;
         vm.wait(marker, 3, None)?;
-        shell_type(vm, "ls")?;
+        shell_type(vm, "fl")?;
         let ls_log = vm.wait("SHELL_LS_OK", 1, Some("OK"))?;
         if ls_log.number("SHELL_LS_COUNT", 0)? < 1 {
-            return Err("Expected at least 1 root entry in ls".to_string());
+            return Err("Expected at least 1 root entry in fl".to_string());
         }
         shell_type(vm, "write note voidos")?;
         let write_log = vm.wait("SHELL_WRITE_OK", 1, Some("OK"))?;
         if write_log.number("SHELL_WRITE_BYTES", 0)? != 6 {
             return Err("Unexpected byte count written by shell write".to_string());
         }
-        shell_type(vm, "cat note")?;
+        shell_type(vm, "rp note")?;
         let cat_log = vm.wait("SHELL_CAT_OK", 1, Some("OK"))?;
         if cat_log.number("SHELL_CAT_BYTES", 0)? != 6 || !cat_log.text.contains("SHELL_CAT: voidos") {
-            return Err("Unexpected content returned by shell cat".to_string());
+            return Err("Unexpected content returned by shell rp".to_string());
         }
         shell_type(vm, "rm note")?;
         vm.wait("SHELL_RM_OK", 1, Some("OK"))?;

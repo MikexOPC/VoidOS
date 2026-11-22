@@ -4,16 +4,19 @@ use super::*;
 
 #[test]
 fn builtins_and_arguments() {
-    for (word,len,kind) in [(0,0,0),(0x706c6568,4,1),(0x6f686365,4,2),
+    for (word,len,kind) in [(0,0,0),(0x706c6568,4,1),(0x746e697270,5,2),
         (0x737574617473,6,3),(0x74697865,4,4),(0x706c6548,4,5)] {
         assert_eq!(classify(word,len,0),kind);
         if matches!(kind,1 | 3 | 4) { assert_eq!(classify(word,len,1),6); }
     }
-    assert_eq!(classify(0x6f686365,4,1),2);
-    assert_eq!(classify(0x736c,2,0),10);
-    assert_eq!(classify(0x736c,2,1),10);
-    assert_eq!(classify(0x746163,3,1),11);
-    assert_eq!(classify(0x746163,3,0),6);
+    assert_eq!(classify(0x746e697270,5,1),2);
+    assert_eq!(classify(0x6c66,2,0),10);
+    assert_eq!(classify(0x6c66,2,1),10);
+    assert_eq!(classify(0x7072,2,1),11);
+    assert_eq!(classify(0x7072,2,0),6);
+    assert_eq!(classify(0x6f686365,4,0),5);
+    assert_eq!(classify(0x736c,2,0),5);
+    assert_eq!(classify(0x746163,3,1),5);
     assert_eq!(classify(0x6574697277,5,1),12);
     assert_eq!(classify(0x6574697277,5,0),6);
     assert_eq!(classify(0x6d72,2,1),13);
