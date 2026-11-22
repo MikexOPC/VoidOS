@@ -25,6 +25,8 @@ BOOT_U64 x86_ipc_receive_ready(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_
 
 // BSP, IF=0, runtime open, trusted kernel storage. A blocked turn returns 0.
 int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *image);
+int x86_process_slot_prepare_budgeted(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *image,
+    BOOT_U32 max_image_pages, BOOT_U32 cpu_budget_ms);
 int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     IPC_CHANNEL *channel, BOOT_U64 endpoint, int renew_budget);
 int x86_process_slot_reap(X86_PROCESS_SLOT *slot);

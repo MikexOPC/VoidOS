@@ -261,6 +261,7 @@ static uint32_t detach_endpoint_private(KERNEL_PROCESS_TABLE *table, KERNEL_IPC_
 static void fill_info_private(const KERNEL_PROCESS *process, KERNEL_PROCESS_INFO *out)
 {
     out->Pid = process->Pid;
+    out->ParentPid = process->ParentPid;
     out->State = process->State;
     out->ExitKind = process->ExitKind;
     out->TaskIndex = process->TaskIndex;
@@ -274,6 +275,7 @@ static void fill_info_private(const KERNEL_PROCESS *process, KERNEL_PROCESS_INFO
     out->Writes = process->Writes;
     out->Irqs = process->Irqs;
     out->ArchContext = process->ArchContext;
+    out->Budget = process->Budget;
 }
 
 // ====== kernel_process_table_init ======
@@ -377,15 +379,99 @@ int kernel_process_table_stats(KERNEL_PROCESS_TABLE *table, KERNEL_PROCESS_STATS
     return 1;
 }
 
-// ====== kernel_process_create ======
+// ====== kernel_process_budget_default ======
 
-int kernel_process_create(KERNEL_PROCESS_TABLE *table, uint32_t flags,
-    uint64_t arch_context, uint64_t *pid_out)
+void kernel_process_budget_default(KERNEL_PROCESS_BUDGET *out)
+{
+    if (!out)
+        return;
+    out->MaxImagePages = KERNEL_PROCESS_DEFAULT_IMAGE_PAGES;
+    out->MaxOpenFiles = KERNEL_PROCESS_DEFAULT_OPEN_FILES;
+    out->CpuBudgetMs = KERNEL_PROCESS_DEFAULT_CPU_BUDGET_MS;
+    out->Flags = KERNEL_BUDGET_FLAG_SPAWN;
+}
+
+// ====== budget_valid_private ======
+
+static int budget_valid_private(const KERNEL_PROCESS_BUDGET *budget)
+{
+    if (!budget)
+        return 0;
+    if (!budget->MaxImagePages || budget->MaxImagePages > KERNEL_PROCESS_MAX_IMAGE_PAGES)
+        return 0;
+    if (!budget->MaxOpenFiles || budget->MaxOpenFiles > KERNEL_PROCESS_MAX_HANDLES)
+        return 0;
+    if (!budget->CpuBudgetMs || budget->CpuBudgetMs > KERNEL_PROCESS_MAX_CPU_BUDGET_MS)
+        return 0;
+    if (budget->Flags & ~KERNEL_BUDGET_FLAG_ALL)
+        return 0;
+    return 1;
+}
+
+// ====== kernel_process_budget_derive ======
+
+int kernel_process_budget_derive(const KERNEL_PROCESS_BUDGET *parent,
+    const KERNEL_PROCESS_BUDGET *requested, KERNEL_PROCESS_BUDGET *out)
+{
+    if (!out)
+        return 0;
+    KERNEL_PROCESS_BUDGET ceiling;
+    if (parent) {
+        if (!budget_valid_private(parent))
+            return 0;
+        ceiling = *parent;
+    } else {
+        kernel_process_budget_default(&ceiling);
+    }
+    if (!requested) {
+        *out = ceiling;
+        return 1;
+    }
+    if ((requested->Flags & ~KERNEL_BUDGET_FLAG_ALL) != 0)
+        return 0;
+    if ((requested->Flags & ~ceiling.Flags) != 0)
+        return 0;
+    uint32_t pages = requested->MaxImagePages ? requested->MaxImagePages : ceiling.MaxImagePages;
+    uint32_t files = requested->MaxOpenFiles ? requested->MaxOpenFiles : ceiling.MaxOpenFiles;
+    uint32_t cpu_ms = requested->CpuBudgetMs ? requested->CpuBudgetMs : ceiling.CpuBudgetMs;
+    if (pages > ceiling.MaxImagePages || files > ceiling.MaxOpenFiles || cpu_ms > ceiling.CpuBudgetMs)
+        return 0;
+    KERNEL_PROCESS_BUDGET derived;
+    derived.MaxImagePages = pages;
+    derived.MaxOpenFiles = files;
+    derived.CpuBudgetMs = cpu_ms;
+    derived.Flags = requested->Flags;
+    if (!budget_valid_private(&derived))
+        return 0;
+    *out = derived;
+    return 1;
+}
+
+// ====== kernel_process_create_with_budget ======
+
+int kernel_process_create_with_budget(KERNEL_PROCESS_TABLE *table, uint64_t parent_pid,
+    uint32_t flags, uint64_t arch_context, const KERNEL_PROCESS_BUDGET *requested_budget,
+    uint64_t *pid_out)
 {
     PROCESS_ACCESS access;
     if (!pid_out || !enter_private(table, &access))
         return 0;
     int result = 0;
+    const KERNEL_PROCESS_BUDGET *parent_budget = NULL;
+    if (parent_pid != KERNEL_PID_KERNEL) {
+        KERNEL_PROCESS *parent = find_process_private(table, parent_pid);
+        if (!parent || parent->State == KERNEL_PROC_ZOMBIE ||
+            !(parent->Budget.Flags & KERNEL_BUDGET_FLAG_SPAWN)) {
+            leave_private(&access);
+            return 0;
+        }
+        parent_budget = &parent->Budget;
+    }
+    KERNEL_PROCESS_BUDGET derived;
+    if (!kernel_process_budget_derive(parent_budget, requested_budget, &derived)) {
+        leave_private(&access);
+        return 0;
+    }
     KERNEL_PROCESS *slot = NULL;
     for (uint32_t index = 0; index < table->ProcessCapacity; ++index) {
         if (table->Processes[index].State == KERNEL_PROC_FREE) {
@@ -404,12 +490,40 @@ int kernel_process_create(KERNEL_PROCESS_TABLE *table, uint32_t flags,
     if (slot && table->NextPid && table->NextPid < UINT64_MAX) {
         zero_bytes(slot, sizeof(*slot));
         slot->Pid = table->NextPid++;
+        slot->ParentPid = parent_pid;
         slot->State = KERNEL_PROC_CREATED;
         slot->TaskIndex = KERNEL_TASK_NONE;
         slot->Flags = flags;
         slot->ArchContext = arch_context;
+        slot->Budget = derived;
         ++table->ProcessCount;
         *pid_out = slot->Pid;
+        result = 1;
+    }
+    leave_private(&access);
+    return result;
+}
+
+// ====== kernel_process_create ======
+
+int kernel_process_create(KERNEL_PROCESS_TABLE *table, uint32_t flags,
+    uint64_t arch_context, uint64_t *pid_out)
+{
+    return kernel_process_create_with_budget(table, KERNEL_PID_KERNEL, flags, arch_context, NULL, pid_out);
+}
+
+// ====== kernel_process_get_budget ======
+
+int kernel_process_get_budget(KERNEL_PROCESS_TABLE *table, uint64_t pid,
+    KERNEL_PROCESS_BUDGET *out)
+{
+    PROCESS_ACCESS access;
+    if (!out || !enter_private(table, &access))
+        return 0;
+    int result = 0;
+    KERNEL_PROCESS *process = find_process_private(table, pid);
+    if (process) {
+        *out = process->Budget;
         result = 1;
     }
     leave_private(&access);

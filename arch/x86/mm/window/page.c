@@ -279,6 +279,146 @@ int x86_page_window_resume(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_LEASE *parke
     return 1;
 }
 
+// ====== lease_frame_valid ======
+
+static int lease_frame_valid(const X86_PAGE_WINDOW *window, BOOT_U64 base, BOOT_U64 pages)
+{
+    if (!window || !window->Pool || !pages || pages > 512ULL || base < 4096ULL || (base & 4095ULL)) {
+        return 0;
+    }
+    BOOT_U32 bits = window->Pool->PhysicalBits;
+    if (bits < 32U || bits > 52U) {
+        return 0;
+    }
+    BOOT_U64 bytes = pages * 4096ULL;
+    BOOT_U64 limit = 1ULL << bits;
+    return base < limit && bytes <= limit - base;
+}
+
+// ====== zero_lease_chunks ======
+
+static int zero_lease_chunks(X86_PAGE_WINDOW *window, const KERNEL_PHYSICAL_LEASE *lease)
+{
+    volatile unsigned char *data = x86_window_bytes();
+    volatile BOOT_U64 *entries = x86_window_entries(3);
+    if (!data || !entries) {
+        return 0;
+    }
+    BOOT_U64 done = 0;
+    while (done < lease->Pages) {
+        BOOT_U64 chunk = lease->Pages - done;
+        if (chunk > X86_KERNEL_WINDOW_PAGES) {
+            chunk = X86_KERNEL_WINDOW_PAGES;
+        }
+        for (BOOT_U64 index = 0; index < chunk; ++index) {
+            entries[WINDOW_LEAF + index] = (lease->Base + (done + index) * 4096ULL) | 3ULL | PAGE_NX;
+        }
+        invalidate_span(chunk);
+        int ok = zero_and_verify(data, chunk * 4096ULL);
+        for (BOOT_U64 index = 0; index < chunk; ++index) {
+            entries[WINDOW_LEAF + index] = 0;
+        }
+        invalidate_span(chunk);
+        if (!ok) {
+            return 0;
+        }
+        done += chunk;
+    }
+    return leaves_match(window);
+}
+
+// ====== x86_page_window_allocate_lease ======
+
+int x86_page_window_allocate_lease(X86_PAGE_WINDOW *window, BOOT_U64 pages, KERNEL_PHYSICAL_LEASE *lease_out)
+{
+    if (!lease_out || !x86_page_window_idle_valid(window) || !pages || pages > 512ULL ||
+        lease_out->Base || lease_out->Pages || lease_out->Id || lease_out->Owner) {
+        return 0;
+    }
+    KERNEL_PHYSICAL_LEASE lease = {0};
+    if (!kernel_physical_allocate(window->Pool, pages, &lease)) {
+        return 0;
+    }
+    if (!lease_frame_valid(window, lease.Base, lease.Pages) ||
+        !kernel_physical_pin(window->Pool, &lease, 1)) {
+        (void)kernel_physical_release(window->Pool, &lease);
+        return 0;
+    }
+    if (!zero_lease_chunks(window, &lease)) {
+        (void)kernel_physical_release_after_unmap(window->Pool, &lease);
+        return 0;
+    }
+    *lease_out = lease;
+    return 1;
+}
+
+// ====== x86_page_window_write_lease ======
+
+int x86_page_window_write_lease(X86_PAGE_WINDOW *window, const KERNEL_PHYSICAL_LEASE *lease,
+                                BOOT_U64 byte_offset, const void *src, BOOT_U64 bytes)
+{
+    if (!src || !bytes || !lease || !x86_page_window_idle_valid(window) ||
+        !lease_frame_valid(window, lease->Base, lease->Pages) ||
+        !kernel_physical_is_pinned(window->Pool, lease)) {
+        return 0;
+    }
+    BOOT_U64 total_bytes = lease->Pages * 4096ULL;
+    if (byte_offset > total_bytes || bytes > total_bytes - byte_offset) {
+        return 0;
+    }
+    BOOT_U64 src_addr = (BOOT_U64)src;
+    if (src_addr > ~0ULL - bytes ||
+        os_address_ranges_overlap(src_addr, bytes, X86_KERNEL_PAGE_WINDOW, X86_KERNEL_WINDOW_BYTES)) {
+        return 0;
+    }
+    volatile unsigned char *target = x86_window_bytes();
+    volatile BOOT_U64 *entries = x86_window_entries(3);
+    if (!target || !entries) {
+        return 0;
+    }
+    const unsigned char *input = (const unsigned char *)src;
+    BOOT_U64 copied = 0;
+    while (copied < bytes) {
+        BOOT_U64 cursor = byte_offset + copied;
+        BOOT_U64 page_index = cursor >> 12;
+        BOOT_U64 page_off = cursor & 4095ULL;
+        BOOT_U64 amount = bytes - copied;
+        if (amount > 4096ULL - page_off) {
+            amount = 4096ULL - page_off;
+        }
+        entries[WINDOW_LEAF] = (lease->Base + page_index * 4096ULL) | 3ULL | PAGE_NX;
+        x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
+        for (BOOT_U64 index = 0; index < amount; ++index) {
+            target[page_off + index] = input[copied + index];
+        }
+        entries[WINDOW_LEAF] = 0;
+        x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
+        copied += amount;
+    }
+    return leaves_match(window);
+}
+
+// ====== x86_page_window_free_lease ======
+
+int x86_page_window_free_lease(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_LEASE *lease)
+{
+    if (!lease || !x86_page_window_idle_valid(window) ||
+        !lease_frame_valid(window, lease->Base, lease->Pages) ||
+        !kernel_physical_release_fits(window->Pool, lease)) {
+        return 0;
+    }
+    if (!zero_lease_chunks(window, lease)) {
+        return 0;
+    }
+#ifdef KERNEL_AP_RUNTIME
+    if (xis_native_shootdown()) x86_paging_generation_bump();
+#endif
+    if (!kernel_physical_release_after_unmap(window->Pool, lease)) {
+        return 0;
+    }
+    return x86_page_window_idle_valid(window);
+}
+
 // ====== copertura di tutte le pagine esposte dal prestito ACPI ===== //
 
 static int acpi_range(const KERNEL_BOOT_CONTEXT *context, BOOT_U64 base, BOOT_U64 span)

@@ -280,6 +280,65 @@ static void test_fault_cleanup_and_generation_reuse(KERNEL_HEAP *heap)
     assert(kernel_process_table_destroy(&table));
 }
 
+// ====== test_budget_non_escalation ======
+
+static void test_budget_non_escalation(KERNEL_HEAP *heap)
+{
+    KERNEL_PROCESS_TABLE table = {0};
+    KERNEL_PROCESS_BUDGET def = {0};
+    KERNEL_PROCESS_BUDGET out = {0};
+    uint64_t parent_pid = 0;
+    uint64_t child_pid = 0;
+    uint64_t grandchild_pid = 0;
+
+    kernel_process_budget_default(&def);
+    assert(def.MaxImagePages == KERNEL_PROCESS_DEFAULT_IMAGE_PAGES);
+    assert(def.MaxOpenFiles == KERNEL_PROCESS_DEFAULT_OPEN_FILES);
+    assert(def.CpuBudgetMs == KERNEL_PROCESS_DEFAULT_CPU_BUDGET_MS);
+    assert(def.Flags == KERNEL_BUDGET_FLAG_SPAWN);
+
+    // Derive from kernel default: narrowing succeeds, escalation fails.
+    KERNEL_PROCESS_BUDGET tight = { 32U, 8U, 500U, KERNEL_BUDGET_FLAG_SPAWN };
+    assert(kernel_process_budget_derive(NULL, &tight, &out));
+    assert(out.MaxImagePages == 32U && out.MaxOpenFiles == 8U && out.CpuBudgetMs == 500U);
+    assert(out.Flags == KERNEL_BUDGET_FLAG_SPAWN);
+
+    KERNEL_PROCESS_BUDGET over_pages = { KERNEL_PROCESS_MAX_IMAGE_PAGES + 1U, 8U, 500U, 0U };
+    assert(!kernel_process_budget_derive(NULL, &over_pages, &out));
+
+    KERNEL_PROCESS_BUDGET bad_flags = { 16U, 4U, 200U, 0x80U };
+    assert(!kernel_process_budget_derive(NULL, &bad_flags, &out));
+
+    // Process table enforcement: parent with tight budget spawns child; escalation is rejected.
+    assert(kernel_process_table_init(&table, heap, 4, 4));
+    assert(kernel_process_create_with_budget(&table, KERNEL_PID_KERNEL, 0, 10, &tight, &parent_pid));
+    assert(kernel_process_get_budget(&table, parent_pid, &out));
+    assert(out.MaxImagePages == 32U && out.MaxOpenFiles == 8U && out.CpuBudgetMs == 500U);
+
+    KERNEL_PROCESS_BUDGET escalate_pages = { 64U, 4U, 250U, 0U };
+    assert(!kernel_process_create_with_budget(&table, parent_pid, 0, 11, &escalate_pages, &child_pid));
+
+    KERNEL_PROCESS_BUDGET escalate_files = { 16U, 16U, 250U, 0U };
+    assert(!kernel_process_create_with_budget(&table, parent_pid, 0, 11, &escalate_files, &child_pid));
+
+    KERNEL_PROCESS_BUDGET escalate_cpu = { 16U, 4U, 1000U, 0U };
+    assert(!kernel_process_create_with_budget(&table, parent_pid, 0, 11, &escalate_cpu, &child_pid));
+
+    // Narrowing and revoking SPAWN flag succeeds.
+    KERNEL_PROCESS_BUDGET sandboxed = { 16U, 4U, 250U, 0U };
+    assert(kernel_process_create_with_budget(&table, parent_pid, 0, 12, &sandboxed, &child_pid));
+    KERNEL_PROCESS_INFO info = {0};
+    assert(kernel_process_info(&table, child_pid, &info));
+    assert(info.ParentPid == parent_pid);
+    assert(info.Budget.MaxImagePages == 16U && info.Budget.MaxOpenFiles == 4U);
+    assert(info.Budget.CpuBudgetMs == 250U && info.Budget.Flags == 0U);
+
+    // Sandboxed child without SPAWN flag cannot spawn grandchildren.
+    assert(!kernel_process_create_with_budget(&table, child_pid, 0, 13, NULL, &grandchild_pid));
+
+    assert(kernel_process_table_destroy(&table));
+}
+
 // ====== main ======
 
 int main(void)
@@ -295,6 +354,7 @@ int main(void)
     test_dynamic_growth_and_loopback(&heap);
     test_state_transitions_and_isolation(&heap);
     test_fault_cleanup_and_generation_reuse(&heap);
+    test_budget_non_escalation(&heap);
 
     KERNEL_HEAP_STATS after = kernel_heap_stats(&heap);
     assert(after.Objects == 0);

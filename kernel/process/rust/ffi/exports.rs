@@ -1,4 +1,4 @@
-use crate::plan::{build, ProcessPlan};
+use crate::plan::{build, build_with_limit, ProcessPlan};
 use crate::rules;
 use core::slice;
 
@@ -14,6 +14,28 @@ pub unsafe extern "C" fn x86_process_plan(bytes: *const u8, length: u64, plan: *
     let image = unsafe { slice::from_raw_parts(bytes, length as usize) };
     let output = unsafe { &mut *plan };
     match build(image, output) {
+        Ok(()) => 0,
+        Err(code) => code,
+    }
+}
+
+// ====== x86_process_plan_budgeted ======
+
+/// # Safety
+/// `bytes` must be readable for `length` bytes and `plan` writable for one `ProcessPlan`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn x86_process_plan_budgeted(
+    bytes: *const u8,
+    length: u64,
+    max_pages: u64,
+    plan: *mut ProcessPlan,
+) -> u32 {
+    if bytes.is_null() || plan.is_null() {
+        return 200;
+    }
+    let image = unsafe { slice::from_raw_parts(bytes, length as usize) };
+    let output = unsafe { &mut *plan };
+    match build_with_limit(image, max_pages, output) {
         Ok(()) => 0,
         Err(code) => code,
     }

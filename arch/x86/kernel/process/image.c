@@ -21,36 +21,61 @@ static int roots_stable(void)
 static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, KERNEL_PHYSICAL_LEASE *lease_out)
 {
     BOOT_U64 pages = TABLE_PAGES + plan->Count + STACK_PAGES;
-    if (!x86_page_window_idle_valid(process_rt.Window) || !x86_page_window_acquire(process_rt.Window, pages)) return 0;
-    volatile unsigned char *alias = x86_window_bytes();
-    volatile BOOT_U64 *tables = (volatile BOOT_U64 *)alias;
-    BOOT_U64 base = process_rt.Window->Lease.Base;
-    BOOT_U64 branch = PTE_PRESENT | PTE_WRITE | PTE_USER;
-    for (BOOT_U64 index = 0; index < pages * PAGE_BYTES; ++index) alias[index] = 0;
-    tables[0] = (base + PAGE_BYTES) | branch;
-    tables[SLOT_IMAGE] = x86_window_entries(0)[SLOT_IMAGE];
-    tables[X86_LAYOUT_WINDOWS_SLOT] = x86_window_entries(0)[X86_LAYOUT_WINDOWS_SLOT];
-    if (process_rt.Permanent) {
-        tables[X86_LAYOUT_HEAP_SLOT] = x86_window_entries(0)[X86_LAYOUT_HEAP_SLOT];
-        tables[X86_LAYOUT_AP_SLOT] = x86_window_entries(0)[X86_LAYOUT_AP_SLOT];
+    if (!x86_page_window_allocate_lease(process_rt.Window, pages, lease_out)) {
+        return 0;
     }
-    tables[512] = (base + 2 * PAGE_BYTES) | branch;
-    tables[1024 + 2] = (base + 3 * PAGE_BYTES) | branch;
+    BOOT_U64 base = lease_out->Base;
+    BOOT_U64 branch = PTE_PRESENT | PTE_WRITE | PTE_USER;
+    const volatile BOOT_U64 *root = x86_window_entries(0);
+    BOOT_U64 entry = (base + PAGE_BYTES) | branch;
+    if (!x86_page_window_write_lease(process_rt.Window, lease_out, 0, &entry, sizeof(entry))) goto fail;
+    entry = root[SLOT_IMAGE];
+    if (!x86_page_window_write_lease(process_rt.Window, lease_out, (BOOT_U64)SLOT_IMAGE * 8ULL, &entry, sizeof(entry))) goto fail;
+    entry = root[X86_LAYOUT_WINDOWS_SLOT];
+    if (!x86_page_window_write_lease(process_rt.Window, lease_out, (BOOT_U64)X86_LAYOUT_WINDOWS_SLOT * 8ULL, &entry, sizeof(entry))) goto fail;
+    if (process_rt.Permanent) {
+        entry = root[X86_LAYOUT_HEAP_SLOT];
+        if (!x86_page_window_write_lease(process_rt.Window, lease_out, (BOOT_U64)X86_LAYOUT_HEAP_SLOT * 8ULL, &entry, sizeof(entry))) goto fail;
+        entry = root[X86_LAYOUT_AP_SLOT];
+        if (!x86_page_window_write_lease(process_rt.Window, lease_out, (BOOT_U64)X86_LAYOUT_AP_SLOT * 8ULL, &entry, sizeof(entry))) goto fail;
+    }
+    entry = (base + 2ULL * PAGE_BYTES) | branch;
+    if (!x86_page_window_write_lease(process_rt.Window, lease_out, 512ULL * 8ULL, &entry, sizeof(entry))) goto fail;
+    entry = (base + 3ULL * PAGE_BYTES) | branch;
+    if (!x86_page_window_write_lease(process_rt.Window, lease_out, (1024ULL + 2ULL) * 8ULL, &entry, sizeof(entry))) goto fail;
     for (BOOT_U64 index = 0; index < plan->Count; ++index) {
         BOOT_U64 lease = TABLE_PAGES + index;
         BOOT_U64 flags = PTE_PRESENT | PTE_USER;
-        if (plan->Pages[index].Flags & 1) flags |= PTE_WRITE;
-        if (!(plan->Pages[index].Flags & 2)) flags |= PTE_NX;
-        tables[PT_OFFSET(plan->Pages[index].Virt)] = (base + lease * PAGE_BYTES) | flags;
-        for (BOOT_U64 byte = 0; byte < plan->Pages[index].FileBytes; ++byte)
-            alias[lease * PAGE_BYTES + byte] = image->Bytes[plan->Pages[index].FileOffset + byte];
+        if (plan->Pages[index].Flags & 1ULL) flags |= PTE_WRITE;
+        if (!(plan->Pages[index].Flags & 2ULL)) flags |= PTE_NX;
+        entry = (base + lease * PAGE_BYTES) | flags;
+        if (!x86_page_window_write_lease(process_rt.Window, lease_out,
+                (BOOT_U64)PT_OFFSET(plan->Pages[index].Virt) * 8ULL, &entry, sizeof(entry))) {
+            goto fail;
+        }
+        if (plan->Pages[index].FileBytes) {
+            if (!x86_page_window_write_lease(process_rt.Window, lease_out,
+                    lease * PAGE_BYTES,
+                    image->Bytes + plan->Pages[index].FileOffset,
+                    plan->Pages[index].FileBytes)) {
+                goto fail;
+            }
+        }
     }
     for (BOOT_U64 index = 0; index < STACK_PAGES; ++index) {
         BOOT_U64 lease = TABLE_PAGES + plan->Count + index;
-        tables[PT_OFFSET(STACK_BASE + index * PAGE_BYTES)] = (base + lease * PAGE_BYTES) | branch | PTE_NX;
+        entry = (base + lease * PAGE_BYTES) | branch | PTE_NX;
+        if (!x86_page_window_write_lease(process_rt.Window, lease_out,
+                (BOOT_U64)PT_OFFSET(STACK_BASE + index * PAGE_BYTES) * 8ULL, &entry, sizeof(entry))) {
+            goto fail;
+        }
     }
-    if (!x86_page_window_park(process_rt.Window, lease_out)) process_die("PROCESS_PARK_FAILED");
     return 1;
+fail:
+    if (!x86_page_window_free_lease(process_rt.Window, lease_out)) {
+        process_die("PROCESS_RELEASE_FAILED");
+    }
+    return 0;
 }
 
 // ====== reap ======
@@ -58,11 +83,7 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
 static int reap(X86_PROCESS_CPU *cpu, KERNEL_PHYSICAL_LEASE *lease)
 {
     if (__readcr3() != cpu->KernelRoot || !roots_stable() || STACK_WORD != STACK_CANARY) return 0;
-    BOOT_U64 pages = lease->Pages;
-    if (!x86_page_window_resume(process_rt.Window, lease)) process_die("PROCESS_RESUME_FAILED");
-    volatile unsigned char *alias = x86_window_bytes();
-    for (BOOT_U64 index = 0; index < pages * PAGE_BYTES; ++index) alias[index] = 0;
-    if (!x86_page_window_release(process_rt.Window)) process_die("PROCESS_RELEASE_FAILED");
+    if (!x86_page_window_free_lease(process_rt.Window, lease)) process_die("PROCESS_RELEASE_FAILED");
     cpu->UserRoot = 0;
     return x86_page_window_idle_valid(process_rt.Window);
 }
@@ -128,15 +149,19 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
     return result->Kind != 0;
 }
 
-// ====== x86_process_slot_prepare ======
+// ====== x86_process_slot_prepare_budgeted ======
 
-int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *image)
+int x86_process_slot_prepare_budgeted(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *image,
+    BOOT_U32 max_image_pages, BOOT_U32 cpu_budget_ms)
 {
-    PROCESS_PLAN plan;
+    static PROCESS_PLAN plan;
     X86_PROCESS_CPU *cpu = x86_process_cpu_current();
     if (!process_rt.Opened || !cpu || cpu->Current || !slot || slot->Lease.Id || !image ||
-        x86_process_plan(image->Bytes, image->Length, &plan)) return 0;
-    BOOT_U32 ticks = kernel_clock_ms(cpu->BudgetClock, PROCESS_BUDGET_MS);
+        !max_image_pages || max_image_pages > MAX_IMAGE_PAGES || !cpu_budget_ms ||
+        x86_process_plan_budgeted(image->Bytes, image->Length, max_image_pages, &plan)) {
+        return 0;
+    }
+    BOOT_U32 ticks = kernel_clock_ms(cpu->BudgetClock, cpu_budget_ms);
     if (ticks == UINT32_MAX || !map_image(image, &plan, &slot->Lease)) return 0;
     slot->KernelRoot = cpu->KernelRoot;
     slot->ImageEntry = process_rt.ExpectedImage;
@@ -145,6 +170,13 @@ int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *im
     slot->RemainingTicks = ticks;
     slot->RemainingIrqs = x86_process_budget_initial();
     return 1;
+}
+
+// ====== x86_process_slot_prepare ======
+
+int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *image)
+{
+    return x86_process_slot_prepare_budgeted(slot, image, MAX_IMAGE_PAGES, PROCESS_BUDGET_MS);
 }
 
 // ====== x86_process_slot_step ======

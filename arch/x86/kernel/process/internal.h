@@ -30,7 +30,8 @@
 #define IMAGE_BASE 0x400000ULL
 #define PT_OFFSET(address) (1536U + (BOOT_U32)(((address) - IMAGE_BASE) >> 12))
 #define SLOT_IMAGE 511U
-#define MAX_IMAGE_PAGES 10U
+// 128 pages = 512 KiB image ceiling, matching KERNEL_PROCESS_MAX_IMAGE_PAGES and Rust MAX_IMAGE_PAGES.
+#define MAX_IMAGE_PAGES 128U
 #define MAX_COPY 256U
 #define TEXT_BLOCK 128U
 // Intel SDM 325462-089, vol. 3A, Fig. 12-8: LVT Timer +320h, vector bits 7:0.
@@ -128,6 +129,8 @@ int x86_process_copy_recover(BOOT_U64 *frame, BOOT_U64 cr2);
 void x86_process_irq_capture(const BOOT_U64 *fx, const BOOT_U64 *gprs, const BOOT_U64 *iret);
 void x86_process_on_preempt_tick(const X86_IRQ_FRAME *frame);
 BOOT_U32 x86_process_plan(const unsigned char *bytes, BOOT_U64 length, PROCESS_PLAN *plan);
+BOOT_U32 x86_process_plan_budgeted(const unsigned char *bytes, BOOT_U64 length,
+    BOOT_U64 max_pages, PROCESS_PLAN *plan);
 BOOT_U32 x86_process_copy_range(BOOT_U64 pointer, BOOT_U64 length);
 BOOT_U32 x86_process_return_valid(BOOT_U64 rip, BOOT_U64 cs, BOOT_U64 flags, BOOT_U64 rsp, BOOT_U64 ss);
 BOOT_U32 x86_process_irq_frame_valid(BOOT_U64 rip, BOOT_U64 cs, BOOT_U64 flags, BOOT_U64 rsp, BOOT_U64 ss);

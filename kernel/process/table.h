@@ -42,6 +42,23 @@
 
 #define KERNEL_PROC_FLAG_RESIDENT     1U
 
+// Per-process resource budget defaults and hard ceilings (128 pages = 512 KiB within one user PT).
+#define KERNEL_PROCESS_MAX_IMAGE_PAGES        128U
+#define KERNEL_PROCESS_DEFAULT_IMAGE_PAGES    128U
+#define KERNEL_PROCESS_DEFAULT_OPEN_FILES     32U
+#define KERNEL_PROCESS_DEFAULT_CPU_BUDGET_MS  2000U
+#define KERNEL_PROCESS_MAX_CPU_BUDGET_MS      60000U
+
+#define KERNEL_BUDGET_FLAG_SPAWN              1U
+#define KERNEL_BUDGET_FLAG_ALL                (KERNEL_BUDGET_FLAG_SPAWN)
+
+typedef struct {
+    uint32_t  MaxImagePages;
+    uint32_t  MaxOpenFiles;
+    uint32_t  CpuBudgetMs;
+    uint32_t  Flags;
+} KERNEL_PROCESS_BUDGET;
+
 typedef struct {
     uint64_t  Storage[142];
 } KERNEL_IPC_CHANNEL;
@@ -69,40 +86,44 @@ typedef struct {
 } KERNEL_IPC_SLOT;
 
 typedef struct {
-    uint64_t            Pid;
-    uint32_t            State;
-    uint32_t            ExitKind;
-    uint32_t            TaskIndex;
-    uint32_t            Flags;
-    uint64_t            ExitCode;
-    uint64_t            FaultVector;
-    uint64_t            FaultError;
-    uint64_t            FaultRip;
-    uint64_t            FaultCr2;
-    uint64_t            WrittenBytes;
-    uint64_t            Writes;
-    uint64_t            Irqs;
-    uint64_t            ArchContext;
-    KERNEL_IPC_HANDLE  *Handles;
-    uint32_t            HandleCount;
-    uint32_t            HandleCapacity;
+    uint64_t               Pid;
+    uint64_t               ParentPid;
+    uint32_t               State;
+    uint32_t               ExitKind;
+    uint32_t               TaskIndex;
+    uint32_t               Flags;
+    uint64_t               ExitCode;
+    uint64_t               FaultVector;
+    uint64_t               FaultError;
+    uint64_t               FaultRip;
+    uint64_t               FaultCr2;
+    uint64_t               WrittenBytes;
+    uint64_t               Writes;
+    uint64_t               Irqs;
+    uint64_t               ArchContext;
+    KERNEL_PROCESS_BUDGET  Budget;
+    KERNEL_IPC_HANDLE     *Handles;
+    uint32_t               HandleCount;
+    uint32_t               HandleCapacity;
 } KERNEL_PROCESS;
 
 typedef struct {
-    uint64_t  Pid;
-    uint32_t  State;
-    uint32_t  ExitKind;
-    uint32_t  TaskIndex;
-    uint32_t  Flags;
-    uint64_t  ExitCode;
-    uint64_t  FaultVector;
-    uint64_t  FaultError;
-    uint64_t  FaultRip;
-    uint64_t  FaultCr2;
-    uint64_t  WrittenBytes;
-    uint64_t  Writes;
-    uint64_t  Irqs;
-    uint64_t  ArchContext;
+    uint64_t               Pid;
+    uint64_t               ParentPid;
+    uint32_t               State;
+    uint32_t               ExitKind;
+    uint32_t               TaskIndex;
+    uint32_t               Flags;
+    uint64_t               ExitCode;
+    uint64_t               FaultVector;
+    uint64_t               FaultError;
+    uint64_t               FaultRip;
+    uint64_t               FaultCr2;
+    uint64_t               WrittenBytes;
+    uint64_t               Writes;
+    uint64_t               Irqs;
+    uint64_t               ArchContext;
+    KERNEL_PROCESS_BUDGET  Budget;
 } KERNEL_PROCESS_INFO;
 
 typedef struct {
@@ -135,8 +156,17 @@ int kernel_process_table_init(KERNEL_PROCESS_TABLE *table, KERNEL_HEAP *heap,
 int kernel_process_table_destroy(KERNEL_PROCESS_TABLE *table);
 int kernel_process_table_stats(KERNEL_PROCESS_TABLE *table, KERNEL_PROCESS_STATS *out);
 
+void kernel_process_budget_default(KERNEL_PROCESS_BUDGET *out);
+int kernel_process_budget_derive(const KERNEL_PROCESS_BUDGET *parent,
+    const KERNEL_PROCESS_BUDGET *requested, KERNEL_PROCESS_BUDGET *out);
+
 int kernel_process_create(KERNEL_PROCESS_TABLE *table, uint32_t flags,
     uint64_t arch_context, uint64_t *pid_out);
+int kernel_process_create_with_budget(KERNEL_PROCESS_TABLE *table, uint64_t parent_pid,
+    uint32_t flags, uint64_t arch_context, const KERNEL_PROCESS_BUDGET *requested_budget,
+    uint64_t *pid_out);
+int kernel_process_get_budget(KERNEL_PROCESS_TABLE *table, uint64_t pid,
+    KERNEL_PROCESS_BUDGET *out);
 int kernel_process_bind_task(KERNEL_PROCESS_TABLE *table, uint64_t pid, uint32_t task_index);
 int kernel_process_set_state(KERNEL_PROCESS_TABLE *table, uint64_t pid, uint32_t expected, uint32_t next);
 int kernel_process_info(KERNEL_PROCESS_TABLE *table, uint64_t pid, KERNEL_PROCESS_INFO *out);
