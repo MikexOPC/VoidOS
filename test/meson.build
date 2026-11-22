@@ -304,3 +304,25 @@ heap_host = executable(
     include_directories: inc,
 )
 test('heap_host', heap_host, env: runtime, timeout: 120)
+
+# ====== storage block cache ======
+
+block_cache_host = executable(
+    'block_cache_host',
+    'kernel/storage/cache_test.c',
+    'kernel/mm/physical/synchronization/backend.c',
+    repo / 'kernel/storage/cache.c',
+    repo / 'kernel/mm/heap/heap.c',
+    repo / 'kernel/mm/heap/core/fill.c',
+    repo / 'kernel/mm/heap/core/guard.c',
+    repo / 'kernel/mm/heap/core/release.c',
+    repo / 'kernel/mm/heap/core/reserve.c',
+    repo / 'kernel/mm/heap/core/state.c',
+    repo / 'lib/containers/bitmap.c',
+    repo / 'kernel/sync/lock.c',
+    repo / 'kernel/sync/acquire.c',
+    repo / 'kernel/time/clock.c',
+    sync_atomics_obj,
+    include_directories: inc,
+)
+test('block_cache_host', block_cache_host, env: runtime)
