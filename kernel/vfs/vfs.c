@@ -1,24 +1,7 @@
-#include "vfs.h"
+#include "internal.h"
 #include "kernel/diagnostics/log.h"
-#include "kernel/sync/internal.h"
 
 static KERNEL_VFS system_vfs;
-
-typedef struct {
-    KERNEL_LOCK_CONTEXT  *Context;
-    KERNEL_LOCK_GUARD     Guard;
-    uint64_t              SavedIf;
-} VFS_ACCESS;
-
-typedef struct {
-    uint64_t  DirEntryLba;
-    uint32_t  DirEntryByteOffset;
-    uint32_t  FirstCluster;
-    uint32_t  FileSize;
-    uint32_t  Attr;
-    char      Name[KERNEL_VFS_NAME_CAPACITY];
-    uint32_t  NameLen;
-} FAT_NODE_LOC;
 
 // ====== zero_bytes ======
 
@@ -51,9 +34,9 @@ static uint32_t string_len(const char *text, uint32_t max_len)
     return len;
 }
 
-// ====== enter_private ======
+// ====== vfs_enter_private ======
 
-static int enter_private(KERNEL_VFS *vfs, VFS_ACCESS *access)
+int vfs_enter_private(KERNEL_VFS *vfs, VFS_ACCESS *access)
 {
     if (!vfs || !access || vfs->Self != (uintptr_t)vfs || !vfs->Ready)
         return 0;
@@ -78,14 +61,17 @@ static int enter_private(KERNEL_VFS *vfs, VFS_ACCESS *access)
     return 1;
 }
 
-// ====== leave_private ======
+// ====== vfs_leave_private ======
 
-static void leave_private(VFS_ACCESS *access)
+void vfs_leave_private(VFS_ACCESS *access)
 {
     if (!kernel_lock_release(access->Context, &access->Guard))
         ks_fail_stop("VFS_LOCK_RELEASE_FAILED");
     ks_irq_restore(access->SavedIf);
 }
+
+static int enter_private(KERNEL_VFS *vfs, VFS_ACCESS *access) { return vfs_enter_private(vfs, access); }
+static void leave_private(VFS_ACCESS *access) { vfs_leave_private(access); }
 
 // ====== kernel_vfs_init ======
 
@@ -191,9 +177,9 @@ int kernel_vfs_mount_fat(KERNEL_VFS *vfs, const char *prefix, KERNEL_BLOCK_CACHE
     return KERNEL_STORAGE_OK;
 }
 
-// ====== resolve_mount_private ======
+// ====== vfs_resolve_mount_private ======
 
-static const KERNEL_VFS_MOUNT *resolve_mount_private(
+const KERNEL_VFS_MOUNT *vfs_resolve_mount_private(
     const KERNEL_VFS *vfs,
     const char *path,
     const char **subpath_out
@@ -239,9 +225,18 @@ static const KERNEL_VFS_MOUNT *resolve_mount_private(
     return best;
 }
 
-// ====== read_next_cluster_private ======
+static const KERNEL_VFS_MOUNT *resolve_mount_private(
+    const KERNEL_VFS *vfs,
+    const char *path,
+    const char **subpath_out
+)
+{
+    return vfs_resolve_mount_private(vfs, path, subpath_out);
+}
 
-static int read_next_cluster_private(
+// ====== vfs_read_next_cluster_private ======
+
+int vfs_read_next_cluster_private(
     const KERNEL_VFS_MOUNT *mount,
     uint32_t cluster,
     uint32_t *next_out
@@ -273,6 +268,15 @@ static int read_next_cluster_private(
 
     *next_out = decoded;
     return KERNEL_STORAGE_OK;
+}
+
+static int read_next_cluster_private(
+    const KERNEL_VFS_MOUNT *mount,
+    uint32_t cluster,
+    uint32_t *next_out
+)
+{
+    return vfs_read_next_cluster_private(mount, cluster, next_out);
 }
 
 // ====== scan_dir_sector_private ======
@@ -414,9 +418,9 @@ static int search_directory_private(
     return KERNEL_STORAGE_ERR_NOT_FOUND;
 }
 
-// ====== resolve_path_private ======
+// ====== vfs_resolve_path_private ======
 
-static int resolve_path_private(
+int vfs_resolve_path_private(
     const KERNEL_VFS_MOUNT *mount,
     const char *subpath,
     FAT_NODE_LOC *out_node
@@ -469,6 +473,15 @@ static int resolve_path_private(
     }
 
     return KERNEL_STORAGE_OK;
+}
+
+static int resolve_path_private(
+    const KERNEL_VFS_MOUNT *mount,
+    const char *subpath,
+    FAT_NODE_LOC *out_node
+)
+{
+    return vfs_resolve_path_private(mount, subpath, out_node);
 }
 
 // ====== kernel_vfs_stat ======
@@ -726,6 +739,20 @@ int kernel_vfs_system_start(
             return 0;
         if (kernel_vfs_read_file(&system_vfs, "/HELLO.TXT", 0U, buf, sizeof(buf), &root_bytes) != KERNEL_STORAGE_OK ||
             root_bytes != 21U || buf[0] != 'V' || buf[7] != 'F')
+            return 0;
+
+        uint32_t written = 0;
+        uint32_t verify_read = 0;
+        char verify_buf[32] = {0};
+        KERNEL_VFS_STAT st;
+        if (kernel_vfs_write_file(&system_vfs, "/VERIFY.TXT", 0U, "VoidOS FAT32 write ok", 21U, 1, 1, &written) != KERNEL_STORAGE_OK ||
+            written != 21U ||
+            kernel_vfs_sync(&system_vfs) != KERNEL_STORAGE_OK ||
+            kernel_block_cache_invalidate(root_cache) != KERNEL_STORAGE_OK ||
+            kernel_vfs_read_file(&system_vfs, "/VERIFY.TXT", 0U, verify_buf, sizeof(verify_buf), &verify_read) != KERNEL_STORAGE_OK ||
+            verify_read != 21U || verify_buf[13] != 'w' ||
+            kernel_vfs_unlink(&system_vfs, "/VERIFY.TXT") != KERNEL_STORAGE_OK ||
+            kernel_vfs_stat(&system_vfs, "/VERIFY.TXT", &st) != KERNEL_STORAGE_ERR_NOT_FOUND)
             return 0;
     }
 

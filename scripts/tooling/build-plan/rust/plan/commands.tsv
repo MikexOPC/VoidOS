@@ -320,6 +320,7 @@ ordinary	c	kernel/drivers/storage/ahci/ahci.c	ahci.obj
 ordinary	c	arch/x86/kernel/drivers/storage/ahci/native.c	ahci-native.obj
 ordinary	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	vfs_fat	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	{repo}/kernel/vfs/rust/fat.rs	-o	{out}/vfs-fat.obj
 ordinary	c	kernel/vfs/vfs.c	kernel-vfs.obj
+ordinary	c	kernel/vfs/write.c	kernel-vfs-write.obj
 user	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	k6_process	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	codegen-units=1	{repo}/kernel/process/rust/lib.rs	-o	{out}/k6-policy.obj
 user	c	kernel/process/table.c	process-table.obj
 user	c	arch/x86/kernel/process/runtime.c	k6-process.obj

@@ -151,7 +151,44 @@ int  kernel_vfs_read_file(
     uint32_t length,
     uint32_t *bytes_read_out
 );
+int  kernel_vfs_write_file(
+    KERNEL_VFS *vfs,
+    const char *path,
+    uint32_t offset,
+    const void *buffer,
+    uint32_t length,
+    int create_if_missing,
+    int truncate,
+    uint32_t *bytes_written_out
+);
+int  kernel_vfs_unlink(KERNEL_VFS *vfs, const char *path);
 int  kernel_vfs_sync(KERNEL_VFS *vfs);
+
+int  kernel_vfs_open(
+    KERNEL_VFS *vfs,
+    uint64_t owner_pid,
+    const char *path,
+    uint32_t flags,
+    uint32_t *fd_out
+);
+int  kernel_vfs_read(
+    KERNEL_VFS *vfs,
+    uint64_t owner_pid,
+    uint32_t fd,
+    void *buffer,
+    uint32_t length,
+    uint32_t *bytes_read_out
+);
+int  kernel_vfs_write(
+    KERNEL_VFS *vfs,
+    uint64_t owner_pid,
+    uint32_t fd,
+    const void *buffer,
+    uint32_t length,
+    uint32_t *bytes_written_out
+);
+int  kernel_vfs_close(KERNEL_VFS *vfs, uint64_t owner_pid, uint32_t fd);
+void kernel_vfs_close_owned(KERNEL_VFS *vfs, uint64_t owner_pid);
 
 KERNEL_VFS *kernel_vfs(void);
 int kernel_vfs_system_start(

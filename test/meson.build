@@ -371,6 +371,7 @@ vfs_fat_host = executable(
     'kernel/vfs/vfs_test.c',
     'kernel/mm/physical/synchronization/backend.c',
     repo / 'kernel/vfs/vfs.c',
+    repo / 'kernel/vfs/write.c',
     repo / 'kernel/storage/cache.c',
     repo / 'kernel/mm/heap/heap.c',
     repo / 'kernel/mm/heap/core/fill.c',

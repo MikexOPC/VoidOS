@@ -196,6 +196,54 @@ int main(void)
     // Corrupt cluster cycle must be caught and rejected without infinite loop
     CHECK(kernel_vfs_read_file(&vfs, "/CYCLE.BIN", 80000U, buf, sizeof(buf), &read_bytes) == KERNEL_STORAGE_ERR_CORRUPT);
 
+    // Create, multi-cluster write (1200 bytes = 3 clusters), cache invalidate, readback, truncate, and unlink
+    uint8_t wbuf[1200];
+    uint8_t rbuf[1200];
+    for (uint32_t i = 0; i < sizeof(wbuf); ++i)
+        wbuf[i] = (uint8_t)((i * 29U + 0x41U) & 0xFFU);
+
+    uint32_t written = 0;
+    CHECK(kernel_vfs_write_file(&vfs, "/DATA.BIN", 0U, wbuf, sizeof(wbuf), 1, 1, &written) == KERNEL_STORAGE_OK);
+    CHECK(written == sizeof(wbuf));
+    CHECK(kernel_vfs_sync(&vfs) == KERNEL_STORAGE_OK);
+    CHECK(kernel_block_cache_invalidate(&fat32_cache) == KERNEL_STORAGE_OK);
+
+    memset(rbuf, 0, sizeof(rbuf));
+    CHECK(kernel_vfs_read_file(&vfs, "/data.bin", 0U, rbuf, sizeof(rbuf), &read_bytes) == KERNEL_STORAGE_OK);
+    CHECK(read_bytes == sizeof(wbuf) && memcmp(wbuf, rbuf, sizeof(wbuf)) == 0);
+
+    // Truncate and overwrite with smaller payload (25 bytes), freeing trailing clusters
+    CHECK(kernel_vfs_write_file(&vfs, "/DATA.BIN", 0U, "Short replacement payload", 25U, 0, 1, &written) == KERNEL_STORAGE_OK);
+    CHECK(written == 25U);
+    CHECK(kernel_vfs_stat(&vfs, "/DATA.BIN", &st) == KERNEL_STORAGE_OK && st.Size == 25U);
+
+    // Open file descriptor table dynamic growth (> 16 open files), read/write via fd, and owner cleanup
+    uint32_t fds[24];
+    for (uint32_t i = 0; i < 24U; ++i) {
+        CHECK(kernel_vfs_open(
+            &vfs,
+            100ULL,
+            "/SUB/FDTEST.TXT",
+            KERNEL_VFS_O_RDWR | (i == 0U ? (KERNEL_VFS_O_CREAT | KERNEL_VFS_O_TRUNC) : 0U),
+            &fds[i]
+        ) == KERNEL_STORAGE_OK);
+    }
+    CHECK(kernel_vfs_write(&vfs, 100ULL, fds[0], "Hello via FD!", 13U, &written) == KERNEL_STORAGE_OK && written == 13U);
+    char fd_read[16] = {0};
+    CHECK(kernel_vfs_read(&vfs, 100ULL, fds[1], fd_read, sizeof(fd_read), &read_bytes) == KERNEL_STORAGE_OK);
+    CHECK(read_bytes == 13U && memcmp(fd_read, "Hello via FD!", 13U) == 0);
+    // Wrong PID must be rejected
+    CHECK(kernel_vfs_read(&vfs, 999ULL, fds[1], fd_read, sizeof(fd_read), &read_bytes) == KERNEL_STORAGE_ERR_ARG);
+    CHECK(kernel_vfs_close(&vfs, 100ULL, fds[0]) == KERNEL_STORAGE_OK);
+    kernel_vfs_close_owned(&vfs, 100ULL);
+    CHECK(vfs.OpenCount == 0U && vfs.OpenCapacity == 32U);
+
+    // Unlink both created files
+    CHECK(kernel_vfs_unlink(&vfs, "/DATA.BIN") == KERNEL_STORAGE_OK);
+    CHECK(kernel_vfs_stat(&vfs, "/DATA.BIN", &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+    CHECK(kernel_vfs_unlink(&vfs, "/SUB/FDTEST.TXT") == KERNEL_STORAGE_OK);
+    CHECK(kernel_vfs_stat(&vfs, "/SUB/FDTEST.TXT", &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+
     kernel_vfs_destroy(&vfs);
     kernel_block_cache_destroy(&fat32_cache);
 
