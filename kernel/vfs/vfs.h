@@ -191,6 +191,7 @@ int  kernel_vfs_write(
 );
 int  kernel_vfs_close(KERNEL_VFS *vfs, uint64_t owner_pid, uint32_t fd);
 void kernel_vfs_close_owned(KERNEL_VFS *vfs, uint64_t owner_pid);
+uint32_t kernel_vfs_count_owned(KERNEL_VFS *vfs, uint64_t owner_pid);
 
 KERNEL_VFS *kernel_vfs(void);
 int kernel_vfs_system_start(

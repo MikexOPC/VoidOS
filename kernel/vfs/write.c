@@ -837,3 +837,22 @@ void kernel_vfs_close_owned(KERNEL_VFS *vfs, uint64_t owner_pid)
     }
     vfs_leave_private(&access);
 }
+
+// ====== kernel_vfs_count_owned ======
+
+uint32_t kernel_vfs_count_owned(KERNEL_VFS *vfs, uint64_t owner_pid)
+{
+    if (!vfs || !owner_pid)
+        return 0U;
+    VFS_ACCESS access;
+    if (!vfs_enter_private(vfs, &access))
+        return 0U;
+    uint32_t count = 0U;
+    for (uint32_t i = 0; i < vfs->OpenCapacity; ++i) {
+        if (vfs->OpenFiles[i].InUse && vfs->OpenFiles[i].OwnerPid == owner_pid) {
+            ++count;
+        }
+    }
+    vfs_leave_private(&access);
+    return count;
+}

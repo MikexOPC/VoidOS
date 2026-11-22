@@ -21,5 +21,6 @@ int x86_process_kill(uint64_t pid);
 int x86_process_reap(uint64_t pid, KERNEL_PROCESS_INFO *info_out);
 int x86_process_query(uint64_t pid, KERNEL_PROCESS_INFO *info_out);
 int x86_process_stats(KERNEL_PROCESS_STATS *stats_out);
+int x86_process_console_push(const unsigned char *bytes, uint32_t length);
 
 #endif

@@ -62,6 +62,28 @@
 #define SYS_WRITE_FILE 8ULL
 #define SYS_CLOSE 9ULL
 #define SYS_UNLINK 10ULL
+#define SYS_SPAWN 11ULL
+#define SYS_WAIT_PID 12ULL
+#define SYS_LIST_DIR 13ULL
+#define SYS_SYNC 14ULL
+#define SYS_CONSOLE_READ 15ULL
+
+typedef struct {
+    BOOT_U64               InitialArg;
+    BOOT_U32               Flags;
+    BOOT_U32               UseBudget;
+    KERNEL_PROCESS_BUDGET  Budget;
+} X86_SPAWN_ARGS;
+
+typedef struct {
+    BOOT_U32  ExitKind;
+    BOOT_U32  Reserved;
+    BOOT_U64  ExitCode;
+    BOOT_U64  FaultVector;
+} X86_WAIT_STATUS;
+
+_Static_assert(sizeof(X86_SPAWN_ARGS) == 32U, "X86_SPAWN_ARGS ABI size");
+_Static_assert(sizeof(X86_WAIT_STATUS) == 24U, "X86_WAIT_STATUS ABI size");
 // Intel SDM 2B, SYSCALL and SYSRET; 3A §2.2, §2.3, §6.8.8: STAR, LSTAR, CSTAR, FMASK, EFER.SCE.
 #define MSR_EFER 0xc0000080U
 #define MSR_STAR 0xc0000081U

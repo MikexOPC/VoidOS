@@ -47,6 +47,23 @@ extern "C" fn worker_main(handle: u64) -> ! {
         if libvoid::close(fd as u64) != 0 {
             libvoid::exit(22);
         }
+        let mut dir_buf: [u8; 64] = [0; 64];
+        if libvoid::list_dir(b"/", &mut dir_buf) <= 0 {
+            libvoid::exit(23);
+        }
+        if libvoid::sync_fs() != 0 {
+            libvoid::exit(24);
+        }
+        let mut key_buf: [u8; 8] = [0; 8];
+        if libvoid::console_read(&mut key_buf) != libvoid::ERR_WOULD_BLOCK {
+            libvoid::exit(25);
+        }
+        if libvoid::spawn(b"/MISSING.ELF", None) >= 0 {
+            libvoid::exit(26);
+        }
+        if libvoid::try_wait_pid(9999, None) >= 0 {
+            libvoid::exit(27);
+        }
     }
     let written = libvoid::write_console(&MESSAGE);
     libvoid::exit(if written == MESSAGE.len() as i64 { 0 } else { 14 });

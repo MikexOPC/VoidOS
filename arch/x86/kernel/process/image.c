@@ -82,9 +82,12 @@ fail:
 
 static int reap(X86_PROCESS_CPU *cpu, KERNEL_PHYSICAL_LEASE *lease)
 {
-    if (__readcr3() != cpu->KernelRoot || !roots_stable() || STACK_WORD != STACK_CANARY) return 0;
+    BOOT_U64 canary_addr = cpu->SyscallTop ? (cpu->SyscallTop - X86_KERNEL_SYSCALL_BYTES) : X86_KERNEL_SYSCALL_BASE;
+    if (__readcr3() != cpu->KernelRoot || !roots_stable() || *(volatile BOOT_U64 *)canary_addr != STACK_CANARY) return 0;
     if (!x86_page_window_free_lease(process_rt.Window, lease)) process_die("PROCESS_RELEASE_FAILED");
-    cpu->UserRoot = 0;
+    if (!cpu->InSyscall) {
+        cpu->UserRoot = 0;
+    }
     return x86_page_window_idle_valid(process_rt.Window);
 }
 
@@ -156,7 +159,7 @@ int x86_process_slot_prepare_budgeted(X86_PROCESS_SLOT *slot, const X86_PROCESS_
 {
     static PROCESS_PLAN plan;
     X86_PROCESS_CPU *cpu = x86_process_cpu_current();
-    if (!process_rt.Opened || !cpu || cpu->Current || !slot || slot->Lease.Id || !image ||
+    if (!process_rt.Opened || !cpu || (cpu->Current && !cpu->InSyscall) || !slot || slot->Lease.Id || !image ||
         !max_image_pages || max_image_pages > MAX_IMAGE_PAGES || !cpu_budget_ms ||
         x86_process_plan_budgeted(image->Bytes, image->Length, max_image_pages, &plan)) {
         return 0;
@@ -317,7 +320,7 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
 int x86_process_slot_reap(X86_PROCESS_SLOT *slot)
 {
     X86_PROCESS_CPU *cpu = x86_process_cpu_current();
-    if (!process_rt.Opened || !cpu || cpu->Current || !slot || !slot->Lease.Id || !reap(cpu, &slot->Lease)) return 0;
+    if (!process_rt.Opened || !cpu || (cpu->Current && !cpu->InSyscall) || !slot || !slot->Lease.Id || !reap(cpu, &slot->Lease)) return 0;
     *slot = (X86_PROCESS_SLOT){0};
     return 1;
 }
