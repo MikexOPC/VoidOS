@@ -159,7 +159,13 @@ pub fn meson_rows(rows: &[Vec<String>], link_hash: &str, out: &str) -> Result<Ve
             continue;
         }
         let output = output_of(row).ok_or("Compiler command has no output.")?;
-        let kind = if row.contains(&template_include) { "after-template" } else { "compile" };
+        let kind = if row.contains(&template_include) {
+            "after-template"
+        } else if row.iter().any(|field| field == "--extern") {
+            "after-lib"
+        } else {
+            "compile"
+        };
         lines.push(format!("{kind}\t{output}\t{output}.d\t{}", row.join("\t")));
     }
     Ok(lines)

@@ -396,3 +396,13 @@ vfs_fat_host = executable(
     include_directories: inc,
 )
 test('vfs_fat_host', vfs_fat_host, env: runtime)
+
+# ====== userspace libvoid ======
+
+libvoid_rust = executable(
+    'libvoid_rust',
+    repo / 'userspace/lib/libvoid.rs',
+    rust_args: ['--test', '-C', 'overflow-checks=yes'],
+    override_options: ['b_sanitize=none'],
+)
+test('libvoid_rust', libvoid_rust)

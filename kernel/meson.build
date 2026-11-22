@@ -63,6 +63,7 @@ plan = run_command(tool, 'plan', context, check: true).stdout().strip()
 
 objects = []
 ap_template = []
+user_libs = []
 user_programs = []
 link_hash = ''
 
@@ -71,16 +72,24 @@ foreach line : plan.split('\n')
     if fields[0] == 'link'
         link_hash = fields[2]
     else
+        deps = []
+        if fields[0] == 'after-template'
+            deps = ap_template + user_programs
+        elif fields[0] == 'after-lib'
+            deps = user_libs
+        endif
         step = custom_target(
             fields[1],
             output: fields[1],
             depfile: fields[2],
             command: [tool, 'run', fields],
-            depends: fields[0] == 'after-template' ? ap_template + user_programs : [],
+            depends: deps,
         )
         objects += step
         if fields[1] == 'ap-template.bin'
             ap_template = [step]
+        elif fields[1].endswith('.rlib')
+            user_libs += step
         elif fields[1].endswith('.elf')
             user_programs += step
         endif
