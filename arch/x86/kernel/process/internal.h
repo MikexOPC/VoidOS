@@ -12,6 +12,8 @@
 #include "arch/x86/kernel/timer/lapic/runtime/runtime.h"
 #include "arch/x86/mm/window/access.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/process/table.h"
+#include "kernel/sync/internal.h"
 #include <intrin.h>
 
 // Intel SDM 3A §§5.5.4, 5.6: P bit 0, R/W bit 1, U/S bit 2; XD bit 63.
@@ -161,6 +163,9 @@ typedef struct {
     BOOT_U32                    Waiting;
     IPC_CHANNEL                *IpcChannel;
     BOOT_U64                    IpcEndpoint;
+    KERNEL_PROCESS_TABLE       *Table;
+    BOOT_U64                    Pid;
+    BOOT_U64                    WaitHandle;
     X86_PROCESS_RESULT         *Current;
     unsigned char               Buffer[MAX_COPY + 1];
 } X86_PROCESS_CPU;
@@ -223,4 +228,7 @@ void process_timer_arm(void);
 void process_timer_start(void);
 void process_timer_quiesce(void);
 int process_budget_expired(BOOT_U64 rip);
+int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
+    KERNEL_PROCESS_TABLE *table, BOOT_U64 pid, BOOT_U64 initial_arg,
+    BOOT_U64 *wait_handle_io, int renew_budget);
 #endif

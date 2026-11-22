@@ -17,6 +17,7 @@
 #endif
 #ifdef KERNEL_USER_PROCESS
 void x86_process_on_preempt_tick(const X86_IRQ_FRAME *frame);
+int x86_process_in_syscall(void);
 #endif
 extern const BOOT_U64 x86_irq_targets[224];
 extern const unsigned char x86_irq_begin[], x86_irq_end[];
@@ -267,6 +268,13 @@ static int frame_owner(const X86_IRQ_FRAME *frame)
 #endif
     BOOT_U64 address = (BOOT_U64)frame;
     BOOT_U64 floor = X86_KERNEL_MAIN_BASE, top = X86_KERNEL_MAIN_TOP;
+#ifdef KERNEL_USER_PROCESS
+    if (x86_process_in_syscall() && address >= X86_KERNEL_SYSCALL_BASE &&
+        address <= X86_KERNEL_SYSCALL_TOP - sizeof(*frame)) {
+        floor = X86_KERNEL_SYSCALL_BASE;
+        top = X86_KERNEL_SYSCALL_TOP;
+    } else
+#endif
 #ifdef KERNEL_SCHEDULER_IRQ
     if (address < floor || address > top - sizeof(*frame)) {
         top = x86_scheduler_irq_stack_top(address);
@@ -319,7 +327,11 @@ void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
     }
 #endif
 #ifdef KERNEL_SCHEDULER_IRQ
-    if (!(frame->Cs & 3U) && (frame->Rsp < X86_KERNEL_MAIN_BASE || frame->Rsp > X86_KERNEL_MAIN_TOP) &&
+    if (!(frame->Cs & 3U)
+#ifdef KERNEL_USER_PROCESS
+        && !x86_process_in_syscall()
+#endif
+        && (frame->Rsp < X86_KERNEL_MAIN_BASE || frame->Rsp > X86_KERNEL_MAIN_TOP) &&
         !x86_scheduler_irq_record(frame->Vector,frame->Rip,frame->Rsp,frame->Flags))
         x86_kernel_stop(0x4b495251554e0005ULL);
 #endif
