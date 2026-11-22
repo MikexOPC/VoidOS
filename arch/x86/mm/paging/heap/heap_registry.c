@@ -84,12 +84,23 @@ BOOT_U32 x86_heap_leaf(BOOT_U64 entry, BOOT_U64 address)
     if (!owner) return 1;
 
     if (X86_LAYOUT_SLOT_OF(address) == X86_HEAP_SLOT) {
-        if (address < X86_HEAP_VIRTUAL || (address & 4095)) return 0;
+        if (address & 4095) return 0;
 
-        BOOT_U64 index = (address - X86_HEAP_VIRTUAL) / 4096;
+        if (address >= X86_HEAP_VIRTUAL && address < X86_HEAP_VIRTUAL + X86_HEAP_PAGES * 4096ULL) {
+            BOOT_U64 index = (address - X86_HEAP_VIRTUAL) / 4096;
 
-        return index < X86_HEAP_PAGES &&
-            (entry & ~0x60ULL) == ((owner->Data.Base + index * 4096) | 0x8000000000000003ULL) ? 9 : 0;
+            return (entry & ~0x60ULL) == ((owner->Data.Base + index * 4096) | 0x8000000000000003ULL) ? 9 : 0;
+        }
+
+        if (address >= X86_HEAP_STACK_BASE &&
+            address < X86_HEAP_STACK_BASE + (BOOT_U64)X86_HEAP_STACK_PTS * 512 * 4096ULL) {
+            BOOT_U64 physical = entry & 0x000ffffffffff000ULL;
+
+            return kernel_regions_overlap(physical, 1, owner->Data.Base, X86_HEAP_PAGES) ||
+                kernel_regions_overlap(physical, 1, owner->Tables.Base, X86_HEAP_TABLES) ? 0 : 1;
+        }
+
+        return 0;
     }
 
     BOOT_U64 physical = entry & 0x000ffffffffff000ULL;

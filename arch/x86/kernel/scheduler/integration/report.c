@@ -1,4 +1,5 @@
 #include "control.h"
+#include "arch/x86/mm/paging/heap/authority.h"
 #include "kernel/diagnostics/log.h"
 #include "../persistent/persistent.h"
 
@@ -9,7 +10,10 @@ int x86_scheduler_report(uint64_t root, uint64_t before, const KERNEL_PHYSICAL_A
     BOOT_U64 after;
     if (!kernel_physical_budget_read(pool, &after)) return 0;
     if (!kernel_text("SCHEDULER_ROOT: ") || !kernel_number(root) ||
-        !kernel_text("\nSCHEDULER_PTE: ") || !kernel_number((BOOT_U64)&x86_stack_entries(3)[320]) ||
+        !kernel_text("\nSCHEDULER_PTE: ") ||
+        !kernel_number(x86_heap_owner()
+            ? X86_LAYOUT_RECURSIVE_VIEW(X86_BOOT_RECURSIVE_SLOT, X86_HEAP_SLOT, 0, X86_HEAP_STACK_PD)
+            : (BOOT_U64)&x86_stack_entries(3)[320]) ||
         !kernel_text("\nSCHEDULER_BUDGET_BEFORE: ") || !kernel_number(before) ||
         !kernel_text("\nSCHEDULER_BUDGET_AFTER: ") || !kernel_number(after) ||
         !kernel_text("\nSCHEDULER_DISPATCHES: ") || !kernel_number(steps) || !kernel_text("\n")) return 0;

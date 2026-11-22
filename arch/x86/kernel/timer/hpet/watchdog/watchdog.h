@@ -12,7 +12,7 @@
    Callers bound the returned value with these, never with a local copy. */
 #define X86_WATCHDOG_WAKE_BUDGET 256U
 #define X86_WATCHDOG_WAKE_LIMIT (X86_WATCHDOG_WAKE_BUDGET + 1U)
-#define X86_WATCHDOG_LOANS 8U
+#define X86_WATCHDOG_LOANS 64U
 _Static_assert(X86_WATCHDOG_WAKE_BUDGET >= 1 && X86_WATCHDOG_WAKE_BUDGET <= 1024,
     "Budget entro i limiti di x86_irq_sleep");
 /* Stable diagnostic phases, not a claim about the underlying hardware cause. */

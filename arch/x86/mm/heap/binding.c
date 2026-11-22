@@ -27,13 +27,20 @@ int x86_heap_check(const X86_HEAP_AUTH *auth)
 // ====== entry_private ======
 
 // Intel SDM Vol. 3A 5.5.4/5.6, 4-KiB pages: P0, RW1, US2=0 at every level; leaves XD63, WB (PAT 0).
-// PDPT slot 0 -> PD; PD slots 1..8 -> the eight PTs (PD slots 0 and 9 stay zero as guards);
-// PT k slot s -> data page k * 512 + s.
+// PDPT slot 0 -> PD; PD slots 1..8 -> the eight heap PTs; PD slots 10..13 -> four initially empty
+// task-stack PTs (PD slots 0, 9 and 14 stay zero as guards); heap PT k slot s -> page k * 512 + s.
 static BOOT_U64 entry_private(const X86_HEAP_AUTH *auth, BOOT_U32 table, BOOT_U32 slot)
 {
     if (table == 0) return slot ? 0 : (auth->Tables.Base + 4096) | 3;
 
-    if (table == 1) return slot >= 1 && slot <= 8 ? (auth->Tables.Base + (slot + 1) * 4096ULL) | 3 : 0;
+    if (table == 1) {
+        if (slot >= 1 && slot <= 8) return (auth->Tables.Base + (slot + 1) * 4096ULL) | 3;
+        if (slot >= X86_HEAP_STACK_PD && slot < X86_HEAP_STACK_PD + X86_HEAP_STACK_PTS)
+            return (auth->Tables.Base + (slot) * 4096ULL) | 3;
+        return 0;
+    }
+
+    if (table >= 10) return 0;
 
     return (auth->Data.Base + ((table - 2) * 512ULL + slot) * 4096) | 0x8000000000000003ULL;
 }

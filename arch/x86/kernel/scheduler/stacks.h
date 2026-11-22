@@ -39,6 +39,7 @@ _Static_assert(X86_TASK_STACK_LEAF > X86_LAPIC_LEAF &&
 
 // Stable trusted typed objects only; caller supplies Rust RESERVED handle.
 // Failure may retain a partial owner. ABORT/COLLECT only after release succeeds.
+uint32_t x86_task_stack_capacity(void);
 uint64_t x86_task_stack_base(uint32_t index);
 int x86_task_stack_acquire(X86_TASK_STACK *owner, KERNEL_PHYSICAL_ALLOCATOR *pool,
                           uint64_t root, uint32_t index, uint64_t generation);

@@ -33,7 +33,7 @@ static int prepare(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected, BOOT_U
         !owner->Context || !owner->Window || !owner->Window->Pool || !(original = owner->Inventory) ||
         owner->Allocated < 3 || owner->Allocated > X86_PAGING_VIDEO_TABLES) return 0;
     *pages = x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root);
-    if (original->Gpu.Ready > 1 || !*pages || *pages > 128 || *pages % 16 ||
+    if (original->Gpu.Ready > 1 || !*pages || *pages > (BOOT_U64)x86_scheduler_capacity() * 16 || *pages % 16 ||
         !budget_matches(owner, original, *pages) ||
         original->LeafPages > UINT64_MAX - *pages || original->RamPages > UINT64_MAX - *pages) return 0;
     *expected = *original;

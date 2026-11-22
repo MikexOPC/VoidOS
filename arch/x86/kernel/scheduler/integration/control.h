@@ -6,9 +6,10 @@
 // ====== private_task_contract ======
 
 typedef void (*X86_TASK_ENTRY)(uint32_t index);
-extern X86_TASK_STACK x86_task_stacks[8];
-extern X86_TASK_CONTEXT x86_task_contexts[8];
+extern X86_TASK_STACK *x86_task_stacks;
+extern X86_TASK_CONTEXT *x86_task_contexts;
 extern uint32_t x86_scheduler_machine_mask;
+uint32_t x86_scheduler_capacity(void);
 int x86_scheduler_binding_open(KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root);
 int x86_scheduler_task_assign(uint32_t index, uint32_t cpu, X86_TASK_ENTRY entry);
 int x86_scheduler_task_assign_mask(uint32_t index, uint64_t mask, X86_TASK_ENTRY entry);

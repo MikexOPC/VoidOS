@@ -2,12 +2,24 @@
 #include "kernel/sync/internal.h"
 
 static X86_SCHEDULER_LOCAL locals[X86_PERCPU_CAPACITY];
-static X86_TASK_BINDING bindings[KERNEL_SCHEDULER_CAPACITY];
+static X86_TASK_BINDING fallback_bindings[KERNEL_SCHEDULER_CAPACITY];
+static X86_TASK_BINDING *active_bindings = fallback_bindings;
+static uint32_t active_binding_capacity = KERNEL_SCHEDULER_CAPACITY;
+
+// ====== x86_scheduler_task_bindings_bind ======
+
+int x86_scheduler_task_bindings_bind(X86_TASK_BINDING *table, uint32_t capacity) {
+    if (!table || capacity < KERNEL_SCHEDULER_MIN_CAPACITY || capacity > KERNEL_SCHEDULER_MAX_CAPACITY)
+        return 0;
+    active_bindings = table;
+    active_binding_capacity = capacity;
+    return 1;
+}
 
 // ====== x86_scheduler_task_binding ======
 
 X86_TASK_BINDING *x86_scheduler_task_binding(uint32_t index) {
-    return index < KERNEL_SCHEDULER_CAPACITY ? &bindings[index] : NULL;
+    return index < active_binding_capacity ? &active_bindings[index] : NULL;
 }
 
 // ====== x86_scheduler_task_binding_init ======

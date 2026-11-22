@@ -97,7 +97,7 @@ static void rollback_private(uint32_t index, uint64_t generation)
 static void launch_private(void)
 {
     KERNEL_SCHEDULER_REPLY reply = kernel_scheduler_apply_on(0,KERNEL_SCHEDULER_RESERVE,KERNEL_SCHEDULER_NONE,0);
-    if (reply.status || reply.index >= 8 || reply.state != KERNEL_TASK_RESERVED || !reply.generation) {
+    if (reply.status || reply.index >= x86_scheduler_capacity() || reply.state != KERNEL_TASK_RESERVED || !reply.generation) {
         failed_private(2);
         return;
     }

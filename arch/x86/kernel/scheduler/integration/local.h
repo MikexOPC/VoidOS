@@ -34,6 +34,7 @@ X86_SCHEDULER_LOCAL *x86_scheduler_local_prepare(void);
 X86_SCHEDULER_LOCAL *x86_scheduler_local_current(void);
 X86_SCHEDULER_LOCAL *x86_scheduler_local_cpu(uint32_t cpu);
 X86_TASK_BINDING *x86_scheduler_task_binding(uint32_t index);
+int x86_scheduler_task_bindings_bind(X86_TASK_BINDING *table, uint32_t capacity);
 int x86_scheduler_task_binding_init(uint32_t index, uint64_t allowed, uint32_t driver);
 int x86_scheduler_task_claim(uint32_t index, uint32_t cpu, const KERNEL_LOCK_WAIT *wait);
 int x86_scheduler_task_release(uint32_t index, uint32_t cpu);

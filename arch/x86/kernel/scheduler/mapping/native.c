@@ -1,5 +1,6 @@
 #include "native.h"
 #include "arch/x86/configs/layout.h"
+#include "arch/x86/mm/paging/heap/authority.h"
 #ifdef KERNEL_AP_RUNTIME
 #include "../remote/scope.h"
 #endif
@@ -16,6 +17,7 @@ static X86_TASK_CONTEXT *bound_contexts;
 static KERNEL_PHYSICAL_ALLOCATOR *bound_pool;
 static uint64_t bound_root;
 static uint32_t bound_bsp;
+static uint32_t bound_capacity;
 #if defined(KERNEL_TEST_SCHEDULER_FAULT) && KERNEL_TEST_SCHEDULER_FAULT == 5
 static uint32_t zero_fault_used;
 
@@ -40,15 +42,34 @@ int x86_scheduler_native_gate(void)
         x86_kernel_stack_branch(bound_root, bound_pool->PhysicalBits);
 }
 
+// ====== task_pt_private ======
+
+static volatile BOOT_U64 *task_pt_private(uint32_t index, uint32_t *first)
+{
+    if (x86_heap_owner()) {
+        if (index >= X86_HEAP_STACK_SLOTS) return 0;
+        uint32_t pt = X86_HEAP_STACK_PD + index / 16;
+        *first = (index % 16) * X86_HEAP_STACK_STRIDE;
+        return (volatile BOOT_U64 *)(uintptr_t)X86_LAYOUT_RECURSIVE_VIEW(
+            X86_BOOT_RECURSIVE_SLOT, X86_HEAP_SLOT, 0, pt);
+    }
+    if (index >= X86_TASK_STACK_SLOTS) return 0;
+    *first = X86_TASK_STACK_LEAF + index * X86_TASK_STACK_STRIDE;
+    return x86_stack_entries(3);
+}
+
 // ====== metadata_private ======
 
 static int metadata_private(const void *object, uint64_t bytes, uint64_t alignment)
 {
     uint64_t address = (uint64_t)(uintptr_t)object;
-    uint64_t end = X86_TASK_STACK_GUARD + 8 * 18 * 4096ULL;
+    uint64_t start = x86_heap_owner() ? X86_HEAP_STACK_BASE : X86_TASK_STACK_GUARD;
+    uint64_t end = x86_heap_owner()
+        ? start + (uint64_t)X86_HEAP_STACK_SLOTS * X86_HEAP_STACK_STRIDE * 4096ULL
+        : start + (uint64_t)X86_TASK_STACK_SLOTS * X86_TASK_STACK_STRIDE * 4096ULL;
     // K1: kernel objects may sit in either canonical half (layout.h).
     return !(address & (alignment - 1)) && X86_LAYOUT_RANGE(address, bytes) &&
-        (address + bytes <= X86_TASK_STACK_GUARD || address >= end);
+        (address + bytes <= start || address >= end);
 }
 
 // ====== separate_private ======
@@ -65,20 +86,28 @@ int x86_scheduler_bind(X86_TASK_STACK *owners, X86_TASK_CONTEXT *contexts,
                       KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root)
 {
     X86_TASK_CPU cpu = {0};
-    if (bound_pool || !metadata_private(owners, 8 * sizeof(*owners), _Alignof(X86_TASK_STACK)) ||
-        !metadata_private(contexts, 8 * sizeof(*contexts), 16) ||
+    uint32_t capacity = x86_task_stack_capacity();
+    uint64_t owner_bytes = (uint64_t)capacity * sizeof(*owners);
+    uint64_t context_bytes = (uint64_t)capacity * sizeof(*contexts);
+    if (bound_pool || !metadata_private(owners, owner_bytes, _Alignof(X86_TASK_STACK)) ||
+        !metadata_private(contexts, context_bytes, 16) ||
         !metadata_private(pool, sizeof(*pool), _Alignof(KERNEL_PHYSICAL_ALLOCATOR)) ||
-        !separate_private(owners, 8 * sizeof(*owners), contexts, 8 * sizeof(*contexts)) ||
-        !separate_private(pool, sizeof(*pool), owners, 8 * sizeof(*owners)) ||
-        !separate_private(pool, sizeof(*pool), contexts, 8 * sizeof(*contexts)) ||
+        !separate_private(owners, owner_bytes, contexts, context_bytes) ||
+        !separate_private(pool, sizeof(*pool), owners, owner_bytes) ||
+        !separate_private(pool, sizeof(*pool), contexts, context_bytes) ||
         !kernel_physical_validate(pool) || !x86_scheduler_cpu_capture(&cpu) ||
         !x86_scheduler_cpu_valid(&cpu, root, cpu.apic_id) ||
         !x86_main_pointer(x86_kernel_stack_pointer())) return 0;
     bound_owners = owners; bound_contexts = contexts; bound_pool = pool;
-    bound_root = root; bound_bsp = cpu.apic_id;
+    bound_root = root; bound_bsp = cpu.apic_id; bound_capacity = capacity;
     if (!x86_scheduler_native_gate()) { x86_scheduler_unbind(); return 0; }
-    for (uint32_t index = 320; index < 464; ++index)
-        if (x86_stack_entries(3)[index]) { x86_scheduler_unbind(); return 0; }
+    for (uint32_t index = 0; index < capacity; ++index) {
+        uint32_t first = 0;
+        volatile BOOT_U64 *entries = task_pt_private(index, &first);
+        if (!entries) { x86_scheduler_unbind(); return 0; }
+        for (uint32_t offset = 0; offset < 18; ++offset)
+            if (entries[first + offset]) { x86_scheduler_unbind(); return 0; }
+    }
     return 1;
 }
 
@@ -87,14 +116,14 @@ int x86_scheduler_bind(X86_TASK_STACK *owners, X86_TASK_CONTEXT *contexts,
 // Only after dispatcher verified all owners empty and all slots absent.
 void x86_scheduler_unbind(void)
 {
-    bound_owners = 0; bound_contexts = 0; bound_pool = 0; bound_root = 0; bound_bsp = 0;
+    bound_owners = 0; bound_contexts = 0; bound_pool = 0; bound_root = 0; bound_bsp = 0; bound_capacity = 0;
 }
 
 // ====== x86_task_stack_dispatcher ======
 
 int x86_task_stack_dispatcher(const X86_TASK_STACK *owner)
 {
-    return owner && bound_owners && owner->index < 8 && owner == &bound_owners[owner->index] &&
+    return owner && bound_owners && owner->index < bound_capacity && owner == &bound_owners[owner->index] &&
         owner->pool == bound_pool && owner->root == bound_root &&
         x86_main_pointer(x86_kernel_stack_pointer()) && x86_scheduler_native_gate();
 }
@@ -104,12 +133,12 @@ int x86_task_stack_dispatcher(const X86_TASK_STACK *owner)
 static int slot_private(const X86_TASK_STACK *owner, uint32_t mode)
 {
     volatile BOOT_U64 *entries;
-    uint32_t offset, first;
-    if (!owner || !bound_owners || owner->index >= 8 || owner != &bound_owners[owner->index] ||
+    uint32_t offset, first = 0;
+    if (!owner || !bound_owners || owner->index >= bound_capacity || owner != &bound_owners[owner->index] ||
         owner->self != (uint64_t)(uintptr_t)owner || owner->pool != bound_pool ||
         owner->root != bound_root || mode > 2 || !x86_scheduler_native_gate()) return 0;
-    entries = x86_stack_entries(3);
-    first = X86_TASK_STACK_LEAF + owner->index * X86_TASK_STACK_STRIDE;
+    entries = task_pt_private(owner->index, &first);
+    if (!entries) return 0;
     for (offset = 0; offset < 18; ++offset) {
         uint64_t actual = entries[first + offset], expected = 0;
         if (offset && offset < 17 && mode) expected = (owner->lease.Base + (offset - 1) * 4096ULL) | 3 | TASK_XD;
@@ -141,11 +170,12 @@ static void invalidate_private(const X86_TASK_STACK *owner)
 // Intel SDM093 Vol3A §5.5.4: P0/RW1/US2/XD63; WB PAT index0 inherited profile.
 int x86_task_stack_map(const X86_TASK_STACK *owner)
 {
-    uint32_t first;
+    uint32_t first = 0;
     volatile BOOT_U64 *entries;
     if (!x86_task_stack_dispatcher(owner) || !slot_private(owner, 0) ||
         kernel_physical_is_pinned(owner->pool, &owner->lease) != 1) return 0;
-    entries = x86_stack_entries(3); first = X86_TASK_STACK_LEAF + owner->index * 18;
+    entries = task_pt_private(owner->index, &first);
+    if (!entries) return 0;
     for (uint32_t page = 0; page < 16; ++page)
         entries[first + page + 1] = (owner->lease.Base + page * 4096ULL) | 3 | TASK_XD;
     invalidate_private(owner);
@@ -157,9 +187,10 @@ int x86_task_stack_map(const X86_TASK_STACK *owner)
 int x86_task_stack_revoke(const X86_TASK_STACK *owner)
 {
     volatile BOOT_U64 *entries;
-    uint32_t first;
+    uint32_t first = 0;
     if (!x86_task_stack_dispatcher(owner) || !slot_private(owner, 2)) return 0;
-    entries = x86_stack_entries(3); first = X86_TASK_STACK_LEAF + owner->index * 18;
+    entries = task_pt_private(owner->index, &first);
+    if (!entries) return 0;
     for (uint32_t page = 0; page < 16; ++page) entries[first + page + 1] = 0;
     // K4-B: the scheduler releases task stacks after the APs are online; the frames
     // return to the allocator only once every AP acknowledged the context flush.
@@ -196,7 +227,7 @@ static int ap_authority_private(const X86_TASK_CONTEXT *context, uint64_t base)
     if (!cpu || !cpu->Index || !x86_scheduler_native_gate()) return 0;
     if (x86_scheduler_dispatcher_context_is(context) == 1)
         return base == X86_AP_STACK_BASE(cpu->Index) && x86_ap_dispatcher_authority();
-    for (uint32_t index = 0; index < 8; ++index) {
+    for (uint32_t index = 0; index < bound_capacity; ++index) {
         const X86_TASK_STACK *owner = &bound_owners[index];
         if (context != &bound_contexts[index] || base != x86_task_stack_base(index)) continue;
         return owner->self == (uint64_t)(uintptr_t)owner && owner->pool == bound_pool &&
@@ -232,7 +263,7 @@ int x86_scheduler_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base
         }
         return 1;
     }
-    for (uint32_t index = 0; index < 8; ++index)
+    for (uint32_t index = 0; index < bound_capacity; ++index)
         if (context == &bound_contexts[index] && base == x86_task_stack_base(index))
             return x86_task_stack_validate(&bound_owners[index]);
     return 0;
@@ -243,16 +274,18 @@ int x86_scheduler_stack_authority(const X86_TASK_CONTEXT *context, uint64_t base
 uint64_t x86_scheduler_live_stack_pages(void)
 {
     uint64_t pages = 0;
-    volatile BOOT_U64 *entries;
-    if (!bound_owners || !x86_scheduler_native_gate() ||
-        !kernel_physical_validate(bound_pool) || !(entries = x86_stack_entries(3))) return UINT64_MAX;
-    for (uint32_t index = 0; index < 8; ++index) {
+    if (!bound_owners || !bound_capacity || !x86_scheduler_native_gate() ||
+        !kernel_physical_validate(bound_pool)) return UINT64_MAX;
+    for (uint32_t index = 0; index < bound_capacity; ++index) {
         const X86_TASK_STACK *owner = &bound_owners[index];
         if (!owner->self) {
+            uint32_t first = 0;
+            volatile BOOT_U64 *entries = task_pt_private(index, &first);
+            if (!entries) return UINT64_MAX;
             for (uint32_t byte = 0; byte < sizeof(*owner); ++byte)
                 if (((const unsigned char *)owner)[byte]) return UINT64_MAX;
             for (uint32_t offset = 0; offset < 18; ++offset)
-                if (entries[320 + index * 18 + offset]) return UINT64_MAX;
+                if (entries[first + offset]) return UINT64_MAX;
             continue;
         }
         if (owner->self != (uint64_t)(uintptr_t)owner || owner->index != index ||

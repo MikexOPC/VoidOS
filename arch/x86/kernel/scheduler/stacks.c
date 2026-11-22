@@ -1,10 +1,22 @@
 #include "stacks.h"
 #include "arch/x86/configs/layout.h"
+#include "arch/x86/mm/paging/heap/authority.h"
+
+// ====== x86_task_stack_capacity ======
+
+uint32_t x86_task_stack_capacity(void)
+{
+    return x86_heap_owner() ? X86_HEAP_STACK_SLOTS : X86_TASK_STACK_SLOTS;
+}
 
 // ====== x86_task_stack_base ======
 
 uint64_t x86_task_stack_base(uint32_t index)
 {
+    if (x86_heap_owner()) {
+        if (index >= X86_HEAP_STACK_SLOTS) return 0;
+        return X86_HEAP_STACK_BASE + ((uint64_t)index * X86_HEAP_STACK_STRIDE + 1) * 4096ULL;
+    }
     if (index >= X86_TASK_STACK_SLOTS) return 0;
     return X86_TASK_STACK_GUARD + ((uint64_t)index * X86_TASK_STACK_STRIDE + 1) * 4096;
 }
@@ -25,12 +37,18 @@ static int empty_private(const X86_TASK_STACK *owner)
 static int identity_private(const X86_TASK_STACK *owner)
 {
     uint64_t address, end, guard;
+    uint32_t capacity = x86_task_stack_capacity();
     if (!owner || owner->self != (uint64_t)(uintptr_t)owner || !owner->pool ||
         !owner->root || (owner->root & 4095) || !owner->generation ||
-        owner->index >= X86_TASK_STACK_SLOTS || owner->stage < X86_TASK_STACK_LEASED ||
+        owner->index >= capacity || owner->stage < X86_TASK_STACK_LEASED ||
         owner->stage > X86_TASK_STACK_READY) return 0;
-    guard = X86_TASK_STACK_GUARD;
-    end = guard + (uint64_t)X86_TASK_STACK_SLOTS * X86_TASK_STACK_STRIDE * 4096;
+    if (x86_heap_owner()) {
+        guard = X86_HEAP_STACK_BASE;
+        end = guard + (uint64_t)X86_HEAP_STACK_SLOTS * X86_HEAP_STACK_STRIDE * 4096ULL;
+    } else {
+        guard = X86_TASK_STACK_GUARD;
+        end = guard + (uint64_t)X86_TASK_STACK_SLOTS * X86_TASK_STACK_STRIDE * 4096ULL;
+    }
     address = (uint64_t)(uintptr_t)owner;
     // K1: kernel objects may sit in either canonical half (layout.h).
     if (!X86_LAYOUT_RANGE(address, sizeof(*owner)) ||
@@ -91,7 +109,7 @@ int x86_task_stack_acquire(X86_TASK_STACK *owner, KERNEL_PHYSICAL_ALLOCATOR *poo
 {
     X86_TASK_STACK candidate = {0};
     uint64_t address = (uint64_t)(uintptr_t)owner, pool_address = (uint64_t)(uintptr_t)pool;
-    if (!owner || !pool || !empty_private(owner) || index >= X86_TASK_STACK_SLOTS || !generation ||
+    if (!owner || !pool || !empty_private(owner) || index >= x86_task_stack_capacity() || !generation ||
         (address < pool_address + sizeof(*pool) && pool_address < address + sizeof(*owner))) return 0;
     candidate.self = address; candidate.pool = pool; candidate.root = root;
     candidate.index = index; candidate.generation = generation; candidate.stage = X86_TASK_STACK_LEASED;

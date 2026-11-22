@@ -4,14 +4,21 @@
 #include "arch/x86/configs/layout.h"
 
 // G3 H1-A: kernel heap at its own PML4 slot. One contiguous pinned RAM lease of 4096 pages (16 MiB)
-// mapped supervisor RW/XD WB from 2 MiB into the slot; the first and the tenth 2 MiB of the slot
-// stay unmapped as guards. Ten owned tables in one pinned lease: PDPT, PD and eight PTs.
-#define X86_HEAP_SLOT     X86_LAYOUT_HEAP_SLOT
-#define X86_HEAP_VIRTUAL  (X86_LAYOUT_SLOT_ADDRESS(X86_HEAP_SLOT) + 0x200000ULL)
-#define X86_HEAP_PAGES    4096U
-#define X86_HEAP_TABLES   10U
-// Inventory tags (Reserved) 48-57, one per table; the table source is tag + 1.
-#define X86_HEAP_TAG      48U
+// mapped supervisor RW/XD WB from 2 MiB into the slot; PD slots 0, 9 and 14 stay unmapped as guards.
+// PD slots 10..13 hold four initially empty PTs reserved for up to 64 guarded task stacks (32-page
+// stride: 1 lower guard, 16 stack pages, 15 unmapped guard pages). Fourteen owned tables in one
+// pinned lease: PDPT, PD, eight heap PTs and four task-stack PTs.
+#define X86_HEAP_SLOT         X86_LAYOUT_HEAP_SLOT
+#define X86_HEAP_VIRTUAL      (X86_LAYOUT_SLOT_ADDRESS(X86_HEAP_SLOT) + 0x200000ULL)
+#define X86_HEAP_PAGES        4096U
+#define X86_HEAP_STACK_PD     10U
+#define X86_HEAP_STACK_PTS    4U
+#define X86_HEAP_STACK_SLOTS  64U
+#define X86_HEAP_STACK_STRIDE 32U
+#define X86_HEAP_STACK_BASE   (X86_LAYOUT_SLOT_ADDRESS(X86_HEAP_SLOT) + (BOOT_U64)X86_HEAP_STACK_PD * 0x200000ULL)
+#define X86_HEAP_TABLES       (10U + X86_HEAP_STACK_PTS)
+// Inventory tags (Reserved) 48-61, one per table; the table source is tag + 1.
+#define X86_HEAP_TAG          48U
 typedef struct {
     BOOT_U64  Owner, Base, Pages, DataId, TableBase, TableId;
 } X86_HEAP_SNAPSHOT;
