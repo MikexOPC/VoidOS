@@ -433,6 +433,20 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         shell_type(vm, "bridge status")?;
         vm.wait(marker, count, None)?;
     }
+    if enabled && !fault {
+        shell_type(vm, "proc")?;
+        let proc_log = vm.wait("SHELL_PROC_OK", 1, Some("OK"))?;
+        if proc_log.number("SHELL_PROC_SPAWNED", 0)? != 5
+            || proc_log.number("SHELL_PROC_PEAK_ACTIVE", 0)? != 6
+            || proc_log.number("SHELL_PROC_IPC_OK", 0)? != 4
+            || proc_log.number("SHELL_PROC_FAULT_VECTOR", 0)? != 6
+            || proc_log.number("SHELL_PROC_REAPED", 0)? != 5
+        {
+            return Err("Unexpected multi-process IPC/fault counts".to_string());
+        }
+        shell_type(vm, "bridge status")?;
+        vm.wait(marker, 3, None)?;
+    }
     let remote = plan.smp > 1 && !fault;
     let preemptive = vm.log().has("KERNEL_AP_PREEMPT_READY");
     let mut expected_cpus = Vec::new();
@@ -469,7 +483,8 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     shell_type(vm, "status")?;
     shell_type(vm, "exit")?;
     let log = vm.wait("KERNEL_READY", 1, Some("OK"))?;
-    if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 + jobs ||
+    let proc_cmds = if enabled && !fault { 2 } else { 0 };
+    if !log.failures().is_empty() || log.number("SHELL_COMMAND_COUNT", 0)? != 4 + proc_cmds + jobs ||
         !log.text.contains("SHELL_STATUS: BSP PS2, kernel tasks") ||
         !log.before("SHELL_EXIT_REQUEST", "KERNEL_PS2_INPUT_CLEANUP_OK") ||
         !log.before("KERNEL_PS2_INPUT_CLEANUP_OK", "KERNEL_READY") {
@@ -487,7 +502,7 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
         return Err("AP job or its session cleanup is invalid".to_string());
     }
     let trace_bytes = vm.trace_bytes()?;
-    let expected = if fault { vec![("06".to_string(), "0000".to_string())] } else { Vec::new() };
+    let expected = if fault || enabled { vec![("06".to_string(), "0000".to_string())] } else { Vec::new() };
     if trace::user_faults(&trace_bytes) != expected || trace::triple_fault(&trace_bytes) {
         return Err("Unexpected fault during the shell session".to_string());
     }

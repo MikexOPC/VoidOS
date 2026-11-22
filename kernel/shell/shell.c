@@ -2,6 +2,7 @@
 #include "kernel/diagnostics/log.h"
 #ifdef KERNEL_USER_PROCESS
 int kernel_shell_bridge_status(void);
+int kernel_shell_proc_run(uint64_t result[5]);
 #endif
 static KERNEL_SHELL_OUTPUT output;
 static void *output_context;
@@ -184,7 +185,7 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
     kind = kernel_ps2_shell_classify(word,end - start,argument != line->Length);
     if (kind == UINT32_MAX) return 0;
     if (!kind) return LOG(1,"SHELL_EMPTY");
-    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | ap <n> [cpu|auto] | exit");
+    if (kind == 1) return LOG(1,"SHELL_HELP: help | echo <testo> | status | bridge status | proc | ap <n> [cpu|auto] | exit");
     if (kind == 2) return echo_private(line->Data + argument,line->Length - argument);
     if (kind == 3) return LOG(1,"SHELL_STATUS: BSP PS2, kernel tasks") &&
         NUMBER("SHELL_INPUT_BYTES: ",status->Bytes) && NUMBER("SHELL_INPUT_KEYS: ",status->Keys) &&
@@ -201,6 +202,21 @@ int kernel_ps2_shell_execute(const KERNEL_PS2_COMMAND *command, const KERNEL_PS2
         return kernel_shell_bridge_status() ? LOG(0,"SHELL_BRIDGE_STATUS_OK") : LOG(2,"SHELL_BRIDGE_UNAVAILABLE");
 #else
         return LOG(2,"SHELL_BRIDGE_UNAVAILABLE");
+#endif
+    }
+    if (kind == 9) {
+#ifdef KERNEL_USER_PROCESS
+        uint64_t proc_result[5] = {0};
+        if (!kernel_shell_proc_run(proc_result))
+            return LOG(2,"SHELL_PROC_FAILED");
+        return NUMBER("SHELL_PROC_SPAWNED: ",proc_result[0]) &&
+            NUMBER("SHELL_PROC_PEAK_ACTIVE: ",proc_result[1]) &&
+            NUMBER("SHELL_PROC_IPC_OK: ",proc_result[2]) &&
+            NUMBER("SHELL_PROC_FAULT_VECTOR: ",proc_result[3]) &&
+            NUMBER("SHELL_PROC_REAPED: ",proc_result[4]) &&
+            LOG(0,"SHELL_PROC_OK");
+#else
+        return LOG(2,"SHELL_PROC_UNAVAILABLE");
 #endif
     }
     return kind == 6 ? LOG(2,"SHELL_BAD_ARGUMENTS") : LOG(2,"SHELL_UNKNOWN_COMMAND");
