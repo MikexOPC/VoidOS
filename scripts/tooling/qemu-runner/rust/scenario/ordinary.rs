@@ -120,6 +120,7 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     if !log.before("KERNEL_VFS_READY", SHELL_READY) ||
         (full && !log.before("KERNEL_VFS_EXEC_OK", SHELL_READY)) ||
+        (full && !log.before("KERNEL_USER_SHELL_OK", SHELL_READY)) ||
         log.number("KERNEL_VFS_MOUNTS", 0)? != 2 ||
         log.number("KERNEL_VFS_ROOT_BYTES", 0)? != 21 ||
         log.number("KERNEL_VFS_BOOT_BYTES", 0)? != 15 {
@@ -590,6 +591,7 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     if !log.before("KERNEL_VFS_READY", "KERNEL_READY") ||
         (enabled && !log.before("KERNEL_VFS_EXEC_OK", "KERNEL_READY")) ||
+        (enabled && !log.before("KERNEL_USER_SHELL_OK", "KERNEL_READY")) ||
         log.number("KERNEL_VFS_MOUNTS", 0)? != 2 ||
         log.number("KERNEL_VFS_ROOT_BYTES", 0)? != 21 ||
         log.number("KERNEL_VFS_BOOT_BYTES", 0)? != 15 {

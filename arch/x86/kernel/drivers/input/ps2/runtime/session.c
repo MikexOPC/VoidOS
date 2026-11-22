@@ -217,6 +217,32 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
             kernel_log(3, "VFS_EXEC_RUN_FAILED"); return 0;
         }
         kernel_log(0, "KERNEL_VFS_EXEC_OK");
+
+        // Verify interactive Ring 3 shell (/bin/sh.elf) via console_read, VFS, and SYS_SPAWN/SYS_WAIT_PID.
+        static const unsigned char sh_script[] =
+            "print sh_ok\nfl /\nwrite shnote ok\nrp /SHNOTE\nrm /SHNOTE\nsync\nrun /bin/init.elf\nexit\n";
+        BOOT_U64 sh_free_before = 0;
+        uint64_t sh_pid = 0;
+        uint32_t sh_state = 0;
+        KERNEL_PROCESS_INFO sh_info = {0};
+        if (!kernel_physical_budget_read(env->Window->Pool, &sh_free_before) ||
+            !x86_process_console_push(sh_script, (uint32_t)(sizeof(sh_script) - 1U)) ||
+            !x86_process_spawn_vfs("/bin/sh.elf", KERNEL_PID_KERNEL, 0, NULL, &sh_pid)) {
+            kernel_log(3, "USER_SHELL_SPAWN_FAILED"); return 0;
+        }
+        stepped = 1;
+        while (stepped && sh_state != KERNEL_PROC_ZOMBIE) {
+            stepped = x86_process_step(sh_pid, 0, &sh_state);
+            if (stepped && sh_state != KERNEL_PROC_ZOMBIE) {
+                stepped = x86_process_step_children(sh_pid);
+            }
+        }
+        if (!stepped || !x86_process_reap(sh_pid, &sh_info) ||
+            sh_info.ExitKind != KERNEL_PROC_EXIT_NORMAL || sh_info.ExitCode != 0 ||
+            !kernel_physical_budget_matches(env->Window->Pool, sh_free_before)) {
+            kernel_log(3, "USER_SHELL_RUN_FAILED"); return 0;
+        }
+        kernel_log(0, "KERNEL_USER_SHELL_OK");
     }
 #endif
     if (!kernel_ps2_discover(directory,env->Window->Pool->PhysicalBits,firmware_read,&session,&description)) {

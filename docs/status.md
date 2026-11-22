@@ -32,26 +32,30 @@
   sulla ESP FAT16 AHCI SATA, verifica in lettura `/HELLO.TXT` (21 byte) e
   `/boot/EFI/BOOT/boot-check.txt` (15 byte via LFN), esegue un ciclo di
   scrittura/sync/rilettura/unlink su `/VERIFY.TXT` (aggiornando la directory
-  prima di liberare i cluster FAT in `truncate` e `unlink`), ed esegue
-  `/bin/init.elf` dal VFS (`KERNEL_VFS_EXEC_OK`). I processi Ring 3 usano la
-  libreria utente `libvoid` (`userspace/lib/libvoid.rs`) sulle syscall `0..10`
-  (`SYS_EXIT`, `SYS_WRITE`, `SYS_YIELD`, IPC `3..5`, VFS `SYS_OPEN (6)` ..
-  `SYS_UNLINK (10)`) con budget risorse per-processo (`KERNEL_PROCESS_BUDGET`,
-  non-escalation, fino a 128 pagine = 512 KiB per immagine ELF) e chiusura
+  prima di liberare i cluster FAT in `truncate` e `unlink`), esegue
+  `/bin/init.elf` dal VFS (`KERNEL_VFS_EXEC_OK`: `SYS_SPAWN` + `SYS_WAIT_PID`
+  su figlio sandboxed con `SPAWN` revocato, figlio `#UD` raccolto con
+  `EXIT_KIND_FAULT` e rifiuto escalation budget) e avvia la shell utente
+  `/bin/sh.elf` in Ring 3 (`KERNEL_USER_SHELL_OK`: `print`, `fl`, `write`,
+  `rp`, `rm`, `sync`, `run /bin/init.elf`, `exit` via `SYS_CONSOLE_READ` e
+  `libvoid`). I processi Ring 3 usano `libvoid` (`userspace/lib/libvoid.rs`,
+  crate `.rlib`) sulle syscall `0..15` (`SYS_EXIT`, `SYS_WRITE`, `SYS_YIELD`,
+  IPC `3..5`, VFS `6..10`, `SYS_SPAWN (11)`, `SYS_WAIT_PID (12)`,
+  `SYS_LIST_DIR (13)`, `SYS_SYNC (14)`, `SYS_CONSOLE_READ (15)`) con budget
+  risorse per-processo (`KERNEL_PROCESS_BUDGET`: `MaxImagePages` fino a 128 =
+  512 KiB, `MaxOpenFiles`, `CpuBudgetMs`, non-escalation) e chiusura
   automatica dei file alla terminazione. `/bin/bridge.elf` e `/bin/worker.elf`
   nella sessione ordinaria vengono caricati da `/bin/` sul VFS.
-- Con PS/2, `ordinary` apre la shell con tastiera e mouse. `bridge status`
-  interroga il servizio residente come normale processo gestito senza pausare
-  lo scheduler; `proc` avvia 5 processi isolati contemporanei (6 con `bridge`:
-  `bridge.elf` server eseguito su AP1 in Ring 3 con IPC cross-CPU verso
-  `worker.elf` sul BSP che legge anche `/HELLO.TXT` dal VFS via syscall
-  `SYS_OPEN`/`SYS_READ`/`SYS_CLOSE`, seconda coppia server/client utente↔utente,
-  e 1 fault CPL3 `#UD` isolato e raccolto senza perdite); `ls`, `cat`, `write`,
-  `rm` e `sync` operano direttamente sui filesystem FAT32/FAT16 montati nel
-  VFS; `ap <n> [cpu|auto] [tasks]` esegue job fidati sugli AP e sul BSP. `exit`
-  chiude la sessione e rilascia processi, task, stack, IRQ e binding PS/2. Il
-  dispatcher BSP continua con timer LAPIC e attese HPET, anche senza controller
-  PS/2. [Build e boot](../README.md).
+- Con PS/2, `ordinary` apre la shell con tastiera e mouse (`help`, `print`,
+  `status`, `bridge status`, `proc`, `fl`, `rp`, `write`, `rm`, `sync`,
+  `ap <n> [cpu|auto] [tasks]`, `exit`). `bridge status` interroga il servizio
+  residente `/bin/bridge.elf` senza pausare lo scheduler; `proc` avvia 5
+  processi isolati da `/bin/` (6 con `bridge`: `bridge.elf` su AP1 con IPC
+  cross-CPU verso `worker.elf` sul BSP che esercita VFS e syscall `11..15`,
+  seconda coppia utente↔utente, e 1 fault CPL3 `#UD` isolato e raccolto senza
+  perdite). `exit` chiude la sessione e rilascia processi, task, stack, IRQ e
+  binding PS/2. Il dispatcher BSP continua con timer LAPIC e attese HPET, anche
+  senza controller PS/2. [Build e boot](../README.md).
 
 ## Profili separati
 
@@ -91,18 +95,17 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 - Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
   e circa 13,5 ms nel soak della 3e. Il quanto nominale è 10 ms.
   [Validazione](validation/consolidamento.md#cpu-e-scheduler).
-- Obiettivo 4 (Esecuzione da file) è in corso: budget per-processo, caricatore
-  ELF fino a 128 pagine, caricamento da `/bin/` sul VFS e libreria `libvoid`
-  (syscall `0..10`) sono fatti; mancano ancora `SYS_SPAWN`/`SYS_WAIT_PID` e
-  syscall `11..15` da Ring 3, supervisione dei servizi tramite `/bin/init.elf`
-  e shell interattiva in Ring 3 (`/bin/sh.elf`), mentre `kernel_process_boot`
-  usa ancora il primo `init` incorporato prima del mount VFS. La scrittura FAT
-  (`kernel_vfs_write_file`) e `unlink` operano su file 8.3 nella directory
-  radice del mount (la lettura supporta percorsi annidati e LFN).
-- Mancano sorgente di entropia e stack canary del kernel. W^X per sezione
-  dell'intera immagine e overflow reale dello stack syscall sono non
-  verificati. Il cancello «base solida» resta aperto. Hardware fisico non
-  verificato per il percorso descritto qui.
+- Obiettivo 4 (Esecuzione da file) è chiuso (`docs/validation/exec.md`).
+  Restano come limiti noti: `kernel_process_boot` usa ancora il primo `init`
+  incorporato prima del mount VFS; limite immagine utente a 128 pagine
+  (512 KiB) senza `mmap`/`brk` dinamico; scrittura FAT (`kernel_vfs_write_file`)
+  e `unlink` su nomi 8.3 nella root del mount (lettura con sottodirectory e LFN).
+- Prossimo obiettivo della roadmap: **Obiettivo 5 — Sicurezza di sistema**
+  (sorgente di entropia e stack canary del kernel, verifica W^X per sezione
+  dell'intera immagine, verifica overflow stack syscall, decisione su KPTI e
+  mitigazioni speculative). Il cancello «base solida» prima della GUI resta
+  aperto finché Obiettivo 5 e il soak da 30 minuti non sono chiusi. Hardware
+  fisico non verificato.
 - Il watchdog HPET rileva e recupera il confronto saltato dall'HPET di
   QEMU 11.1 (circa una volta su un milione di armamenti); recupero osservato
   dal vivo in una sessione da 30 minuti.
@@ -124,22 +127,25 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Revisione corrente (Obiettivo 3 + fix sicurezza FAT `truncate`/`unlink` +
-VFS/cache a `IF=1` + Task 4.1–4.3: budget processi, ELF fino a 128 pagine,
-caricamento da `/bin/` su VirtIO-blk 1 MiB, `libvoid`), Meson `ordinary`,
-kernel SHA-256 `679BBED6E6AD0DC14D18E3979982ED5B9F7F39F25829E43C730FFCD33BBC8D19`,
-loader SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+Obiettivo 4 (Esecuzione da file: `SYS_SPAWN`/`SYS_WAIT_PID` con budget e
+non-escalation, ELF fino a 128 pagine, `/bin/init.elf`, `/bin/sh.elf`,
+`/bin/bridge.elf`, `/bin/worker.elf` da VFS VirtIO-blk 1 MiB, `libvoid`
+syscall `0..15`, più fix FAT crash-safe e VFS/cache a `IF=1`), Meson
+`ordinary`, kernel SHA-256
+`51624CE3FCCF477D5E160BE1F3860A183909ED566CCF632CE20A65392D70C4BE`, loader
+SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
 QEMU/OVMF TCG/q35: **10/10 boot** `--ordinary-shell --smp 4`
-(`kernel/build/qemu-runner-18ea7a86f13df900-8b9c`), **1/1 boot**
-`--ordinary-no-ps2 --smp 4` (`kernel/build/qemu-runner-18ea7abc6c690edc-7d60`).
-Test host con ASan/Rust: `vfs_fat_host` PASS (inclusi fault-injection I/O su
-`truncate`/`unlink` e verifica `IF=1` durante I/O), `block_cache_host` PASS,
-`process_table_host` PASS (inclusa non-escalation budget), `process_policy_rust`
-**14/14 PASS**, `elf_parser_rust` **9/9 PASS**, `libvoid_rust` **3/3 PASS**,
-`qemu_runner_unit` **21/21 PASS**. Evidenze precedenti della chiusura di
-Obiettivo 3 (`464dd6b`, `kernel.elf` `B7F0B709...`, inclusi 3/3 `--smp 8`) in
-[validazione storage](validation/storage.md). Hardware fisico non verificato.
-[Validazione processi](validation/processi.md).
+(`kernel/build/qemu-runner-18ea7c97912de2d8-a218`), **3/3 boot**
+`--ordinary-shell --smp 8` (`kernel/build/qemu-runner-18ea7cd620baa574-aba8`),
+**1/1 boot** `--ordinary-no-ps2 --smp 4`
+(`kernel/build/qemu-runner-18ea7cea64d98a04-46e0`). Test host con ASan/Rust:
+`process_table_host` PASS, `vfs_fat_host` PASS, `block_cache_host` PASS,
+`libvoid_rust` **3/3 PASS**, `process_policy_rust` **14/14 PASS**,
+`elf_parser_rust` **9/9 PASS**, `shell_command_rust` **4/4 PASS**,
+`qemu_runner_unit` **21/21 PASS**. Hardware fisico non verificato.
+[Validazione esecuzione da file](validation/exec.md),
+[validazione storage](validation/storage.md),
+[validazione processi](validation/processi.md).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni
 [AP nel boot ordinario](validation/consolidamento.md#validazione-dei-backend-x86),
