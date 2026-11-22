@@ -15,8 +15,9 @@ profilo.
 
 ## Cosa non funziona ancora
 
-La shell gira in una sessione sul dispatcher BSP permanente. Mancano la
-preemption ordinaria sugli AP, driver a blocchi, VFS, esecuzione
+La shell gira in una sessione sul dispatcher BSP permanente con capacità fino
+a 64 task su heap e migrazione/preemption ordinaria su BSP e AP. Mancano più
+processi utente attivi contemporaneamente, driver a blocchi, VFS, esecuzione
 di ELF da file, entropia e stack canary. Vedi lo [stato del progetto](docs/status.md).
 
 ## Prerequisiti su Windows x64
@@ -53,6 +54,14 @@ meson test -C kernel/build/meson-kernel
 meson setup kernel/build/meson-qemu-runner test/tooling/qemu-runner --vsenv
 meson compile -C kernel/build/meson-qemu-runner
 ./kernel/build/meson-qemu-runner/qemu_runner.exe --ordinary --image kernel/build/meson-kernel/kernel.elf --boots 1 --smp 4
+```
+
+Per compilare ed eseguire le suite host unificate (C con ASan e Rust) tramite Meson:
+
+```powershell
+meson setup kernel/build/meson-host-tests test --vsenv
+meson compile -C kernel/build/meson-host-tests
+meson test -C kernel/build/meson-host-tests
 ```
 
 Meson produce `kernel/build/meson-kernel/kernel.elf` e controlla la parità

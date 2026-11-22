@@ -73,7 +73,12 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   ignota; ipotesi non verificata: carico dell'host. Non si è ripresentato in
   9 sessioni con diagnostica dedicata.
 - Il backend processi è stato diviso. La CI ha un workflow per suite host
-  e boot ordinario. Resta la migrazione delle suite host in `meson test`.
+  e boot ordinario. Le suite host principali (`clock`, `sync`, `scheduler`,
+  `line_editor`, `elf_parser`, `process_policy`, `user_protection`,
+  `watchdog_integration`, `log_boundary`, 17 test C+ASan e Rust) girano ora
+  in un unico [test/meson.build](../test/meson.build) senza dipendere da
+  PowerShell 7; restano negli script PowerShell le suite legacy dei driver
+  diagnostici.
 
 ## Evidenze
 
