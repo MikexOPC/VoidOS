@@ -118,6 +118,12 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
         log.number("KERNEL_AHCI_SECTORS", 0)? == 0 {
         return Err("AHCI SATA block device did not start".to_string());
     }
+    if !log.before("KERNEL_VFS_READY", SHELL_READY) ||
+        log.number("KERNEL_VFS_MOUNTS", 0)? != 2 ||
+        log.number("KERNEL_VFS_ROOT_BYTES", 0)? != 21 ||
+        log.number("KERNEL_VFS_BOOT_BYTES", 0)? != 15 {
+        return Err("VFS FAT mount or file verification failed".to_string());
+    }
     for cpu in 0..plan.smp {
         if read_cr4(vm, cpu)? & (SMEP | SMAP | UMIP) != expected {
             return Err(format!("Unexpected CR4 on CPU {cpu}"));
@@ -555,6 +561,12 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     if !log.before("KERNEL_AHCI_READY", "KERNEL_READY") ||
         log.number("KERNEL_AHCI_SECTORS", 0)? == 0 {
         return Err("AHCI SATA block device did not start without PS/2".to_string());
+    }
+    if !log.before("KERNEL_VFS_READY", "KERNEL_READY") ||
+        log.number("KERNEL_VFS_MOUNTS", 0)? != 2 ||
+        log.number("KERNEL_VFS_ROOT_BYTES", 0)? != 21 ||
+        log.number("KERNEL_VFS_BOOT_BYTES", 0)? != 15 {
+        return Err("VFS FAT mount or file verification failed without PS/2".to_string());
     }
     if !log.before("KERNEL_READY", "KERNEL_DISPATCHER_READY") {
         return Err("The idle loop started before the boot completed".to_string());

@@ -96,9 +96,36 @@ fn prepare_esp(directory: &Path, image: &Path, paths: &Paths) -> Result<PathBuf,
     }
     fs::write(boot.join("boot-check.txt"), b"OS boot check\r\n").map_err(|error| format!("ESP file: {error}"))?;
     let mut vblk = vec![0u8; 128 * 512];
-    vblk[..19].copy_from_slice(b"VOIDOS_VBLK_DISK_V1");
+    vblk[0] = 0xEB;
+    vblk[1] = 0x58;
+    vblk[2] = 0x90;
+    vblk[3..11].copy_from_slice(b"VOIDOS  ");
+    vblk[11..13].copy_from_slice(&512u16.to_le_bytes());
+    vblk[13] = 1;
+    vblk[14..16].copy_from_slice(&4u16.to_le_bytes());
+    vblk[16] = 2;
+    vblk[17..19].copy_from_slice(&0u16.to_le_bytes());
+    vblk[21] = 0xF8;
+    vblk[32..36].copy_from_slice(&128u32.to_le_bytes());
+    vblk[36..40].copy_from_slice(&2u32.to_le_bytes());
+    vblk[44..48].copy_from_slice(&2u32.to_le_bytes());
+    vblk[48..50].copy_from_slice(&1u16.to_le_bytes());
     vblk[510] = 0x55;
     vblk[511] = 0xAA;
+    for fat_idx in 0..2usize {
+        let fat_off = (4 + fat_idx * 2) * 512;
+        vblk[fat_off..fat_off + 4].copy_from_slice(&0x0FFF_FFF8u32.to_le_bytes());
+        vblk[fat_off + 4..fat_off + 8].copy_from_slice(&0x0FFF_FFFFu32.to_le_bytes());
+        vblk[fat_off + 8..fat_off + 12].copy_from_slice(&0x0FFF_FFFFu32.to_le_bytes());
+        vblk[fat_off + 12..fat_off + 16].copy_from_slice(&0x0FFF_FFFFu32.to_le_bytes());
+    }
+    let root_off = 8 * 512;
+    vblk[root_off..root_off + 11].copy_from_slice(b"HELLO   TXT");
+    vblk[root_off + 11] = 0x20;
+    vblk[root_off + 26..root_off + 28].copy_from_slice(&3u16.to_le_bytes());
+    vblk[root_off + 28..root_off + 32].copy_from_slice(&21u32.to_le_bytes());
+    let data_off = 9 * 512;
+    vblk[data_off..data_off + 21].copy_from_slice(b"VoidOS FAT32 disk ok\n");
     fs::write(directory.join("vblk.img"), &vblk).map_err(|error| format!("VirtIO disk: {error}"))?;
     Ok(esp)
 }

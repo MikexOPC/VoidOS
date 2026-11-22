@@ -342,3 +342,48 @@ ahci_protocol_rust = executable(
     override_options: ['b_sanitize=none'],
 )
 test('ahci_protocol_rust', ahci_protocol_rust)
+
+# ====== VFS & FAT filesystem ======
+
+vfs_fat_rust = executable(
+    'vfs_fat_rust',
+    repo / 'kernel/vfs/rust/fat.rs',
+    rust_args: ['--test', '-C', 'overflow-checks=yes'],
+    override_options: ['b_sanitize=none'],
+)
+test('vfs_fat_rust', vfs_fat_rust)
+
+vfs_fat_obj = custom_target(
+    'vfs_fat_obj',
+    input: files(repo / 'kernel/vfs/rust/fat.rs'),
+    output: 'vfs_fat.obj',
+    depfile: 'vfs_fat.d',
+    command: [
+        rustc, '--edition=2024', '-D', 'warnings', '--crate-type=lib',
+        '--crate-name', 'vfs_fat',
+        '-C', 'panic=abort', '-C', 'opt-level=2',
+        '--emit=obj=@OUTPUT@,dep-info=@DEPFILE@', '@INPUT@',
+    ],
+)
+
+vfs_fat_host = executable(
+    'vfs_fat_host',
+    'kernel/vfs/vfs_test.c',
+    'kernel/mm/physical/synchronization/backend.c',
+    repo / 'kernel/vfs/vfs.c',
+    repo / 'kernel/storage/cache.c',
+    repo / 'kernel/mm/heap/heap.c',
+    repo / 'kernel/mm/heap/core/fill.c',
+    repo / 'kernel/mm/heap/core/guard.c',
+    repo / 'kernel/mm/heap/core/release.c',
+    repo / 'kernel/mm/heap/core/reserve.c',
+    repo / 'kernel/mm/heap/core/state.c',
+    repo / 'lib/containers/bitmap.c',
+    repo / 'kernel/sync/lock.c',
+    repo / 'kernel/sync/acquire.c',
+    repo / 'kernel/time/clock.c',
+    sync_atomics_obj,
+    vfs_fat_obj,
+    include_directories: inc,
+)
+test('vfs_fat_host', vfs_fat_host, env: runtime)

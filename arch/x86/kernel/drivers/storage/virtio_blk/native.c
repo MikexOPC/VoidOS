@@ -277,7 +277,7 @@ static int verify_io_private(KERNEL_BLOCK_CACHE *cache)
 
     if (kernel_block_cache_read_sectors(cache, 0ULL, 1U, sector0) != KERNEL_STORAGE_OK)
         return 0;
-    if (sector0[0] != 'V' || sector0[1] != 'O' || sector0[2] != 'I' || sector0[3] != 'D')
+    if (sector0[510] != 0x55U || sector0[511] != 0xAAU)
         return 0;
 
     if (!cache->Device->ReadOnly && cache->Device->TotalSectors >= 2ULL) {
