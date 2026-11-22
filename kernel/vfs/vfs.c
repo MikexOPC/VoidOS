@@ -40,34 +40,60 @@ int vfs_enter_private(KERNEL_VFS *vfs, VFS_ACCESS *access)
 {
     if (!vfs || !access || vfs->Self != (uintptr_t)vfs || !vfs->Ready)
         return 0;
-    uint64_t saved_if = ks_irq_save();
-    KERNEL_LOCK_CONTEXT *context = kernel_lock_current_context();
-    if (!context) {
+    for (uint32_t attempt = 0; attempt < 1000000U; ++attempt) {
+        uint64_t saved_if = ks_irq_save();
+        KERNEL_LOCK_CONTEXT *context = kernel_lock_current_context();
+        if (!context) {
+            ks_irq_restore(saved_if);
+            return 0;
+        }
+        KERNEL_LOCK_GUARD guard;
+        zero_bytes(&guard, sizeof(guard));
+        if (!kernel_lock_acquire(&vfs->Lock, context, &guard)) {
+            ks_irq_restore(saved_if);
+            return 0;
+        }
+        if (vfs->Self != (uintptr_t)vfs || !vfs->Ready) {
+            (void)kernel_lock_release(context, &guard);
+            ks_irq_restore(saved_if);
+            return 0;
+        }
+        if (!vfs->IoBusy) {
+            vfs->IoBusy = 1U;
+            if (!kernel_lock_release(context, &guard))
+                ks_fail_stop("VFS_LOCK_RELEASE_FAILED");
+            ks_irq_restore(saved_if);
+            access->Vfs = vfs;
+            return 1;
+        }
+        if (!kernel_lock_release(context, &guard))
+            ks_fail_stop("VFS_LOCK_RELEASE_FAILED");
         ks_irq_restore(saved_if);
-        return 0;
+        ks_pause();
     }
-    zero_bytes(access, sizeof(*access));
-    if (!kernel_lock_acquire(&vfs->Lock, context, &access->Guard)) {
-        ks_irq_restore(saved_if);
-        return 0;
-    }
-    if (vfs->Self != (uintptr_t)vfs || !vfs->Ready) {
-        (void)kernel_lock_release(context, &access->Guard);
-        ks_irq_restore(saved_if);
-        return 0;
-    }
-    access->Context = context;
-    access->SavedIf = saved_if;
-    return 1;
+    return 0;
 }
 
 // ====== vfs_leave_private ======
 
 void vfs_leave_private(VFS_ACCESS *access)
 {
-    if (!kernel_lock_release(access->Context, &access->Guard))
+    KERNEL_VFS *vfs = access ? access->Vfs : NULL;
+    if (!vfs)
+        return;
+    uint64_t saved_if = ks_irq_save();
+    KERNEL_LOCK_CONTEXT *context = kernel_lock_current_context();
+    if (!context)
+        ks_fail_stop("VFS_LOCK_CONTEXT_MISSING");
+    KERNEL_LOCK_GUARD guard;
+    zero_bytes(&guard, sizeof(guard));
+    if (!kernel_lock_acquire(&vfs->Lock, context, &guard))
+        ks_fail_stop("VFS_LOCK_REACQUIRE_FAILED");
+    vfs->IoBusy = 0U;
+    if (!kernel_lock_release(context, &guard))
         ks_fail_stop("VFS_LOCK_RELEASE_FAILED");
-    ks_irq_restore(access->SavedIf);
+    ks_irq_restore(saved_if);
+    access->Vfs = NULL;
 }
 
 static int enter_private(KERNEL_VFS *vfs, VFS_ACCESS *access) { return vfs_enter_private(vfs, access); }

@@ -1,4 +1,5 @@
 #include "kernel/vfs/vfs.h"
+#include "kernel/sync/internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,7 +14,10 @@ static __declspec(align(4096)) uint8_t heap_arena[KERNEL_HEAP_MAX_PAGES * 4096UL
 static KERNEL_HEAP test_heap;
 
 typedef struct {
-    uint8_t  Storage[DISK_SECTORS * DISK_SECTOR_BYTES];
+    uint8_t   Storage[DISK_SECTORS * DISK_SECTOR_BYTES];
+    int       FailWriteActive;
+    uint64_t  FailWriteLba;
+    uint32_t  IoWithIrqEnabled;
 } RAM_DISK;
 
 static RAM_DISK fat32_disk;
@@ -39,6 +43,8 @@ KERNEL_HEAP *kernel_heap(void) { return &test_heap; }
 static int ram_read(KERNEL_BLOCK_DEVICE *device, uint64_t lba, uint32_t count, void *buffer)
 {
     RAM_DISK *disk = (RAM_DISK *)device->Context;
+    CHECK(ks_irq_state() != 0);
+    ++disk->IoWithIrqEnabled;
     memcpy(buffer, disk->Storage + lba * DISK_SECTOR_BYTES, (size_t)count * DISK_SECTOR_BYTES);
     return KERNEL_STORAGE_OK;
 }
@@ -48,6 +54,11 @@ static int ram_read(KERNEL_BLOCK_DEVICE *device, uint64_t lba, uint32_t count, v
 static int ram_write(KERNEL_BLOCK_DEVICE *device, uint64_t lba, uint32_t count, const void *buffer)
 {
     RAM_DISK *disk = (RAM_DISK *)device->Context;
+    CHECK(ks_irq_state() != 0);
+    ++disk->IoWithIrqEnabled;
+    if (disk->FailWriteActive && disk->FailWriteLba >= lba && disk->FailWriteLba < lba + count) {
+        return KERNEL_STORAGE_ERR_IO;
+    }
     memcpy(disk->Storage + lba * DISK_SECTOR_BYTES, buffer, (size_t)count * DISK_SECTOR_BYTES);
     return KERNEL_STORAGE_OK;
 }
@@ -243,6 +254,53 @@ int main(void)
     CHECK(kernel_vfs_stat(&vfs, "/DATA.BIN", &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
     CHECK(kernel_vfs_unlink(&vfs, "/SUB/FDTEST.TXT") == KERNEL_STORAGE_OK);
     CHECK(kernel_vfs_stat(&vfs, "/SUB/FDTEST.TXT", &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+
+    // Fault-injection: directory write failure during truncate and unlink must NOT free FAT clusters.
+    uint8_t fault_payload[600];
+    for (uint32_t i = 0; i < sizeof(fault_payload); ++i) {
+        fault_payload[i] = (uint8_t)('A' + (i % 26U));
+    }
+    CHECK(kernel_vfs_write_file(&vfs, "/FAULT.TXT", 0U, fault_payload, sizeof(fault_payload), 1, 1, &written) == KERNEL_STORAGE_OK);
+    CHECK(written == sizeof(fault_payload));
+    CHECK(kernel_vfs_stat(&vfs, "/FAULT.TXT", &st) == KERNEL_STORAGE_OK);
+    CHECK(st.Size == sizeof(fault_payload) && st.FirstCluster >= 2U);
+    uint32_t first_cluster = st.FirstCluster;
+
+    // 1) Inject write error on root dir sector (LBA 8) during truncate.
+    fat32_disk.FailWriteActive = 1;
+    fat32_disk.FailWriteLba = 8U;
+    CHECK(kernel_vfs_write_file(&vfs, "/FAULT.TXT", 0U, "x", 1U, 0, 1, &written) == KERNEL_STORAGE_ERR_IO);
+    fat32_disk.FailWriteActive = 0;
+    CHECK(kernel_block_cache_invalidate(&fat32_cache) == KERNEL_STORAGE_OK);
+
+    // FAT cluster must still be allocated and file content intact.
+    uint32_t fat_word = 0;
+    memcpy(&fat_word, fat32_disk.Storage + 4U * 512U + first_cluster * 4U, 4U);
+    CHECK((fat_word & 0x0FFFFFFFU) != 0U);
+    uint8_t verify_buf[600];
+    memset(verify_buf, 0, sizeof(verify_buf));
+    CHECK(kernel_vfs_read_file(&vfs, "/FAULT.TXT", 0U, verify_buf, sizeof(verify_buf), &read_bytes) == KERNEL_STORAGE_OK);
+    CHECK(read_bytes == sizeof(fault_payload) && memcmp(verify_buf, fault_payload, sizeof(fault_payload)) == 0);
+
+    // 2) Inject write error on root dir sector (LBA 8) during unlink.
+    fat32_disk.FailWriteActive = 1;
+    fat32_disk.FailWriteLba = 8U;
+    CHECK(kernel_vfs_unlink(&vfs, "/FAULT.TXT") == KERNEL_STORAGE_ERR_IO);
+    fat32_disk.FailWriteActive = 0;
+    CHECK(kernel_block_cache_invalidate(&fat32_cache) == KERNEL_STORAGE_OK);
+
+    memcpy(&fat_word, fat32_disk.Storage + 4U * 512U + first_cluster * 4U, 4U);
+    CHECK((fat_word & 0x0FFFFFFFU) != 0U);
+    memset(verify_buf, 0, sizeof(verify_buf));
+    CHECK(kernel_vfs_read_file(&vfs, "/FAULT.TXT", 0U, verify_buf, sizeof(verify_buf), &read_bytes) == KERNEL_STORAGE_OK);
+    CHECK(read_bytes == sizeof(fault_payload) && memcmp(verify_buf, fault_payload, sizeof(fault_payload)) == 0);
+
+    // 3) Clean unlink succeeds and frees the FAT cluster.
+    CHECK(kernel_vfs_unlink(&vfs, "/FAULT.TXT") == KERNEL_STORAGE_OK);
+    CHECK(kernel_vfs_stat(&vfs, "/FAULT.TXT", &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+    memcpy(&fat_word, fat32_disk.Storage + 4U * 512U + first_cluster * 4U, 4U);
+    CHECK((fat_word & 0x0FFFFFFFU) == 0U);
+    CHECK(fat32_disk.IoWithIrqEnabled > 0U);
 
     kernel_vfs_destroy(&vfs);
     kernel_block_cache_destroy(&fat32_cache);

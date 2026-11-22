@@ -5,9 +5,7 @@
 #include "kernel/sync/internal.h"
 
 typedef struct {
-    KERNEL_LOCK_CONTEXT  *Context;
-    KERNEL_LOCK_GUARD     Guard;
-    uint64_t              SavedIf;
+    KERNEL_VFS  *Vfs;
 } VFS_ACCESS;
 
 typedef struct {

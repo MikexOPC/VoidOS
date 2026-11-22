@@ -46,7 +46,7 @@ typedef struct {
     uint32_t                  SectorsPerBlock;
     uint32_t                  CapacityLines;
     uint32_t                  Ready;
-    uint32_t                  Reserved;
+    uint32_t                  IoBusy;
     KERNEL_BLOCK_CACHE_STATS  Stats;
     KERNEL_LOCK               Lock;
 } KERNEL_BLOCK_CACHE;

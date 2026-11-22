@@ -22,17 +22,24 @@
   supporta. Lo stack delle syscall ha due guard page coperte dall'inventario
   paging.
 - Al boot il kernel avvia due driver a blocchi reali sull'immagine ordinaria:
-  VirtIO-blk PCI modern (OASIS VirtIO 1.2, `00:02.0`, 128 settori) e AHCI SATA
-  (Intel AHCI 1.3.1, controller ICH9 `00:1f.2` porta 0, `IDENTIFY`,
+  VirtIO-blk PCI modern (OASIS VirtIO 1.2, `00:02.0`, 2048 settori = 1 MiB) e
+  AHCI SATA (Intel AHCI 1.3.1, controller ICH9 `00:1f.2` porta 0, `IDENTIFY`,
   `READ/WRITE DMA EXT`, `FLUSH CACHE EXT`), ciascuno servito da una cache a
-  blocchi LRU write-through da 64 linee × 4 KiB su `kernel_heap()`. Il VFS
-  monta `/` sul volume FAT32 VirtIO-blk e `/boot` sulla ESP FAT16 AHCI SATA,
-  verifica in lettura `/HELLO.TXT` (21 byte) e `/boot/EFI/BOOT/boot-check.txt`
-  (15 byte via LFN), ed esegue un ciclo di scrittura, flush, invalidazione
-  cache, rilettura e rimozione su `/VERIFY.TXT`. I processi Ring 3 dispongono
-  delle syscall `SYS_OPEN (6)`, `SYS_READ (7)`, `SYS_WRITE_FILE (8)`,
-  `SYS_CLOSE (9)` e `SYS_UNLINK (10)` con tabella dinamica dei file aperti
-  (fino a 256) e chiusura automatica alla terminazione del processo.
+  blocchi LRU write-through da 64 linee × 4 KiB su `kernel_heap()`. Sia il VFS
+  sia la block cache tengono gli interrupt attivi (`IF=1`) durante gli
+  attraversamenti FAT e l'I/O sincrono su disco (mutua esclusione via `IoBusy`
+  con spinlock breve). Il VFS monta `/` sul volume FAT32 VirtIO-blk e `/boot`
+  sulla ESP FAT16 AHCI SATA, verifica in lettura `/HELLO.TXT` (21 byte) e
+  `/boot/EFI/BOOT/boot-check.txt` (15 byte via LFN), esegue un ciclo di
+  scrittura/sync/rilettura/unlink su `/VERIFY.TXT` (aggiornando la directory
+  prima di liberare i cluster FAT in `truncate` e `unlink`), ed esegue
+  `/bin/init.elf` dal VFS (`KERNEL_VFS_EXEC_OK`). I processi Ring 3 usano la
+  libreria utente `libvoid` (`userspace/lib/libvoid.rs`) sulle syscall `0..10`
+  (`SYS_EXIT`, `SYS_WRITE`, `SYS_YIELD`, IPC `3..5`, VFS `SYS_OPEN (6)` ..
+  `SYS_UNLINK (10)`) con budget risorse per-processo (`KERNEL_PROCESS_BUDGET`,
+  non-escalation, fino a 128 pagine = 512 KiB per immagine ELF) e chiusura
+  automatica dei file alla terminazione. `/bin/bridge.elf` e `/bin/worker.elf`
+  nella sessione ordinaria vengono caricati da `/bin/` sul VFS.
 - Con PS/2, `ordinary` apre la shell con tastiera e mouse. `bridge status`
   interroga il servizio residente come normale processo gestito senza pausare
   lo scheduler; `proc` avvia 5 processi isolati contemporanei (6 con `bridge`:
@@ -84,10 +91,14 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 - Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
   e circa 13,5 ms nel soak della 3e. Il quanto nominale è 10 ms.
   [Validazione](validation/consolidamento.md#cpu-e-scheduler).
-- Mancano `exec` di ELF caricati dal VFS, `init` e shell in Ring 3
-  (Obiettivo 4: i programmi utente sono ancora incorporati nell'immagine). La
-  scrittura FAT (`kernel_vfs_write_file`) e `unlink` operano su file 8.3 nella
-  directory radice del mount (la lettura supporta percorsi annidati e LFN).
+- Obiettivo 4 (Esecuzione da file) è in corso: budget per-processo, caricatore
+  ELF fino a 128 pagine, caricamento da `/bin/` sul VFS e libreria `libvoid`
+  (syscall `0..10`) sono fatti; mancano ancora `SYS_SPAWN`/`SYS_WAIT_PID` e
+  syscall `11..15` da Ring 3, supervisione dei servizi tramite `/bin/init.elf`
+  e shell interattiva in Ring 3 (`/bin/sh.elf`), mentre `kernel_process_boot`
+  usa ancora il primo `init` incorporato prima del mount VFS. La scrittura FAT
+  (`kernel_vfs_write_file`) e `unlink` operano su file 8.3 nella directory
+  radice del mount (la lettura supporta percorsi annidati e LFN).
 - Mancano sorgente di entropia e stack canary del kernel. W^X per sezione
   dell'intera immagine e overflow reale dello stack syscall sono non
   verificati. Il cancello «base solida» resta aperto. Hardware fisico non
@@ -113,28 +124,22 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Obiettivo 3 (Storage: VirtIO-blk, AHCI SATA, cache a blocchi LRU write-through,
-VFS FAT32/FAT16 in lettura/scrittura, syscall Ring 3 e comandi shell), Meson
-`ordinary`, kernel SHA-256
-`B7F0B709201E62ADA618046CAF0851358592874D2A6941A7967267E35508B3C3`,
+Revisione corrente (Obiettivo 3 + fix sicurezza FAT `truncate`/`unlink` +
+VFS/cache a `IF=1` + Task 4.1–4.3: budget processi, ELF fino a 128 pagine,
+caricamento da `/bin/` su VirtIO-blk 1 MiB, `libvoid`), Meson `ordinary`,
+kernel SHA-256 `679BBED6E6AD0DC14D18E3979982ED5B9F7F39F25829E43C730FFCD33BBC8D19`,
 loader SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
-QEMU/OVMF TCG/q35: 10/10 boot `--ordinary-shell --smp 4` (`FreePages: 11834`
-stabili, `Overruns: 0`), 3/3 boot `--ordinary-shell --smp 8` (`FreePages:
-11606` stabili, `Overruns: 0`), 1/1 boot `--ordinary-no-ps2 --smp 4`
-(`FreePages: 11837`). Su ogni boot: mount `/` su VirtIO-blk FAT32 e `/boot` su
-AHCI SATA ESP FAT16 (`KERNEL_VFS_MOUNTS: 0x2`, `KERNEL_VFS_ROOT_BYTES: 0x15`,
-`KERNEL_VFS_BOOT_BYTES: 0xf`, `KERNEL_VFS_READY`), `proc` con 6 processi Ring 3
-simultanei (`bridge.elf` su AP1 con IPC cross-CPU verso `worker.elf` su BSP che
-apre, legge 21 byte e chiude `/HELLO.TXT` via `SYS_OPEN`/`SYS_READ`/`SYS_CLOSE`,
-seconda coppia IPC utente↔utente, 1 `#UD` CPL3 isolato e raccolto), comandi
-shell `ls`, `write note voidos`, `cat note`, `rm note`, `sync`, e
-`ap 1000000 auto 16`. Test host con ASan: `block_cache_host` PASS,
-`vfs_fat_host` PASS, `virtio_blk_protocol_rust` **3/3 PASS**,
-`ahci_protocol_rust` **2/2 PASS**, `vfs_fat_rust` **2/2 PASS**,
-`shell_command_rust` **4/4 PASS**, `qemu_runner_unit` **21/21 PASS** (26 test
-in `test/meson.build`). Hardware fisico non verificato.
-[Validazione storage](validation/storage.md),
-[validazione processi](validation/processi.md).
+QEMU/OVMF TCG/q35: **10/10 boot** `--ordinary-shell --smp 4`
+(`kernel/build/qemu-runner-18ea7a86f13df900-8b9c`), **1/1 boot**
+`--ordinary-no-ps2 --smp 4` (`kernel/build/qemu-runner-18ea7abc6c690edc-7d60`).
+Test host con ASan/Rust: `vfs_fat_host` PASS (inclusi fault-injection I/O su
+`truncate`/`unlink` e verifica `IF=1` durante I/O), `block_cache_host` PASS,
+`process_table_host` PASS (inclusa non-escalation budget), `process_policy_rust`
+**14/14 PASS**, `elf_parser_rust` **9/9 PASS**, `libvoid_rust` **3/3 PASS**,
+`qemu_runner_unit` **21/21 PASS**. Evidenze precedenti della chiusura di
+Obiettivo 3 (`464dd6b`, `kernel.elf` `B7F0B709...`, inclusi 3/3 `--smp 8`) in
+[validazione storage](validation/storage.md). Hardware fisico non verificato.
+[Validazione processi](validation/processi.md).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni
 [AP nel boot ordinario](validation/consolidamento.md#validazione-dei-backend-x86),

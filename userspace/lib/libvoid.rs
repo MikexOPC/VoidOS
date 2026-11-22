@@ -16,11 +16,6 @@ pub const SYS_READ: u64 = 7;
 pub const SYS_WRITE_FILE: u64 = 8;
 pub const SYS_CLOSE: u64 = 9;
 pub const SYS_UNLINK: u64 = 10;
-pub const SYS_SPAWN: u64 = 11;
-pub const SYS_WAIT_PID: u64 = 12;
-pub const SYS_LIST_DIR: u64 = 13;
-pub const SYS_SYNC: u64 = 14;
-pub const SYS_CONSOLE_READ: u64 = 15;
 
 // ====== flags and errors ======
 
@@ -188,59 +183,6 @@ pub fn close(fd: u64) -> i64 {
 #[inline]
 pub fn unlink(path: &[u8]) -> i64 {
     raw_syscall(SYS_UNLINK, path.as_ptr() as u64, path.len() as u64, 0)
-}
-
-// ====== spawn ======
-
-#[cfg(not(test))]
-#[inline]
-pub fn spawn(path: &[u8], args: Option<&SpawnArgs>) -> i64 {
-    let ptr = match args {
-        Some(a) => (a as *const SpawnArgs) as u64,
-        None => 0,
-    };
-    raw_syscall(SYS_SPAWN, path.as_ptr() as u64, path.len() as u64, ptr)
-}
-
-// ====== wait_pid ======
-
-#[cfg(not(test))]
-#[inline]
-pub fn wait_pid(pid: u64, status: Option<&mut WaitStatus>) -> i64 {
-    let ptr = match status {
-        Some(s) => (s as *mut WaitStatus) as u64,
-        None => 0,
-    };
-    raw_syscall(SYS_WAIT_PID, pid, ptr, 0)
-}
-
-// ====== list_dir ======
-
-#[cfg(not(test))]
-#[inline]
-pub fn list_dir(path: &[u8], buf: &mut [u8]) -> i64 {
-    raw_syscall(
-        SYS_LIST_DIR,
-        path.as_ptr() as u64,
-        ((path.len() as u64) << 32) | (buf.len() as u64 & 0xFFFF_FFFF),
-        buf.as_mut_ptr() as u64,
-    )
-}
-
-// ====== sync_fs ======
-
-#[cfg(not(test))]
-#[inline]
-pub fn sync_fs() -> i64 {
-    raw_syscall(SYS_SYNC, 0, 0, 0)
-}
-
-// ====== console_read ======
-
-#[cfg(not(test))]
-#[inline]
-pub fn console_read(buf: &mut [u8]) -> i64 {
-    raw_syscall(SYS_CONSOLE_READ, buf.as_mut_ptr() as u64, buf.len() as u64, 0)
 }
 
 // ====== trim_spaces ======

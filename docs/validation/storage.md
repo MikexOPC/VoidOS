@@ -3,9 +3,10 @@
 ## Perimetro e immagine verificata
 
 - **Profilo:** Meson `ordinary` (immagine unica di produzione).
-- **Kernel ELF (`kernel.elf`):** SHA-256 `B7F0B709201E62ADA618046CAF0851358592874D2A6941A7967267E35508B3C3`.
+- **Revisione iniziale Obiettivo 3 (`464dd6b`):** `kernel.elf` SHA-256 `B7F0B709201E62ADA618046CAF0851358592874D2A6941A7967267E35508B3C3`.
+- **Revisione corrente (fix sicurezza FAT + I/O VFS/cache a `IF=1` + `/bin/` su VirtIO-blk 1 MiB):** `kernel.elf` SHA-256 `679BBED6E6AD0DC14D18E3979982ED5B9F7F39F25829E43C730FFCD33BBC8D19`.
 - **Loader UEFI (`BOOTX64.EFI`):** SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
-- **Macchina virtuale:** QEMU 11.1.0 (`q35`, TCG, OVMF `edk2-x86_64-code.fd`), disco ESP SATA AHCI (`00:1f.2`, FAT16, 1.032.192 settori = 504 MiB) + disco secondario VirtIO-blk PCI modern (`disable-legacy=on`, `00:02.0`, FAT32, 128 settori = 64 KiB).
+- **Macchina virtuale:** QEMU 11.1.0 (`q35`, TCG, OVMF `edk2-x86_64-code.fd`), disco ESP SATA AHCI (`00:1f.2`, FAT16, 1.032.192 settori = 504 MiB) + disco secondario VirtIO-blk PCI modern (`disable-legacy=on`, `00:02.0`, FAT32, 2048 settori = 1 MiB nella revisione corrente; 128 settori = 64 KiB a `464dd6b`).
 
 ## Suite host (Meson, MSVC ASan + Rust)
 
@@ -39,7 +40,16 @@ Tutte le suite di storage e di sistema in [test/meson.build](../../test/meson.bu
      - `sync` esegue il flush dei mount e dei device sottostanti (`SHELL_SYNC_OK`).
    - Stabilità e memoria: `FreePages: 11834` costanti in tutti i 10 boot, `Overruns: 0`, 24 job AP completati per boot, preemption attiva su tutte le 4 CPU.
 2. **`--ordinary-shell --smp 8 --boots 3`:** **3/3 PASS** (`kernel/build/qemu-runner-18ea76b2af5387e4-26fc`), `FreePages: 11606` costanti, `Overruns: 0`, `SharedIdtCpus: 8`, `VisitedCpus: 255`.
-3. **`--ordinary-no-ps2 --smp 4 --boots 1`:** **1/1 PASS** (`kernel/build/qemu-runner-18ea76c6b9754000-6284`), VirtIO-blk, AHCI e VFS attivi e verificati anche senza controller PS/2, `FreePages: 11837`.
+3. **`--ordinary-no-ps2 --smp 4 --boots 1` (`464dd6b`):** **1/1 PASS** (`kernel/build/qemu-runner-18ea76c6b9754000-6284`), VirtIO-blk, AHCI e VFS attivi e verificati anche senza controller PS/2, `FreePages: 11837`.
+
+### Campagna aggiornata dopo fix robustezza FAT e `IF=1` su VFS/cache (`kernel.elf` SHA-256 `679BBED6E6AD0DC14D18E3979982ED5B9F7F39F25829E43C730FFCD33BBC8D19`)
+
+- **Fix verificati:**
+  - `truncate` e `unlink` in [write.c](../../kernel/vfs/write.c) aggiornano la directory entry su disco **prima** di liberare la catena dei cluster nella FAT; verificato in `vfs_fat_host` (ASan, PASS) tramite iniezione di `KERNEL_STORAGE_ERR_IO` sul settore directory (`LBA 8`), controllando che i cluster FAT restino allocati e i dati integri.
+  - [vfs.c](../../kernel/vfs/vfs.c) e [cache.c](../../kernel/storage/cache.c) usano un flag `IoBusy` protetto da spinlock breve, mantenendo `IF=1` durante gli attraversamenti FAT e l'I/O sincrono su disco; verificato in `vfs_fat_host` (`ks_irq_state() != 0` in ogni lettura/scrittura del device) e `block_cache_host` (ASan, PASS).
+- **Boot QEMU aggiornati:**
+  - `--ordinary-shell --smp 4 --boots 10`: **10/10 PASS** (`kernel/build/qemu-runner-18ea7a86f13df900-8b9c`), inclusi `/bin/init.elf`, `/bin/bridge.elf` e `/bin/worker.elf` caricati dal VFS VirtIO-blk da 2048 settori (`KERNEL_VFS_EXEC_OK`).
+  - `--ordinary-no-ps2 --smp 4 --boots 1`: **1/1 PASS** (`kernel/build/qemu-runner-18ea7abc6c690edc-7d60`).
 
 ## Limiti noti e cosa non è stato provato
 

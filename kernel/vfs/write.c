@@ -422,15 +422,9 @@ int kernel_vfs_write_file(
     }
 
     if (truncate) {
-        if (node.FirstCluster >= 2U) {
-            status = free_cluster_chain_private(mount, node.FirstCluster);
-            if (status != KERNEL_STORAGE_OK) {
-                vfs_leave_private(&access);
-                return status;
-            }
-        }
-        node.FirstCluster = 0U;
-        node.FileSize = 0U;
+        // Update directory entry to (0, 0) BEFORE freeing the FAT cluster chain so an I/O
+        // failure on the directory sector never leaves a visible entry pointing to free clusters.
+        uint32_t old_first = node.FirstCluster;
         status = update_dir_entry_private(
             mount,
             node.DirEntryLba,
@@ -441,6 +435,15 @@ int kernel_vfs_write_file(
         if (status != KERNEL_STORAGE_OK) {
             vfs_leave_private(&access);
             return status;
+        }
+        node.FirstCluster = 0U;
+        node.FileSize = 0U;
+        if (old_first >= 2U) {
+            status = free_cluster_chain_private(mount, old_first);
+            if (status != KERNEL_STORAGE_OK) {
+                vfs_leave_private(&access);
+                return status;
+            }
         }
     }
 
@@ -589,19 +592,17 @@ int kernel_vfs_unlink(KERNEL_VFS *vfs, const char *path)
         return KERNEL_STORAGE_ERR_ARG;
     }
 
-    if (node.FirstCluster >= 2U) {
-        status = free_cluster_chain_private(mount, node.FirstCluster);
-        if (status != KERNEL_STORAGE_OK) {
-            vfs_leave_private(&access);
-            return status;
-        }
-    }
-
+    // Mark the directory entry deleted (0xE5) on disk BEFORE freeing the FAT cluster chain
+    // so a directory write error never leaves a visible file referencing freed clusters.
+    uint32_t old_first = node.FirstCluster;
     uint8_t sector[512];
     status = kernel_block_cache_read_sectors(mount->Cache, node.DirEntryLba, 1U, sector);
     if (status == KERNEL_STORAGE_OK) {
         sector[node.DirEntryByteOffset] = 0xE5U;
         status = kernel_block_cache_write_sectors(mount->Cache, node.DirEntryLba, 1U, sector);
+    }
+    if (status == KERNEL_STORAGE_OK && old_first >= 2U) {
+        status = free_cluster_chain_private(mount, old_first);
     }
 
     vfs_leave_private(&access);

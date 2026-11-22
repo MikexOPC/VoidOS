@@ -2,9 +2,7 @@
 #include "kernel/sync/internal.h"
 
 typedef struct {
-    KERNEL_LOCK_CONTEXT  *Context;
-    KERNEL_LOCK_GUARD     Guard;
-    uint64_t              SavedIf;
+    KERNEL_BLOCK_CACHE  *Cache;
 } CACHE_ACCESS;
 
 // ====== zero_bytes ======
@@ -121,34 +119,60 @@ static int enter_private(KERNEL_BLOCK_CACHE *cache, CACHE_ACCESS *access)
 {
     if (!cache || !access || cache->Self != (uintptr_t)cache || !cache->Ready)
         return 0;
-    uint64_t saved_if = ks_irq_save();
-    KERNEL_LOCK_CONTEXT *context = kernel_lock_current_context();
-    if (!context) {
+    for (uint32_t attempt = 0; attempt < 1000000U; ++attempt) {
+        uint64_t saved_if = ks_irq_save();
+        KERNEL_LOCK_CONTEXT *context = kernel_lock_current_context();
+        if (!context) {
+            ks_irq_restore(saved_if);
+            return 0;
+        }
+        KERNEL_LOCK_GUARD guard;
+        zero_bytes(&guard, sizeof(guard));
+        if (!kernel_lock_acquire(&cache->Lock, context, &guard)) {
+            ks_irq_restore(saved_if);
+            return 0;
+        }
+        if (cache->Self != (uintptr_t)cache || !cache->Ready) {
+            (void)kernel_lock_release(context, &guard);
+            ks_irq_restore(saved_if);
+            return 0;
+        }
+        if (!cache->IoBusy) {
+            cache->IoBusy = 1U;
+            if (!kernel_lock_release(context, &guard))
+                ks_fail_stop("BLOCK_CACHE_LOCK_RELEASE_FAILED");
+            ks_irq_restore(saved_if);
+            access->Cache = cache;
+            return 1;
+        }
+        if (!kernel_lock_release(context, &guard))
+            ks_fail_stop("BLOCK_CACHE_LOCK_RELEASE_FAILED");
         ks_irq_restore(saved_if);
-        return 0;
+        ks_pause();
     }
-    zero_bytes(access, sizeof(*access));
-    if (!kernel_lock_acquire(&cache->Lock, context, &access->Guard)) {
-        ks_irq_restore(saved_if);
-        return 0;
-    }
-    if (cache->Self != (uintptr_t)cache || !cache->Ready) {
-        (void)kernel_lock_release(context, &access->Guard);
-        ks_irq_restore(saved_if);
-        return 0;
-    }
-    access->Context = context;
-    access->SavedIf = saved_if;
-    return 1;
+    return 0;
 }
 
 // ====== leave_private ======
 
 static void leave_private(CACHE_ACCESS *access)
 {
-    if (!kernel_lock_release(access->Context, &access->Guard))
+    KERNEL_BLOCK_CACHE *cache = access ? access->Cache : NULL;
+    if (!cache)
+        return;
+    uint64_t saved_if = ks_irq_save();
+    KERNEL_LOCK_CONTEXT *context = kernel_lock_current_context();
+    if (!context)
+        ks_fail_stop("BLOCK_CACHE_LOCK_CONTEXT_MISSING");
+    KERNEL_LOCK_GUARD guard;
+    zero_bytes(&guard, sizeof(guard));
+    if (!kernel_lock_acquire(&cache->Lock, context, &guard))
+        ks_fail_stop("BLOCK_CACHE_LOCK_REACQUIRE_FAILED");
+    cache->IoBusy = 0U;
+    if (!kernel_lock_release(context, &guard))
         ks_fail_stop("BLOCK_CACHE_LOCK_RELEASE_FAILED");
-    ks_irq_restore(access->SavedIf);
+    ks_irq_restore(saved_if);
+    access->Cache = NULL;
 }
 
 // ====== kernel_block_cache_init ======

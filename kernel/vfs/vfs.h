@@ -106,6 +106,8 @@ typedef struct {
     KERNEL_VFS_OPEN_FILE  *OpenFiles;
     uint32_t               OpenCapacity;
     uint32_t               OpenCount;
+    uint32_t               IoBusy;
+    uint32_t               Reserved;
     KERNEL_LOCK            Lock;
 } KERNEL_VFS;
 
