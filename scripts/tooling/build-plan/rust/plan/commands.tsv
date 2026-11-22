@@ -226,6 +226,8 @@ c	kernel/sync/lock.c
 c	kernel/sync/acquire.c
 rustc.exe	--edition=2024	--crate-type=staticlib	--crate-name	security_csprng	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	lto=fat	-C	codegen-units=1	{repo}/kernel/security/rust/csprng.rs	-o	{out}/kernel-security-csprng.lib
 c	kernel/security/random.c	kernel-security-random.obj
+c	kernel/security/canary.c	kernel-security-canary.obj
+ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/arch-x86-kernel-security-canary.obj	{repo}/arch/x86/kernel/security/canary.asm
 c	arch/x86/kernel/security/entropy.c	arch-x86-kernel-security-entropy.obj
 c	arch/x86/kernel/cpu/percpu/startup/commit/retention.c
 c	arch/x86/kernel/cpu/percpu/transition/lifecycle.c

@@ -77,7 +77,7 @@ fn parse_profile(args: impl IntoIterator<Item = String>) -> Result<Profile, &'st
 
 fn c_command(profile: Profile, source: &str, object: Option<&str>, optimize: bool) -> Vec<String> {
     let mut command: Vec<_> = [
-        "cl.exe", "/nologo", "/TC", "/std:c11", "/W4", "/WX", "/GS-", "/Zl",
+        "cl.exe", "/nologo", "/TC", "/std:c11", "/W4", "/WX", "/GS", "/Gs9999999", "/Zl",
     ]
     .into_iter()
     .chain(optimize.then_some("/O2"))
@@ -265,7 +265,11 @@ fn link_command(commands: &[Vec<String>]) -> Result<Vec<String>, &'static str> {
         if !outputs.insert(output) {
             return Err("Duplicate compiler output.");
         }
-        if !first.contains(&output) && output != "{out}/ap-template.bin" && !output.ends_with(".elf") {
+        if !first.contains(&output)
+            && output != "{out}/ap-template.bin"
+            && !output.ends_with(".elf")
+            && !output.ends_with(".rlib")
+        {
             link.push(output.into());
         }
     }

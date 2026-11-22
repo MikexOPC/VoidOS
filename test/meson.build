@@ -431,6 +431,20 @@ security_csprng_lib = custom_target(
     ],
 )
 
+security_canary_host_lib = static_library(
+    'security_canary_host_lib',
+    repo / 'kernel/security/canary.c',
+    include_directories: inc,
+    c_args: [
+        '/D__security_cookie=ksec_test_cookie',
+        '/D__security_cookie_complement=ksec_test_cookie_comp',
+        '/D__security_check_cookie=ksec_test_check_cookie',
+        '/D__report_gsfailure=ksec_test_report_gsfailure',
+        '/D__report_rangecheckfailure=ksec_test_report_range',
+        '/D__GSHandlerCheck=ksec_test_gs_handler',
+    ],
+)
+
 security_random_host = executable(
     'security_random_host',
     'kernel/security/random_test.c',
@@ -441,6 +455,7 @@ security_random_host = executable(
     repo / 'kernel/time/clock.c',
     sync_atomics_obj,
     security_csprng_lib,
+    link_with: security_canary_host_lib,
     include_directories: inc,
 )
 test('security_random_host', security_random_host, env: runtime)

@@ -38,5 +38,6 @@ uint32_t kernel_random_source(void);
 int      kernel_random_bytes(void *out, uint32_t length);
 int      kernel_random_u64(uint64_t *out);
 int      kernel_random_reseed(void);
+int      kernel_security_cookie_init(void);
 
 #endif

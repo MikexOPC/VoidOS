@@ -1,7 +1,21 @@
 #include "kernel/security/random.h"
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+extern uintptr_t ksec_test_cookie;
+extern uintptr_t ksec_test_cookie_comp;
+extern void kernel_security_cookie_validate(uintptr_t cookie);
+
+static jmp_buf panic_jmp;
+static const char *last_panic = NULL;
+
+__declspec(noreturn) void kernel_panic(const char *reason)
+{
+    last_panic = reason;
+    longjmp(panic_jmp, 1);
+}
 
 // Host test of kernel_random_* over a controllable simulated hardware entropy backend.
 
@@ -89,6 +103,21 @@ int main(void)
     CHECK(!kernel_random_bytes(NULL, 16U));
     CHECK(kernel_random_bytes(NULL, 0U));
 
-    printf("PASS: security_random_host (CPUID absent/stuck rejection, RCT+APT health, HMAC_DRBG generate+reseed)\n");
+    // 5) Stack canary cookie initialization and corruption detection.
+    uintptr_t initial_cookie = ksec_test_cookie;
+    CHECK(kernel_security_cookie_init());
+    CHECK(ksec_test_cookie != 0U && ksec_test_cookie != initial_cookie);
+    CHECK((ksec_test_cookie >> 48) == 0U);
+    CHECK(ksec_test_cookie_comp == ~ksec_test_cookie);
+    kernel_security_cookie_validate(ksec_test_cookie);
+
+    last_panic = NULL;
+    if (setjmp(panic_jmp) == 0) {
+        kernel_security_cookie_validate(ksec_test_cookie ^ 1ULL);
+        CHECK(0); // Must never return on corrupted cookie.
+    }
+    CHECK(last_panic != NULL && strcmp(last_panic, "STACK_COOKIE_CORRUPTED") == 0);
+
+    printf("PASS: security_random_host (entropy, RCT+APT, HMAC_DRBG, /GS stack canary + corruption panic)\n");
     return 0;
 }

@@ -1,5 +1,6 @@
 #include "startup/startup.h"
 #include "diagnostics/log.h"
+#include "security/random.h"
 #include "arch/x86/kernel/descriptors/segments.h"
 #include "arch/x86/kernel/stack/main.h"
 #include "arch/x86/kernel/cpu/percpu/percpu.h"
@@ -39,12 +40,14 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
 
 // ====== continuazione statica senza riferimenti o ritorni sullo stack loader ===== //
 
-__declspec(noreturn) static void kernel_continue(void) {
+__declspec(noreturn) __declspec(safebuffers) static void kernel_continue(void) {
     const KERNEL_BOOT_CONTEXT *context;
     X86_PAGING_INVENTORY *paging;
     if (!x86_kernel_main_retire(&main_stack) || !x86_kernel_main_report(&main_stack)) kernel_panic("MAIN_STACK_RETIRE_FAILED");
     kernel_profile_after_retire();
     if (!kernel_lock_bootstrap_promote() || !x86_percpu_bsp_report()) kernel_panic("KERNEL_PERCPU_BSP_FAILED");
+    if (!kernel_random_init()) kernel_panic("KERNEL_ENTROPY_INIT_FAILED");
+    if (!kernel_security_cookie_init()) kernel_panic("KERNEL_CANARY_INIT_FAILED");
     kernel_startup_platform(&startup, &context, &paging);
     kernel_startup_devices(&startup, context, paging);
     kernel_profile_finish(&startup);
