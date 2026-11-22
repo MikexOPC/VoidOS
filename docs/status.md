@@ -12,17 +12,21 @@
   Lo scheduler gestisce la sessione PS/2 sul BSP con un timer di preemption
   da 10 ms (vettore D1h). I task della sessione partono con gli interrupt
   attivi e il timer li sospende anche fuori dalla finestra di attesa.
-- Con SMEP e SMAP disponibili, il BSP esegue un ELF Rust incorporato in
-  ring 3 con tabelle di paging dedicate. Il programma stampa via syscall,
-  termina e viene rilasciato prima di `KERNEL_READY`. UMIP viene abilitato
-  se la CPU lo supporta. Lo stack delle syscall ha due guard page.
+- Con SMEP e SMAP disponibili, il runtime Ring 3 è permanente sull'IDT comune
+  con stato di transizione per-CPU (`gs:`), `SYSCALL` attivo stabilmente,
+  syscall interrompibili (`IF=1` fuori dalle sezioni critiche minime) e
+  tabelle dinamiche di processi, handle e canali IPC su `kernel_heap()` (fino
+  a 256). Al boot `init.elf` gira e viene raccolto tramite `x86_process_manager`.
+  UMIP viene abilitato se la CPU lo supporta. Lo stack delle syscall ha due
+  guard page coperte dall'inventario paging.
 - Con PS/2, `ordinary` apre la shell con tastiera e mouse. `bridge status`
-  interroga il servizio residente e `ap <n> [cpu]` invia un job fidato
-  all'AP scelto, con AP1 predefinito.
-  `exit` chiude la sessione e rilascia task, stack, IRQ e binding PS/2.
-  Il dispatcher BSP continua con timer LAPIC e attese HPET, anche senza
-  controller PS/2. Nell'attesa gli interrupt sono abilitati.
-  [Build e boot](../README.md).
+  interroga il servizio residente come normale processo gestito senza pausare
+  lo scheduler; `proc` avvia 5 processi isolati contemporanei (6 con `bridge`:
+  2 coppie server/client utente↔utente via IPC + 1 fault CPL3 `#UD` isolato e
+  raccolto senza perdite); `ap <n> [cpu|auto] [tasks]` esegue job fidati sugli
+  AP e sul BSP. `exit` chiude la sessione e rilascia processi, task, stack,
+  IRQ e binding PS/2. Il dispatcher BSP continua con timer LAPIC e attese
+  HPET, anche senza controller PS/2. [Build e boot](../README.md).
 
 ## Profili separati
 
@@ -53,8 +57,9 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   con guard page nello slot heap (`ap <n> [cpu|auto] [tasks]`). Il registro
   IRQ copre 222 vettori sottoscrivibili per CPU.
   I record IRQ delle 64 CPU del bootstrap riservano 568 KiB nell'immagine.
-  L'heap è limitato a 16 MiB e c'è
-  un solo processo attivo alla volta.
+  L'heap è limitato a 16 MiB; `KERNEL_PHYSICAL_LEASES = 64` limita i processi
+  simultanei (~40 al netto del boot) e i processi utente girano sul BSP
+  mentre gli AP eseguono task kernel.
 - Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
   e circa 13,5 ms nel soak della 3e. Il quanto nominale è 10 ms.
   [Validazione](validation/consolidamento.md#cpu-e-scheduler).
@@ -82,24 +87,20 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Capacità oltre 8 task (64 task su heap + batch simultanei), Meson `ordinary`,
-kernel SHA-256
-`DC4ECB82F9035FFF61251EAFE09C2D51076AF302156883894009A46D8A3E04AF`,
-loader SHA-256
-`8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
-QEMU/OVMF TCG/q35: 10/10 boot `--ordinary-shell` a 4 vCPU (`FreePages: 16016`
-stabili) e 3/3 boot a 8 vCPU (`FreePages: 15804` stabili), ciascuno con
-`ap 1000000 auto 16` (20 task vivi contemporaneamente, `SHELL_AP_MAX_INDEX = 19`,
-oltre il vecchio limite 8 e oltre il confine di PT a 16, somma e checksum
-verificati su tutti i 16 task e cleanup completo delle 256 pagine di stack).
-Test host Rust dello scheduler 54/54 PASS (capacità fino a 256, `clippy` 0
-warning) e `qemu_runner_unit` 21/21 PASS. Stress completo `--ordinary-soak 30
---smp 8` PASS (1/1): 30 minuti di shell + 30 di idle dopo `exit`, 235 job
-(66 migrati, 232 migrazioni su tutte le 8 CPU), 21.162 byte PS/2 prodotti e
-letti (picco FIFO 4), 8.750 sospensioni BSP (8.720 fuori finestra, 0
-sforamenti), sospensioni == riprese su tutti i 7 AP e 15.804 pagine libere
-stabili. Hardware fisico non verificato.
-[Risultati, immagini e limiti](validation/consolidamento.md#cpu-e-scheduler).
+Obiettivo 2 (processi multipli isolati, syscall `IF=1`, IPC multi-canale e
+fault CPL3 sull'IDT comune), Meson `ordinary`, kernel SHA-256
+`5A921AFFAF0F70B11CE8E6E5C852017AA23D4C2A0D87C554C5D875A9B7A73BB2`, loader
+SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
+QEMU/OVMF TCG/q35: 10/10 boot `--ordinary-shell --smp 4` (`FreePages: 15990`
+stabili, `Overruns: 0`), 3/3 boot `--ordinary-shell --smp 8` (`FreePages:
+15778` stabili, `Overruns: 0`), 1/1 boot `--ordinary-no-ps2 --smp 4`, ciascuno
+con `proc` (6 processi Ring 3 simultanei, 2 coppie IPC utente↔utente, 1 `#UD`
+CPL3 verificato nel trace QEMU, 5/5 raccolti con zero leak), 3× `bridge status`
+senza `x86_preempt_pause()`, e `ap 1000000 auto 16`. Suite host Meson **18/18
+PASS** (`process_table_host` con ASan + `process_policy_rust` 13/13),
+`qemu_runner_unit` **21/21 PASS**. Soak 60 min precedente (`DC4ECB82…`)
+confermato su Obiettivo 1. Hardware fisico non verificato.
+[Validazione processi](validation/processi.md).
 
 Risultati precedenti con immagini e limiti propri nelle validazioni
 [AP nel boot ordinario](validation/consolidamento.md#validazione-dei-backend-x86),

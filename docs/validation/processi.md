@@ -14,6 +14,7 @@ ordinario corrente è descritto nello [stato](../status.md).
 | K6-C | `k6-process` 10/10 con ELF valido, ELF rifiutato, fault utente, copie fallite, IRQ da CPL3, NMI nelle finestre, isolamento tra esecuzioni e raccolta. Sei negativi 3/3 ciascuno, compresi root o slot incoerenti e fault kernel. |
 | K6-D | Campagna storica 119/119, ottenuta in più corse e revisioni delle immagini. `k6-process`, `k6-ordinary` e `k6-protection` 10/10 ciascuna dopo le correzioni di review. Provata la scadenza con una syscall in corso, senza IRQ di processo serviti. |
 | IPC v0 | `k6-process` e `k6-ordinary` 10/10 ciascuna. Il diagnostico verifica FIFO, coda piena e vuota, handle del peer rifiutato, buffer piccolo, recupero di fault in lettura e scrittura, chiusura dopo exit o fault e budget fisico ripristinato. Host IPC 12/12 per livello di ottimizzazione, runner 13/13. |
+| Obiettivo 2 (processi multipli, `ordinary`) | Immagine unica `ordinary` (kernel SHA-256 `5A921AFFAF0F70B11CE8E6E5C852017AA23D4C2A0D87C554C5D875A9B7A73BB2`, loader SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`): `--ordinary-shell --smp 4` **10/10 PASS** (`FreePages: 15990` stabili, `Overruns: 0`), `--ordinary-shell --smp 8` **3/3 PASS** (`FreePages: 15778` stabili, `Overruns: 0`), `--ordinary-no-ps2 --smp 4` **1/1 PASS**. Su ogni boot shell: `init.elf` tramite `x86_process_manager`, `bridge` migrato senza `x86_preempt_pause()`, `proc` con **6 processi Ring 3 isolati contemporanei** (2 coppie server/client utente↔utente su 2 canali IPC + 1 fault CPL3 `#UD` verificato dal trace QEMU + `bridge` residente) con raccolta 5/5 e zero pagine perse, e 3× `bridge status` verdi. Suite host Meson **18/18 PASS** (`process_table_host` con ASan + `process_policy_rust` 13/13), `qemu_runner_unit` **21/21 PASS**. |
 
 Evidenze storiche locali sotto `kernel/build/` nelle esecuzioni K5
 `qemu-run-0e7bd9138e074ee7821e8f62d4d050f9` e
@@ -22,10 +23,13 @@ Evidenze storiche locali sotto `kernel/build/` nelle esecuzioni K5
 `qemu-run-a35837f296d74616a9efdd5161499307`, chiusura e review K6-D
 `qemu-run-a3d8f15de78048afb74ed40c0ad5a330` e
 `qemu-run-0d2f725d065341538ca4f89391a395df`, IPC
-`qemu-run-a1c0fc7566e54d6db8b7466d84c28d5d`.
+`qemu-run-a1c0fc7566e54d6db8b7466d84c28d5d`, Obiettivo 2
+`proc-task25-final-4`, `proc-task25-final-8`, `proc-task25-nops2-4`.
 I conteggi delle singole campagne precedenti restano nelle versioni
 dei report a `efecb8b`.
 
-L'IPC è limitata al diagnostico e alterna i contesti sul BSP.
-Restano aperti processi concorrenti generali, syscall interrompibili,
-avvio da file e prove su PC fisico.
+Limiti noti rimasti dopo Obiettivo 2: i processi utente girano in ring 3 sul
+BSP mentre gli AP eseguono task kernel; `KERNEL_PHYSICAL_LEASES = 64` limita
+i processi simultanei (~40 al netto del boot); gli ELF sono ancora
+incorporati (avvio da disco in Obiettivo 3–4); hardware fisico non
+verificato.
