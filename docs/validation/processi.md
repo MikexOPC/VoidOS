@@ -30,7 +30,8 @@ Ring 3 su AP `run-ap-r3-smp4-10`, `run-ap-r3-smp8`, `run-ap-r3-nops2`.
 I conteggi delle singole campagne precedenti restano nelle versioni
 dei report a `efecb8b`.
 
-Limiti noti rimasti: l'heap è limitato a 16 MiB (`KERNEL_HEAP_MAX_PAGES = 4096`);
-`kernel_text` su COM1 non ha lock SMP (i processi utente su AP non usano
-`SYS_WRITE`); gli ELF sono ancora incorporati (avvio da disco in Obiettivo 3–4);
-hardware fisico non verificato.
+Limiti noti rimasti: l'heap è staticamente mappato a 32 MiB (`KERNEL_HEAP_MAX_PAGES = 8192`,
+scelto per lasciare ~46 MiB fisici liberi su VM da 128 MiB); `kernel_text` su
+COM1 non ha lock SMP (i processi utente su AP non usano `SYS_WRITE`); gli ELF
+sono ancora incorporati (avvio da disco in Obiettivo 3–4); hardware fisico non
+verificato.

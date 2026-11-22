@@ -81,6 +81,15 @@ static void random_cases(void)
 
     KERNEL_HEAP_STATS stats = kernel_heap_stats(&heap);
     CHECK(stats.FreePages == KERNEL_HEAP_MAX_PAGES && !stats.RunPages && !stats.SlabPages && !stats.Objects);
+
+    // Contiguous run beyond the legacy 16 MiB (4096 pages) limit.
+    unsigned char *large = kernel_heap_pages(&heap, 5000);
+    CHECK(large && !((uintptr_t)large & 4095));
+    large[0] = 0x5a;
+    large[5000ULL * 4096ULL - 1] = 0xa5;
+    CHECK(kernel_heap_stats(&heap).RunPages == 5000 && kernel_heap_stats(&heap).FreePages == KERNEL_HEAP_MAX_PAGES - 5000);
+    CHECK(kernel_heap_free(&heap, large));
+    CHECK(kernel_heap_stats(&heap).FreePages == KERNEL_HEAP_MAX_PAGES && !kernel_heap_stats(&heap).RunPages);
 }
 
 // ====== rejected_cases ======

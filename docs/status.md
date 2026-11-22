@@ -60,10 +60,12 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   con guard page nello slot heap (`ap <n> [cpu|auto] [tasks]`). Il registro
   IRQ copre 222 vettori sottoscrivibili per CPU.
   I record IRQ delle 64 CPU del bootstrap riservano 568 KiB nell'immagine.
-  L'heap è limitato a 16 MiB (`KERNEL_HEAP_MAX_PAGES = 4096`). L'allocatore
-  fisico supporta 256 lease (`KERNEL_PHYSICAL_LEASES = 256`) e 512 extent.
-  `kernel_text` su COM1 non ha lock SMP: i processi utente su AP usano solo
-  syscall SMP-safe (`SYS_WAIT_READABLE`, `SYS_RECV`, `SYS_SEND`, `SYS_EXIT`).
+  L'heap è configurato a 32 MiB (`KERNEL_HEAP_MAX_PAGES = 8192`, 512 pagine
+  slab = 2 MiB, 22 tabelle paging con guard page e 4 PT per 64 task stack).
+  L'allocatore fisico supporta 256 lease (`KERNEL_PHYSICAL_LEASES = 256`) e
+  512 extent. `kernel_text` su COM1 non ha lock SMP: i processi utente su AP
+  usano solo syscall SMP-safe (`SYS_WAIT_READABLE`, `SYS_RECV`, `SYS_SEND`,
+  `SYS_EXIT`).
 - Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
   e circa 13,5 ms nel soak della 3e. Il quanto nominale è 10 ms.
   [Validazione](validation/consolidamento.md#cpu-e-scheduler).
@@ -84,26 +86,29 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 - Il backend processi è stato diviso. La CI ha un workflow per suite host
   e boot ordinario. Le suite host principali (`clock`, `sync`, `scheduler`,
   `line_editor`, `elf_parser`, `process_policy`, `user_protection`,
-  `watchdog_integration`, `log_boundary`, 17 test C+ASan e Rust) girano ora
+  `watchdog_integration`, `log_boundary`, `process_table_host`,
+  `physical_allocator_host`, `heap_host`, 20 test C+ASan e Rust) girano ora
   in un unico [test/meson.build](../test/meson.build) senza dipendere da
   PowerShell 7; restano negli script PowerShell le suite legacy dei driver
   diagnostici.
 
 ## Evidenze
 
-Obiettivo 2 + Ring 3 su AP e 256 lease fisiche, Meson `ordinary`, kernel
-SHA-256 `F5192230A68A4EC5A3043C236F9A732F28BAC34A6B17C47963459D33B59908FB`,
+Obiettivo 2 + 256 lease, Ring 3 su AP e heap 32 MiB, Meson `ordinary`, kernel
+SHA-256 `1098172B261A1B919AD09A375B0D3E1161DEA7DA99A097EB819C0D8415E8F24B`,
 loader SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
-QEMU/OVMF TCG/q35: 10/10 boot `--ordinary-shell --smp 4` (`FreePages: 15975`
-stabili, `Overruns: 0`), 3/3 boot `--ordinary-shell --smp 8` (`FreePages:
-15747` stabili, `Overruns: 0`), 1/1 boot `--ordinary-no-ps2 --smp 4`, ciascuno
-con `proc` (6 processi Ring 3 simultanei, `bridge.elf` server eseguito su AP1
-con `SHELL_PROC_AP_CPU: 0x1` e IPC cross-CPU verso `worker.elf` su BSP,
-seconda coppia IPC utente↔utente, 1 `#UD` CPL3 verificato nel trace QEMU,
-5/5 raccolti con zero leak), 3× `bridge status` senza `x86_preempt_pause()`,
-e `ap 1000000 auto 16`. Suite host Meson **19/19 PASS** (inclusi
-`process_table_host` e `physical_allocator_host` con ASan), AP geometry Rust
-unit test **2/2 PASS**, `qemu_runner_unit` **21/21 PASS**. Soak 60 min
+QEMU/OVMF TCG/q35: 3/3 boot `--ordinary-shell --smp 4` (`KERNEL_HEAP_PAGES:
+0x2000`, `KERNEL_HEAP_TABLES: 0x16`, `FreePages: 11860` stabili, `Overruns:
+0`), 1/1 boot `--ordinary-shell --smp 8`, preceduti da 10/10 boot `--smp 4`,
+3/3 `--smp 8` e 1/1 `--ordinary-no-ps2` su Ring 3 AP (`F5192230…`). Su ogni
+boot: `proc` con 6 processi Ring 3 simultanei (`bridge.elf` su AP1 con
+`SHELL_PROC_AP_CPU: 0x1` e IPC cross-CPU verso `worker.elf` su BSP, seconda
+coppia IPC utente↔utente, 1 `#UD` CPL3 verificato nel trace QEMU, 5/5 raccolti
+con zero leak), 3× `bridge status` senza `x86_preempt_pause()`, e
+`ap 1000000 auto 16`. Test host con ASan: `heap_host` PASS (200.000 operazioni
++ run contigua da 5000 pagine > 16 MiB), `process_table_host` PASS,
+`physical_allocator_host` PASS, AP geometry Rust **2/2 PASS**,
+`qemu_runner_unit` **21/21 PASS** (20 test in `test/meson.build`). Soak 60 min
 precedente (`DC4ECB82…`) confermato su Obiettivo 1. Hardware fisico non
 verificato.
 [Validazione processi](validation/processi.md).

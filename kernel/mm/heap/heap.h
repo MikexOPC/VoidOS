@@ -9,8 +9,8 @@
 // part maps the range, see arch/x86/mm/heap). Small objects come from size-class slabs, larger
 // ones from contiguous page runs (first fit). Fixed metadata, no allocation of its own.
 // Metadata serialized per owner; backing remains pinned. Never from NMI/fault or IRQ context.
-#define KERNEL_HEAP_MAX_PAGES   4096U       // 16 MiB
-#define KERNEL_HEAP_SLAB_PAGES  256U        // at most 1 MiB of small objects
+#define KERNEL_HEAP_MAX_PAGES   8192U       // 32 MiB
+#define KERNEL_HEAP_SLAB_PAGES  512U        // at most 2 MiB of small objects
 #define KERNEL_HEAP_CLASSES     8U          // 16, 32, ... 2048 bytes
 #define KERNEL_HEAP_CANARY      0x4b48454150434e59ULL
 #define KERNEL_HEAP_POISON      0xccU
