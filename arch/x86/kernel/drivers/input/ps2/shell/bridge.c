@@ -11,11 +11,6 @@
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #endif
 
-extern const unsigned char kernel_user_bridge[];
-extern const BOOT_U64 kernel_user_bridge_length;
-extern const unsigned char kernel_user_worker[];
-extern const BOOT_U64 kernel_user_worker_length;
-
 static X86_PAGE_WINDOW *owner;
 static BOOT_U64 budget;
 static uint64_t bridge_pid;
@@ -111,8 +106,6 @@ static void bridge_dispatch_private(void)
 
 static void proc_spawn_private(void)
 {
-    const X86_PROCESS_IMAGE server_img = {kernel_user_bridge, kernel_user_bridge_length};
-    const X86_PROCESS_IMAGE worker_img = {kernel_user_worker, kernel_user_worker_length};
     uint64_t h_srv[2] = {0}, h_cli[2] = {0};
     proc_spawned = 0;
     proc_free_before = 0;
@@ -121,8 +114,8 @@ static void proc_spawn_private(void)
     for (uint32_t index = 0; index < 6U; ++index) proc_result[index] = 0;
     int ok = x86_process_manager_ready() && kernel_physical_budget_read(owner->Pool, &proc_free_before);
     for (uint32_t index = 0; ok && index < 5U; ++index) {
-        const X86_PROCESS_IMAGE *img = (index == 0 || index == 2) ? &server_img : &worker_img;
-        if (!x86_process_spawn(img, 0, &proc_pids[index])) {
+        const char *path = (index == 0 || index == 2) ? "/bin/bridge.elf" : "/bin/worker.elf";
+        if (!x86_process_spawn_vfs(path, KERNEL_PID_KERNEL, 0, NULL, &proc_pids[index])) {
             ok = 0;
             break;
         }
@@ -206,12 +199,11 @@ static void proc_reap_private(void)
 
 int x86_shell_bridge_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
 {
-    const X86_PROCESS_IMAGE image = {kernel_user_bridge, kernel_user_bridge_length};
     uint64_t user_handle = 0;
     if (!x86_user_mode_allowed()) return 1;
     if (owner || !x86_process_runtime_start(window, timer) || !x86_process_manager_init() ||
         !kernel_physical_budget_read(window->Pool, &budget)) return 0;
-    if (!x86_process_spawn(&image, KERNEL_PROC_FLAG_RESIDENT, &bridge_pid))
+    if (!x86_process_spawn_vfs("/bin/bridge.elf", KERNEL_PID_KERNEL, KERNEL_PROC_FLAG_RESIDENT, NULL, &bridge_pid))
         return 0;
     if (!x86_process_channel_create(KERNEL_PID_KERNEL, bridge_pid, &bridge_kernel_handle, &user_handle) ||
         !x86_process_set_arg(bridge_pid, user_handle)) {

@@ -1,6 +1,9 @@
 #include "session.h"
 #ifdef KERNEL_USER_PROCESS
 #include "../shell/bridge.h"
+#include "arch/x86/kernel/descriptors/protection.h"
+#include "arch/x86/kernel/process/manager.h"
+#include "arch/x86/kernel/timer/lapic/timer.h"
 #endif
 #ifdef KERNEL_PS2_MOUSE
 #include "kernel/drivers/input/ps2/mouse/stream/control.h"
@@ -190,6 +193,25 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;
     }
+#ifdef KERNEL_USER_PROCESS
+    if (x86_user_mode_allowed() && x86_process_manager_ready()) {
+        uint64_t init_pid = 0;
+        uint32_t init_state = 0;
+        KERNEL_PROCESS_INFO init_info = {0};
+        if (!x86_process_spawn_vfs("/bin/init.elf", KERNEL_PID_KERNEL, 0, NULL, &init_pid)) {
+            kernel_log(3, "VFS_EXEC_SPAWN_FAILED"); return 0;
+        }
+        int stepped = 1;
+        while (stepped && init_state != KERNEL_PROC_ZOMBIE) {
+            stepped = x86_process_step(init_pid, 0, &init_state);
+        }
+        if (!stepped || !x86_process_reap(init_pid, &init_info) ||
+            init_info.ExitKind != KERNEL_PROC_EXIT_NORMAL || init_info.ExitCode != 0) {
+            kernel_log(3, "VFS_EXEC_RUN_FAILED"); return 0;
+        }
+        kernel_log(0, "KERNEL_VFS_EXEC_OK");
+    }
+#endif
     if (!kernel_ps2_discover(directory,env->Window->Pool->PhysicalBits,firmware_read,&session,&description)) {
         kernel_log(3,"PS2_DISCOVERY_FAILED"); return 0;
     }
@@ -197,6 +219,11 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         if (!kernel_log(2,"KERNEL_PS2_INPUT_ABSENT")) return 0;
         return !session.Persistent || x86_scheduler_run_input();
     }
+#ifdef KERNEL_USER_PROCESS
+    if (!x86_shell_bridge_open(env->Window, x86_timer_owner())) {
+        kernel_log(3, "SHELL_BRIDGE_OPEN_FAILED"); return 0;
+    }
+#endif
     if (!x86_ps2_route_plan(env->Topology,env->Capabilities,env->Window->Pool->PhysicalBits,&session.Route)) {
         kernel_log(3,"PS2_ROUTE_PLAN_FAILED"); return 0;
     }

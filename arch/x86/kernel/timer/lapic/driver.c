@@ -291,9 +291,6 @@ int x86_timer_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     }
     kernel_log(1,"TIMER_CALIBRATED");
     if (!x86_timer_events_initialize(&timer)) { goto cleanup; }
-#if defined(KERNEL_PS2_INPUT) && defined(KERNEL_USER_PROCESS)
-    if (!x86_shell_bridge_open(window, &timer)) goto cleanup;
-#endif
     if (!watchdog || watchdog->Mapping != mapping || watchdog->Window != window ||
         watchdog->Context != context || watchdog->Inventory != inventory ||
         !x86_watchdog_open(watchdog)) { goto cleanup; }

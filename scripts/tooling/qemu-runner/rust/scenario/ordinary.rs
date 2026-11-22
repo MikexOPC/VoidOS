@@ -111,7 +111,7 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
         return Err("A CPU without protections ran a process".to_string());
     }
     if !log.before("KERNEL_VIRTIO_BLK_READY", SHELL_READY) ||
-        log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 128 {
+        log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 2048 {
         return Err("VirtIO-blk block device did not start".to_string());
     }
     if !log.before("KERNEL_AHCI_READY", SHELL_READY) ||
@@ -119,6 +119,7 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
         return Err("AHCI SATA block device did not start".to_string());
     }
     if !log.before("KERNEL_VFS_READY", SHELL_READY) ||
+        (full && !log.before("KERNEL_VFS_EXEC_OK", SHELL_READY)) ||
         log.number("KERNEL_VFS_MOUNTS", 0)? != 2 ||
         log.number("KERNEL_VFS_ROOT_BYTES", 0)? != 21 ||
         log.number("KERNEL_VFS_BOOT_BYTES", 0)? != 15 {
@@ -574,7 +575,7 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
         return Err("The first process did not run".to_string());
     }
     if !log.before("KERNEL_VIRTIO_BLK_READY", "KERNEL_READY") ||
-        log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 128 {
+        log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 2048 {
         return Err("VirtIO-blk block device did not start without PS/2".to_string());
     }
     if !log.before("KERNEL_AHCI_READY", "KERNEL_READY") ||
@@ -582,6 +583,7 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
         return Err("AHCI SATA block device did not start without PS/2".to_string());
     }
     if !log.before("KERNEL_VFS_READY", "KERNEL_READY") ||
+        (enabled && !log.before("KERNEL_VFS_EXEC_OK", "KERNEL_READY")) ||
         log.number("KERNEL_VFS_MOUNTS", 0)? != 2 ||
         log.number("KERNEL_VFS_ROOT_BYTES", 0)? != 21 ||
         log.number("KERNEL_VFS_BOOT_BYTES", 0)? != 15 {

@@ -9,6 +9,10 @@ int x86_process_manager_ready(void);
 KERNEL_PROCESS_TABLE *x86_process_manager_table(void);
 
 int x86_process_spawn(const X86_PROCESS_IMAGE *image, uint32_t flags, uint64_t *pid_out);
+int x86_process_spawn_with_budget(const X86_PROCESS_IMAGE *image, uint64_t parent_pid,
+    uint32_t flags, const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out);
+int x86_process_spawn_vfs(const char *path, uint64_t parent_pid, uint32_t flags,
+    const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out);
 int x86_process_set_arg(uint64_t pid, uint64_t initial_arg);
 int x86_process_channel_create(uint64_t pid0, uint64_t pid1,
     uint64_t *handle0_out, uint64_t *handle1_out);

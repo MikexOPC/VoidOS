@@ -77,17 +77,30 @@ KERNEL_PROCESS_TABLE *x86_process_manager_table(void)
     return manager_ready ? &manager_table : NULL;
 }
 
-// ====== x86_process_spawn ======
+// ====== x86_process_spawn_with_budget ======
 
-int x86_process_spawn(const X86_PROCESS_IMAGE *image, uint32_t flags, uint64_t *pid_out)
+int x86_process_spawn_with_budget(const X86_PROCESS_IMAGE *image, uint64_t parent_pid,
+    uint32_t flags, const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out)
 {
     KERNEL_HEAP *heap = kernel_heap();
     if (!manager_ready || !heap || !image || !pid_out)
         return 0;
+    KERNEL_PROCESS_BUDGET parent_budget = {0};
+    const KERNEL_PROCESS_BUDGET *parent_ptr = NULL;
+    if (parent_pid != KERNEL_PID_KERNEL) {
+        if (!kernel_process_get_budget(&manager_table, parent_pid, &parent_budget) ||
+            !(parent_budget.Flags & KERNEL_BUDGET_FLAG_SPAWN))
+            return 0;
+        parent_ptr = &parent_budget;
+    }
+    KERNEL_PROCESS_BUDGET derived = {0};
+    if (!kernel_process_budget_derive(parent_ptr, requested_budget, &derived))
+        return 0;
     X86_PROCESS_ARCH *arch = kernel_heap_alloc(heap, sizeof(*arch), 16);
     if (!arch)
         return 0;
-    if (!x86_process_slot_prepare(&arch->Slot, image)) {
+    if (!x86_process_slot_prepare_budgeted(&arch->Slot, image,
+        derived.MaxImagePages, derived.CpuBudgetMs)) {
         (void)kernel_heap_free(heap, arch);
         return 0;
     }
@@ -99,7 +112,8 @@ int x86_process_spawn(const X86_PROCESS_IMAGE *image, uint32_t flags, uint64_t *
     }
     manager_held_pages += pages;
     uint64_t pid = 0;
-    if (!kernel_process_create(&manager_table, flags, (uint64_t)(uintptr_t)arch, &pid) ||
+    if (!kernel_process_create_with_budget(&manager_table, parent_pid, flags,
+        (uint64_t)(uintptr_t)arch, requested_budget, &pid) ||
         !kernel_process_set_state(&manager_table, pid, KERNEL_PROC_CREATED, KERNEL_PROC_RUNNABLE)) {
         if (pid)
             (void)kernel_process_reap(&manager_table, pid, NULL);
@@ -113,6 +127,40 @@ int x86_process_spawn(const X86_PROCESS_IMAGE *image, uint32_t flags, uint64_t *
     arch->Flags = flags;
     *pid_out = pid;
     return 1;
+}
+
+// ====== x86_process_spawn ======
+
+int x86_process_spawn(const X86_PROCESS_IMAGE *image, uint32_t flags, uint64_t *pid_out)
+{
+    return x86_process_spawn_with_budget(image, KERNEL_PID_KERNEL, flags, NULL, pid_out);
+}
+
+// ====== x86_process_spawn_vfs ======
+
+int x86_process_spawn_vfs(const char *path, uint64_t parent_pid, uint32_t flags,
+    const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    KERNEL_HEAP *heap = kernel_heap();
+    if (!manager_ready || !vfs || !heap || !path || !pid_out)
+        return 0;
+    KERNEL_VFS_STAT st = {0};
+    if (kernel_vfs_stat(vfs, path, &st) != KERNEL_STORAGE_OK || st.IsDirectory ||
+        st.Size < 64U || st.Size > (uint32_t)(KERNEL_PROCESS_MAX_IMAGE_PAGES * 4096U))
+        return 0;
+    unsigned char *buffer = kernel_heap_alloc(heap, st.Size, 16);
+    if (!buffer)
+        return 0;
+    uint32_t read_bytes = 0;
+    int ok = kernel_vfs_read_file(vfs, path, 0, buffer, st.Size, &read_bytes) == KERNEL_STORAGE_OK &&
+        read_bytes == st.Size;
+    if (ok) {
+        X86_PROCESS_IMAGE image = { buffer, st.Size };
+        ok = x86_process_spawn_with_budget(&image, parent_pid, flags, requested_budget, pid_out);
+    }
+    (void)kernel_heap_free(heap, buffer);
+    return ok;
 }
 
 // ====== x86_process_set_arg ======
