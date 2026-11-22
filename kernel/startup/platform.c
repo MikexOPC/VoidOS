@@ -13,6 +13,9 @@
 #include "arch/x86/kernel/serial/interrupts/route.h"
 #include "arch/x86/mm/paging/retirement/retire.h"
 #include "arch/x86/kernel/descriptors/protection.h"
+#if defined(KERNEL_USER_PROCESS) && !defined(KERNEL_TEST_K6_PROCESS)
+#include "arch/x86/kernel/process/process.h"
+#endif
 
 #ifdef KERNEL_TEST_SYNC
 #include "test/kernel/sync/integration/probe.h"
@@ -30,6 +33,9 @@ static void acpi_root_private(KERNEL_BOOTSTRAP_MEMORY *memory)
     if (!kernel_scheduler_prepare(&memory->Physical, memory->Context.Info.PageTableRoot)) kernel_panic("SCHEDULER_FAILED");
 #else
     if (!kernel_scheduler_run(&memory->Physical, memory->Context.Info.PageTableRoot)) kernel_panic("SCHEDULER_FAILED");
+#endif
+#if defined(KERNEL_USER_PROCESS) && !defined(KERNEL_TEST_K6_PROCESS)
+    if (!x86_process_stack_prepare(&memory->Physical, memory->Context.Info.PageTableRoot)) kernel_panic("PROCESS_STACK_FAILED");
 #endif
     if (!os_acpi_root_valid(&memory->Context.Info.Acpi, x86_physical_bits())) kernel_panic("ACPI_ROOT_INVALID");
     if (memory->Context.Info.Acpi.Source) {

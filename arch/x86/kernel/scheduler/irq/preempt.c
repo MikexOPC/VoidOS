@@ -13,6 +13,9 @@
 #ifdef KERNEL_AP_TASKS
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #endif
+#ifdef KERNEL_USER_PROCESS
+int x86_process_in_syscall(void);
+#endif
 
 extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_compute_end[];
 
@@ -206,6 +209,13 @@ void x86_preempt_after(const X86_IRQ_FRAME *frame)
     KERNEL_PREEMPT_INPUT input = {0};
     const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
     if (!preempt.Open || !preempt.Running || frame->Vector != X86_PREEMPT_VECTOR) return;
+#ifdef KERNEL_USER_PROCESS
+    if (x86_process_in_syscall()) {
+        if (!x86_preempt_rearm())
+            kernel_panic("PREEMPT_REARM_FAILED");
+        return;
+    }
+#endif
     if (x86_scheduler_task_valid())
         input.task = ((uint64_t)(x86_scheduler_index() + 1U) << 56) |
             (x86_scheduler_generation() & 0x00ffffffffffffffULL);

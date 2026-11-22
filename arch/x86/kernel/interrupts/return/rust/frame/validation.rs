@@ -21,7 +21,9 @@ pub extern "C" fn x86_irq_idtr(base: u64, limit: u64) -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn x86_irq_frame(vector: u64, cs: u64, flags: u64, ss: u64) -> u32 {
-    u32::from((32..=255).contains(&vector) && cs == 8 && ss == 16 && flags & 2 != 0
+    let kernel = cs == 8 && ss == 16;
+    let user = cs == 0x33 && ss == 0x2b && flags & 0x200 != 0 && vector != 0xf0;
+    u32::from((32..=255).contains(&vector) && (kernel || user) && flags & 2 != 0
         && (vector != 0xf0 || flags & 0x200 == 0) && (matches!(vector,0xf0 | 0xff) || flags & 0x200 != 0))
 }
 

@@ -1,10 +1,4 @@
 option casemap:none
-EXTERN process_owner:QWORD
-EXTERN process_kernel_root:QWORD
-EXTERN process_user_root:QWORD
-EXTERN process_stack_top:QWORD
-EXTERN process_user_rsp:QWORD
-EXTERN process_saved_rsp:QWORD
 IFDEF K6_DIAGNOSTICS
 EXTERN process_window:QWORD
 EXTERN process_window_budget:QWORD
@@ -18,11 +12,7 @@ EXTERN process_nmi_gs:QWORD
 EXTERN process_nmi_flags:QWORD
 ENDIF
 EXTERN process_drain:QWORD
-EXTERN process_fault:QWORD
-EXTERN process_fault_cr2:QWORD
-EXTERN process_exit_kind:QWORD
 EXTERN process_fx_clean:BYTE
-EXTERN process_fx_saved:BYTE
 EXTERN x86_process_syscall_dispatch:PROC
 EXTERN x86_process_irq_service:PROC
 EXTERN x86_process_irq_drained:PROC
@@ -32,6 +22,18 @@ EXTERN x86_process_copy_recover:PROC
 EXTERN x86_process_kernel_fatal:PROC
 
 K6_EXIT_FAULT EQU 2
+; Offsets verified by _Static_assert in percpu.h and arch/x86/kernel/process/internal.h.
+GS_SYSCALL_TOP EQU 448
+GS_USER_RSP    EQU 456
+GS_PROCESS_CPU EQU 464
+CPU_KROOT      EQU 0
+CPU_UROOT      EQU 8
+CPU_SAVED_RSP  EQU 32
+CPU_EXIT_KIND  EQU 40
+CPU_FAULT_CR2  EQU 48
+CPU_FAULT      EQU 56
+CPU_OWNER      EQU 112
+CPU_FX_SAVED   EQU 160
 
 .code
 
@@ -121,35 +123,32 @@ ENDIF
 syscall_swapped:
     lfence
     K6_WAIT 2
-    mov [process_user_rsp], rsp
-    mov rsp, [process_stack_top]
+    mov QWORD PTR gs:[GS_USER_RSP], rsp
+    mov rsp, QWORD PTR gs:[GS_SYSCALL_TOP]
     push 2bh
-    push QWORD PTR [process_user_rsp]
+    push QWORD PTR gs:[GS_USER_RSP]
     push r11
     push 33h
     push rcx
     K6_PUSH_GPR
-    mov rax, [process_kernel_root]
+    mov rbx, QWORD PTR gs:[GS_PROCESS_CPU]
+    test rbx, rbx
+    jz x86_process_stop
+    mov rax, QWORD PTR [rbx+CPU_KROOT]
     mov cr3, rax
     K6_WAIT 3
     sub rsp, 512
     fxsave64 [rsp]
     fxrstor64 [process_fx_clean]
     cld
-    mov ecx, 0c0000101h
-    rdmsr
-    shl rdx, 32
-    or rax, rdx
-    cmp rax, QWORD PTR [process_owner]
-    jne x86_process_stop
     mov rax, QWORD PTR gs:[0]
-    cmp rax, QWORD PTR [process_owner]
+    cmp rax, QWORD PTR [rbx+CPU_OWNER]
     jne x86_process_stop
-    mov rbx, rsp
+    mov rbp, rsp
     mov rcx, rsp
     sub rsp, 32
     call x86_process_syscall_dispatch
-    mov rsp, rbx
+    mov rsp, rbp
     cmp eax, 1
     je syscall_return
     cmp eax, 2
@@ -159,7 +158,7 @@ syscall_return:
     fxrstor64 [rsp]
     add rsp, 512
     K6_WAIT 4
-    mov rax, [process_user_root]
+    mov rax, QWORD PTR [rbx+CPU_UROOT]
     mov cr3, rax
     K6_WAIT 5
     swapgs
@@ -181,15 +180,16 @@ x86_process_enter PROC
     push r13
     push r14
     push r15
-    mov [process_saved_rsp], rsp
-    fxsave64 [process_fx_saved]
+    mov rbx, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov QWORD PTR [rbx+CPU_SAVED_RSP], rsp
+    fxsave64 [rbx+CPU_FX_SAVED]
     fxrstor64 [process_fx_clean]
     push 2bh
     push rdx
     push 202h
     push 33h
     push rcx
-    mov rax, [process_user_root]
+    mov rax, QWORD PTR [rbx+CPU_UROOT]
     mov cr3, rax
     xor eax, eax
     xor ebx, ebx
@@ -223,8 +223,9 @@ x86_process_resume PROC
     push r13
     push r14
     push r15
-    mov [process_saved_rsp], rsp
-    fxsave64 [process_fx_saved]
+    mov rbx, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov QWORD PTR [rbx+CPU_SAVED_RSP], rsp
+    fxsave64 [rbx+CPU_FX_SAVED]
     fxrstor64 [rcx]
     sub rsp, 160
     lea rsi, [rcx+512]
@@ -232,7 +233,7 @@ x86_process_resume PROC
     mov ecx, 20
     cld
     rep movsq
-    mov rax, [process_user_root]
+    mov rax, QWORD PTR [rbx+CPU_UROOT]
     mov cr3, rax
     swapgs
     K6_POP_GPR
@@ -242,8 +243,10 @@ x86_process_resume ENDP
 ; ====== x86_process_leave ======
 
 ; Root e GS del kernel gia attivi. Segmenti utente azzerati senza toccare la base GS del kernel.
+PUBLIC x86_process_leave
 x86_process_leave PROC
-    mov rsp, [process_saved_rsp]
+    mov rbx, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov rsp, QWORD PTR [rbx+CPU_SAVED_RSP]
     mov ax, 16
     mov ss, ax
     mov ds, ax
@@ -253,7 +256,7 @@ x86_process_leave PROC
     swapgs
     mov gs, ax
     swapgs
-    fxrstor64 [process_fx_saved]
+    fxrstor64 [rbx+CPU_FX_SAVED]
     pop r15
     pop r14
     pop r13
@@ -273,7 +276,8 @@ K6_USER_IRQ MACRO service, vector
     swapgs
     lfence
     K6_PUSH_GPR
-    mov rax, [process_kernel_root]
+    mov rbp, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov rax, QWORD PTR [rbp+CPU_KROOT]
     mov cr3, rax
     ; Intel SDM 3A §7.14.4: il cambio di privilegio carica SS nullo. I validatori del LAPIC
     ; richiedono il selettore del kernel. IRETQ riprende SS utente dal frame.
@@ -297,7 +301,7 @@ ENDIF
     jne x86_process_stop
     fxrstor64 [rsp]
     add rsp, 512
-    mov rax, [process_user_root]
+    mov rax, QWORD PTR [rbp+CPU_UROOT]
     mov cr3, rax
     swapgs
     K6_POP_GPR
@@ -418,19 +422,16 @@ x86_process_nmi PROC
     shl rdx, 32
     or rax, rdx
     mov r11, rax
-    cmp rax, QWORD PTR [process_owner]
-    je nmi_gs_ready
-    mov ecx, 0c0000102h
-    rdmsr
-    shl rdx, 32
-    or rax, rdx
-    cmp rax, QWORD PTR [process_owner]
-    jne x86_process_stop
+    test rax, rax
+    jnz nmi_gs_ready
     swapgs
     inc r10d
 nmi_gs_ready:
     lfence
-    mov rax, [process_kernel_root]
+    mov rcx, QWORD PTR gs:[GS_PROCESS_CPU]
+    test rcx, rcx
+    jz x86_process_stop
+    mov rax, QWORD PTR [rcx+CPU_KROOT]
     mov cr3, rax
 IFDEF K6_DIAGNOSTICS
     cmp QWORD PTR [process_nmi_armed], 1
@@ -496,16 +497,17 @@ fault_common LABEL BYTE
     jz fault_kernel
     swapgs
     lfence
-    mov rax, [process_kernel_root]
+    mov rbx, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov rax, QWORD PTR [rbx+CPU_KROOT]
     mov cr3, rax
     cld
     mov rsi, rsp
-    lea rdi, process_fault
+    lea rdi, [rbx+CPU_FAULT]
     mov ecx, 7
     rep movsq
     mov rax, cr2
-    mov [process_fault_cr2], rax
-    mov QWORD PTR [process_exit_kind], K6_EXIT_FAULT
+    mov QWORD PTR [rbx+CPU_FAULT_CR2], rax
+    mov QWORD PTR [rbx+CPU_EXIT_KIND], K6_EXIT_FAULT
     jmp x86_process_leave
 fault_kernel:
     cmp QWORD PTR [rsp], 14
@@ -536,17 +538,18 @@ fault_kernel:
 fault_fatal_saved:
     add rsp, 56
 fault_fatal:
-    mov rax, [process_kernel_root]
-    mov cr3, rax
     mov ecx, 0c0000101h
     rdmsr
     shl rdx, 32
     or rax, rdx
-    cmp rax, QWORD PTR [process_owner]
-    je fault_gs_ready
+    test rax, rax
+    jnz fault_gs_ready
     swapgs
 fault_gs_ready:
     lfence
+    mov rbx, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov rax, QWORD PTR [rbx+CPU_KROOT]
+    mov cr3, rax
     mov rcx, rsp
     mov rdx, cr2
     and rsp, -16
@@ -569,7 +572,8 @@ x86_process_copy PROC
     mov rcx, r8
     cld
     lfence
-    mov rax, [process_user_root]
+    mov r9, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov rax, QWORD PTR [r9+CPU_UROOT]
     mov cr3, rax
     stac
     K6_WAIT 6
@@ -577,7 +581,7 @@ x86_process_copy_first LABEL BYTE
     rep movsb
 x86_process_copy_last LABEL BYTE
     clac
-    mov rax, [process_kernel_root]
+    mov rax, QWORD PTR [r9+CPU_KROOT]
     mov cr3, rax
     xor eax, eax
     pop rsi
@@ -585,7 +589,8 @@ x86_process_copy_last LABEL BYTE
     ret
 x86_process_copy_fixup LABEL BYTE
     clac
-    mov rax, [process_kernel_root]
+    mov r9, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov rax, QWORD PTR [r9+CPU_KROOT]
     mov cr3, rax
     mov eax, 1
     pop rsi
@@ -599,10 +604,11 @@ IFDEF K6_DIAGNOSTICS
 ; Solo prova negativa: lettura di un indirizzo con la root del processo attiva.
 PUBLIC x86_process_probe_read
 x86_process_probe_read PROC
-    mov rax, [process_user_root]
+    mov r9, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov rax, QWORD PTR [r9+CPU_UROOT]
     mov cr3, rax
     movzx eax, BYTE PTR [rcx]
-    mov rax, [process_kernel_root]
+    mov rax, QWORD PTR [r9+CPU_KROOT]
     mov cr3, rax
     ret
 x86_process_probe_read ENDP

@@ -10,6 +10,7 @@ default rel
 section .text
 global x86_irq_begin, x86_irq_end
 extern x86_irq_dispatch, x86_irq_after
+extern x86_user_leave_target, x86_user_irq_capture_target, x86_user_fx_clean_target
 
 ; ====== vector_entries ======
 
@@ -25,6 +26,8 @@ x86_irq_vector_%+v:
 ; ====== irq_common ======
 
 irq_common:
+    test byte [rsp+16], 3
+    jnz .cpl3
     push rax
     push rcx
     push rdx
@@ -85,6 +88,84 @@ irq_common:
     pop rax
     add rsp, 8
     iretq
+; Intel SDM 3A §§7.12, 7.14.4: CLAC clears AC; CPL3->CPL0 loads null SS.
+.cpl3:
+    clac
+    swapgs
+    lfence
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rbp
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+    mov r12, rsp
+    mov r13, [gs:464]
+    mov rax, [r13]
+    mov cr3, rax
+    mov ax, 16
+    mov ss, ax
+    lea rcx, [r12+120]
+    and rsp, -16
+    sub rsp, 544
+    fxsave64 [rsp+32]
+    [warning -reloc-rel-dword]
+    mov rax, [rel x86_user_fx_clean_target]
+    [warning +reloc-rel-dword]
+    fxrstor64 [rax]
+    cld
+    [warning -reloc-rel-dword]
+    call x86_irq_dispatch
+    [warning +reloc-rel-dword]
+    lea rcx, [r12+120]
+    [warning -reloc-rel-dword]
+    call x86_irq_after
+    [warning +reloc-rel-dword]
+    cmp dword [r13+148], 0
+    jne .cpl3_leave
+    fxrstor64 [rsp+32]
+    mov rsp, r12
+    mov rax, [r13+8]
+    mov cr3, rax
+    swapgs
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    add rsp, 8
+    iretq
+.cpl3_leave:
+    lea rcx, [rsp+32]
+    mov rdx, r12
+    lea r8, [r12+128]
+    [warning -reloc-rel-dword]
+    mov rax, [rel x86_user_irq_capture_target]
+    [warning +reloc-rel-dword]
+    call rax
+    [warning -reloc-rel-dword]
+    mov rax, [rel x86_user_leave_target]
+    [warning +reloc-rel-dword]
+    jmp rax
 x86_irq_end:
 
 ; ====== x86_irq_cpu_state ======

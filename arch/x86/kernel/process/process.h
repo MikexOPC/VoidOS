@@ -18,10 +18,14 @@ typedef struct {
     BOOT_U64 Length;
 } X86_PROCESS_IMAGE;
 
+int x86_process_stack_prepare(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root);
+int x86_process_runtime_start(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer);
+int x86_process_runtime_ready(void);
 int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer);
 int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result);
 int x86_process_input_irqs(BOOT_U32 mask);
 int x86_process_close(void);
+int x86_process_in_syscall(void);
 #ifdef KERNEL_TEST_K6_PROCESS
 int x86_process_nmi_report(BOOT_U64 window);
 void x86_process_nmi_arm(BOOT_U64 window);

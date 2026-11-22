@@ -51,33 +51,35 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
 
 // ====== reap ======
 
-static int reap(KERNEL_PHYSICAL_LEASE *lease)
+static int reap(X86_PROCESS_CPU *cpu, KERNEL_PHYSICAL_LEASE *lease)
 {
-    if (__readcr3() != process_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY) return 0;
+    if (__readcr3() != cpu->KernelRoot || !roots_stable() || STACK_WORD != STACK_CANARY) return 0;
     BOOT_U64 pages = lease->Pages;
     if (!x86_page_window_resume(process_rt.Window, lease)) process_die("PROCESS_RESUME_FAILED");
     volatile unsigned char *alias = x86_window_bytes();
     for (BOOT_U64 index = 0; index < pages * PAGE_BYTES; ++index) alias[index] = 0;
     if (!x86_page_window_release(process_rt.Window)) process_die("PROCESS_RELEASE_FAILED");
-    process_user_root = 0;
+    cpu->UserRoot = 0;
     return x86_page_window_idle_valid(process_rt.Window);
 }
 
 // ====== turn_finish ======
 
-static void turn_finish(X86_PROCESS_RESULT *result)
+static void turn_finish(X86_PROCESS_CPU *cpu, X86_PROCESS_RESULT *result)
 {
     process_timer_quiesce();
-    if (process_exit_kind == X86_PROCESS_FAULT) {
+    if (cpu->ExitKind == X86_PROCESS_FAULT) {
         result->Kind = X86_PROCESS_FAULT;
-        result->Vector = process_fault[0];
-        result->Error = process_fault[1];
-        result->Rip = process_fault[2];
-        result->Cr2 = process_fault_cr2;
+        result->Vector = cpu->Fault[0];
+        result->Error = cpu->Fault[1];
+        result->Rip = cpu->Fault[2];
+        result->Cr2 = cpu->FaultCr2;
     }
     __writemsr(MSR_FS_BASE, 0);
     __writemsr(MSR_KERNEL_GS, 0);
-    process_rt.Current = 0;
+    cpu->Active = 0;
+    cpu->LeaveRequested = 0;
+    cpu->Current = 0;
 }
 
 // ====== x86_process_run ======
@@ -86,7 +88,8 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
 {
     static PROCESS_PLAN plan;
     BOOT_U64 budget;
-    if (!process_rt.Opened || !image || !result) return 0;
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!process_rt.Opened || !cpu || !image || !result) return 0;
     for (BOOT_U32 index = 0; index < 8; ++index) ((BOOT_U64 *)result)[index] = 0;
     process_rt.State = 0;
     advance(1);
@@ -99,11 +102,13 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
         return kernel_physical_budget_matches(process_rt.Window->Pool, budget);
     }
     if (!map_image(image, &plan, &process_rt.Held)) return 0;
-    process_user_root = process_rt.Held.Base;
+    cpu->UserRoot = process_rt.Held.Base;
     advance(2);
-    process_rt.Current = result;
-    process_rt.WrittenBytes = 0;
-    process_exit_kind = 0;
+    cpu->Current = result;
+    cpu->WrittenBytes = 0;
+    cpu->ExitKind = 0;
+    cpu->LeaveRequested = 0;
+    cpu->Active = 1;
     advance(3);
     process_timer_start();
 #ifdef KERNEL_TEST_K6_PROCESS
@@ -111,8 +116,8 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
 #endif
     x86_process_enter(plan.Entry, STACK_TOP, 0);
     advance(4);
-    turn_finish(result);
-    if (!reap(&process_rt.Held) || !kernel_physical_budget_matches(process_rt.Window->Pool, budget)) {
+    turn_finish(cpu, result);
+    if (!reap(cpu, &process_rt.Held) || !kernel_physical_budget_matches(process_rt.Window->Pool, budget)) {
         process_die(roots_stable() ? "PROCESS_REAP_FAILED" : "PROCESS_ROOT_CHANGED");
     }
     advance(5);
@@ -124,11 +129,12 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
 int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *image)
 {
     PROCESS_PLAN plan;
-    if (!process_rt.Opened || process_rt.Current || !slot || slot->Lease.Id || !image ||
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!process_rt.Opened || !cpu || cpu->Current || !slot || slot->Lease.Id || !image ||
         x86_process_plan(image->Bytes, image->Length, &plan)) return 0;
-    BOOT_U32 ticks = kernel_clock_ms(process_rt.BudgetClock, PROCESS_BUDGET_MS);
+    BOOT_U32 ticks = kernel_clock_ms(cpu->BudgetClock, PROCESS_BUDGET_MS);
     if (ticks == UINT32_MAX || !map_image(image, &plan, &slot->Lease)) return 0;
-    slot->KernelRoot = process_kernel_root;
+    slot->KernelRoot = cpu->KernelRoot;
     slot->ImageEntry = process_rt.ExpectedImage;
     slot->WindowEntry = process_rt.ExpectedWindows;
     slot->Entry = plan.Entry;
@@ -142,12 +148,13 @@ int x86_process_slot_prepare(X86_PROCESS_SLOT *slot, const X86_PROCESS_IMAGE *im
 int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     IPC_CHANNEL *channel, BOOT_U64 endpoint, int renew_budget)
 {
-    if (!process_rt.Opened || process_rt.Current || !slot || !slot->Lease.Id || !result || result->Kind ||
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!process_rt.Opened || !cpu || cpu->Current || !slot || !slot->Lease.Id || !result || result->Kind ||
         (!!channel != !!endpoint) || (slot->Waiting && !channel)) return 0;
-    if (slot->KernelRoot != process_kernel_root || slot->ImageEntry != process_rt.ExpectedImage ||
+    if (slot->KernelRoot != cpu->KernelRoot || slot->ImageEntry != process_rt.ExpectedImage ||
         slot->WindowEntry != process_rt.ExpectedWindows || !roots_stable()) return 0;
     if (renew_budget) {
-        BOOT_U32 ticks = kernel_clock_ms(process_rt.BudgetClock, PROCESS_BUDGET_MS);
+        BOOT_U32 ticks = kernel_clock_ms(cpu->BudgetClock, PROCESS_BUDGET_MS);
         if (ticks == UINT32_MAX) return 0;
         slot->RemainingTicks = ticks;
         slot->RemainingIrqs = x86_process_budget_initial();
@@ -158,32 +165,34 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
         GPR(slot->Frame, GPR_RAX) = ready;
         slot->Waiting = 0;
     }
-    process_user_root = slot->Lease.Base;
-    process_rt.Current = result;
-    process_rt.WrittenBytes = slot->Written;
-    process_rt.BudgetLeft = slot->RemainingIrqs;
-    process_exit_kind = 0;
-    process_rt.Yielded = 0;
-    process_rt.Waiting = 0;
-    process_rt.YieldFrame = slot->Frame;
-    process_rt.IpcChannel = channel;
-    process_rt.IpcEndpoint = endpoint;
-    if (!kernel_deadline_start(process_rt.BudgetClock, slot->RemainingTicks, &process_rt.BudgetDeadline)) process_die("PROCESS_CLOCK_FAILED");
+    cpu->UserRoot = slot->Lease.Base;
+    cpu->Current = result;
+    cpu->WrittenBytes = slot->Written;
+    cpu->BudgetLeft = slot->RemainingIrqs;
+    cpu->ExitKind = 0;
+    cpu->Yielded = 0;
+    cpu->Waiting = 0;
+    cpu->LeaveRequested = 0;
+    cpu->Active = 1;
+    cpu->YieldFrame = slot->Frame;
+    cpu->IpcChannel = channel;
+    cpu->IpcEndpoint = endpoint;
+    if (!kernel_deadline_start(cpu->BudgetClock, slot->RemainingTicks, &cpu->BudgetDeadline)) process_die("PROCESS_CLOCK_FAILED");
     process_timer_arm();
     if (slot->Yields) x86_process_resume(slot->Frame);
     else x86_process_enter(slot->Entry, STACK_TOP, endpoint);
-    BOOT_U32 elapsed = kernel_clock_elapsed(process_rt.BudgetClock, process_rt.BudgetDeadline.Start);
-    process_rt.YieldFrame = 0;
-    process_rt.IpcChannel = 0;
-    process_rt.IpcEndpoint = 0;
-    turn_finish(result);
-    if (__readcr3() != process_kernel_root || !roots_stable() || STACK_WORD != STACK_CANARY)
+    BOOT_U32 elapsed = kernel_clock_elapsed(cpu->BudgetClock, cpu->BudgetDeadline.Start);
+    cpu->YieldFrame = 0;
+    cpu->IpcChannel = 0;
+    cpu->IpcEndpoint = 0;
+    turn_finish(cpu, result);
+    if (__readcr3() != cpu->KernelRoot || !roots_stable() || STACK_WORD != STACK_CANARY)
         process_die("PROCESS_ROOT_CHANGED");
-    slot->Written = process_rt.WrittenBytes;
-    slot->RemainingIrqs = process_rt.BudgetLeft;
-    if (process_rt.Yielded) {
+    slot->Written = cpu->WrittenBytes;
+    slot->RemainingIrqs = cpu->BudgetLeft;
+    if (cpu->Yielded) {
         ++slot->Yields;
-        slot->Waiting = process_rt.Waiting;
+        slot->Waiting = cpu->Waiting;
         if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
         else slot->RemainingTicks -= elapsed;
     }
@@ -194,7 +203,8 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
 
 int x86_process_slot_reap(X86_PROCESS_SLOT *slot)
 {
-    if (!process_rt.Opened || process_rt.Current || !slot || !slot->Lease.Id || !reap(&slot->Lease)) return 0;
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!process_rt.Opened || !cpu || cpu->Current || !slot || !slot->Lease.Id || !reap(cpu, &slot->Lease)) return 0;
     *slot = (X86_PROCESS_SLOT){0};
     return 1;
 }

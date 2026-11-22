@@ -1,9 +1,29 @@
 #include "../watchdog.h"
+#include "kernel/mm/physical/holdings.h"
 #include "lib/memory/address_ranges.h"
 
 static KERNEL_PHYSICAL_ALLOCATOR *loan_pool;
 static KERNEL_PHYSICAL_LEASE loans[X86_WATCHDOG_LOANS];
 static uint32_t loan_count;
+static BOOT_U64 baseline_holdings;
+
+// ====== x86_watchdog_budget_capture_baseline ======
+
+void x86_watchdog_budget_capture_baseline(void)
+{
+    baseline_holdings = kernel_holdings_total();
+}
+
+// ====== holdings_delta_private ======
+
+static int holdings_delta_private(BOOT_U64 *delta_out)
+{
+    BOOT_U64 current = kernel_holdings_total();
+    if (current == UINT64_MAX || baseline_holdings == UINT64_MAX || current < baseline_holdings)
+        return 0;
+    *delta_out = current - baseline_holdings;
+    return 1;
+}
 
 // ====== x86_watchdog_budget_active ======
 
@@ -15,10 +35,13 @@ int x86_watchdog_budget_valid(void)
 {
     const X86_HPET_WATCHDOG *owner = x86_watchdog_state();
     const KERNEL_PHYSICAL_ALLOCATOR *pool;
-    if (!owner->Env.Window || !(pool = owner->Env.Window->Pool)) return 0;
-    if (!loan_pool) return kernel_physical_budget_matches(pool, owner->Budget);
+    BOOT_U64 delta = 0;
+    if (!owner->Env.Window || !(pool = owner->Env.Window->Pool) || !holdings_delta_private(&delta) ||
+        owner->Budget < delta) return 0;
+    BOOT_U64 effective = owner->Budget - delta;
+    if (!loan_pool) return kernel_physical_budget_matches(pool, effective);
     if (loan_count < 2 || loan_count > X86_WATCHDOG_LOANS || pool != loan_pool ||
-        owner->Budget < 16 * loan_count || !kernel_physical_budget_matches(pool, owner->Budget - 16 * loan_count) ||
+        effective < 16 * loan_count || !kernel_physical_budget_matches(pool, effective - 16 * loan_count) ||
         !kernel_physical_validate(pool)) return 0;
     for (uint32_t index = 0; index < loan_count; ++index)
         if (kernel_physical_is_pinned(pool,&loans[index]) != 1) return 0;
@@ -58,10 +81,11 @@ int x86_watchdog_budget_begin_four(const KERNEL_PHYSICAL_LEASE *first, const KER
     KERNEL_PHYSICAL_ALLOCATOR *pool;
     const KERNEL_PHYSICAL_LEASE *inputs[4] = {first,second,third,fourth};
     uint32_t count = fourth ? 4U : third ? 3U : 2U;
+    BOOT_U64 delta = 0;
     if (loan_pool || !first || !second || first == second || !owner->Ready || owner->Closed ||
         owner->Armed || owner->Error || !owner->Env.Window || !(pool = owner->Env.Window->Pool) ||
-        (fourth && !third) || owner->Budget < 16 * count ||
-        !kernel_physical_budget_matches(pool, owner->Budget - 16 * count) || !kernel_physical_validate(pool)) return 0;
+        (fourth && !third) || !holdings_delta_private(&delta) || owner->Budget < delta + 16 * count ||
+        !kernel_physical_budget_matches(pool, owner->Budget - delta - 16 * count) || !kernel_physical_validate(pool)) return 0;
     for (uint32_t index = 0; index < count; ++index) {
         if (inputs[index]->Pages != 16 || kernel_physical_is_pinned(pool,inputs[index]) != 1) return 0;
         for (uint32_t other = 0; other < index; ++other)
@@ -93,10 +117,11 @@ int x86_watchdog_budget_end(void)
 int x86_watchdog_budget_lend(const KERNEL_PHYSICAL_LEASE *lease)
 {
     X86_HPET_WATCHDOG *owner = x86_watchdog_state();
+    BOOT_U64 delta = 0;
     if (!loan_pool || !lease || loan_count >= X86_WATCHDOG_LOANS || owner->Armed || owner->Error ||
         lease->Pages != 16 || kernel_physical_is_pinned(loan_pool,lease) != 1 ||
-        owner->Budget < 16 * (loan_count + 1) ||
-        !kernel_physical_budget_matches(loan_pool, owner->Budget - 16 * (loan_count + 1))) return 0;
+        !holdings_delta_private(&delta) || owner->Budget < delta + 16 * (loan_count + 1) ||
+        !kernel_physical_budget_matches(loan_pool, owner->Budget - delta - 16 * (loan_count + 1))) return 0;
     for (uint32_t index = 0; index < loan_count; ++index)
         if (loans[index].Id == lease->Id ||
             os_address_ranges_overlap(loans[index].Base,65536,lease->Base,65536)) return 0;

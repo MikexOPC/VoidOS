@@ -27,4 +27,9 @@ void x86_exception_read_idt(X86_KERNEL_IDTR *pointer);
 void x86_exception_load_idt(const X86_KERNEL_IDTR *pointer);
 BOOT_U64 x86_exception_environment(void);
 __declspec(noreturn) void x86_exception_terminal(const X86_EXCEPTION_FRAME *frame, BOOT_U64 cr2);
+extern volatile BOOT_U64 x86_user_fault_active;
+extern BOOT_U64 x86_user_leave_target;
+extern BOOT_U64 x86_user_copy_recover_target;
+extern BOOT_U64 x86_user_irq_capture_target;
+extern BOOT_U64 x86_user_fx_clean_target;
 #endif

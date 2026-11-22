@@ -7,6 +7,11 @@ static X86_KERNEL_IDT kernel_idt;
 static X86_KERNEL_IDTR kernel_idtr;
 static BOOT_U32 installed;
 static BOOT_U32 split_ist;
+volatile BOOT_U64 x86_user_fault_active;
+BOOT_U64 x86_user_leave_target;
+BOOT_U64 x86_user_copy_recover_target;
+BOOT_U64 x86_user_irq_capture_target;
+BOOT_U64 x86_user_fx_clean_target;
 
 // ====== intervalli non sovrapposti senza overflow prima degli accessi ===== //
 

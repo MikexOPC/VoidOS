@@ -64,8 +64,15 @@ int x86_process_resident_request(const unsigned char request[2], unsigned char r
     *result = (X86_PROCESS_RESULT){0};
     message[0] = request[0];
     message[1] = request[1];
-    int passed = x86_ipc_send(&channel, endpoint, endpoint, message, 2) == 2 &&
-        x86_process_slot_step(&slot, result, &channel, endpoint | 1U, 1) &&
+    int stepped = x86_ipc_send(&channel, endpoint, endpoint, message, 2) == 2;
+    int renew = 1;
+    if (stepped) {
+        do {
+            stepped = x86_process_slot_step(&slot, result, &channel, endpoint | 1U, renew);
+            renew = 0;
+        } while (stepped && !result->Kind && !slot.Waiting);
+    }
+    int passed = stepped &&
         !result->Kind && slot.Waiting &&
         x86_ipc_peek(&channel, endpoint, endpoint, message, 2) == 2 &&
         !x86_ipc_consume(&channel, endpoint, endpoint) &&

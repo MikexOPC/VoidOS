@@ -1,24 +1,69 @@
 #include "internal.h"
+#include "kernel/mm/physical/holdings.h"
 
-volatile BOOT_U64 process_owner, process_kernel_root, process_user_root, process_stack_top, process_user_rsp, process_saved_rsp;
 #ifdef KERNEL_TEST_K6_PROCESS
 volatile BOOT_U64 process_window, process_window_budget, process_negative = KERNEL_K6_NEGATIVE;
 volatile BOOT_U64 process_nmi_armed, process_nmi_count, process_nmi_rip, process_nmi_cs, process_nmi_cr3, process_nmi_gs, process_nmi_flags;
 #endif
-volatile BOOT_U64 process_fault[7], process_fault_cr2, process_exit_kind, process_drain;
-_Alignas(16) unsigned char process_fx_saved[512];
+volatile BOOT_U64 process_drain;
 // Intel SDM vol. 2, FXSAVE64 image: FCW 037fh and MXCSR 1f80h, clean x87/SSE data.
 _Alignas(16) const unsigned char process_fx_clean[512] = {
     [0] = 0x7f, [1] = 0x03, [24] = 0x80, [25] = 0x1f
 };
 
 X86_PROCESS_RUNTIME process_rt;
+X86_PROCESS_CPU x86_process_cpus[X86_PERCPU_CAPACITY];
+static BOOT_U32 stack_prepared;
+
+// ====== x86_process_stack_prepare ======
+
+int x86_process_stack_prepare(KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root)
+{
+    if (!x86_user_mode_allowed())
+        return 1;
+    if (stack_prepared || !pool || !root)
+        return 0;
+    if (!x86_kernel_stacks_acquire_for(&process_rt.SyscallStack, pool, root, 3))
+        return 0;
+    if (!x86_kernel_stacks_commit(&process_rt.SyscallStack)) {
+        (void)x86_kernel_stacks_release(&process_rt.SyscallStack);
+        return 0;
+    }
+    stack_prepared = 1;
+    return 1;
+}
+
+// ====== x86_process_cpu_current ======
+
+X86_PROCESS_CPU *x86_process_cpu_current(void)
+{
+    const X86_CPU_LOCAL *owner = x86_percpu_current_local();
+    if (!owner || owner->Index >= X86_PERCPU_CAPACITY)
+        return 0;
+    return &x86_process_cpus[owner->Index];
+}
+
+// ====== x86_process_in_syscall ======
+
+int x86_process_in_syscall(void)
+{
+    const X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    return cpu && cpu->InSyscall != 0;
+}
+
+// ====== x86_process_runtime_ready ======
+
+int x86_process_runtime_ready(void)
+{
+    return process_rt.Permanent != 0 && process_rt.Opened != 0;
+}
 
 // ====== process_die ======
 
 __declspec(noreturn) void process_die(const char *reason)
 {
-    x86_exception_load_idt(&process_rt.IdtPrevious);
+    if (!process_rt.Permanent)
+        x86_exception_load_idt(&process_rt.IdtPrevious);
     (void)kernel_log(3, reason);
     kernel_panic(reason);
 }
@@ -86,10 +131,83 @@ static BOOT_U64 rsp0_swap(BOOT_U64 value)
     return previous;
 }
 
+// ====== bind_bsp_cpu_private ======
+
+static int bind_bsp_cpu_private(const X86_CPU_LOCAL *owner, const KERNEL_LOCK_WAIT *wait)
+{
+    X86_PROCESS_CPU *cpu = &x86_process_cpus[0];
+    for (BOOT_U32 index = 0; index < sizeof(*cpu); ++index) ((unsigned char *)cpu)[index] = 0;
+    cpu->KernelRoot = __readcr3();
+    cpu->SyscallTop = X86_KERNEL_SYSCALL_TOP;
+    cpu->Owner = (BOOT_U64)owner;
+    cpu->BudgetClock = &wait->Clock;
+    return x86_percpu_bind_process_cpu(X86_KERNEL_SYSCALL_TOP, (BOOT_U64)cpu);
+}
+
+// ====== x86_process_runtime_start ======
+
+int x86_process_runtime_start(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
+{
+    if (process_rt.Permanent)
+        return 1;
+    const X86_CPU_LOCAL *owner = x86_percpu_bsp();
+    if (process_rt.Opened || !window || !timer || !owner || !x86_user_mode_allowed() ||
+        !x86_exception_environment() || x86_percpu_current_local() != owner ||
+        __readmsr(MSR_GS_BASE) != (BOOT_U64)owner || (__readmsr(MSR_EFER) & EFER_SCE))
+        return 0;
+    const KERNEL_LOCK_WAIT *wait = x86_percpu_wait_current();
+    if (!wait)
+        return 0;
+    const volatile BOOT_U64 *root = x86_window_entries(0);
+    for (BOOT_U32 slot = 0; slot < 256; ++slot)
+        if (root[slot]) return 0;
+    process_rt.TssField = tss_rsp0();
+    if (!process_rt.TssField)
+        return 0;
+    if (!stack_prepared) {
+        if (!x86_kernel_stacks_acquire_for(&process_rt.SyscallStack, window->Pool, __readcr3(), 3))
+            return 0;
+    }
+    if (!bind_bsp_cpu_private(owner, wait)) {
+        if (!stack_prepared)
+            (void)x86_kernel_stacks_release(&process_rt.SyscallStack);
+        return 0;
+    }
+    process_rt.Window = window;
+    process_rt.Timer = timer;
+    STACK_WORD = STACK_CANARY;
+    process_rt.ExpectedImage = root[SLOT_IMAGE];
+    process_rt.ExpectedWindows = root[X86_LAYOUT_WINDOWS_SLOT];
+    process_rt.Rsp0Previous = rsp0_swap(X86_KERNEL_SYSCALL_TOP);
+    process_rt.AlternateSaved = __readmsr(MSR_KERNEL_GS);
+    __writemsr(MSR_KERNEL_GS, 0);
+    process_rt.MsrSaved[0] = __readmsr(MSR_STAR);
+    process_rt.MsrSaved[1] = __readmsr(MSR_LSTAR);
+    process_rt.MsrSaved[2] = __readmsr(MSR_CSTAR);
+    process_rt.MsrSaved[3] = __readmsr(MSR_FMASK);
+    process_rt.MsrSaved[4] = __readmsr(MSR_EFER);
+    // Intel SDM 3A §6.8.8: permanent SYSCALL configuration on the common IDT.
+    __writemsr(MSR_STAR, STAR_VALUE);
+    __writemsr(MSR_LSTAR, (BOOT_U64)x86_process_syscall);
+    __writemsr(MSR_CSTAR, (BOOT_U64)x86_process_stop);
+    __writemsr(MSR_FMASK, FLAGS_MASK);
+    __writemsr(MSR_EFER, process_rt.MsrSaved[4] | EFER_SCE);
+    x86_user_leave_target = (BOOT_U64)x86_process_leave;
+    x86_user_copy_recover_target = (BOOT_U64)x86_process_copy_recover;
+    x86_user_irq_capture_target = (BOOT_U64)x86_process_irq_capture;
+    x86_user_fx_clean_target = (BOOT_U64)process_fx_clean;
+    x86_user_fault_active = 1;
+    process_rt.Permanent = 1;
+    process_rt.Opened = 1;
+    return 1;
+}
+
 // ====== x86_process_open ======
 
 int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
 {
+    if (process_rt.Permanent)
+        return 1;
     const X86_CPU_LOCAL *owner = x86_percpu_bsp();
     if (process_rt.Opened || !window || !timer || !owner || !x86_user_mode_allowed() ||
         !x86_exception_environment() || x86_percpu_current_local() != owner ||
@@ -102,12 +220,12 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     if (!process_rt.TssField || !x86_timer_read(timer->Mapping, 0x320, &process_rt.TimerLvtSaved) ||
         !x86_timer_read(timer->Mapping, 0x3e0, &process_rt.TimerDivideSaved) ||
         !x86_kernel_stacks_acquire_for(&process_rt.SyscallStack, window->Pool, __readcr3(), 3)) return 0;
+    if (!bind_bsp_cpu_private(owner, wait)) {
+        (void)x86_kernel_stacks_release(&process_rt.SyscallStack);
+        return 0;
+    }
     process_rt.Window = window;
     process_rt.Timer = timer;
-    process_rt.BudgetClock = &wait->Clock;
-    process_owner = (BOOT_U64)owner;
-    process_kernel_root = __readcr3();
-    process_stack_top = X86_KERNEL_SYSCALL_TOP;
     STACK_WORD = STACK_CANARY;
     process_rt.ExpectedImage = root[SLOT_IMAGE];
     process_rt.ExpectedWindows = root[X86_LAYOUT_WINDOWS_SLOT];
@@ -115,7 +233,7 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
     idt_prepare();
     x86_exception_read_idt(&process_rt.IdtPrevious);
     x86_exception_load_idt(&process_rt.IdtProbe);
-    process_rt.Rsp0Previous = rsp0_swap(process_stack_top);
+    process_rt.Rsp0Previous = rsp0_swap(X86_KERNEL_SYSCALL_TOP);
     process_rt.AlternateSaved = __readmsr(MSR_KERNEL_GS);
     __writemsr(MSR_KERNEL_GS, 0);
     process_rt.MsrSaved[0] = __readmsr(MSR_STAR);
@@ -136,6 +254,8 @@ int x86_process_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
 
 int x86_process_close(void)
 {
+    if (process_rt.Permanent)
+        return 1;
     if (!process_rt.Opened) return 0;
     if (!x86_timer_stop(process_rt.Timer->Mapping) ||
         !x86_timer_confirm_write(process_rt.Timer->Mapping, 0x3e0, process_rt.TimerDivideSaved) ||
@@ -146,11 +266,11 @@ int x86_process_close(void)
     __writemsr(MSR_CSTAR, process_rt.MsrSaved[2]);
     __writemsr(MSR_FMASK, process_rt.MsrSaved[3]);
     __writemsr(MSR_KERNEL_GS, process_rt.AlternateSaved);
-    if (rsp0_swap(process_rt.Rsp0Previous) != process_stack_top) process_die("PROCESS_RSP0_CHANGED");
+    if (rsp0_swap(process_rt.Rsp0Previous) != X86_KERNEL_SYSCALL_TOP) process_die("PROCESS_RSP0_CHANGED");
     if (!x86_kernel_stacks_release(&process_rt.SyscallStack)) process_die("PROCESS_STACK_RETAINED");
     x86_exception_load_idt(&process_rt.IdtPrevious);
+    (void)x86_percpu_bind_process_cpu(0, 0);
     process_rt.InputIrqMask = 0;
-    process_owner = 0;
     process_rt.Opened = 0;
     return !(__readmsr(MSR_EFER) & EFER_SCE);
 }
@@ -159,13 +279,16 @@ int x86_process_close(void)
 
 int x86_process_input_irqs(BOOT_U32 mask)
 {
+    if (process_rt.Permanent)
+        return 1;
     static void (*const entries[X86_IRQ_DEVICE_SLOTS])(void) = {
         x86_process_device_irq40, x86_process_device_irq41,
         x86_process_device_irq42, x86_process_device_irq43,
     };
     X86_IRQ_TOKEN tokens[X86_IRQ_DEVICE_SLOTS] = {0};
     X86_IRQ_REGISTRY *registry = x86_irq_registry();
-    if (!process_rt.Opened || process_rt.Current || !registry || registry->Busy ||
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!process_rt.Opened || !cpu || cpu->Current || !registry || registry->Busy ||
         x86_percpu_current_local() != x86_percpu_bsp() || (mask & ~15U)) return 0;
     for (BOOT_U32 index = 0; index < X86_IRQ_DEVICE_SLOTS; ++index) {
         if (!(mask & (1U << index))) continue;

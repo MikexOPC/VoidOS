@@ -1,9 +1,14 @@
 #include "internal.h"
+#ifdef KERNEL_PS2_INPUT
+#include "arch/x86/kernel/scheduler/irq/preempt.h"
+#endif
 
 // ====== process_timer_arm ======
 
 void process_timer_arm(void)
 {
+    if (process_rt.Permanent)
+        return;
     const X86_LAPIC_MAPPING *mapping = process_rt.Timer->Mapping;
     BOOT_U32 vector = K6_NEGATIVE(36) ? STRAY_TEST_VECTOR : TIMER_VECTOR;
     // Intel SDM 3A §13.5.4: divide 3E0h = 3 (by 16), LVT 320h one-shot unmasked, initial count 380h.
@@ -15,12 +20,14 @@ void process_timer_arm(void)
 
 void process_timer_start(void)
 {
-    process_rt.BudgetLeft = x86_process_budget_initial();
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!cpu) process_die("PROCESS_CPU_INVALID");
+    cpu->BudgetLeft = x86_process_budget_initial();
     BOOT_U32 duration = PROCESS_BUDGET_MS;
 #ifdef KERNEL_TEST_K6_PROCESS
     if (process_delay_next_syscall) duration = 100;
 #endif
-    if (!kernel_deadline_start(process_rt.BudgetClock, kernel_clock_ms(process_rt.BudgetClock, duration), &process_rt.BudgetDeadline))
+    if (!kernel_deadline_start(cpu->BudgetClock, kernel_clock_ms(cpu->BudgetClock, duration), &cpu->BudgetDeadline))
         process_die("PROCESS_CLOCK_FAILED");
     process_timer_arm();
 }
@@ -29,6 +36,8 @@ void process_timer_start(void)
 
 void process_timer_quiesce(void)
 {
+    if (process_rt.Permanent)
+        return;
     BOOT_U32 pending = 0;
     BOOT_U32 mask = IRR_TIMER_BIT;
 #ifdef KERNEL_TEST_K6_PROCESS
@@ -48,12 +57,59 @@ void process_timer_quiesce(void)
     if (!x86_lapic_idle_except(process_rt.Timer->Mapping, process_rt.InputIrqMask)) process_die("PROCESS_TIMER_RETAINED");
 }
 
+// ====== x86_process_on_preempt_tick ======
+
+void x86_process_on_preempt_tick(const X86_IRQ_FRAME *frame)
+{
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!cpu || !cpu->Current)
+        process_die("PROCESS_PREEMPT_CPU_INVALID");
+    ++cpu->Current->Irqs;
+    cpu->Current->Rip = frame->Rip;
+    if (!x86_process_irq_frame_valid(frame->Rip, frame->Cs, frame->Flags, frame->Rsp, frame->Ss)) {
+        cpu->Current->Kind = X86_PROCESS_BAD_FRAME;
+        cpu->LeaveRequested = 2;
+    } else {
+        cpu->BudgetLeft = x86_process_budget_next(cpu->BudgetLeft);
+        if (process_budget_expired(frame->Rip)) {
+            cpu->LeaveRequested = 2;
+        } else if (cpu->YieldFrame) {
+            cpu->LeaveRequested = 1;
+        }
+    }
+#ifdef KERNEL_PS2_INPUT
+    if (!x86_preempt_rearm())
+        kernel_panic("PROCESS_PREEMPT_REARM_FAILED");
+#endif
+}
+
+// ====== x86_process_irq_capture ======
+
+void x86_process_irq_capture(const BOOT_U64 *fx, const BOOT_U64 *gprs, const BOOT_U64 *iret)
+{
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!cpu)
+        process_die("PROCESS_CPU_INVALID");
+    BOOT_U32 reason = cpu->LeaveRequested;
+    cpu->LeaveRequested = 0;
+    if (reason == 1 && cpu->YieldFrame) {
+        for (BOOT_U32 index = 0; index < FX_WORDS; ++index)
+            cpu->YieldFrame[index] = fx[index];
+        for (BOOT_U32 index = 0; index < 15U; ++index)
+            cpu->YieldFrame[FX_WORDS + index] = gprs[index];
+        for (BOOT_U32 index = 0; index < 5U; ++index)
+            cpu->YieldFrame[FX_WORDS + 15U + index] = iret[index];
+        cpu->Yielded = 1;
+    }
+}
+
 // ====== x86_process_irq_service ======
 
 int x86_process_irq_service(BOOT_U64 *frame)
 {
     BOOT_U32 value, index;
-    if ((BOOT_U64)&IRET(frame, 0) != process_stack_top - 40) process_die("PROCESS_IRQ_INVALID");
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!cpu || !cpu->Current || (BOOT_U64)&IRET(frame, 0) != cpu->SyscallTop - 40) process_die("PROCESS_IRQ_INVALID");
     // Intel SDM 3A §13.8.4: ISR 100h-170h, one 32-bit bank per 16-byte step, indexed by vector.
     for (index = 0; index < 8; ++index) {
         if (!x86_lapic_native_read(0x100 + index * 16, &value) ||
@@ -61,13 +117,13 @@ int x86_process_irq_service(BOOT_U64 *frame)
     }
     // Intel SDM 3A §13.8.5: writing zero to EOI (B0h) retires the highest ISR bit.
     if (!x86_lapic_native_eoi()) process_die("PROCESS_IRQ_INVALID");
-    ++process_rt.Current->Irqs;
-    process_rt.Current->Rip = IRET(frame, 0);
+    ++cpu->Current->Irqs;
+    cpu->Current->Rip = IRET(frame, 0);
     if (!x86_process_irq_frame_valid(IRET(frame, 0), IRET(frame, 1), IRET(frame, 2), IRET(frame, 3), IRET(frame, 4))) {
-        process_rt.Current->Kind = X86_PROCESS_BAD_FRAME;
+        cpu->Current->Kind = X86_PROCESS_BAD_FRAME;
         return 2;
     }
-    process_rt.BudgetLeft = x86_process_budget_next(process_rt.BudgetLeft);
+    cpu->BudgetLeft = x86_process_budget_next(cpu->BudgetLeft);
     if (process_budget_expired(IRET(frame, 0))) return 2;
     if (!x86_timer_write(process_rt.Timer->Mapping, 0x380, process_rt.Timer->Reload)) process_die("PROCESS_TIMER_FAILED");
     return 1;
@@ -89,7 +145,8 @@ static int input_irq_deliver(BOOT_U32 vector)
 
 int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
 {
-    if (!process_rt.Current || (BOOT_U64)&IRET(frame, 0) != process_stack_top - 40 ||
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!cpu || !cpu->Current || (BOOT_U64)&IRET(frame, 0) != cpu->SyscallTop - 40 ||
         !input_irq_deliver(vector))
         process_die("PROCESS_DEVICE_IRQ_INVALID");
 #ifdef KERNEL_TEST_K6_PROCESS
@@ -99,7 +156,7 @@ int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
     }
 #endif
     if (!x86_process_irq_frame_valid(IRET(frame, 0), IRET(frame, 1), IRET(frame, 2), IRET(frame, 3), IRET(frame, 4))) {
-        process_rt.Current->Kind = X86_PROCESS_BAD_FRAME;
+        cpu->Current->Kind = X86_PROCESS_BAD_FRAME;
         return 2;
     }
     return process_budget_expired(IRET(frame, 0)) ? 2 : 1;
@@ -109,13 +166,16 @@ int x86_process_device_irq_service(BOOT_U64 *frame, BOOT_U32 vector)
 
 void x86_process_device_irq_kernel(BOOT_U32 vector)
 {
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
     if (!process_rt.Opened || !process_drain || !input_irq_deliver(vector))
         process_die("PROCESS_DEVICE_IRQ_INVALID");
 #ifdef KERNEL_TEST_K6_PROCESS
     if (process_probe_armed) {
-        if (process_rt.Current || process_probe_delivered != 1) process_die("PROCESS_DEVICE_IRQ_INVALID");
+        if ((cpu && cpu->Current) || process_probe_delivered != 1) process_die("PROCESS_DEVICE_IRQ_INVALID");
         process_probe_delivered = 2;
     }
+#else
+    (void)cpu;
 #endif
 }
 
@@ -132,7 +192,8 @@ void x86_process_irq_drained(void)
 
 void x86_process_kernel_fatal(const BOOT_U64 *frame, BOOT_U64 cr2)
 {
-    x86_exception_load_idt(&process_rt.IdtPrevious);
+    if (!process_rt.Permanent)
+        x86_exception_load_idt(&process_rt.IdtPrevious);
     (void)kernel_text("PROCESS_FAULT_VECTOR: ");
     (void)kernel_number(frame[0]);
     (void)kernel_text("\nPROCESS_FAULT_RIP: ");

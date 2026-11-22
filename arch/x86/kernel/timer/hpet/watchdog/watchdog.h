@@ -123,6 +123,7 @@ int x86_watchdog_budget_begin_four(const KERNEL_PHYSICAL_LEASE *first, const KER
 int x86_watchdog_budget_end(void);
 int x86_watchdog_budget_lend(const KERNEL_PHYSICAL_LEASE *lease);
 int x86_watchdog_budget_return(const KERNEL_PHYSICAL_LEASE *lease);
+void x86_watchdog_budget_capture_baseline(void);
 int x86_watchdog_budget_valid(void);
 int x86_watchdog_budget_active(void);
 int x86_watchdog_device(BOOT_U32 operation);

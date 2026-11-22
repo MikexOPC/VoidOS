@@ -2,6 +2,9 @@ option casemap:none
 EXTERN x86_exception_terminal:PROC
 EXTERN xp_panic_fault_entry:PROC
 EXTERN xp_panic_armed:QWORD
+EXTERN x86_user_fault_active:QWORD
+EXTERN x86_user_leave_target:QWORD
+EXTERN x86_user_copy_recover_target:QWORD
 .code
 
 ; ====== lettura IDTR e caricamento sullo stack gia validato dal loader ===== ;
@@ -66,7 +69,77 @@ ENDM
 
 ; ====== terminale senza ritorno shadow space e allineamento Microsoft x64 ===== ;
 
+; Intel SDM 3A §7.12: CLAC rimuove AC solo quando SMAP e attivo (x86_user_fault_active != 0).
+; Intel SDM 3A §7.15: CPL3 termina il processo; CPL0 #PF recupera solo nella finestra di copia.
 x86_kernel_fault_common LABEL BYTE
+    cmp QWORD PTR [x86_user_fault_active], 0
+    je fault_normal
+    clac
+    test BYTE PTR [rsp+24], 3
+    jnz fault_from_user
+    cmp QWORD PTR [rsp], 14
+    jne fault_normal
+    push rax
+    mov rax, QWORD PTR gs:[464]
+    test rax, rax
+    jz fault_copy_skip
+    cmp QWORD PTR [rax+128], 0
+    je fault_copy_skip
+    push rcx
+    push rdx
+    push r8
+    push r9
+    push r10
+    push r11
+    lea rcx, [rsp+56]
+    mov rdx, cr2
+    sub rsp, 32
+    mov rax, QWORD PTR [x86_user_copy_recover_target]
+    call rax
+    add rsp, 32
+    cmp eax, 1
+    jne fault_copy_unrecovered
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdx
+    pop rcx
+    pop rax
+    add rsp, 16
+    iretq
+fault_copy_unrecovered:
+    mov rax, QWORD PTR gs:[464]
+    mov rax, QWORD PTR [rax]
+    mov cr3, rax
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdx
+    pop rcx
+fault_copy_skip:
+    pop rax
+    jmp fault_normal
+fault_from_user:
+    swapgs
+    lfence
+    mov rbx, QWORD PTR gs:[464]
+    test rbx, rbx
+    jz NEAR PTR x86_kernel_nested_stop
+    mov rax, QWORD PTR [rbx]
+    mov cr3, rax
+    cld
+    mov rsi, rsp
+    lea rdi, [rbx+56]
+    mov ecx, 7
+    rep movsq
+    mov rax, cr2
+    mov QWORD PTR [rbx+48], rax
+    mov QWORD PTR [rbx+40], 2
+    mov rax, QWORD PTR [x86_user_leave_target]
+    jmp rax
+fault_normal:
     cmp QWORD PTR [xp_panic_armed], 0
     jne NEAR PTR xp_panic_fault_entry
     mov al, 1

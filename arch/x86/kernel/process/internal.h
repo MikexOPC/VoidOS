@@ -104,6 +104,7 @@ BOOT_U32 x86_process_nmi_valid(BOOT_U64 window, BOOT_U32 user_root, BOOT_U32 ker
 #endif
 BOOT_U64 x86_ipc_send_check(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, BOOT_U64 len);
 void x86_process_resume(const BOOT_U64 *frame);
+void x86_process_leave(void);
 void x86_process_syscall(void);
 void x86_process_nmi(void);
 void x86_process_irq(void);
@@ -116,6 +117,9 @@ void x86_process_spurious(void);
 __declspec(noreturn) void x86_process_stop(void);
 void x86_process_enter(BOOT_U64 entry, BOOT_U64 stack, BOOT_U64 argument);
 BOOT_U64 x86_process_copy(void *target, const void *source, BOOT_U64 bytes);
+int x86_process_copy_recover(BOOT_U64 *frame, BOOT_U64 cr2);
+void x86_process_irq_capture(const BOOT_U64 *fx, const BOOT_U64 *gprs, const BOOT_U64 *iret);
+void x86_process_on_preempt_tick(const X86_IRQ_FRAME *frame);
 BOOT_U32 x86_process_plan(const unsigned char *bytes, BOOT_U64 length, PROCESS_PLAN *plan);
 BOOT_U32 x86_process_copy_range(BOOT_U64 pointer, BOOT_U64 length);
 BOOT_U32 x86_process_return_valid(BOOT_U64 rip, BOOT_U64 cs, BOOT_U64 flags, BOOT_U64 rsp, BOOT_U64 ss);
@@ -128,7 +132,57 @@ BOOT_U64 x86_process_budget_initial(void);
 BOOT_U64 x86_process_budget_next(BOOT_U64 remaining);
 BOOT_U32 x86_process_write_allowed(BOOT_U64 total, BOOT_U64 length);
 
-// ====== stato del runtime dei processi: una sola istanza sul BSP ======
+// ====== stato per-CPU per transizioni ring 3 (layout condiviso con Assembly) ======
+
+typedef struct {
+    _Alignas(64) BOOT_U64       KernelRoot;
+    BOOT_U64                    UserRoot;
+    BOOT_U64                    SyscallTop;
+    BOOT_U64                    UserRsp;
+    BOOT_U64                    SavedRsp;
+    volatile BOOT_U64           ExitKind;
+    volatile BOOT_U64           FaultCr2;
+    volatile BOOT_U64           Fault[7];
+    BOOT_U64                    Owner;
+    volatile BOOT_U64           CopyPointer;
+    volatile BOOT_U64           CopyLength;
+    volatile BOOT_U64           CopyWrite;
+    volatile BOOT_U32           Active;
+    volatile BOOT_U32           LeaveRequested;
+    volatile BOOT_U32           InSyscall;
+    BOOT_U32                    Reserved;
+    _Alignas(16) unsigned char  FxSaved[512];
+    BOOT_U64                    BudgetLeft;
+    BOOT_U64                    WrittenBytes;
+    const KERNEL_CLOCK         *BudgetClock;
+    KERNEL_DEADLINE             BudgetDeadline;
+    BOOT_U64                   *YieldFrame;
+    BOOT_U32                    Yielded;
+    BOOT_U32                    Waiting;
+    IPC_CHANNEL                *IpcChannel;
+    BOOT_U64                    IpcEndpoint;
+    X86_PROCESS_RESULT         *Current;
+    unsigned char               Buffer[MAX_COPY + 1];
+} X86_PROCESS_CPU;
+
+_Static_assert(offsetof(X86_PROCESS_CPU, KernelRoot) == 0, "X86_PROCESS_CPU KernelRoot offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, UserRoot) == 8, "X86_PROCESS_CPU UserRoot offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, SyscallTop) == 16, "X86_PROCESS_CPU SyscallTop offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, UserRsp) == 24, "X86_PROCESS_CPU UserRsp offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, SavedRsp) == 32, "X86_PROCESS_CPU SavedRsp offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, ExitKind) == 40, "X86_PROCESS_CPU ExitKind offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, FaultCr2) == 48, "X86_PROCESS_CPU FaultCr2 offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, Fault) == 56, "X86_PROCESS_CPU Fault offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, Owner) == 112, "X86_PROCESS_CPU Owner offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, CopyPointer) == 120, "X86_PROCESS_CPU CopyPointer offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, CopyLength) == 128, "X86_PROCESS_CPU CopyLength offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, CopyWrite) == 136, "X86_PROCESS_CPU CopyWrite offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, Active) == 144, "X86_PROCESS_CPU Active offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, LeaveRequested) == 148, "X86_PROCESS_CPU LeaveRequested offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, InSyscall) == 152, "X86_PROCESS_CPU InSyscall offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, FxSaved) == 160, "X86_PROCESS_CPU FxSaved offset");
+
+// ====== stato condiviso del runtime dei processi ======
 
 typedef struct {
     X86_KERNEL_STACKS         SyscallStack;
@@ -140,19 +194,10 @@ typedef struct {
     BOOT_U64                  Rsp0Previous, MsrSaved[5], AlternateSaved;
     BOOT_U64                  ExpectedImage, ExpectedWindows;
     KERNEL_PHYSICAL_LEASE     Held;
-    BOOT_U32                  State, Opened, TimerLvtSaved, TimerDivideSaved;
-    BOOT_U64                  BudgetLeft, Drained, WrittenBytes;
-    const KERNEL_CLOCK       *BudgetClock;
-    KERNEL_DEADLINE           BudgetDeadline;
-    BOOT_U64                 *YieldFrame;
-    BOOT_U32                  Yielded, Waiting;
-    IPC_CHANNEL              *IpcChannel;
-    BOOT_U64                  IpcEndpoint;
-    X86_PROCESS_RESULT       *Current;
+    BOOT_U32                  State, Opened, Permanent, TimerLvtSaved, TimerDivideSaved;
+    BOOT_U64                  Drained;
     BOOT_U32                  InputIrqMask;
     X86_IRQ_TOKEN             InputIrqTokens[X86_IRQ_DEVICE_SLOTS];
-    volatile BOOT_U64         CopyPointer, CopyLength, CopyWrite;
-    unsigned char             Buffer[MAX_COPY + 1];
 } X86_PROCESS_RUNTIME;
 
 _Static_assert(X86_PROCESS_FRAME_WORDS == USER_FRAME_WORDS, "Saved process frame size");
@@ -160,9 +205,8 @@ _Static_assert(X86_PROCESS_FRAME_WORDS == USER_FRAME_WORDS, "Saved process frame
 // ====== stato condiviso con l'ingresso Assembly ======
 
 extern X86_PROCESS_RUNTIME process_rt;
-extern volatile BOOT_U64 process_owner, process_kernel_root, process_user_root, process_stack_top, process_user_rsp, process_saved_rsp;
-extern volatile BOOT_U64 process_fault[7], process_fault_cr2, process_exit_kind, process_drain;
-extern unsigned char process_fx_saved[512];
+extern X86_PROCESS_CPU x86_process_cpus[X86_PERCPU_CAPACITY];
+extern volatile BOOT_U64 process_drain;
 extern const unsigned char process_fx_clean[512];
 #ifdef KERNEL_TEST_K6_PROCESS
 extern volatile BOOT_U64 process_window, process_window_budget, process_negative;
@@ -173,6 +217,7 @@ void process_probe_send(void);
 
 // ====== funzioni interne condivise fra i file del modulo ======
 
+X86_PROCESS_CPU *x86_process_cpu_current(void);
 __declspec(noreturn) void process_die(const char *reason);
 void process_timer_arm(void);
 void process_timer_start(void);

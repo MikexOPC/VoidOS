@@ -18,6 +18,7 @@ int x86_shell_bridge_open(X86_PAGE_WINDOW *window, X86_LAPIC_TIMER *timer)
 {
     const X86_PROCESS_IMAGE image = {kernel_user_bridge, kernel_user_bridge_length};
     if (!x86_user_mode_allowed()) return 1;
+    if (!x86_process_runtime_start(window, timer)) return 0;
     if (owner || !kernel_physical_budget_read(window->Pool, &budget) ||
         !x86_process_resident_open(window, timer, &image)) return 0;
     owner = window;
@@ -49,10 +50,9 @@ void x86_shell_bridge_dispatch(void)
     for (BOOT_U32 index = 0; index < X86_IRQ_DEVICE_SLOTS; ++index) {
         if (registry->Slots[index].Id) mask |= 1U << index;
     }
-    if (!x86_preempt_pause()) kernel_scheduler_fail_stop();
     ready = x86_process_resident_request(request, response, mask, &result, 1) &&
         response[0] == 1 && response[1] == 0;
-    if (!x86_irq_ready() || !x86_preempt_resume()) kernel_scheduler_fail_stop();
+    if (!x86_irq_ready()) kernel_scheduler_fail_stop();
     pending = 0;
 }
 

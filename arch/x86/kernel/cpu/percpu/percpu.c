@@ -86,6 +86,23 @@ KERNEL_LOCK_CONTEXT *x86_percpu_current_context(void) {
     return owner ? (KERNEL_LOCK_CONTEXT *)&owner->Locks : NULL;
 }
 
+// ====== x86_percpu_bind_process_cpu ======
+
+int x86_percpu_bind_process_cpu(uint64_t syscall_top, uint64_t process_cpu) {
+    uint64_t saved = ks_irq_save();
+    const X86_CPU_LOCAL *current = x86_percpu_current_local();
+    int result = 0;
+    if (current && current->Index < X86_PERCPU_CAPACITY) {
+        X86_CPU_LOCAL *owner = &areas[current->Index];
+        owner->SyscallTop = syscall_top;
+        owner->UserRsp = 0;
+        owner->ProcessCpu = process_cpu;
+        result = 1;
+    }
+    ks_irq_restore(saved);
+    return result;
+}
+
 // ====== x86_percpu_ap ======
 
 const X86_CPU_LOCAL *x86_percpu_ap(uint32_t index) {

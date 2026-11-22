@@ -15,6 +15,9 @@
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
 #include "arch/x86/kernel/scheduler/context.h"
 #endif
+#ifdef KERNEL_USER_PROCESS
+void x86_process_on_preempt_tick(const X86_IRQ_FRAME *frame);
+#endif
 extern const BOOT_U64 x86_irq_targets[224];
 extern const unsigned char x86_irq_begin[], x86_irq_end[];
 extern const BOOT_U64 x86_kernel_fault_targets[32];
@@ -251,6 +254,12 @@ const X86_IRQ_FRAME *x86_irq_current_frame(void) {
 
 static int frame_owner(const X86_IRQ_FRAME *frame)
 {
+    if ((frame->Cs & 3U) == 3U) {
+        const X86_CPU_LOCAL *user_owner = x86_percpu_current_local();
+        return user_owner && user_owner->SyscallTop &&
+            (BOOT_U64)frame == user_owner->SyscallTop - sizeof(*frame) &&
+            frame->Rip < (1ULL << 47) && frame->Rsp < (1ULL << 47);
+    }
 #ifdef KERNEL_AP_RUNTIME
     const X86_CPU_LOCAL *owner = x86_percpu_current_local();
     if (!owner) return 0;
@@ -310,7 +319,7 @@ void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
     }
 #endif
 #ifdef KERNEL_SCHEDULER_IRQ
-    if ((frame->Rsp < X86_KERNEL_MAIN_BASE || frame->Rsp > X86_KERNEL_MAIN_TOP) &&
+    if (!(frame->Cs & 3U) && (frame->Rsp < X86_KERNEL_MAIN_BASE || frame->Rsp > X86_KERNEL_MAIN_TOP) &&
         !x86_scheduler_irq_record(frame->Vector,frame->Rip,frame->Rsp,frame->Flags))
         x86_kernel_stop(0x4b495251554e0005ULL);
 #endif
@@ -328,6 +337,13 @@ void x86_irq_dispatch(const X86_IRQ_FRAME *frame)
 
 void x86_irq_after(const X86_IRQ_FRAME *frame)
 {
+    if ((frame->Cs & 3U) == 3U) {
+#if defined(KERNEL_USER_PROCESS) && defined(KERNEL_PS2_INPUT)
+        if (frame->Vector == X86_PREEMPT_VECTOR)
+            x86_process_on_preempt_tick(frame);
+#endif
+        return;
+    }
 #ifdef KERNEL_AP_RUNTIME
     const X86_CPU_LOCAL *owner = x86_percpu_current_local();
     if (owner && owner->Index) {
