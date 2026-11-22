@@ -178,6 +178,38 @@ process_policy_rust = executable(
 )
 test('process_policy_rust', process_policy_rust, timeout: 120)
 
+process_ipc_obj = custom_target(
+    'process_ipc_obj',
+    input: files(repo / 'kernel/process/rust/ipc/channel.rs'),
+    output: 'process_ipc.obj',
+    depfile: 'process_ipc.d',
+    command: [
+        rustc, '--edition=2024', '-D', 'warnings', '--crate-type=lib',
+        '-C', 'panic=abort', '-C', 'opt-level=2',
+        '--emit=obj=@OUTPUT@,dep-info=@DEPFILE@', '@INPUT@',
+    ],
+)
+
+process_table_host = executable(
+    'process_table_host',
+    'kernel/process/table_test.c',
+    repo / 'kernel/process/table.c',
+    repo / 'kernel/mm/heap/heap.c',
+    repo / 'kernel/mm/heap/core/fill.c',
+    repo / 'kernel/mm/heap/core/guard.c',
+    repo / 'kernel/mm/heap/core/release.c',
+    repo / 'kernel/mm/heap/core/reserve.c',
+    repo / 'kernel/mm/heap/core/state.c',
+    repo / 'lib/containers/bitmap.c',
+    repo / 'kernel/sync/lock.c',
+    repo / 'kernel/sync/acquire.c',
+    repo / 'kernel/time/clock.c',
+    sync_atomics_obj,
+    process_ipc_obj,
+    include_directories: inc,
+)
+test('process_table_host', process_table_host, env: runtime)
+
 # ====== x86 descriptors & watchdog/log integration ======
 
 user_protection_rust = executable(

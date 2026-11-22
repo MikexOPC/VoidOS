@@ -90,6 +90,40 @@ scartano i messaggi e fanno osservare la chiusura all'altro. Le code
 sono azzerate prima del riuso. L'IPC generale, con attese e trasferimento
 dei diritti, richiede un design successivo. [Validazione](../validation/processi.md).
 
+## Processi multipli, scheduler e IPC generale (Obiettivo 2)
+
+Il percorso `ordinary` evolve da singolo runtime BSP con pausa dello scheduler a
+gestione multi-processo integrata nello scheduler preemptive:
+
+- **Tabelle dinamiche su `kernel_heap()` (`kernel/process/table.{h,c}`):**
+  - `KERNEL_PROCESS_TABLE`: tabella dinamica di processi (capacità iniziale
+    configurabile, raddoppio fino a 256), con `Pid` monotonico non riutilizzato,
+    stati `FREE -> CREATED -> RUNNABLE <-> BLOCKED -> ZOMBIE -> FREE`, stato di
+    uscita/fault, statistiche e puntatore opaco `ArchContext` (nessun header
+    `arch/` in `kernel/`).
+  - Tabella handle per-processo allocata su `kernel_heap()` (raddoppio fino a
+    256 handle per processo): ogni chiamata `send`/`recv`/`wait_readable`
+    verifica la proprietà dell'handle sul processo chiamante prima di delegare
+    al core Rust `Channel`.
+  - Registro dinamico dei canali IPC su `kernel_heap()` (raddoppio fino a 256
+    canali), con due endpoint (PID utente oppure `KERNEL_PID_KERNEL = 0` per
+    servizi chiamati dal kernel come `bridge`) e slot `WaiterTask[2]` per il
+    risveglio atomico senza race fra controllo di prontezza e parcheggio.
+- **Ordine dei lock:** `process_table (150) -> heap (200) -> physical (300) ->
+  scheduler (900)`. I risvegli dei task bloccati su IPC vengono sempre restituiti
+  al chiamante ed eseguiti dopo il rilascio del lock della tabella processi.
+- **Terminazione e recupero:** `exit`, fault CPL3, scadenza budget o kill
+  portano il processo in `ZOMBIE`, chiudono tutti i suoi handle IPC (svegliando
+  i peer con `-7 / PEER_CLOSED`), liberano la tabella handle e consentono al
+  livello `arch/x86` di azzerare e rilasciare la lease fisica prima del reap
+  finale. Un processo che fa fault o non termina non ferma il sistema.
+- **Integrazione x86 (Task 2.2–2.4):** stato di transizione per-CPU in `gs:`,
+  `EFER.SCE` permanente, fault CPL3 e recovery della copia integrati nell'IDT
+  comune, syscall con `IF=1` fuori dalla sezione critica minima (`SWAPGS`/CR3,
+  finestra `STAC`/`CLAC`, lock brevi) e `bridge` migrato come processo
+  ordinario concorrente. Limite fisico noto: `KERNEL_PHYSICAL_LEASES = 64`
+  (1 lease per processo, ~40 processi simultanei al netto del boot).
+
 ## Mediazione delle richieste
 
 La direzione discussa per il bridge prevede un servizio di policy che
