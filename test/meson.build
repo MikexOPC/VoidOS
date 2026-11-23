@@ -482,3 +482,11 @@ gui_host = executable(
     include_directories: inc,
 )
 test('gui_host', gui_host, env: runtime)
+
+libui_rust = executable(
+    'libui_rust',
+    repo / 'userspace/gui/libui/lib.rs',
+    rust_args: ['--test', '-C', 'overflow-checks=yes'],
+    override_options: ['b_sanitize=none'],
+)
+test('libui_rust', libui_rust)

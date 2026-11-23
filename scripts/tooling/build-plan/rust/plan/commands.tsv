@@ -304,6 +304,7 @@ rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-
 c	arch/x86/kernel/cpu/percpu/startup/commit/commit.c
 c	arch/x86/kernel/cpu/percpu/startup/commit/native.c
 ordinary	rustc.exe	--edition=2024	-D	warnings	--crate-type=rlib	--crate-name	libvoid	--target	x86_64-unknown-none	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	{repo}/userspace/lib/libvoid.rs	-o	{out}/liblibvoid.rlib
+ordinary	rustc.exe	--edition=2024	-D	warnings	--crate-type=rlib	--crate-name	libui	--target	x86_64-unknown-none	-C	panic=abort	-C	opt-level=2	-C	relocation-model=static	{repo}/userspace/gui/libui/lib.rs	-o	{out}/liblibui.rlib
 ordinary	rustc.exe	--edition=2024	-D	warnings	--crate-type=bin	--crate-name	user_init	--target	x86_64-unknown-none	--extern	libvoid={out}/liblibvoid.rlib	-C	panic=abort	-C	opt-level=s	-C	relocation-model=static	-C	link-arg=-T{repo}/userspace/init/link.ld	-C	link-arg=-zmax-page-size=4096	-C	link-arg=--build-id=none	-C	link-arg=--no-gc-sections	{repo}/userspace/init/init.rs	-o	{out}/user-init.elf
 ordinary	nasm.exe	-f	win64	-Wall	-Werror	-I{out}/	-o	{out}/user-init-image.obj	{repo}/kernel/process/programs/image.asm
 ordinary	c	kernel/process/boot.c	k6-boot.obj
