@@ -111,4 +111,35 @@ elf = custom_target(
     build_by_default: true,
 )
 
+if get_option('profile') == 'ordinary'
+    cargo = find_program('cargo')
+    slint_ui = custom_target(
+        'user-ui.elf',
+        output: 'user-ui.elf',
+        input: files(
+            repo / 'userspace/gui/ui/Cargo.toml',
+            repo / 'userspace/gui/ui/build.rs',
+            repo / 'userspace/gui/ui/desktop.slint',
+            repo / 'userspace/gui/ui/src/main.rs',
+            repo / 'userspace/gui/ui/components/background/background.slint',
+            repo / 'userspace/gui/ui/components/window/window.slint',
+            repo / 'userspace/gui/ui/components/dock/default/dock.slint',
+            repo / 'userspace/gui/ui/components/overlay/overlay.slint',
+            repo / 'userspace/gui/ui/components/cursor/cursor.slint',
+            repo / 'userspace/lib/libvoid.rs',
+            repo / 'userspace/lib/heap.rs',
+        ),
+        command: [
+            'powershell', '-NoProfile', '-Command',
+            'Set-Location \'' + (repo / 'userspace/gui/ui') + '\'; & \'' + cargo.full_path()
+            + '\' build --release --target x86_64-unknown-none --target-dir \''
+            + (repo / 'kernel/build/slint-target')
+            + '\'; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Copy-Item -Force \''
+            + (repo / 'kernel/build/slint-target/x86_64-unknown-none/release/user-ui')
+            + '\' \'' + (out / 'user-ui.elf') + '\'',
+        ],
+        build_by_default: true,
+    )
+endif
+
 test('plan_parity', find_program(tool), args: ['parity', context], depends: elf, timeout: 60)

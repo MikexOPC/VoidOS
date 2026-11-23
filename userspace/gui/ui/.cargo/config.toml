@@ -1,0 +1,8 @@
+[target.x86_64-unknown-none]
+rustflags = [
+    "-C", "relocation-model=static",
+    "-C", "link-arg=-T../../init/link.ld",
+    "-C", "link-arg=-zmax-page-size=4096",
+    "-C", "link-arg=--build-id=none",
+    "-C", "link-arg=--gc-sections",
+]

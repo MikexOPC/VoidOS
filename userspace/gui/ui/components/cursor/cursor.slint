@@ -1,0 +1,14 @@
+// Layer 4: Software cursor pointer
+export component SoftwareCursor inherits Rectangle {
+    in property <length> pointer-x: 512px;
+    in property <length> pointer-y: 384px;
+
+    x: root.pointer-x;
+    y: root.pointer-y;
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    background: #FFFFFFEE;
+    border-width: 2px;
+    border-color: #0F172A;
+}

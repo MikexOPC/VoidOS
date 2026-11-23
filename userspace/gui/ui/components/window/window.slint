@@ -1,0 +1,92 @@
+// Layer 1: Reusable animated desktop window frame
+export component VoidWindow inherits Rectangle {
+    in property <string> title: "Window";
+    in property <bool> focused: false;
+    callback close-clicked();
+    callback focus-clicked();
+
+    background: #141A24;
+    border-radius: 12px;
+    border-width: 1.5px;
+    border-color: root.focused ? #3B82F6 : #2A3447;
+    drop-shadow-blur: 22px;
+    drop-shadow-offset-y: 8px;
+    drop-shadow-color: #00000088;
+    clip: true;
+
+    animate border-color { duration: 180ms; easing: ease-out; }
+
+    TouchArea {
+        clicked => { root.focus-clicked(); }
+    }
+
+    VerticalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        // Titlebar
+        Rectangle {
+            height: 34px;
+            background: root.focused ? #1D2638 : #18202E;
+            animate background { duration: 180ms; easing: ease-out; }
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+
+                    // Window indicator dots
+                    Rectangle {
+                        width: 11px;
+                        height: 11px;
+                        border-radius: 6px;
+                        background: #EF4444;
+                        y: 11px;
+                        TouchArea {
+                            clicked => { root.close-clicked(); }
+                        }
+                    }
+                    Rectangle {
+                        width: 11px;
+                        height: 11px;
+                        border-radius: 6px;
+                        background: #F59E0B;
+                        y: 11px;
+                    }
+                    Rectangle {
+                        width: 11px;
+                        height: 11px;
+                        border-radius: 6px;
+                        background: #22C55E;
+                        y: 11px;
+                    }
+
+                    Text {
+                        text: root.title;
+                        color: root.focused ? #F1F5F9 : #94A3B8;
+                        font-size: 13px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Thin divider
+        Rectangle {
+            height: 1px;
+            background: #243044;
+        }
+
+        // Client content area
+        Rectangle {
+            vertical-stretch: 1;
+            @children
+        }
+    }
+}

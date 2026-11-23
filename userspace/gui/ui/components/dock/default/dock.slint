@@ -1,0 +1,129 @@
+// Layer 2: Default Dock variant (userspace/gui/ui/components/dock/default/)
+// Supports animated morphing between:
+//   0 = Floating pill (bottom center)
+//   1 = Full-width bottom bar
+//   2 = Compact pill (bottom center)
+//   3 = Left floating vertical dock
+
+component DockButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    in property <color> accent: #3B82F6;
+    callback clicked();
+
+    height: 34px;
+    border-radius: 8px;
+    background: ta.has-hover ? #334566 : (root.active ? root.accent : #1E2738);
+    border-width: 1px;
+    border-color: ta.has-hover ? #60A5FA : #2E3B52;
+
+    animate background { duration: 150ms; easing: ease-out; }
+    animate border-color { duration: 150ms; easing: ease-out; }
+
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    Text {
+        text: root.label;
+        color: #F1F5F9;
+        font-size: 12px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component DefaultDock inherits Rectangle {
+    in property <length> screen-width: 1024px;
+    in property <length> screen-height: 768px;
+    in property <int> dock-mode: 0;
+    in property <bool> terminal-open: true;
+    in property <bool> sysmon-open: true;
+
+    callback toggle-terminal();
+    callback toggle-sysmon();
+    callback cycle-dock();
+
+    property <bool> is-vertical: root.dock-mode == 3;
+    property <length> target-w: root.dock-mode == 1 ? root.screen-width :
+                                root.dock-mode == 2 ? 260px :
+                                root.dock-mode == 3 ? 92px : 380px;
+    property <length> target-h: root.dock-mode == 3 ? 210px :
+                                root.dock-mode == 2 ? 46px : 54px;
+
+    x: root.dock-mode == 1 ? 0px :
+       root.dock-mode == 3 ? 14px :
+       (root.screen-width - root.target-w) / 2;
+    y: root.dock-mode == 1 ? root.screen-height - root.target-h :
+       root.dock-mode == 3 ? (root.screen-height - root.target-h) / 2 :
+       root.screen-height - root.target-h - 14px;
+    width: root.target-w;
+    height: root.target-h;
+
+    background: #121826E6;
+    border-radius: root.dock-mode == 1 ? 0px : 16px;
+    border-width: 1px;
+    border-color: #364560;
+    drop-shadow-blur: 18px;
+    drop-shadow-offset-y: 6px;
+    drop-shadow-color: #00000099;
+
+    animate x { duration: 220ms; easing: ease-out; }
+    animate y { duration: 220ms; easing: ease-out; }
+    animate width { duration: 220ms; easing: ease-out; }
+    animate height { duration: 220ms; easing: ease-out; }
+    animate border-radius { duration: 220ms; easing: ease-out; }
+
+    if !root.is-vertical: HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 10px;
+        alignment: center;
+
+        DockButton {
+            width: 96px;
+            label: "Terminal";
+            active: root.terminal-open;
+            clicked => { root.toggle-terminal(); }
+        }
+        DockButton {
+            width: 96px;
+            label: "Monitor";
+            active: root.sysmon-open;
+            accent: #10B981;
+            clicked => { root.toggle-sysmon(); }
+        }
+        DockButton {
+            width: 72px;
+            label: "Dock";
+            active: false;
+            clicked => { root.cycle-dock(); }
+        }
+    }
+
+    if root.is-vertical: VerticalLayout {
+        padding: 10px;
+        spacing: 10px;
+        alignment: center;
+
+        DockButton {
+            label: "Term";
+            active: root.terminal-open;
+            clicked => { root.toggle-terminal(); }
+        }
+        DockButton {
+            label: "Sys";
+            active: root.sysmon-open;
+            accent: #10B981;
+            clicked => { root.toggle-sysmon(); }
+        }
+        DockButton {
+            label: "Dock";
+            active: false;
+            clicked => { root.cycle-dock(); }
+        }
+    }
+}

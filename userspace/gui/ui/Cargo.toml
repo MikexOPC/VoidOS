@@ -1,0 +1,23 @@
+[package]
+name = "voidos-ui"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+
+[[bin]]
+name = "user-ui"
+path = "src/main.rs"
+
+[dependencies]
+libvoid = { path = "../../lib" }
+slint = { version = "1.9", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "renderer-software", "libm"] }
+
+[build-dependencies]
+slint-build = "1.9"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
