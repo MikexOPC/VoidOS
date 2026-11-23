@@ -22,6 +22,7 @@
 #include "arch/x86/kernel/drivers/storage/ahci/native.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/vfs/vfs.h"
+#include "kernel/security/random.h"
 #include "kernel/diagnostics/log.h"
 #ifdef KERNEL_AP_TASKS
 #include "arch/x86/kernel/scheduler/remote/remote.h"
@@ -193,6 +194,15 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;
     }
+#ifdef KERNEL_USER_PROCESS
+    if (!kernel_security_audit_wx_and_guards(x86_user_mode_allowed())) {
+        kernel_log(3, "SECURITY_AUDIT_FAILED"); return 0;
+    }
+#else
+    if (!kernel_security_audit_wx_and_guards(0)) {
+        kernel_log(3, "SECURITY_AUDIT_FAILED"); return 0;
+    }
+#endif
 #ifdef KERNEL_USER_PROCESS
     if (x86_user_mode_allowed() && x86_process_manager_ready()) {
         BOOT_U64 free_before = 0;

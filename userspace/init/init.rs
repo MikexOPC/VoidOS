@@ -40,6 +40,17 @@ fn run_sandboxed_child() -> ! {
     libvoid::exit(if written == CHILD_OK.len() as i64 { 42 } else { 54 });
 }
 
+// ====== run_umip_probe ======
+
+fn run_umip_probe() -> ! {
+    // Intel SDM Vol. 3A §2.5 (CR4.UMIP = bit 11): SGDT at CPL > 0 must raise #GP(0) (vector 13).
+    let mut gdtr = [0u8; 10];
+    unsafe {
+        core::arch::asm!("sgdt [{}]", in(reg) gdtr.as_mut_ptr(), options(nostack));
+    }
+    libvoid::exit(77);
+}
+
 // ====== run_vfs_supervisor ======
 
 fn run_vfs_supervisor() -> ! {
@@ -86,6 +97,25 @@ fn run_vfs_supervisor() -> ! {
         libvoid::exit(65);
     }
 
+    // 2b) Spawn a Ring 3 child that executes SGDT: with CR4.UMIP active it must fault with #GP (vector 13).
+    let umip_args = libvoid::SpawnArgs {
+        initial_arg: 3,
+        flags: 0,
+        use_budget: 0,
+        budget: libvoid::SpawnBudget::default(),
+    };
+    let umip_pid = libvoid::spawn(b"/bin/init.elf", Some(&umip_args));
+    if umip_pid <= 0 {
+        libvoid::exit(68);
+    }
+    let mut umip_status = libvoid::WaitStatus::default();
+    if libvoid::wait_pid(umip_pid as u64, Some(&mut umip_status)) != 0 {
+        libvoid::exit(69);
+    }
+    if umip_status.exit_kind != libvoid::EXIT_KIND_FAULT || umip_status.fault_vector != 13 {
+        libvoid::exit(70);
+    }
+
     // 3) Budget escalation must be rejected by the kernel.
     let bad_args = libvoid::SpawnArgs {
         initial_arg: 2,
@@ -115,6 +145,9 @@ extern "C" fn program_main(mode: u64) -> ! {
     }
     if mode == 2 {
         run_sandboxed_child();
+    }
+    if mode == 3 {
+        run_umip_probe();
     }
     let written = libvoid::write_console(&MESSAGE);
     libvoid::exit(if written == MESSAGE.len() as i64 { 0 } else { 1 });

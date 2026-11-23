@@ -39,5 +39,6 @@ int      kernel_random_bytes(void *out, uint32_t length);
 int      kernel_random_u64(uint64_t *out);
 int      kernel_random_reseed(void);
 int      kernel_security_cookie_init(void);
+int      kernel_security_audit_wx_and_guards(int check_syscall_stack);
 
 #endif

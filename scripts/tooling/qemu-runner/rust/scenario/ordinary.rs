@@ -112,8 +112,10 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     if !log.before("KERNEL_ENTROPY_READY", SHELL_READY) ||
         !log.before("KERNEL_CANARY_READY", SHELL_READY) ||
+        !log.before("KERNEL_WX_AUDIT_OK", SHELL_READY) ||
+        !log.before("KERNEL_GUARD_AUDIT_OK", SHELL_READY) ||
         log.number("KERNEL_ENTROPY_SOURCE", 0)? < 1 {
-        return Err("Hardware entropy, CSPRNG, or stack canary failed to initialize".to_string());
+        return Err("Hardware entropy, CSPRNG, stack canary, or W^X/guard audit failed".to_string());
     }
     if !log.before("KERNEL_VIRTIO_BLK_READY", SHELL_READY) ||
         log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 2048 {
@@ -546,7 +548,11 @@ fn shell_boot(vm: &mut Vm, plan: &Plan, fault: bool) -> Result<Value, String> {
     }
     let trace_bytes = vm.trace_bytes()?;
     let expected = if enabled {
-        vec![("06".to_string(), "0000".to_string()), ("06".to_string(), "0000".to_string())]
+        vec![
+            ("06".to_string(), "0000".to_string()),
+            ("0d".to_string(), "0000".to_string()),
+            ("06".to_string(), "0000".to_string()),
+        ]
     } else if fault {
         vec![("06".to_string(), "0000".to_string())]
     } else {
@@ -588,8 +594,10 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     if !log.before("KERNEL_ENTROPY_READY", "KERNEL_READY") ||
         !log.before("KERNEL_CANARY_READY", "KERNEL_READY") ||
+        !log.before("KERNEL_WX_AUDIT_OK", "KERNEL_READY") ||
+        !log.before("KERNEL_GUARD_AUDIT_OK", "KERNEL_READY") ||
         log.number("KERNEL_ENTROPY_SOURCE", 0)? < 1 {
-        return Err("Hardware entropy, CSPRNG, or stack canary failed without PS/2".to_string());
+        return Err("Hardware entropy, CSPRNG, stack canary, or W^X/guard audit failed without PS/2".to_string());
     }
     if !log.before("KERNEL_VIRTIO_BLK_READY", "KERNEL_READY") ||
         log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 2048 {
@@ -612,7 +620,11 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
     }
     let dispatcher = wait_dispatcher(vm)?;
     let bytes = vm.trace_bytes()?;
-    let expected = if enabled { vec![("06".to_string(), "0000".to_string())] } else { Vec::new() };
+    let expected = if enabled {
+        vec![("06".to_string(), "0000".to_string()), ("0d".to_string(), "0000".to_string())]
+    } else {
+        Vec::new()
+    };
     if trace::user_faults(&bytes) != expected || trace::triple_fault(&bytes) {
         return Err("Unexpected fault without a PS/2 controller".to_string());
     }

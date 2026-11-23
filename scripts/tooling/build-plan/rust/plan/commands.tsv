@@ -229,6 +229,7 @@ c	kernel/security/random.c	kernel-security-random.obj
 c	kernel/security/canary.c	kernel-security-canary.obj
 ml64.exe	/nologo	/W3	/WX	/c	/Fo{out}/arch-x86-kernel-security-canary.obj	{repo}/arch/x86/kernel/security/canary.asm
 c	arch/x86/kernel/security/entropy.c	arch-x86-kernel-security-entropy.obj
+c	arch/x86/kernel/security/audit.c	arch-x86-kernel-security-audit.obj
 c	arch/x86/kernel/cpu/percpu/startup/commit/retention.c
 c	arch/x86/kernel/cpu/percpu/transition/lifecycle.c
 c	arch/x86/kernel/cpu/percpu/transition/tables.c
