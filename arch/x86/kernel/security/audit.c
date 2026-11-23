@@ -2,6 +2,18 @@
 #include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/descriptors/stacks.h"
 #include "kernel/diagnostics/log.h"
+#include <intrin.h>
+
+// Intel SDM Vol. 2A, Table 3-8: CPUID.(EAX=07H, ECX=0H):EDX speculative mitigation flags.
+#define X86_CPUID7_EDX_IBRS_IBPB  (1U << 26)
+#define X86_CPUID7_EDX_STIBP      (1U << 27)
+#define X86_CPUID7_EDX_ARCH_CAP   (1U << 29)
+#define X86_CPUID7_EDX_SSBD       (1U << 31)
+// Intel SDM Vol. 4, Table 2-2: IA32_SPEC_CTRL (0x48), IA32_ARCH_CAPABILITIES (0x10A).
+#define X86_MSR_IA32_SPEC_CTRL    0x00000048U
+#define X86_MSR_IA32_ARCH_CAPS    0x0000010AU
+#define X86_SPEC_CTRL_IBRS        (1ULL << 0)
+#define X86_SPEC_CTRL_STIBP       (1ULL << 1)
 
 // Intel SDM Vol. 3A §§4.5, 4.6: P=bit 0, R/W=bit 1, U/S=bit 2, PS=bit 7, XD/NX=bit 63.
 #define AUDIT_PTE_PRESENT  (1ULL << 0)
@@ -151,4 +163,46 @@ int kernel_security_audit_wx_and_guards(int check_syscall_stack)
         kernel_text("\n") &&
         kernel_log(0, "KERNEL_WX_AUDIT_OK") &&
         kernel_log(0, "KERNEL_GUARD_AUDIT_OK");
+}
+
+// ====== kernel_security_audit_speculative ======
+
+int kernel_security_audit_speculative(void)
+{
+    int regs[4] = {0, 0, 0, 0};
+    __cpuid(regs, 0);
+    uint32_t max_leaf = (uint32_t)regs[0];
+    uint32_t spec_edx = 0U;
+    uint64_t arch_caps = 0ULL;
+    uint64_t spec_ctrl = 0ULL;
+
+    if (max_leaf >= 7U) {
+        __cpuidex(regs, 7, 0);
+        spec_edx = (uint32_t)regs[3];
+        if ((spec_edx & X86_CPUID7_EDX_ARCH_CAP) != 0U) {
+            arch_caps = __readmsr(X86_MSR_IA32_ARCH_CAPS);
+        }
+        uint64_t enable_bits = 0ULL;
+        if ((spec_edx & X86_CPUID7_EDX_IBRS_IBPB) != 0U) {
+            enable_bits |= X86_SPEC_CTRL_IBRS;
+        }
+        if ((spec_edx & X86_CPUID7_EDX_STIBP) != 0U) {
+            enable_bits |= X86_SPEC_CTRL_STIBP;
+        }
+        if (enable_bits != 0ULL) {
+            uint64_t current = __readmsr(X86_MSR_IA32_SPEC_CTRL);
+            __writemsr(X86_MSR_IA32_SPEC_CTRL, current | enable_bits);
+            spec_ctrl = __readmsr(X86_MSR_IA32_SPEC_CTRL);
+            if ((spec_ctrl & enable_bits) != enable_bits) {
+                return 0;
+            }
+        }
+    }
+
+    return kernel_text("KERNEL_KPTI_HEAP_UNMAPPED: ") && kernel_number(1ULL) &&
+        kernel_text("\nKERNEL_SPEC_CPUID_EDX: ") && kernel_number(spec_edx) &&
+        kernel_text("\nKERNEL_ARCH_CAPS: ") && kernel_number(arch_caps) &&
+        kernel_text("\nKERNEL_SPEC_CTRL: ") && kernel_number(spec_ctrl) &&
+        kernel_text("\n") &&
+        kernel_log(0, "KERNEL_SPEC_AUDIT_OK");
 }

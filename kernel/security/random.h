@@ -40,5 +40,6 @@ int      kernel_random_u64(uint64_t *out);
 int      kernel_random_reseed(void);
 int      kernel_security_cookie_init(void);
 int      kernel_security_audit_wx_and_guards(int check_syscall_stack);
+int      kernel_security_audit_speculative(void);
 
 #endif

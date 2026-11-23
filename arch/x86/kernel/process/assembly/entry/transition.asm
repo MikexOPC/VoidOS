@@ -184,6 +184,9 @@ x86_process_enter PROC
     mov QWORD PTR [rbx+CPU_SAVED_RSP], rsp
     fxsave64 [rbx+CPU_FX_SAVED]
     fxrstor64 [process_fx_clean]
+    ; KPTI: switch off the heap-backed task stack onto the per-CPU syscall trampoline stack
+    ; before loading UserRoot (which does not map X86_LAYOUT_HEAP_SLOT).
+    mov rsp, QWORD PTR gs:[GS_SYSCALL_TOP]
     push 2bh
     push rdx
     push 202h
@@ -227,6 +230,9 @@ x86_process_resume PROC
     mov QWORD PTR [rbx+CPU_SAVED_RSP], rsp
     fxsave64 [rbx+CPU_FX_SAVED]
     fxrstor64 [rcx]
+    ; KPTI: switch onto the per-CPU syscall trampoline stack while KernelRoot is still active
+    ; so [rcx+512] (heap-backed saved frame) is copied before loading UserRoot.
+    mov rsp, QWORD PTR gs:[GS_SYSCALL_TOP]
     sub rsp, 160
     lea rsi, [rcx+512]
     mov rdi, rsp

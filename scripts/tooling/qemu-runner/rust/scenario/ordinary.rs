@@ -114,8 +114,10 @@ fn ordinary_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
         !log.before("KERNEL_CANARY_READY", SHELL_READY) ||
         !log.before("KERNEL_WX_AUDIT_OK", SHELL_READY) ||
         !log.before("KERNEL_GUARD_AUDIT_OK", SHELL_READY) ||
+        !log.before("KERNEL_SPEC_AUDIT_OK", SHELL_READY) ||
+        log.number("KERNEL_KPTI_HEAP_UNMAPPED", 0)? != 1 ||
         log.number("KERNEL_ENTROPY_SOURCE", 0)? < 1 {
-        return Err("Hardware entropy, CSPRNG, stack canary, or W^X/guard audit failed".to_string());
+        return Err("Hardware entropy, CSPRNG, stack canary, KPTI, or W^X/guard audit failed".to_string());
     }
     if !log.before("KERNEL_VIRTIO_BLK_READY", SHELL_READY) ||
         log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 2048 {
@@ -596,8 +598,10 @@ fn no_ps2_boot(vm: &mut Vm, plan: &Plan) -> Result<Value, String> {
         !log.before("KERNEL_CANARY_READY", "KERNEL_READY") ||
         !log.before("KERNEL_WX_AUDIT_OK", "KERNEL_READY") ||
         !log.before("KERNEL_GUARD_AUDIT_OK", "KERNEL_READY") ||
+        !log.before("KERNEL_SPEC_AUDIT_OK", "KERNEL_READY") ||
+        log.number("KERNEL_KPTI_HEAP_UNMAPPED", 0)? != 1 ||
         log.number("KERNEL_ENTROPY_SOURCE", 0)? < 1 {
-        return Err("Hardware entropy, CSPRNG, stack canary, or W^X/guard audit failed without PS/2".to_string());
+        return Err("Hardware entropy, CSPRNG, stack canary, KPTI, or W^X/guard audit failed without PS/2".to_string());
     }
     if !log.before("KERNEL_VIRTIO_BLK_READY", "KERNEL_READY") ||
         log.number("KERNEL_VIRTIO_BLK_SECTORS", 0)? != 2048 {

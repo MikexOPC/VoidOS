@@ -195,11 +195,13 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         kernel_log(3, "VFS_START_FAILED"); return 0;
     }
 #ifdef KERNEL_USER_PROCESS
-    if (!kernel_security_audit_wx_and_guards(x86_user_mode_allowed())) {
+    if (!kernel_security_audit_wx_and_guards(x86_user_mode_allowed()) ||
+        !kernel_security_audit_speculative()) {
         kernel_log(3, "SECURITY_AUDIT_FAILED"); return 0;
     }
 #else
-    if (!kernel_security_audit_wx_and_guards(0)) {
+    if (!kernel_security_audit_wx_and_guards(0) ||
+        !kernel_security_audit_speculative()) {
         kernel_log(3, "SECURITY_AUDIT_FAILED"); return 0;
     }
 #endif

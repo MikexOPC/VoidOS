@@ -34,8 +34,8 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
     entry = root[X86_LAYOUT_WINDOWS_SLOT];
     if (!x86_page_window_write_lease(process_rt.Window, lease_out, (BOOT_U64)X86_LAYOUT_WINDOWS_SLOT * 8ULL, &entry, sizeof(entry))) goto fail;
     if (process_rt.Permanent) {
-        entry = root[X86_LAYOUT_HEAP_SLOT];
-        if (!x86_page_window_write_lease(process_rt.Window, lease_out, (BOOT_U64)X86_LAYOUT_HEAP_SLOT * 8ULL, &entry, sizeof(entry))) goto fail;
+        // KPTI: X86_LAYOUT_HEAP_SLOT is intentionally omitted from UserRoot so the entire
+        // 32 MiB kernel heap (VFS, caches, process table, IPC, task stacks) is unmapped in CPL3.
         entry = root[X86_LAYOUT_AP_SLOT];
         if (!x86_page_window_write_lease(process_rt.Window, lease_out, (BOOT_U64)X86_LAYOUT_AP_SLOT * 8ULL, &entry, sizeof(entry))) goto fail;
     }
