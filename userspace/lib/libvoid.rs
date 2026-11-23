@@ -1,5 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
+pub mod heap;
+
 #[cfg(not(test))]
 use core::arch::asm;
 
