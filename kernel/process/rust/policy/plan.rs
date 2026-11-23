@@ -1,11 +1,11 @@
 use crate::parser::{parse, Error, Image, USER_BASE};
 
-pub const IMAGE_END: u64 = 0x5fd000;
-pub const STACK_BASE: u64 = 0x5fe000;
-pub const STACK_TOP: u64 = 0x600000;
-pub const USER_END: u64 = 0x600000;
-// 128 pages = 512 KiB image ceiling inside the 509-page single user PT [0x400000, 0x5fd000).
-pub const MAX_IMAGE_PAGES: usize = 128;
+pub const IMAGE_END: u64 = 0xbef000;
+pub const STACK_BASE: u64 = 0xbf0000;
+pub const STACK_TOP: u64 = 0xc00000;
+pub const USER_END: u64 = 0xc00000;
+// 1536 pages = 6 MiB image ceiling inside 4 consecutive user PTs [0x400000, 0xbef000).
+pub const MAX_IMAGE_PAGES: usize = 1536;
 pub const FLAG_WRITE: u64 = 1;
 pub const FLAG_EXECUTE: u64 = 2;
 

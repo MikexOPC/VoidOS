@@ -101,10 +101,10 @@ fn fat32_set_fat(vblk: &mut [u8], fat_sectors: usize, cluster: u32, value: u32) 
 // ====== build_vblk_fat32 ======
 
 fn build_vblk_fat32(image_dir: Option<&Path>) -> Result<Vec<u8>, String> {
-    const TOTAL_SECTORS: usize = 8192;
+    const TOTAL_SECTORS: usize = 32768;
     const RESERVED_SECTORS: usize = 4;
-    const FAT_SECTORS: usize = 64;
-    const DATA_START_SECTOR: usize = RESERVED_SECTORS + 2 * FAT_SECTORS; // 132
+    const FAT_SECTORS: usize = 256;
+    const DATA_START_SECTOR: usize = RESERVED_SECTORS + 2 * FAT_SECTORS; // 516
     let mut vblk = vec![0u8; TOTAL_SECTORS * 512];
     vblk[0] = 0xEB;
     vblk[1] = 0x58;

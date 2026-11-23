@@ -2,7 +2,7 @@ pub const PAGE: u64 = 4096;
 pub const USER_BASE: u64 = 0x400000;
 pub const IMAGE_LIMIT: u64 = 0x3000_0000;
 pub const MAX_SEGMENTS: usize = 8;
-pub const MAX_PAGES: u64 = 1024;
+pub const MAX_PAGES: u64 = 2048;
 
 const HEADER_BYTES: usize = 64;
 const PROGRAM_BYTES: usize = 56;

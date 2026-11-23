@@ -126,7 +126,7 @@ fn run_vfs_supervisor() -> ! {
         flags: 0,
         use_budget: 1,
         budget: libvoid::SpawnBudget {
-            max_image_pages: 999,
+            max_image_pages: 9999,
             max_open_files: 4,
             cpu_budget_ms: 1000,
             flags: 0,

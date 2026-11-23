@@ -41,8 +41,11 @@ static int map_image(const X86_PROCESS_IMAGE *image, const PROCESS_PLAN *plan, K
     }
     entry = (base + 2ULL * PAGE_BYTES) | branch;
     if (!x86_page_window_write_lease(process_rt.Window, lease_out, 512ULL * 8ULL, &entry, sizeof(entry))) goto fail;
-    entry = (base + 3ULL * PAGE_BYTES) | branch;
-    if (!x86_page_window_write_lease(process_rt.Window, lease_out, (1024ULL + 2ULL) * 8ULL, &entry, sizeof(entry))) goto fail;
+    for (BOOT_U64 pt_idx = 0; pt_idx < USER_PT_COUNT; ++pt_idx) {
+        entry = (base + (3ULL + pt_idx) * PAGE_BYTES) | branch;
+        if (!x86_page_window_write_lease(process_rt.Window, lease_out,
+            (1024ULL + 2ULL + pt_idx) * 8ULL, &entry, sizeof(entry))) goto fail;
+    }
     for (BOOT_U64 index = 0; index < plan->Count; ++index) {
         BOOT_U64 lease = TABLE_PAGES + index;
         BOOT_U64 flags = PTE_PRESENT | PTE_USER;
