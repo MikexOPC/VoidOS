@@ -1,25 +1,27 @@
-# Validazione — Obiettivo 6: GUI di VoidOS
+# Validazione — Obiettivo 6 & 6B: GUI di VoidOS su Slint 1.19
 
 ## Stato
 **Fatta** (sull'immagine di produzione `ordinary` in QEMU; hardware fisico non ancora provato).
 
-- `kernel.elf` SHA-256: `9B2F12D99C8CB32A5B4FDF1EF5551426A8E412E021C040E5315E6B474F7CC8A9`
-- Binari userspace GUI sul disco VirtIO-blk FAT32 (4 MiB, 8192 settori):
-  - `/bin/ui.elf` (`user-ui.elf`): 37.264 byte
-  - `/bin/terminal.elf` (`user-terminal.elf`): 29.080 byte
-  - `/bin/sysmon.elf` (`user-sysmon.elf`): 24.984 byte
-  - `/ETC/UI/THEME.VSS`: tema mini-CSS dark "Void"
+- `kernel.elf` SHA-256: `0FFC9084D46C14730AB3702D592FF639E77939FC1323F2253AC96EF80C1B7BC5`
+- `/bin/ui.elf` (`user-ui.elf`, Slint 1.19 `no_std` + software renderer, `GPL-3.0-only`):
+  - SHA-256: `AAC21418DAB61BF3B1981AEEA22DE493B5C975F6A439C9A2786C9FE7A3991C57`
+  - Dimensione: **443.504 byte** (~433 KiB) con `opt-level="z"`, LTO e strip
+- Volume VirtIO-blk FAT32: 16 MiB (32.768 settori) contenente `/bin/{init,bridge,worker,sh,ui,terminal,sysmon}.elf` e `/ETC/UI/THEME.VSS`.
+- Loader ELF utente: 4 Page Table consecutive (`0x400000..0xC00000`, tetto immagine 6 MiB = 1536 pagine, stack utente 64 KiB con guard page).
 
 ---
 
-## 1. Test host (ASan / Rust)
+## 1. Test host (Meson `voidos-host-tests`: 7/7 PASS)
 
 | Suite | Risultato | Cosa verifica |
 |---|---|---|
-| `gui_host` (C + ASan) | **PASS** (`KERNEL_GUI_HOST_OK`) | Ownership esclusiva display, bounds/overflow rect `uint32_t`, input ring FIFO + overflow drop, crescita dinamica SHM (`>16` oggetti, `>32` mapping), refcounting multi-PID, rilascio automatico al termine processo, non-escalation `BUDGET_FLAG_DISPLAY`. |
-| `libui_rust` | **4/4 PASS** | Easing fixed-point 16.16 e `Tween`/`RectAnim`, parser mini-CSS `.vss`, `Canvas` fill/clip/blend + `DirtyList`, roundtrip + magic check `GuiMessage` (`96` byte). |
-| `libvoid_rust` | **3/3 PASS** | Dimensioni ABI struct (`DisplayInfo`=48, `DisplayAcquireOut`=32, `DisplayRect`=16, `InputEvent`=24), token splitting, formattazione decimale. |
+| `gui_host` (C + ASan) | **PASS** | Ownership esclusiva display, bounds/overflow rect, input ring PS/2, crescita dinamica SHM, refcounting, rilascio automatico, non-escalation `BUDGET_FLAG_DISPLAY`. |
+| `libvoid_rust` | **4/4 PASS** | ABI struct GUI (`DisplayInfo`/`DisplayAcquireOut`/`DisplayRect`/`InputEvent`), allocatore `alloc` Ring 3 (`HeapCore` alloc/dealloc/alignment/coalescing + OOM), token splitting, formattazione. |
+| `libui_rust` | **4/4 PASS** | Animazioni fixed-point, parser mini-CSS `.vss`, renderer 2D + `DirtyList`, protocollo IPC `GuiMessage`. |
 | `process_table_host` (C + ASan) | **PASS** | Tabella processi dinamica, IPC, non-escalation budget, zero leak heap. |
+| `process_policy_rust` | **14/14 PASS** | Policy ELF fino a 1536 pagine, range `0x400000..0xC00000`, IPC, return frames. |
+| `elf_parser_rust` | **9/9 PASS** | Parser ELF64 e mutazioni header/segmenti. |
 | `security_random_host` (C + ASan) | **PASS** | Entropia, RCT/APT, `HMAC_DRBG`, canary `/GS`. |
 
 ---
@@ -27,18 +29,16 @@
 ## 2. Prove sull'immagine di produzione in QEMU
 
 - **Campagna:** `qemu_runner.exe --image kernel/build/meson-kernel/kernel.elf --ordinary-shell --smp 4 --boots 10`
-- **Risultato:** **10/10 PASS** (`kernel/build/qemu-runner-18eab0b67e2a3b98-2ab0`).
+- **Risultato:** **10/10 PASS** (`kernel/build/qemu-runner-18eab3e45e58763c-c124`).
 - **Comportamento reale verificato su ogni boot:**
-  1. `SYS_DISPLAY_INFO` restituisce geometria valida del framebuffer attivo.
-  2. `SYS_SHM_CREATE` / `SYS_SHM_MAP` / `SYS_SHM_UNMAP` mappano pagine `RW+NX` in Ring 3 (`0x10000000+`), verificano lettura/scrittura volatile e rilasciano senza leak fisici (controllo watchdog HPET).
-  3. `/bin/ui.elf` carica `/ETC/UI/THEME.VSS` dal VFS, acquisisce il display con `BUDGET_FLAG_DISPLAY`, mappa il backbuffer SHM (768 pagine per 1024x768x32), compone i 5 strati modulari (`ui/components/{background,window,dock,overlay,cursor}`), esegue il morph animato della Dock (`Floating` -> `Bar`), presenta i dirty rect sul framebuffer e all'uscita rilascia il display ripristinando la console testuale.
-  4. `/bin/terminal.elf` e `/bin/sysmon.elf` vengono avviati **concorrentemente** in sandbox (senza `BUDGET_FLAG_DISPLAY`), confermano il rifiuto di `display_acquire`, allocano/mappano ciascuno il proprio buffer SHM, eseguono comandi VFS reali (`print`, `fl /`, `rp /HELLO.TXT`) e animazioni `Tween` rasterizzando pixel reali, e rilasciano tutto a zero leak.
+  1. `/bin/ui.elf` (Slint 1.19 `no_std`) alloca il proprio heap `alloc` da 4 MiB su `SYS_SHM_CREATE` + `SYS_SHM_MAP` (`RW+NX`).
+  2. Acquisisce il display con `BUDGET_FLAG_DISPLAY`, mappa il backbuffer SHM (768 pagine a 1024×768×32), inizializza `VoidPlatform` + `MinimalSoftwareWindow`.
+  3. Renderizza `desktop.slint` e tutti i componenti modulari (`background/`, `window/`, `dock/default/`, `overlay/`, `cursor/`), esegue il morph animato di `DefaultDock` (`0 -> 1`), presenta i dirty rect via `SYS_DISPLAY_PRESENT`, stampa `USER: VoidOS slint compositor ok` ed esce rilasciando display e SHM (zero perdite fisiche confermate dal watchdog HPET + ripristino console testuale).
+  4. `/bin/terminal.elf` e `/bin/sysmon.elf` girano concorrentemente in sandbox senza `BUDGET_FLAG_DISPLAY`, confermano isolamento e zero leak.
 
 ---
 
-## 3. Limiti noti rimasti
+## 3. Licenze e limiti noti
 
-- **Sessione live multi-finestra IPC:** il loop interattivo `mode=0` di `/bin/ui.elf`, `/bin/terminal.elf` e `/bin/sysmon.elf` e implementato; nei boot automatici `--ordinary-shell` i binari girano in `mode=1` per non bloccare il runner della shell testuale.
-- **Rendering:** 100% CPU software (`SSE2` + dirty rects); nessuna accelerazione GPU 3D.
-- **Font:** bitmap ASCII 8x8 scalato 8x16 (niente TrueType).
-- **Hardware reale:** non ancora provato su PC fisico (previsto in Obiettivo 7 insieme a USB xHCI e x2APIC).
+- **Licenza Slint:** `userspace/gui/ui/` usa Slint sotto **`GPL-3.0-only`** (`userspace/gui/ui/LICENSE-GPL-3.0.txt`, sorgenti pubblici sul repo; nessun badge richiesto nella GUI o nella `.iso`).
+- **Limiti noti:** rendering CPU software (niente GPU 3D); input PS/2 (USB xHCI in Obiettivo 7); hardware fisico non ancora provato; budget CPU per singolo turno legato a meta periodo del timer ACPI PM 24-bit (`2000 ms < 2343 ms`).

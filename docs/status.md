@@ -139,17 +139,21 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Obiettivo 6 (GUI a 5 strati in Ring 3: syscall `16..22` display/input/SHM
-`RW+NX`, `BUDGET_FLAG_DISPLAY`, libreria condivisa `libui` con animazioni,
-mini-CSS `/ETC/UI/THEME.VSS` e blitter `SSE2`, compositor `/bin/ui.elf` con
-`ui/components/{background,window,dock,overlay,cursor}`, app sandboxed
+Obiettivo 6 + 6B (GUI a 5 strati in Ring 3 su **Slint 1.19 `no_std`** +
+software renderer, licenza `GPL-3.0-only` in `userspace/gui/ui/`: syscall
+`16..22` display/input/SHM `RW+NX`, `BUDGET_FLAG_DISPLAY`, loader ELF utente
+multi-PT fino a 6 MiB / stack 64 KiB, allocatore `alloc` Ring 3 su SHM in
+`libvoid`, compositor `/bin/ui.elf` da 443.504 byte con componenti modulari
+`ui/components/{background,window,dock/default,overlay,cursor}`, app sandboxed
 `/bin/terminal.elf` e `/bin/sysmon.elf` in `userspace/gui/application/`),
 Meson `ordinary`, kernel SHA-256
-`9B2F12D99C8CB32A5B4FDF1EF5551426A8E412E021C040E5315E6B474F7CC8A9`.
+`0FFC9084D46C14730AB3702D592FF639E77939FC1323F2253AC96EF80C1B7BC5`,
+`/bin/ui.elf` SHA-256
+`AAC21418DAB61BF3B1981AEEA22DE493B5C975F6A439C9A2786C9FE7A3991C57`.
 QEMU/OVMF TCG/q35: **10/10 boot** `--ordinary-shell --smp 4`
-(`kernel/build/qemu-runner-18eab0b67e2a3b98-2ab0`). Test host: `gui_host`
-(ASan) PASS, `libui_rust` **4/4 PASS**, `libvoid_rust` **3/3 PASS**,
-`process_table_host` (ASan) PASS, `security_random_host` (ASan) PASS.
+(`kernel/build/qemu-runner-18eab3e45e58763c-c124`). Test host Meson: **7/7
+PASS** (`gui_host`, `libvoid_rust` 4/4, `libui_rust` 4/4, `process_table_host`,
+`process_policy_rust` 14/14, `elf_parser_rust` 9/9, `security_random_host`).
 [Validazione GUI](validation/gui.md).
 
 Obiettivo 5 (Sicurezza di sistema e chiusura cancello «base solida» pre-GUI:
