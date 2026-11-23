@@ -100,7 +100,7 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 - Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
   e circa 13,5 ms nel soak della 3e. Il quanto nominale è 10 ms.
   [Validazione](validation/consolidamento.md#cpu-e-scheduler).
-- **Obiettivi 1–5 chiusi e cancello «base solida» prima della GUI superato.**
+- **Obiettivi 1–6 chiusi sull'immagine di produzione `ordinary`.**
   Limiti noti accettati:
   - Hardware fisico non ancora verificato (tutte le prove su QEMU 11.1.0).
   - `kernel_process_boot` usa ancora il primo `init` incorporato prima del
@@ -109,12 +109,15 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
     nella root del mount (lettura con sottodirectory e LFN).
   - KPTI rimuove l'intero heap kernel (32 MiB), vista ricorsiva e slot device
     da `UserRoot`; restano mappati con `U/S=0` `SLOT_IMAGE`, `WINDOWS_SLOT` e
-    `AP_SLOT` per il percorso di transizione (isolamento `.text.trampoline` su
-    pagina dedicata come miglioramento futuro). QEMU TCG `-cpu max` non espone
+    `AP_SLOT` per il percorso di transizione. QEMU TCG `-cpu max` non espone
     `IBRS`/`STIBP`/`IA32_ARCH_CAPABILITIES`.
-- Prossimo obiettivo della roadmap: **Obiettivo 6 — GUI** (`userspace/gui/ui/`
-  per compositor/desktop, `userspace/gui/apps/` per applicazioni, comunicazione
-  mediata dal servizio Ring 3 `/bin/bridge.elf`).
+  - GUI: rendering CPU software (`SSE2` + dirty rects, font bitmap 8x16),
+    input PS/2; nel boot automatico `--ordinary-shell` i binari GUI
+    (`/bin/ui.elf`, `/bin/terminal.elf`, `/bin/sysmon.elf`) eseguono la
+    verifica completa (`mode=1`) e rilasciano il display per lasciare spazio
+    ai test della shell testuale.
+- Prossimo obiettivo della roadmap: **Obiettivo 7 — Hardware reale e
+  periferiche** (USB xHCI, x2APIC, avvio su PC fisico, rete).
 - Il watchdog HPET rileva e recupera il confronto saltato dall'HPET di
   QEMU 11.1 (circa una volta su un milione di armamenti); recupero osservato
   dal vivo in una sessione da 30 minuti.
@@ -135,6 +138,19 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
   diagnostici.
 
 ## Evidenze
+
+Obiettivo 6 (GUI a 5 strati in Ring 3: syscall `16..22` display/input/SHM
+`RW+NX`, `BUDGET_FLAG_DISPLAY`, libreria condivisa `libui` con animazioni,
+mini-CSS `/ETC/UI/THEME.VSS` e blitter `SSE2`, compositor `/bin/ui.elf` con
+`ui/components/{background,window,dock,overlay,cursor}`, app sandboxed
+`/bin/terminal.elf` e `/bin/sysmon.elf` in `userspace/gui/application/`),
+Meson `ordinary`, kernel SHA-256
+`9B2F12D99C8CB32A5B4FDF1EF5551426A8E412E021C040E5315E6B474F7CC8A9`.
+QEMU/OVMF TCG/q35: **10/10 boot** `--ordinary-shell --smp 4`
+(`kernel/build/qemu-runner-18eab0b67e2a3b98-2ab0`). Test host: `gui_host`
+(ASan) PASS, `libui_rust` **4/4 PASS**, `libvoid_rust` **3/3 PASS**,
+`process_table_host` (ASan) PASS, `security_random_host` (ASan) PASS.
+[Validazione GUI](validation/gui.md).
 
 Obiettivo 5 (Sicurezza di sistema e chiusura cancello «base solida» pre-GUI:
 entropia `RDSEED`/`RDRAND` + health test RCT/APT + `HMAC_DRBG`, stack canary
