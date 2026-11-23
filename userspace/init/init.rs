@@ -187,8 +187,9 @@ fn run_vfs_supervisor() -> ! {
         libvoid::exit(77);
     }
 
-    // 6) Launch /bin/terminal.elf (sandboxed: no DISPLAY flag) and verify VFS commands + SHM rendering.
-    let term_args = libvoid::SpawnArgs {
+    // 6) Launch /bin/terminal.elf and /bin/sysmon.elf concurrently (sandboxed, no DISPLAY flag)
+    // to verify multi-app SHM coexistence, animated rendering, and zero-leak cleanup.
+    let app_args = libvoid::SpawnArgs {
         initial_arg: 1,
         flags: 0,
         use_budget: 1,
@@ -199,16 +200,24 @@ fn run_vfs_supervisor() -> ! {
             flags: 0,
         },
     };
-    let term_pid = libvoid::spawn(b"/bin/terminal.elf", Some(&term_args));
-    if term_pid <= 0 {
+    let term_pid = libvoid::spawn(b"/bin/terminal.elf", Some(&app_args));
+    let sysmon_pid = libvoid::spawn(b"/bin/sysmon.elf", Some(&app_args));
+    if term_pid <= 0 || sysmon_pid <= 0 {
         libvoid::exit(78);
     }
     let mut term_status = libvoid::WaitStatus::default();
+    let mut sysmon_status = libvoid::WaitStatus::default();
     if libvoid::wait_pid(term_pid as u64, Some(&mut term_status)) != 0
         || term_status.exit_kind != libvoid::EXIT_KIND_NORMAL
         || term_status.exit_code != 0
     {
         libvoid::exit(79);
+    }
+    if libvoid::wait_pid(sysmon_pid as u64, Some(&mut sysmon_status)) != 0
+        || sysmon_status.exit_kind != libvoid::EXIT_KIND_NORMAL
+        || sysmon_status.exit_code != 0
+    {
+        libvoid::exit(80);
     }
 
     let written = libvoid::write_console(&SUPERVISOR_OK);
