@@ -1,10 +1,14 @@
-# Stato di VoidOS — 22 novembre 2026
+# Stato di VoidOS — 23 novembre 2026
 
 ## Immagine ordinaria (`ordinary`, Meson)
 
 - Il loader UEFI carica il kernel ELF. Il kernel configura paging con NX e
-  WP, GDT/TSS/IST, allocatore fisico, heap e interrupt. In QEMU è stato
-  inizializzato anche il framebuffer GOP.
+  WP, GDT/TSS/IST, entropia hardware (`RDSEED`/`RDRAND` via CPUID + health test
+  NIST SP 800-90B + `HMAC_DRBG` SHA-256), stack canary `/GS` su tutto il codice
+  C del kernel con `__security_cookie` casuale a 48 bit al boot, audit W^X
+  runtime su tutte le PTE dell'immagine kernel (117 RX, 33 RO+NX, 279 RW+NX,
+  0 W+X) e sulle guard page degli stack, allocatore fisico, heap e interrupt.
+  In QEMU è stato inizializzato anche il framebuffer GOP.
 - In QEMU con quattro vCPU, il core di avvio (BSP) avvia tre core secondari
   (AP). Ogni AP entra in un dispatcher permanente e risponde al PING
   inter-CPU. Il dispatcher persiste anche senza PS/2 e dopo `exit`.
@@ -14,13 +18,14 @@
   attivi e il timer li sospende anche fuori dalla finestra di attesa.
 - Con SMEP e SMAP disponibili, il runtime Ring 3 è permanente sull'IDT comune
   su BSP e AP con stato di transizione per-CPU (`gs:`), stack syscall/RSP0
-  dedicato con guard page su ogni AP (33 pagine mappate per AP), `SYSCALL`
-  attivo stabilmente su tutte le CPU, syscall interrompibili (`IF=1` fuori
-  dalle sezioni critiche minime) e tabelle dinamiche di processi, handle e
-  canali IPC su `kernel_heap()` (fino a 256). Al boot `init.elf` gira e viene
-  raccolto tramite `x86_process_manager`. UMIP viene abilitato se la CPU lo
-  supporta. Lo stack delle syscall ha due guard page coperte dall'inventario
-  paging.
+  dedicato con guard page su ogni AP (33 pagine mappate per AP), KPTI con
+  rimozione dell'intero heap kernel (`X86_LAYOUT_HEAP_SLOT`, 32 MiB) dalla PML4
+  utente `UserRoot` e switch sullo stack trampolino in `transition.asm`, audit
+  `CPUID`/`IA32_ARCH_CAPABILITIES`, `SYSCALL` attivo stabilmente su tutte le
+  CPU, syscall interrompibili (`IF=1` fuori dalle sezioni critiche minime) e
+  tabelle dinamiche di processi, handle e canali IPC su `kernel_heap()` (fino
+  a 256). UMIP viene abilitato se la CPU lo supporta e verificato in Ring 3
+  tramite `SGDT` → `#GP(0)` (vettore `13`).
 - Al boot il kernel avvia due driver a blocchi reali sull'immagine ordinaria:
   VirtIO-blk PCI modern (OASIS VirtIO 1.2, `00:02.0`, 2048 settori = 1 MiB) e
   AHCI SATA (Intel AHCI 1.3.1, controller ICH9 `00:1f.2` porta 0, `IDENTIFY`,
@@ -95,17 +100,21 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 - Una porzione di audit a IRQ spenti ha raggiunto 18,7 ms nella 3d-4
   e circa 13,5 ms nel soak della 3e. Il quanto nominale è 10 ms.
   [Validazione](validation/consolidamento.md#cpu-e-scheduler).
-- Obiettivo 4 (Esecuzione da file) è chiuso (`docs/validation/exec.md`).
-  Restano come limiti noti: `kernel_process_boot` usa ancora il primo `init`
-  incorporato prima del mount VFS; limite immagine utente a 128 pagine
-  (512 KiB) senza `mmap`/`brk` dinamico; scrittura FAT (`kernel_vfs_write_file`)
-  e `unlink` su nomi 8.3 nella root del mount (lettura con sottodirectory e LFN).
-- Prossimo obiettivo della roadmap: **Obiettivo 5 — Sicurezza di sistema**
-  (sorgente di entropia e stack canary del kernel, verifica W^X per sezione
-  dell'intera immagine, verifica overflow stack syscall, decisione su KPTI e
-  mitigazioni speculative). Il cancello «base solida» prima della GUI resta
-  aperto finché Obiettivo 5 e il soak da 30 minuti non sono chiusi. Hardware
-  fisico non verificato.
+- **Obiettivi 1–5 chiusi e cancello «base solida» prima della GUI superato.**
+  Limiti noti accettati:
+  - Hardware fisico non ancora verificato (tutte le prove su QEMU 11.1.0).
+  - `kernel_process_boot` usa ancora il primo `init` incorporato prima del
+    mount VFS; limite immagine utente a 128 pagine (512 KiB) senza `mmap`/`brk`
+    dinamico; scrittura FAT (`kernel_vfs_write_file`) e `unlink` su nomi 8.3
+    nella root del mount (lettura con sottodirectory e LFN).
+  - KPTI rimuove l'intero heap kernel (32 MiB), vista ricorsiva e slot device
+    da `UserRoot`; restano mappati con `U/S=0` `SLOT_IMAGE`, `WINDOWS_SLOT` e
+    `AP_SLOT` per il percorso di transizione (isolamento `.text.trampoline` su
+    pagina dedicata come miglioramento futuro). QEMU TCG `-cpu max` non espone
+    `IBRS`/`STIBP`/`IA32_ARCH_CAPABILITIES`.
+- Prossimo obiettivo della roadmap: **Obiettivo 6 — GUI** (`userspace/gui/ui/`
+  per compositor/desktop, `userspace/gui/apps/` per applicazioni, comunicazione
+  mediata dal servizio Ring 3 `/bin/bridge.elf`).
 - Il watchdog HPET rileva e recupera il confronto saltato dall'HPET di
   QEMU 11.1 (circa una volta su un milione di armamenti); recupero osservato
   dal vivo in una sessione da 30 minuti.
@@ -127,23 +136,30 @@ che le loro prove trovano posto nei test host o nell'immagine unica.
 
 ## Evidenze
 
-Obiettivo 4 (Esecuzione da file: `SYS_SPAWN`/`SYS_WAIT_PID` con budget e
-non-escalation, ELF fino a 128 pagine, `/bin/init.elf`, `/bin/sh.elf`,
-`/bin/bridge.elf`, `/bin/worker.elf` da VFS VirtIO-blk 1 MiB, `libvoid`
-syscall `0..15`, più fix FAT crash-safe e VFS/cache a `IF=1`), Meson
+Obiettivo 5 (Sicurezza di sistema e chiusura cancello «base solida» pre-GUI:
+entropia `RDSEED`/`RDRAND` + health test RCT/APT + `HMAC_DRBG`, stack canary
+`/GS` con cookie casuale 48-bit al boot, audit W^X runtime 117 RX / 33 RO /
+279 RW / 0 W+X e guard page, UMIP `SGDT` → `#GP` in Ring 3, KPTI con rimozione
+`HEAP_SLOT` da `UserRoot`, audit CPUID/MSR mitigazioni speculative), Meson
 `ordinary`, kernel SHA-256
-`51624CE3FCCF477D5E160BE1F3860A183909ED566CCF632CE20A65392D70C4BE`, loader
+`1BF874EE7BDC1909C8F182B8351C7EF8FB4CE0CCA5028FB8E13F44A9B1C75575`, loader
 SHA-256 `8253E1DBC4BD6909A5F6EB3026C6C50C2964BA215DA8891A4243B22FECC65B1C`.
 QEMU/OVMF TCG/q35: **10/10 boot** `--ordinary-shell --smp 4`
-(`kernel/build/qemu-runner-18ea7c97912de2d8-a218`), **3/3 boot**
-`--ordinary-shell --smp 8` (`kernel/build/qemu-runner-18ea7cd620baa574-aba8`),
+(`kernel/build/qemu-runner-18ea9ddfe22ec1d4-3f78`), **3/3 boot**
+`--ordinary-shell --smp 8` (`kernel/build/qemu-runner-18ea9e11f1340f18-6668`),
 **1/1 boot** `--ordinary-no-ps2 --smp 4`
-(`kernel/build/qemu-runner-18ea7cea64d98a04-46e0`). Test host con ASan/Rust:
+(`kernel/build/qemu-runner-18ea9e24f3a01978-657c`), **soak continuo da 30
+minuti** `--ordinary-soak 30 --smp 4` (`qemu-runner-18ea9e294bd3b858-6200`:
+499 comandi, 90.384 tick preemption, 0 overrun, 0 errori PS/2, `FreePages:
+11823` stabili) + verifica runner `--ordinary-soak 1 --boots 1` **1/1 PASS**
+(`qemu-runner-18ea9fe0485cffc8-638`). Test host ASan/Rust:
+`security_csprng_rust` **2/2 PASS**, `security_random_host` PASS,
 `process_table_host` PASS, `vfs_fat_host` PASS, `block_cache_host` PASS,
 `libvoid_rust` **3/3 PASS**, `process_policy_rust` **14/14 PASS**,
 `elf_parser_rust` **9/9 PASS**, `shell_command_rust` **4/4 PASS**,
 `qemu_runner_unit` **21/21 PASS**. Hardware fisico non verificato.
-[Validazione esecuzione da file](validation/exec.md),
+[Validazione sicurezza](validation/sicurezza.md),
+[validazione esecuzione da file](validation/exec.md),
 [validazione storage](validation/storage.md),
 [validazione processi](validation/processi.md).
 

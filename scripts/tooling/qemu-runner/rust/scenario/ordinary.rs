@@ -689,7 +689,8 @@ fn soak_boot(vm: &mut Vm, plan: &Plan, minutes: u32) -> Result<Value, String> {
         return Err(format!("The long session did not close cleanly: {commands} commands, {rounds} rounds"));
     }
     let bytes = vm.trace_bytes()?;
-    if !trace::user_faults(&bytes).is_empty() || trace::triple_fault(&bytes) {
+    let expected = vec![("06".to_string(), "0000".to_string()), ("0d".to_string(), "0000".to_string())];
+    if trace::user_faults(&bytes) != expected || trace::triple_fault(&bytes) {
         return Err("Unexpected fault during the long session".to_string());
     }
     let preemption = preemption_evidence(&log)?;
