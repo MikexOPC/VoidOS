@@ -20,9 +20,13 @@ static SUPERVISOR_OK: [u8; 30] = *b"VoidOS init vfs supervisor ok\n";
 // ====== run_sandboxed_child ======
 
 fn run_sandboxed_child() -> ! {
-    // Child was spawned with SPAWN flag revoked: spawning must be rejected.
+    // Child was spawned with SPAWN and DISPLAY flags revoked: both must be rejected.
     if libvoid::spawn(b"/bin/init.elf", None) >= 0 {
         libvoid::exit(50);
+    }
+    let mut acq = libvoid::DisplayAcquireOut::default();
+    if libvoid::display_acquire(&mut acq) >= 0 {
+        libvoid::exit(55);
     }
     let fd = libvoid::open(b"/HELLO.TXT", libvoid::O_RDONLY);
     if fd <= 0 {
@@ -130,6 +134,33 @@ fn run_vfs_supervisor() -> ! {
     };
     if libvoid::spawn(b"/bin/init.elf", Some(&bad_args)) >= 0 {
         libvoid::exit(66);
+    }
+
+    // 4) GUI syscalls: display_info + Ring 3 RW+NX SHM create/map/access/unmap.
+    let mut dinfo = libvoid::DisplayInfo::default();
+    if libvoid::display_info(&mut dinfo) != 0 || dinfo.width == 0 || dinfo.height == 0 || dinfo.stride < dinfo.width {
+        libvoid::exit(71);
+    }
+    let shm_id = libvoid::shm_create(2);
+    if shm_id <= 0 {
+        libvoid::exit(72);
+    }
+    let virt = libvoid::shm_map(shm_id as u64);
+    if virt < 0x1000_0000 {
+        libvoid::exit(73);
+    }
+    unsafe {
+        let ptr = virt as *mut u64;
+        core::ptr::write_volatile(ptr, 0xCAFE_BABE_1234_5678u64);
+        core::ptr::write_volatile(ptr.add(512), 0xDEAD_BEEF_90AB_CDEFu64);
+        if core::ptr::read_volatile(ptr) != 0xCAFE_BABE_1234_5678u64
+            || core::ptr::read_volatile(ptr.add(512)) != 0xDEAD_BEEF_90AB_CDEFu64
+        {
+            libvoid::exit(74);
+        }
+    }
+    if libvoid::shm_unmap(shm_id as u64) != 0 {
+        libvoid::exit(75);
     }
 
     let written = libvoid::write_console(&SUPERVISOR_OK);

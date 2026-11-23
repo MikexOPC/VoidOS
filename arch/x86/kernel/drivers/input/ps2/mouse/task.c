@@ -5,6 +5,9 @@
 #ifdef KERNEL_CONSOLE_SHELL
 #include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
 #endif
+#ifdef KERNEL_USER_PROCESS
+#include "kernel/gui/gui.h"
+#endif
 
 // ====== pop_private ======
 
@@ -94,6 +97,11 @@ void x86_ps2_mouse_task(void)
 #endif
             ++mouse->Events;
             mouse->Buttons = event.Buttons;
+#ifdef KERNEL_USER_PROCESS
+            if (kernel_gui_global() && kernel_gui_display_owner(kernel_gui_global()) != 0) {
+                (void)kernel_gui_input_push_mouse(kernel_gui_global(), event.DeltaX, event.DeltaY, event.Buttons);
+            } else
+#endif
 #ifdef KERNEL_CONSOLE_SHELL
             if (!x86_console_mouse(owner, event.DeltaX, event.DeltaY, event.Buttons)) kernel_scheduler_fail_stop();
 #endif

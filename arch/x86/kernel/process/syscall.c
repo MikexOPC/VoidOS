@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "gui.h"
 #include "manager.h"
 #include "kernel/vfs/vfs.h"
 
@@ -42,6 +43,14 @@ static BOOT_U64 copy_checked(X86_PROCESS_CPU *cpu, void *target, const void *sou
     if (__readeflags() & FLAG_AC) process_die("PROCESS_AC_RETAINED");
     ks_irq_restore(saved_if);
     return failed;
+}
+
+// ====== x86_process_copy_user ======
+
+BOOT_U64 x86_process_copy_user(X86_PROCESS_CPU *cpu, void *target, const void *source,
+    BOOT_U64 pointer, BOOT_U64 length, BOOT_U64 write)
+{
+    return copy_checked(cpu, target, source, pointer, length, write);
 }
 
 // ====== sys_write ======
@@ -448,6 +457,27 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_CONSOLE_READ) {
         GPR(frame, GPR_RAX) = sys_console_read(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_DISPLAY_INFO) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_display_info(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_DISPLAY_ACQUIRE) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_display_acquire(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_DISPLAY_PRESENT) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_display_present(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_INPUT_POLL) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_input_poll(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_SHM_CREATE) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_shm_create(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_SHM_MAP) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_shm_map(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_SHM_UNMAP) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_shm_unmap(cpu, GPR(frame, GPR_RDI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else {
         GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;

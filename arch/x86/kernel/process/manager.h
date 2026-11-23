@@ -2,6 +2,7 @@
 #define OS_X86_PROCESS_MANAGER_H
 
 #include "process.h"
+#include "slot.h"
 #include "kernel/process/table.h"
 
 int x86_process_manager_init(void);
@@ -23,5 +24,6 @@ int x86_process_reap(uint64_t pid, KERNEL_PROCESS_INFO *info_out);
 int x86_process_query(uint64_t pid, KERNEL_PROCESS_INFO *info_out);
 int x86_process_stats(KERNEL_PROCESS_STATS *stats_out);
 int x86_process_console_push(const unsigned char *bytes, uint32_t length);
+X86_PROCESS_SLOT *x86_process_slot_for_pid(uint64_t pid);
 
 #endif

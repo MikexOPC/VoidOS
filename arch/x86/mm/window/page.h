@@ -18,6 +18,8 @@ int x86_page_window_resume(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_LEASE *parke
 int x86_page_window_allocate_lease(X86_PAGE_WINDOW *window, BOOT_U64 pages, KERNEL_PHYSICAL_LEASE *lease_out);
 int x86_page_window_write_lease(X86_PAGE_WINDOW *window, const KERNEL_PHYSICAL_LEASE *lease,
                                 BOOT_U64 byte_offset, const void *src, BOOT_U64 bytes);
+int x86_page_window_read_lease(X86_PAGE_WINDOW *window, const KERNEL_PHYSICAL_LEASE *lease,
+                               BOOT_U64 byte_offset, void *dst, BOOT_U64 bytes);
 int x86_page_window_free_lease(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_LEASE *lease);
 int x86_page_window_read_acpi(X86_PAGE_WINDOW *window, const KERNEL_BOOT_CONTEXT *context,
                               BOOT_U64 physical, BOOT_U64 bytes, unsigned char *output);

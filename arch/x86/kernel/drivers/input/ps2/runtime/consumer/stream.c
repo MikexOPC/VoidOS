@@ -9,6 +9,9 @@
 #ifdef KERNEL_CONSOLE_SHELL
 #include "arch/x86/kernel/drivers/video/framebuffer/console/runtime.h"
 #endif
+#ifdef KERNEL_USER_PROCESS
+#include "kernel/gui/gui.h"
+#endif
 #ifdef KERNEL_TEST_CONSOLE_DRAW
 #include "test/kernel/console/video/active/worker.h"
 #endif
@@ -81,6 +84,12 @@ static int text_private(uint32_t event)
     owner->TextState = (uint32_t)(result >> 32);
     if (scalar == KERNEL_PS2_TEXT_INVALID) return 0;
     if (!scalar) return 1;
+#ifdef KERNEL_USER_PROCESS
+    if (kernel_gui_global() && kernel_gui_display_owner(kernel_gui_global()) != 0) {
+        (void)kernel_gui_input_push_key(kernel_gui_global(), event, scalar, owner->TextState);
+        return 1;
+    }
+#endif
     if (!line_private(scalar)) return 0;
     if (scalar == KERNEL_PS2_TEXT_BACKSPACE) return kernel_log(1,"PS2_EDIT_BACKSPACE");
     if (scalar == KERNEL_PS2_TEXT_TAB) return kernel_log(1,"PS2_EDIT_TAB");

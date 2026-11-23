@@ -50,7 +50,8 @@
 #define KERNEL_PROCESS_MAX_CPU_BUDGET_MS      60000U
 
 #define KERNEL_BUDGET_FLAG_SPAWN              1U
-#define KERNEL_BUDGET_FLAG_ALL                (KERNEL_BUDGET_FLAG_SPAWN)
+#define KERNEL_BUDGET_FLAG_DISPLAY            2U
+#define KERNEL_BUDGET_FLAG_ALL                (KERNEL_BUDGET_FLAG_SPAWN | KERNEL_BUDGET_FLAG_DISPLAY)
 
 typedef struct {
     uint32_t  MaxImagePages;

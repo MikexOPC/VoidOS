@@ -7,6 +7,9 @@
 #include "profile.h"
 #include "../pixels/session.h"
 #include "kernel/time/clock.h"
+#ifdef KERNEL_USER_PROCESS
+#include "arch/x86/kernel/process/gui.h"
+#endif
 #ifdef KERNEL_TEST_PAGING_TAMPER
 #include "arch/x86/mm/heap/binding.h"
 #endif
@@ -201,6 +204,9 @@ int x86_console_open(X86_PS2_SESSION *session, KERNEL_DISPLAY display)
             !display.Ops->Redraw || !display.Ops->Rect))) return 0;
     self->Source = session;
     self->Display = display;
+#ifdef KERNEL_USER_PROCESS
+    x86_gui_bind_display(display);
+#endif
     self->PointerFrame = UINT64_MAX;
     self->PointerVisibility = 2;
     if (!os_damage_init(&self->Damage, 1)) return 0;
@@ -435,6 +441,15 @@ int x86_console_flush(X86_PS2_SESSION *session)
     if (display->Ops && !display->Ops->Check(display->Self)) return flush_failure(self, 1);
     X86_PROFILE_END(X86_PROFILE_POLL, poll_start);
     if (self->Absent) return 1;
+#ifdef KERNEL_USER_PROCESS
+    KERNEL_GUI *gui = kernel_gui_global();
+    if (gui) {
+        if (kernel_gui_display_owner(gui) != 0)
+            return 1;
+        if (kernel_gui_take_console_restore(gui) && !retarget_private(self))
+            return flush_failure(self, 7);
+    }
+#endif
     if (!x86_console_requests_step(self)) return flush_failure(self, 8);
     // R1-A: the update in flight advances (or a recovery runs) before anything is drawn. After a
     // target change (bring-up or GOP fallback) every cell is drawn again on the new target.

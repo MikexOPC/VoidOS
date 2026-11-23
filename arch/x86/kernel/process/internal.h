@@ -67,6 +67,13 @@
 #define SYS_LIST_DIR 13ULL
 #define SYS_SYNC 14ULL
 #define SYS_CONSOLE_READ 15ULL
+#define SYS_DISPLAY_INFO 16ULL
+#define SYS_DISPLAY_ACQUIRE 17ULL
+#define SYS_DISPLAY_PRESENT 18ULL
+#define SYS_INPUT_POLL 19ULL
+#define SYS_SHM_CREATE 20ULL
+#define SYS_SHM_MAP 21ULL
+#define SYS_SHM_UNMAP 22ULL
 
 typedef struct {
     BOOT_U64               InitialArg;
@@ -261,4 +268,6 @@ int process_budget_expired(BOOT_U64 rip);
 int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     KERNEL_PROCESS_TABLE *table, BOOT_U64 pid, BOOT_U64 initial_arg,
     BOOT_U64 *wait_handle_io, int renew_budget);
+BOOT_U64 x86_process_copy_user(X86_PROCESS_CPU *cpu, void *target, const void *source,
+    BOOT_U64 pointer, BOOT_U64 length, BOOT_U64 write);
 #endif

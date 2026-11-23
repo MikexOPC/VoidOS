@@ -21,6 +21,13 @@ pub const SYS_WAIT_PID: u64 = 12;
 pub const SYS_LIST_DIR: u64 = 13;
 pub const SYS_SYNC: u64 = 14;
 pub const SYS_CONSOLE_READ: u64 = 15;
+pub const SYS_DISPLAY_INFO: u64 = 16;
+pub const SYS_DISPLAY_ACQUIRE: u64 = 17;
+pub const SYS_DISPLAY_PRESENT: u64 = 18;
+pub const SYS_INPUT_POLL: u64 = 19;
+pub const SYS_SHM_CREATE: u64 = 20;
+pub const SYS_SHM_MAP: u64 = 21;
+pub const SYS_SHM_UNMAP: u64 = 22;
 
 // ====== flags and errors ======
 
@@ -31,6 +38,11 @@ pub const O_CREAT: u64 = 1 << 8;
 pub const O_TRUNC: u64 = 1 << 9;
 
 pub const BUDGET_FLAG_SPAWN: u32 = 1;
+pub const BUDGET_FLAG_DISPLAY: u32 = 2;
+
+pub const INPUT_NONE: u32 = 0;
+pub const INPUT_KEY: u32 = 1;
+pub const INPUT_MOUSE: u32 = 2;
 
 pub const ERR_WOULD_BLOCK: i64 = -6;
 pub const ERR_PEER_CLOSED: i64 = -7;
@@ -250,12 +262,112 @@ pub fn sync_fs() -> i64 {
     raw_syscall(SYS_SYNC, 0, 0, 0)
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DisplayInfo {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: u32,
+    pub uptime_ms: u64,
+    pub owner_pid: u64,
+    pub backbuffer_shm_id: u64,
+    pub reserved: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DisplayAcquireOut {
+    pub shm_id: u64,
+    pub user_virt: u64,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DisplayRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct InputEvent {
+    pub kind: u32,
+    pub flags: u32,
+    pub code: u32,
+    pub value: u32,
+    pub delta_x: i32,
+    pub delta_y: i32,
+}
+
 // ====== console_read ======
 
 #[cfg(not(test))]
 #[inline]
 pub fn console_read(buf: &mut [u8]) -> i64 {
     raw_syscall(SYS_CONSOLE_READ, buf.as_mut_ptr() as u64, buf.len() as u64, 0)
+}
+
+// ====== display_info ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn display_info(out: &mut DisplayInfo) -> i64 {
+    raw_syscall(SYS_DISPLAY_INFO, (out as *mut DisplayInfo) as u64, 0, 0)
+}
+
+// ====== display_acquire ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn display_acquire(out: &mut DisplayAcquireOut) -> i64 {
+    raw_syscall(SYS_DISPLAY_ACQUIRE, (out as *mut DisplayAcquireOut) as u64, 0, 0)
+}
+
+// ====== display_present ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn display_present(rects: &[DisplayRect]) -> i64 {
+    raw_syscall(SYS_DISPLAY_PRESENT, rects.as_ptr() as u64, rects.len() as u64, 0)
+}
+
+// ====== input_poll ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn input_poll(event: &mut InputEvent) -> i64 {
+    raw_syscall(SYS_INPUT_POLL, (event as *mut InputEvent) as u64, 0, 0)
+}
+
+// ====== shm_create ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn shm_create(pages: u64) -> i64 {
+    raw_syscall(SYS_SHM_CREATE, pages, 0, 0)
+}
+
+// ====== shm_map ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn shm_map(shm_id: u64) -> i64 {
+    raw_syscall(SYS_SHM_MAP, shm_id, 0, 0)
+}
+
+// ====== shm_unmap ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn shm_unmap(shm_id: u64) -> i64 {
+    raw_syscall(SYS_SHM_UNMAP, shm_id, 0, 0)
 }
 
 // ====== trim_spaces ======
@@ -325,6 +437,10 @@ mod tests {
         assert_eq!(size_of::<SpawnBudget>(), 16);
         assert_eq!(size_of::<SpawnArgs>(), 32);
         assert_eq!(size_of::<WaitStatus>(), 24);
+        assert_eq!(size_of::<DisplayInfo>(), 48);
+        assert_eq!(size_of::<DisplayAcquireOut>(), 32);
+        assert_eq!(size_of::<DisplayRect>(), 16);
+        assert_eq!(size_of::<InputEvent>(), 24);
     }
 
     #[test]

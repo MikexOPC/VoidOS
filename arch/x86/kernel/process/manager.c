@@ -1,4 +1,5 @@
 #include "manager.h"
+#include "gui.h"
 #include "internal.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/mm/physical/holdings.h"
@@ -56,6 +57,10 @@ int x86_process_manager_init(void)
         return 0;
     manager_held_pages = 0;
     if (!kernel_holdings_register(&manager_holding, 0)) {
+        (void)kernel_process_table_destroy(&manager_table);
+        return 0;
+    }
+    if (!x86_gui_init()) {
         (void)kernel_process_table_destroy(&manager_table);
         return 0;
     }
@@ -210,6 +215,7 @@ int x86_process_step(uint64_t pid, int renew_budget, uint32_t *state_out)
         return 0;
     if (arch->Result.Kind) {
         uint32_t wake_count = 0;
+        x86_gui_release_owned(pid, &arch->Slot);
         if (kernel_vfs())
             kernel_vfs_close_owned(kernel_vfs(), pid);
         (void)kernel_process_terminate(&manager_table, pid,
@@ -235,6 +241,8 @@ int x86_process_kill(uint64_t pid)
     uint32_t wake_count = 0;
     if (!manager_ready || !pid)
         return 0;
+    X86_PROCESS_ARCH *arch = arch_lookup_private(pid, NULL);
+    x86_gui_release_owned(pid, arch ? &arch->Slot : NULL);
     if (kernel_vfs())
         kernel_vfs_close_owned(kernel_vfs(), pid);
     return kernel_process_terminate(&manager_table, pid, KERNEL_PROC_EXIT_KILLED, 0,
@@ -250,6 +258,7 @@ int x86_process_reap(uint64_t pid, KERNEL_PROCESS_INFO *info_out)
     X86_PROCESS_ARCH *arch = arch_lookup_private(pid, &info);
     if (!heap || !arch || (info.State != KERNEL_PROC_ZOMBIE && info.State != KERNEL_PROC_CREATED))
         return 0;
+    x86_gui_release_owned(pid, &arch->Slot);
     if (kernel_vfs())
         kernel_vfs_close_owned(kernel_vfs(), pid);
     uint64_t pages = arch->Slot.Lease.Pages;
@@ -283,6 +292,14 @@ int x86_process_stats(KERNEL_PROCESS_STATS *stats_out)
     if (!manager_ready || !stats_out)
         return 0;
     return kernel_process_table_stats(&manager_table, stats_out);
+}
+
+// ====== x86_process_slot_for_pid ======
+
+X86_PROCESS_SLOT *x86_process_slot_for_pid(uint64_t pid)
+{
+    X86_PROCESS_ARCH *arch = arch_lookup_private(pid, NULL);
+    return arch ? &arch->Slot : NULL;
 }
 
 // ====== x86_process_step_children ======

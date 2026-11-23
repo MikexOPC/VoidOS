@@ -398,6 +398,52 @@ int x86_page_window_write_lease(X86_PAGE_WINDOW *window, const KERNEL_PHYSICAL_L
     return leaves_match(window);
 }
 
+// ====== x86_page_window_read_lease ======
+
+int x86_page_window_read_lease(X86_PAGE_WINDOW *window, const KERNEL_PHYSICAL_LEASE *lease,
+                               BOOT_U64 byte_offset, void *dst, BOOT_U64 bytes)
+{
+    if (!dst || !bytes || !lease || !x86_page_window_idle_valid(window) ||
+        !lease_frame_valid(window, lease->Base, lease->Pages) ||
+        !kernel_physical_is_pinned(window->Pool, lease)) {
+        return 0;
+    }
+    BOOT_U64 total_bytes = lease->Pages * 4096ULL;
+    if (byte_offset > total_bytes || bytes > total_bytes - byte_offset) {
+        return 0;
+    }
+    BOOT_U64 dst_addr = (BOOT_U64)dst;
+    if (dst_addr > ~0ULL - bytes ||
+        os_address_ranges_overlap(dst_addr, bytes, X86_KERNEL_PAGE_WINDOW, X86_KERNEL_WINDOW_BYTES)) {
+        return 0;
+    }
+    const volatile unsigned char *source = x86_window_bytes();
+    volatile BOOT_U64 *entries = x86_window_entries(3);
+    if (!source || !entries) {
+        return 0;
+    }
+    unsigned char *output = (unsigned char *)dst;
+    BOOT_U64 copied = 0;
+    while (copied < bytes) {
+        BOOT_U64 cursor = byte_offset + copied;
+        BOOT_U64 page_index = cursor >> 12;
+        BOOT_U64 page_off = cursor & 4095ULL;
+        BOOT_U64 amount = bytes - copied;
+        if (amount > 4096ULL - page_off) {
+            amount = 4096ULL - page_off;
+        }
+        entries[WINDOW_LEAF] = (lease->Base + page_index * 4096ULL) | 3ULL | PAGE_NX;
+        x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
+        for (BOOT_U64 index = 0; index < amount; ++index) {
+            output[copied + index] = source[page_off + index];
+        }
+        entries[WINDOW_LEAF] = 0;
+        x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
+        copied += amount;
+    }
+    return leaves_match(window);
+}
+
 // ====== x86_page_window_free_lease ======
 
 int x86_page_window_free_lease(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_LEASE *lease)

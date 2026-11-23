@@ -295,7 +295,7 @@ static void test_budget_non_escalation(KERNEL_HEAP *heap)
     assert(def.MaxImagePages == KERNEL_PROCESS_DEFAULT_IMAGE_PAGES);
     assert(def.MaxOpenFiles == KERNEL_PROCESS_DEFAULT_OPEN_FILES);
     assert(def.CpuBudgetMs == KERNEL_PROCESS_DEFAULT_CPU_BUDGET_MS);
-    assert(def.Flags == KERNEL_BUDGET_FLAG_SPAWN);
+    assert(def.Flags == KERNEL_BUDGET_FLAG_ALL);
 
     // Derive from kernel default: narrowing succeeds, escalation fails.
     KERNEL_PROCESS_BUDGET tight = { 32U, 8U, 500U, KERNEL_BUDGET_FLAG_SPAWN };

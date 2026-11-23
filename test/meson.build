@@ -459,3 +459,26 @@ security_random_host = executable(
     include_directories: inc,
 )
 test('security_random_host', security_random_host, env: runtime)
+
+# ====== gui subsystem ======
+
+gui_host = executable(
+    'gui_host',
+    'kernel/gui/gui_test.c',
+    repo / 'kernel/gui/gui.c',
+    repo / 'kernel/process/table.c',
+    repo / 'kernel/mm/heap/heap.c',
+    repo / 'kernel/mm/heap/core/fill.c',
+    repo / 'kernel/mm/heap/core/guard.c',
+    repo / 'kernel/mm/heap/core/release.c',
+    repo / 'kernel/mm/heap/core/reserve.c',
+    repo / 'kernel/mm/heap/core/state.c',
+    repo / 'lib/containers/bitmap.c',
+    repo / 'kernel/sync/lock.c',
+    repo / 'kernel/sync/acquire.c',
+    repo / 'kernel/time/clock.c',
+    sync_atomics_obj,
+    process_ipc_obj,
+    include_directories: inc,
+)
+test('gui_host', gui_host, env: runtime)

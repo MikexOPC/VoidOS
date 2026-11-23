@@ -1,6 +1,7 @@
 #include "kernel.h"
 #include "kernel/diagnostics/log.h"
 #include "../pixels/write.h"
+#include "../pixels/session.h"
 #include "../../../../../../../test/arch/x86/kernel/drivers/video/framebuffer/drawing/probe.h"
 #include "../gateway/cell.h"
 #include "../gateway/inventory.h"
@@ -157,4 +158,32 @@ int x86_fb_kernel_group(BOOT_U32 column, BOOT_U32 row, const BOOT_U32 *scalars,
     BOOT_U32 count, BOOT_U32 foreground, BOOT_U32 background, BOOT_U64 *ticks)
 {
     return x86_fb_kernel_group_caret(column, row, scalars, count, foreground, background, ticks, ~0U);
+}
+
+// ====== x86_fb_kernel_surface_info ======
+
+int x86_fb_kernel_surface_info(BOOT_U64 *base_out, BOOT_U32 *width_out,
+    BOOT_U32 *height_out, BOOT_U32 *stride_out, BOOT_U32 *format_out)
+{
+    const X86_FB_TARGET *target = x86_fb_target();
+    if (target && target->Base && target->Width && target->Height && target->Stride >= target->Width) {
+        if (base_out) *base_out = target->Base;
+        if (width_out) *width_out = target->Width;
+        if (height_out) *height_out = target->Height;
+        if (stride_out) *stride_out = target->Stride;
+        if (format_out) *format_out = 1U;
+        return 1;
+    }
+    if (mapping.Ready == 2 && mapping.Context && mapping.Context->Info.Framebuffer.Base) {
+        const OS_FRAMEBUFFER *fb = &mapping.Context->Info.Framebuffer;
+        if (!fb->Width || !fb->Height || fb->Stride < fb->Width)
+            return 0;
+        if (base_out) *base_out = X86_FB_VIRTUAL;
+        if (width_out) *width_out = fb->Width;
+        if (height_out) *height_out = fb->Height;
+        if (stride_out) *stride_out = fb->Stride;
+        if (format_out) *format_out = fb->Format;
+        return 1;
+    }
+    return 0;
 }

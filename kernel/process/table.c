@@ -388,7 +388,7 @@ void kernel_process_budget_default(KERNEL_PROCESS_BUDGET *out)
     out->MaxImagePages = KERNEL_PROCESS_DEFAULT_IMAGE_PAGES;
     out->MaxOpenFiles = KERNEL_PROCESS_DEFAULT_OPEN_FILES;
     out->CpuBudgetMs = KERNEL_PROCESS_DEFAULT_CPU_BUDGET_MS;
-    out->Flags = KERNEL_BUDGET_FLAG_SPAWN;
+    out->Flags = KERNEL_BUDGET_FLAG_ALL;
 }
 
 // ====== budget_valid_private ======
