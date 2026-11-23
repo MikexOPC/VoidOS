@@ -91,9 +91,9 @@ fn fat32_write_entry(buf: &mut [u8], offset: usize, name_83: &[u8; 11], attr: u8
 
 // ====== fat32_set_fat ======
 
-fn fat32_set_fat(vblk: &mut [u8], cluster: u32, value: u32) {
+fn fat32_set_fat(vblk: &mut [u8], fat_sectors: usize, cluster: u32, value: u32) {
     for fat_idx in 0..2usize {
-        let fat_off = (4 + fat_idx * 16) * 512 + (cluster as usize) * 4;
+        let fat_off = (4 + fat_idx * fat_sectors) * 512 + (cluster as usize) * 4;
         vblk[fat_off..fat_off + 4].copy_from_slice(&value.to_le_bytes());
     }
 }
@@ -101,10 +101,10 @@ fn fat32_set_fat(vblk: &mut [u8], cluster: u32, value: u32) {
 // ====== build_vblk_fat32 ======
 
 fn build_vblk_fat32(image_dir: Option<&Path>) -> Result<Vec<u8>, String> {
-    const TOTAL_SECTORS: usize = 2048;
+    const TOTAL_SECTORS: usize = 8192;
     const RESERVED_SECTORS: usize = 4;
-    const FAT_SECTORS: usize = 16;
-    const DATA_START_SECTOR: usize = RESERVED_SECTORS + 2 * FAT_SECTORS; // 36
+    const FAT_SECTORS: usize = 64;
+    const DATA_START_SECTOR: usize = RESERVED_SECTORS + 2 * FAT_SECTORS; // 132
     let mut vblk = vec![0u8; TOTAL_SECTORS * 512];
     vblk[0] = 0xEB;
     vblk[1] = 0x58;
@@ -123,36 +123,57 @@ fn build_vblk_fat32(image_dir: Option<&Path>) -> Result<Vec<u8>, String> {
     vblk[510] = 0x55;
     vblk[511] = 0xAA;
 
-    fat32_set_fat(&mut vblk, 0, 0x0FFF_FFF8);
-    fat32_set_fat(&mut vblk, 1, 0x0FFF_FFFF);
-    fat32_set_fat(&mut vblk, 2, 0x0FFF_FFFF); // root dir "/"
-    fat32_set_fat(&mut vblk, 3, 0x0FFF_FFFF); // "/HELLO.TXT"
-    fat32_set_fat(&mut vblk, 4, 0x0FFF_FFFF); // "/BIN" dir
+    fat32_set_fat(&mut vblk, FAT_SECTORS, 0, 0x0FFF_FFF8);
+    fat32_set_fat(&mut vblk, FAT_SECTORS, 1, 0x0FFF_FFFF);
+    fat32_set_fat(&mut vblk, FAT_SECTORS, 2, 0x0FFF_FFFF); // root dir "/"
+    fat32_set_fat(&mut vblk, FAT_SECTORS, 3, 0x0FFF_FFFF); // "/HELLO.TXT"
+    fat32_set_fat(&mut vblk, FAT_SECTORS, 4, 0x0FFF_FFFF); // "/BIN" dir
+    fat32_set_fat(&mut vblk, FAT_SECTORS, 5, 0x0FFF_FFFF); // "/ETC" dir
+    fat32_set_fat(&mut vblk, FAT_SECTORS, 6, 0x0FFF_FFFF); // "/ETC/UI" dir
+    fat32_set_fat(&mut vblk, FAT_SECTORS, 7, 0x0FFF_FFFF); // "/ETC/UI/THEME.VSS"
 
     let cluster_offset = |cluster: u32| -> usize {
         (DATA_START_SECTOR + (cluster as usize - 2)) * 512
     };
 
-    // Root directory (cluster 2): HELLO.TXT and BIN/
+    // Root directory (cluster 2): HELLO.TXT, BIN/, ETC/
     let root_off = cluster_offset(2);
     fat32_write_entry(&mut vblk, root_off, b"HELLO   TXT", 0x20, 3, 21);
     fat32_write_entry(&mut vblk, root_off + 32, b"BIN        ", 0x10, 4, 0);
+    fat32_write_entry(&mut vblk, root_off + 64, b"ETC        ", 0x10, 5, 0);
 
     let hello_off = cluster_offset(3);
     vblk[hello_off..hello_off + 21].copy_from_slice(b"VoidOS FAT32 disk ok\n");
+
+    // /ETC directory (cluster 5) -> /ETC/UI (cluster 6) -> /ETC/UI/THEME.VSS (cluster 7)
+    let etc_off = cluster_offset(5);
+    fat32_write_entry(&mut vblk, etc_off, b".          ", 0x10, 5, 0);
+    fat32_write_entry(&mut vblk, etc_off + 32, b"..         ", 0x10, 0, 0);
+    fat32_write_entry(&mut vblk, etc_off + 64, b"UI         ", 0x10, 6, 0);
+
+    let theme_vss: &[u8] = b"/* VoidOS default dark theme */\ndesktop { bg-top: #0D111A; bg-bottom: #161E2E; }\nwindow { background: #151A24; border: #2A3344; border-focus: #3B82F6; radius: 8; }\ndock { background: #141924D8; border: #404E68E0; edge: bottom; shape: floating; radius: 14; thickness: 48; transition: 180ms; }\ntheme { accent: #3B82F6; accent-hover: #60A5FA; text: #E8EEF7; }\n";
+    let ui_off = cluster_offset(6);
+    fat32_write_entry(&mut vblk, ui_off, b".          ", 0x10, 6, 0);
+    fat32_write_entry(&mut vblk, ui_off + 32, b"..         ", 0x10, 5, 0);
+    fat32_write_entry(&mut vblk, ui_off + 64, b"THEME   VSS", 0x20, 7, theme_vss.len() as u32);
+    let theme_off = cluster_offset(7);
+    vblk[theme_off..theme_off + theme_vss.len()].copy_from_slice(theme_vss);
 
     // /BIN directory (cluster 4): ".", ".." and available user ELF binaries.
     let bin_off = cluster_offset(4);
     fat32_write_entry(&mut vblk, bin_off, b".          ", 0x10, 4, 0);
     fat32_write_entry(&mut vblk, bin_off + 32, b"..         ", 0x10, 0, 0);
 
-    let mut next_cluster: u32 = 5;
+    let mut next_cluster: u32 = 8;
     let mut next_bin_slot: usize = 2;
-    let binaries: [(&[u8; 11], &str); 4] = [
+    let binaries: [(&[u8; 11], &str); 7] = [
         (b"INIT    ELF", "user-init.elf"),
         (b"BRIDGE  ELF", "user-bridge.elf"),
         (b"WORKER  ELF", "user-worker.elf"),
         (b"SH      ELF", "user-sh.elf"),
+        (b"UI      ELF", "user-ui.elf"),
+        (b"TERMINALELF", "user-terminal.elf"),
+        (b"SYSMON  ELF", "user-sysmon.elf"),
     ];
     if let Some(dir) = image_dir {
         for (name_83, file_name) in binaries {
@@ -174,7 +195,7 @@ fn build_vblk_fat32(image_dir: Option<&Path>) -> Result<Vec<u8>, String> {
             for idx in 0..clusters_needed {
                 let c = first_cluster + idx;
                 let next = if idx + 1 < clusters_needed { c + 1 } else { 0x0FFF_FFFF };
-                fat32_set_fat(&mut vblk, c, next);
+                fat32_set_fat(&mut vblk, FAT_SECTORS, c, next);
                 let src_start = (idx as usize) * 512;
                 let src_end = (src_start + 512).min(bytes.len());
                 let dst = cluster_offset(c);

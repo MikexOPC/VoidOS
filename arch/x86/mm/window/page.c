@@ -283,7 +283,7 @@ int x86_page_window_resume(X86_PAGE_WINDOW *window, KERNEL_PHYSICAL_LEASE *parke
 
 static int lease_frame_valid(const X86_PAGE_WINDOW *window, BOOT_U64 base, BOOT_U64 pages)
 {
-    if (!window || !window->Pool || !pages || pages > 512ULL || base < 4096ULL || (base & 4095ULL)) {
+    if (!window || !window->Pool || !pages || pages > 2048ULL || base < 4096ULL || (base & 4095ULL)) {
         return 0;
     }
     BOOT_U32 bits = window->Pool->PhysicalBits;
@@ -331,7 +331,7 @@ static int zero_lease_chunks(X86_PAGE_WINDOW *window, const KERNEL_PHYSICAL_LEAS
 
 int x86_page_window_allocate_lease(X86_PAGE_WINDOW *window, BOOT_U64 pages, KERNEL_PHYSICAL_LEASE *lease_out)
 {
-    if (!lease_out || !x86_page_window_idle_valid(window) || !pages || pages > 512ULL ||
+    if (!lease_out || !x86_page_window_idle_valid(window) || !pages || pages > 2048ULL ||
         lease_out->Base || lease_out->Pages || lease_out->Id || lease_out->Owner) {
         return 0;
     }
@@ -434,7 +434,17 @@ int x86_page_window_read_lease(X86_PAGE_WINDOW *window, const KERNEL_PHYSICAL_LE
         }
         entries[WINDOW_LEAF] = (lease->Base + page_index * 4096ULL) | 3ULL | PAGE_NX;
         x86_invalidate_page(X86_KERNEL_PAGE_WINDOW);
-        for (BOOT_U64 index = 0; index < amount; ++index) {
+        BOOT_U64 index = 0;
+        if (((page_off | copied) & 3ULL) == 0) {
+            const volatile BOOT_U32 *src32 = (const volatile BOOT_U32 *)(source + page_off);
+            BOOT_U32 *dst32 = (BOOT_U32 *)(output + copied);
+            BOOT_U64 words = amount >> 2;
+            for (BOOT_U64 w = 0; w < words; ++w) {
+                dst32[w] = src32[w];
+            }
+            index = words << 2;
+        }
+        for (; index < amount; ++index) {
             output[copied + index] = source[page_off + index];
         }
         entries[WINDOW_LEAF] = 0;

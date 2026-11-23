@@ -214,10 +214,16 @@ static int map_shm_into_slot_private(uint64_t pid, X86_PROCESS_SLOT *slot,
     // Populate user PTEs as RW + NX (W^X enforced: shared memory is never executable).
     BOOT_U64 pte_flags = PTE_PRESENT | PTE_WRITE | PTE_USER | PTE_NX;
     BOOT_U64 branch_flags = PTE_PRESENT | PTE_WRITE | PTE_USER;
-    for (uint32_t page = 0; page < pages; ++page) {
-        BOOT_U64 pte = (phys_base + (BOOT_U64)page * PAGE_BYTES) | pte_flags;
+    for (uint32_t pd_off = 0; pd_off < pd_count; ++pd_off) {
+        BOOT_U64 pt_buf[512];
+        for (uint32_t entry_idx = 0; entry_idx < 512U; ++entry_idx) {
+            uint32_t page = pd_off * 512U + entry_idx;
+            pt_buf[entry_idx] = (page < pages)
+                ? ((phys_base + (BOOT_U64)page * PAGE_BYTES) | pte_flags)
+                : 0ULL;
+        }
         if (!x86_page_window_write_lease(process_rt.Window, &pt_lease,
-            (BOOT_U64)page * 8ULL, &pte, sizeof(pte))) {
+            (BOOT_U64)pd_off * PAGE_BYTES, pt_buf, sizeof(pt_buf))) {
             (void)x86_page_window_free_lease(process_rt.Window, &pt_lease);
             (void)update_holdings_private(-(int64_t)pd_count);
             ks_irq_restore(saved_if);

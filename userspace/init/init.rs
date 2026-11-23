@@ -163,6 +163,30 @@ fn run_vfs_supervisor() -> ! {
         libvoid::exit(75);
     }
 
+    // 5) Launch /bin/ui.elf in self-check mode (5 layers + Dock morph + console restore on exit).
+    let ui_args = libvoid::SpawnArgs {
+        initial_arg: 1,
+        flags: 0,
+        use_budget: 1,
+        budget: libvoid::SpawnBudget {
+            max_image_pages: 128,
+            max_open_files: 8,
+            cpu_budget_ms: 2000,
+            flags: libvoid::BUDGET_FLAG_DISPLAY,
+        },
+    };
+    let ui_pid = libvoid::spawn(b"/bin/ui.elf", Some(&ui_args));
+    if ui_pid <= 0 {
+        libvoid::exit(76);
+    }
+    let mut ui_status = libvoid::WaitStatus::default();
+    if libvoid::wait_pid(ui_pid as u64, Some(&mut ui_status)) != 0
+        || ui_status.exit_kind != libvoid::EXIT_KIND_NORMAL
+        || ui_status.exit_code != 0
+    {
+        libvoid::exit(77);
+    }
+
     let written = libvoid::write_console(&SUPERVISOR_OK);
     libvoid::exit(if written == SUPERVISOR_OK.len() as i64 { 0 } else { 67 });
 }
