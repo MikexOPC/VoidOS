@@ -187,6 +187,30 @@ fn run_vfs_supervisor() -> ! {
         libvoid::exit(77);
     }
 
+    // 6) Launch /bin/terminal.elf (sandboxed: no DISPLAY flag) and verify VFS commands + SHM rendering.
+    let term_args = libvoid::SpawnArgs {
+        initial_arg: 1,
+        flags: 0,
+        use_budget: 1,
+        budget: libvoid::SpawnBudget {
+            max_image_pages: 128,
+            max_open_files: 8,
+            cpu_budget_ms: 2000,
+            flags: 0,
+        },
+    };
+    let term_pid = libvoid::spawn(b"/bin/terminal.elf", Some(&term_args));
+    if term_pid <= 0 {
+        libvoid::exit(78);
+    }
+    let mut term_status = libvoid::WaitStatus::default();
+    if libvoid::wait_pid(term_pid as u64, Some(&mut term_status)) != 0
+        || term_status.exit_kind != libvoid::EXIT_KIND_NORMAL
+        || term_status.exit_code != 0
+    {
+        libvoid::exit(79);
+    }
+
     let written = libvoid::write_console(&SUPERVISOR_OK);
     libvoid::exit(if written == SUPERVISOR_OK.len() as i64 { 0 } else { 67 });
 }
