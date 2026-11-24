@@ -1,7 +1,6 @@
 import { DesktopBackground } from "components/background/background.slint";
 import { VoidWindow } from "components/window/window.slint";
 import { DefaultDock } from "components/dock/default/dock.slint";
-import { SoftwareCursor } from "components/cursor/cursor.slint";
 
 export struct AppSurface {
     kind: int,
@@ -115,11 +114,5 @@ export component VoidDesktop inherits Window {
         shutdown-clicked => {
             root.quit-desktop();
         }
-    }
-
-    // Layer 4: Cursor
-    SoftwareCursor {
-        pointer-x: root.cursor-x;
-        pointer-y: root.cursor-y;
     }
 }

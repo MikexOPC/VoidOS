@@ -4,6 +4,8 @@
 extern crate alloc;
 
 mod apps;
+mod cursor;
+mod cursor_data;
 
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
@@ -34,7 +36,7 @@ static ALLOCATOR: libvoid::heap::ShmAllocator = libvoid::heap::ShmAllocator::new
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Default)]
-struct BgrxPixel(u32);
+pub struct BgrxPixel(pub u32);
 
 impl TargetPixel for BgrxPixel {
     fn blend(&mut self, color: slint::platform::software_renderer::PremultipliedRgbaColor) {
@@ -86,35 +88,51 @@ impl Platform for VoidPlatform {
     }
 }
 
-// ====== present_region ======
+// ====== present_rects ======
 
-fn present_region(
-    region: slint::platform::software_renderer::PhysicalRegion,
+fn present_rects(
+    region: Option<slint::platform::software_renderer::PhysicalRegion>,
+    extra0: Option<libvoid::DisplayRect>,
+    extra1: Option<libvoid::DisplayRect>,
     max_w: u32,
     max_h: u32,
 ) -> bool {
     let mut wire = [libvoid::DisplayRect::default(); 16];
     let mut n = 0usize;
-    for (origin, size) in region.iter() {
-        if n >= 16 {
-            return libvoid::display_present(&[libvoid::DisplayRect {
-                x: 0,
-                y: 0,
-                width: max_w,
-                height: max_h,
-            }]) == 0;
+    if let Some(reg) = region {
+        for (origin, size) in reg.iter() {
+            if n >= 14 {
+                return libvoid::display_present(&[libvoid::DisplayRect {
+                    x: 0,
+                    y: 0,
+                    width: max_w,
+                    height: max_h,
+                }]) == 0;
+            }
+            let x0 = origin.x.max(0) as u32;
+            let y0 = origin.y.max(0) as u32;
+            let w = size.width.min(max_w.saturating_sub(x0));
+            let h = size.height.min(max_h.saturating_sub(y0));
+            if w > 0 && h > 0 {
+                wire[n] = libvoid::DisplayRect {
+                    x: x0,
+                    y: y0,
+                    width: w,
+                    height: h,
+                };
+                n += 1;
+            }
         }
-        let x0 = origin.x.max(0) as u32;
-        let y0 = origin.y.max(0) as u32;
-        let w = size.width.min(max_w.saturating_sub(x0));
-        let h = size.height.min(max_h.saturating_sub(y0));
-        if w > 0 && h > 0 {
-            wire[n] = libvoid::DisplayRect {
-                x: x0,
-                y: y0,
-                width: w,
-                height: h,
-            };
+    }
+    if let Some(r) = extra0 {
+        if r.width > 0 && r.height > 0 && n < 16 {
+            wire[n] = r;
+            n += 1;
+        }
+    }
+    if let Some(r) = extra1 {
+        if r.width > 0 && r.height > 0 && n < 16 {
+            wire[n] = r;
             n += 1;
         }
     }
@@ -251,7 +269,7 @@ extern "C" fn program_main(mode: u64) -> ! {
         let mut presented = false;
         window.draw_if_needed(|renderer| {
             let dirty = renderer.render(backbuffer, acq.stride as usize);
-            presented = present_region(dirty, acq.width, acq.height);
+            presented = present_rects(Some(dirty), None, None, acq.width, acq.height);
         });
         if !presented || !applications.shutdown() {
             let _ = libvoid::write_console(b"GUI self-check error 93\n");
@@ -263,11 +281,13 @@ extern "C" fn program_main(mode: u64) -> ! {
 
     let _ = libvoid::write_console(b"VoidOS desktop ready\n");
 
-    // Mode 0: live interactive Slint event loop.
+    // Mode 0: live interactive Slint event loop with decoupled 20x20 cursor overlay + mouse coalescing.
     let mut cx = (acq.width as f32) * 0.5;
     let mut cy = (acq.height as f32) * 0.5;
     let mut prev_buttons = 0u32;
     let mut last_uptime_second = dinfo.uptime_ms / 1000;
+    let mut cursor = cursor::CursorOverlay::new();
+
     loop {
         if libvoid::display_info(&mut dinfo) != 0 {
             let _ = applications.shutdown();
@@ -288,6 +308,8 @@ extern "C" fn program_main(mode: u64) -> ! {
         }
         slint::platform::update_timers_and_animations();
         let mut ev = libvoid::InputEvent::default();
+        let mut mouse_moved = false;
+        let mut any_input = false;
         loop {
             let received = libvoid::input_poll(&mut ev);
             if received == 0 {
@@ -297,27 +319,34 @@ extern "C" fn program_main(mode: u64) -> ! {
                 let _ = applications.shutdown();
                 libvoid::exit(96);
             }
+            any_input = true;
             if ev.kind == libvoid::INPUT_MOUSE {
-                cx = (cx + ev.delta_x as f32).clamp(0.0, (acq.width - 1) as f32);
-                cy = (cy - ev.delta_y as f32).clamp(0.0, (acq.height - 1) as f32);
-                ui.set_cursor_x(cx);
-                ui.set_cursor_y(cy);
-                let pos = LogicalPosition::new(cx, cy);
-                window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+                if ev.delta_x != 0 || ev.delta_y != 0 {
+                    cx = (cx + ev.delta_x as f32).clamp(0.0, (acq.width - 1) as f32);
+                    cy = (cy - ev.delta_y as f32).clamp(0.0, (acq.height - 1) as f32);
+                    mouse_moved = true;
+                }
                 let left_now = (ev.flags & 1) != 0;
                 let left_prev = (prev_buttons & 1) != 0;
-                if left_now && !left_prev {
-                    window.dispatch_event(WindowEvent::PointerPressed {
-                        position: pos,
-                        button: PointerEventButton::Left,
-                    });
-                } else if !left_now && left_prev {
-                    window.dispatch_event(WindowEvent::PointerReleased {
-                        position: pos,
-                        button: PointerEventButton::Left,
-                    });
+                if left_now != left_prev {
+                    let pos = LogicalPosition::new(cx, cy);
+                    if mouse_moved {
+                        window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+                        mouse_moved = false;
+                    }
+                    if left_now {
+                        window.dispatch_event(WindowEvent::PointerPressed {
+                            position: pos,
+                            button: PointerEventButton::Left,
+                        });
+                    } else {
+                        window.dispatch_event(WindowEvent::PointerReleased {
+                            position: pos,
+                            button: PointerEventButton::Left,
+                        });
+                    }
+                    prev_buttons = ev.flags;
                 }
-                prev_buttons = ev.flags;
             } else if ev.kind == libvoid::INPUT_KEY {
                 let scalar = match ev.value {
                     0x110001 => 8,
@@ -329,6 +358,11 @@ extern "C" fn program_main(mode: u64) -> ! {
                     ui.set_status("Coda tastiera piena".into());
                 }
             }
+        }
+        if mouse_moved {
+            window.dispatch_event(WindowEvent::PointerMoved {
+                position: LogicalPosition::new(cx, cy),
+            });
         }
         while let Some((operation, kind)) = requests.borrow_mut().pop_front() {
             let ok = match operation {
@@ -351,16 +385,33 @@ extern "C" fn program_main(mode: u64) -> ! {
             let ok = applications.shutdown();
             libvoid::exit(if ok { 0 } else { 94 });
         }
+
+        let ix = cx as i32;
+        let iy = cy as i32;
         let mut presented = true;
+        let mut slint_drew = false;
         window.draw_if_needed(|renderer| {
+            slint_drew = true;
+            let old_rect = cursor.restore(backbuffer, acq.stride as usize);
             let dirty = renderer.render(backbuffer, acq.stride as usize);
-            presented = present_region(dirty, acq.width, acq.height);
+            let new_rect = cursor.draw(backbuffer, acq.stride as usize, acq.width, acq.height, ix, iy);
+            presented = present_rects(Some(dirty), old_rect, new_rect, acq.width, acq.height);
         });
+        if !slint_drew {
+            let (ox, oy, drawn) = cursor.pos();
+            if !drawn || ox != ix || oy != iy {
+                let old_rect = cursor.restore(backbuffer, acq.stride as usize);
+                let new_rect = cursor.draw(backbuffer, acq.stride as usize, acq.width, acq.height, ix, iy);
+                presented = present_rects(None, old_rect, new_rect, acq.width, acq.height);
+            }
+        }
         if !presented {
             let _ = applications.shutdown();
             libvoid::exit(95);
         }
-        libvoid::yield_now();
+        if !any_input {
+            libvoid::yield_now();
+        }
     }
 }
 
