@@ -218,9 +218,9 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         }
         int stepped = 1;
         while (stepped && init_state != KERNEL_PROC_ZOMBIE) {
-            stepped = x86_process_step(init_pid, 0, &init_state);
+            stepped = x86_process_step(init_pid, 1, &init_state);
             if (stepped && init_state != KERNEL_PROC_ZOMBIE) {
-                stepped = x86_process_step_children(init_pid);
+                stepped = x86_process_step_children_budget(init_pid, 1);
             }
         }
         if (!stepped || !x86_process_reap(init_pid, &init_info) ||
