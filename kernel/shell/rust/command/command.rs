@@ -19,9 +19,10 @@ pub fn classify(word: u64, length: u32, arguments: u32) -> u32 {
         (5, 0x6574697277) => 12, // write
         (2, 0x6d72) => 13, // rm
         (4, 0x636e7973) => 14, // sync
+        (3, 0x697567) => 15,
         _ => 5,
     };
-    if (arguments != 0 && matches!(command, 1 | 3 | 4 | 9 | 14)) || (arguments == 0 && matches!(command, 7 | 8 | 11 | 12 | 13)) { 6 } else { command }
+    if (arguments != 0 && matches!(command, 1 | 3 | 4 | 9 | 14 | 15)) || (arguments == 0 && matches!(command, 7 | 8 | 11 | 12 | 13)) { 6 } else { command }
 }
 
 // ====== count ======

@@ -422,6 +422,8 @@ int kernel_gui_shm_create(KERNEL_GUI *gui, uint64_t pid, uint32_t pages,
             KERNEL_SHM_OBJECT *obj = &gui->ShmObjects[index];
             obj->Id = gui->NextShmId++;
             obj->CreatorPid = pid;
+            obj->ReaderPid = 0;
+            obj->OwnerReleased = 0;
             obj->PhysBase = phys_base;
             obj->Pages = pages;
             obj->RefCount = 0;
@@ -455,6 +457,77 @@ int kernel_gui_shm_lookup(KERNEL_GUI *gui, uint64_t shm_id,
     return ok;
 }
 
+// ====== shm_access_private ======
+
+static int shm_access_private(const KERNEL_GUI *gui, const KERNEL_SHM_OBJECT *obj, uint64_t pid)
+{
+    return obj && pid && (obj->CreatorPid == pid
+        || (obj->ReaderPid == pid && gui->DisplayOwnerPid == pid));
+}
+
+// ====== kernel_gui_shm_publish ======
+
+int kernel_gui_shm_publish(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id)
+{
+    GUI_ACCESS access;
+    if (!enter_private(gui, &access))
+        return 0;
+    KERNEL_SHM_OBJECT *obj = find_shm_object_private(gui, shm_id);
+    int ok = obj && pid && obj->CreatorPid == pid && !obj->IsDisplay
+        && gui->DisplayOwnerPid && gui->DisplayOwnerPid != pid
+        && (!obj->ReaderPid || obj->ReaderPid == gui->DisplayOwnerPid);
+    if (ok)
+        obj->ReaderPid = gui->DisplayOwnerPid;
+    leave_private(&access);
+    return ok;
+}
+
+// ====== kernel_gui_shm_pin ======
+
+int kernel_gui_shm_pin(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id,
+    uint32_t *pages_out, uint64_t *phys_base_out, int *writable_out)
+{
+    if (!pages_out ||
+        !phys_base_out ||
+        !writable_out
+    )
+        return 0;
+    GUI_ACCESS access;
+    if (!enter_private(gui, &access))
+        return 0;
+    KERNEL_SHM_OBJECT *obj = find_shm_object_private(gui, shm_id);
+    int ok = shm_access_private(gui, obj, pid);
+    if (ok) {
+        ++obj->RefCount;
+        *pages_out = obj->Pages;
+        *phys_base_out = obj->PhysBase;
+        *writable_out = obj->CreatorPid == pid;
+    }
+    leave_private(&access);
+    return ok;
+}
+
+// ====== kernel_gui_shm_unpin ======
+
+int kernel_gui_shm_unpin(KERNEL_GUI *gui, uint64_t shm_id, int *freed_object_out)
+{
+    GUI_ACCESS access;
+    if (!enter_private(gui, &access))
+        return 0;
+    KERNEL_SHM_OBJECT *obj = find_shm_object_private(gui, shm_id);
+    int ok = obj && obj->RefCount;
+    int freed = 0;
+    if (ok && --obj->RefCount == 0 && obj->OwnerReleased) {
+        obj->Active = 0;
+        --gui->ShmObjectCount;
+        freed = 1;
+    }
+    if (freed_object_out)
+        *freed_object_out = freed;
+    leave_private(&access);
+    return ok;
+}
+
 // ====== kernel_gui_shm_map_record ======
 
 int kernel_gui_shm_map_record(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id, uint64_t user_virt)
@@ -465,7 +538,7 @@ int kernel_gui_shm_map_record(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id, ui
     if (!enter_private(gui, &access))
         return 0;
     KERNEL_SHM_OBJECT *obj = find_shm_object_private(gui, shm_id);
-    if (!obj) {
+    if (!shm_access_private(gui, obj, pid)) {
         leave_private(&access);
         return 0;
     }
@@ -492,6 +565,8 @@ int kernel_gui_shm_map_record(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id, ui
             gui->ShmMappings[index].Active = 1;
             ++gui->ShmMappingCount;
             ++obj->RefCount;
+            if (obj->CreatorPid == pid)
+                obj->OwnerReleased = 0;
             ok = 1;
             break;
         }
@@ -534,6 +609,7 @@ int kernel_gui_shm_find_mapping(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id,
 static void unmap_entry_locked(KERNEL_GUI *gui, uint32_t map_index,
     uint64_t *user_virt_out, uint32_t *pages_out, uint64_t *phys_base_out, int *freed_object_out)
 {
+    uint64_t pid = gui->ShmMappings[map_index].Pid;
     uint64_t shm_id = gui->ShmMappings[map_index].ShmId;
     uint64_t user_virt = gui->ShmMappings[map_index].UserVirt;
     uint32_t pages = gui->ShmMappings[map_index].Pages;
@@ -544,6 +620,8 @@ static void unmap_entry_locked(KERNEL_GUI *gui, uint32_t map_index,
     int freed = 0;
     KERNEL_SHM_OBJECT *obj = find_shm_object_private(gui, shm_id);
     if (obj) {
+        if (obj->CreatorPid == pid)
+            obj->OwnerReleased = 1;
         phys_base = obj->PhysBase;
         pages = obj->Pages;
         if (obj->RefCount > 0)
@@ -594,6 +672,10 @@ int kernel_gui_shm_pop_owned(KERNEL_GUI *gui, uint64_t pid, uint64_t *shm_id_out
     GUI_ACCESS access;
     if (!enter_private(gui, &access))
         return 0;
+    for (uint32_t index = 0; index < gui->ShmObjectCapacity; ++index) {
+        if (gui->ShmObjects[index].Active && gui->ShmObjects[index].CreatorPid == pid)
+            gui->ShmObjects[index].OwnerReleased = 1;
+    }
     // First pop any active mapping held by pid.
     for (uint32_t index = 0; index < gui->ShmMappingCapacity; ++index) {
         if (gui->ShmMappings[index].Active && gui->ShmMappings[index].Pid == pid) {

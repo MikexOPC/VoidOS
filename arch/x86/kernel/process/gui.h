@@ -17,6 +17,7 @@ typedef struct {
 _Static_assert(sizeof(X86_DISPLAY_ACQUIRE_OUT) == 32U, "X86_DISPLAY_ACQUIRE_OUT ABI size");
 
 int x86_gui_init(void);
+void x86_gui_clock_tick(void);
 void x86_gui_bind_display(KERNEL_DISPLAY display);
 void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot);
 
@@ -27,5 +28,8 @@ BOOT_U64 x86_gui_sys_input_poll(X86_PROCESS_CPU *cpu, BOOT_U64 event_ptr);
 BOOT_U64 x86_gui_sys_shm_create(X86_PROCESS_CPU *cpu, BOOT_U64 pages);
 BOOT_U64 x86_gui_sys_shm_map(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id);
 BOOT_U64 x86_gui_sys_shm_unmap(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id);
+
+BOOT_U64 x86_gui_sys_shm_publish(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id);
+BOOT_U64 x86_gui_sys_shm_view(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id, BOOT_U64 out_ptr);
 
 #endif

@@ -1,28 +1,24 @@
-// Layer 3: Overlay status pill / notification banner
+// Layer 3: Subtle floating status pill
 export component OverlayPill inherits Rectangle {
     in property <string> message: "";
-    in property <bool> shown: true;
+    in property <bool> shown: false;
 
-    height: 30px;
-    border-radius: 15px;
-    background: #131A28E8;
+    width: 240px;
+    height: 28px;
+    border-radius: 14px;
+    background: #FFFFFFE8;
     border-width: 1px;
-    border-color: #3B82F6AA;
+    border-color: #DCE0F0;
     opacity: root.shown ? 1.0 : 0.0;
 
-    animate opacity { duration: 180ms; easing: ease-out; }
+    animate opacity { duration: 160ms; easing: ease-out; }
 
-    HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        alignment: center;
-
-        Text {
-            text: root.message;
-            color: #E2E8F0;
-            font-size: 12px;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
+    Text {
+        text: root.message;
+        color: #2D334A;
+        font-size: 11px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
     }
 }

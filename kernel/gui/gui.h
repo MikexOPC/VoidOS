@@ -32,7 +32,7 @@ typedef struct {
     uint64_t  UptimeMs;
     uint64_t  OwnerPid;
     uint64_t  BackbufferShmId;
-    uint64_t  Reserved;
+    uint64_t  RtcPacked;
 } KERNEL_DISPLAY_INFO;
 
 _Static_assert(sizeof(KERNEL_DISPLAY_INFO) == 48U, "KERNEL_DISPLAY_INFO ABI size");
@@ -60,11 +60,13 @@ _Static_assert(sizeof(KERNEL_INPUT_EVENT) == 24U, "KERNEL_INPUT_EVENT ABI size")
 typedef struct {
     uint64_t  Id;
     uint64_t  CreatorPid;
+    uint64_t  ReaderPid;
     uint64_t  PhysBase;
     uint32_t  Pages;
     uint32_t  RefCount;
     uint32_t  Active;
     uint32_t  IsDisplay;
+    uint32_t  OwnerReleased;
 } KERNEL_SHM_OBJECT;
 
 typedef struct {
@@ -127,6 +129,10 @@ int kernel_gui_shm_create(KERNEL_GUI *gui, uint64_t pid, uint32_t pages,
     uint64_t phys_base, int is_display, uint64_t *shm_id_out);
 int kernel_gui_shm_lookup(KERNEL_GUI *gui, uint64_t shm_id,
     uint32_t *pages_out, uint64_t *phys_base_out);
+int kernel_gui_shm_publish(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id);
+int kernel_gui_shm_pin(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id,
+    uint32_t *pages_out, uint64_t *phys_base_out, int *writable_out);
+int kernel_gui_shm_unpin(KERNEL_GUI *gui, uint64_t shm_id, int *freed_object_out);
 int kernel_gui_shm_map_record(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id, uint64_t user_virt);
 int kernel_gui_shm_find_mapping(KERNEL_GUI *gui, uint64_t pid, uint64_t shm_id,
     uint64_t *user_virt_out, uint32_t *pages_out, uint64_t *phys_base_out);

@@ -128,12 +128,17 @@ impl TerminalBuffer {
             }
             let mut buf = [0u8; 256];
             let n = libvoid::read(fd as u64, &mut buf);
-            let _ = libvoid::close(fd as u64);
+            let closed = libvoid::close(fd as u64);
+            if n < 0 || closed != 0 {
+                self.write_bytes(b"rp: read failed\n");
+                return true;
+            }
             if n > 0 {
                 self.write_bytes(&buf[..(n as usize).min(buf.len())]);
                 if buf[(n as usize).min(buf.len()) - 1] != b'\n' {
                     self.write_bytes(b"\n");
                 }
+                let _ = libvoid::write_console(b"VoidOS terminal VFS read ok\n");
             }
             return true;
         }
@@ -181,6 +186,13 @@ extern "C" fn program_main(arg: u64) -> ! {
         libvoid::exit(90);
     }
 
+    let mut display = libvoid::DisplayInfo::default();
+    if libvoid::display_info(&mut display) != 0 {
+        libvoid::exit(98);
+    }
+    if display.backbuffer_shm_id != 0 && libvoid::shm_map(display.backbuffer_shm_id) >= 0 {
+        libvoid::exit(98);
+    }
     let theme = load_theme();
     let shm_id = libvoid::shm_create(SHM_PAGES);
     if shm_id <= 0 {
@@ -227,14 +239,17 @@ extern "C" fn program_main(arg: u64) -> ! {
     }
 
     // Live IPC window mode: arg carries the IPC channel handle to the compositor.
-    let ipc_handle = arg;
+    let ipc_handle = arg & !(1u64 << 63);
+    if libvoid::shm_publish(shm_id as u64) != 0 {
+        libvoid::exit(95);
+    }
     let create = GuiMessage::create_window(WIN_W, WIN_H, shm_id as u64, b"Terminal");
     let wire = create.encode();
-    let _ = libvoid::ipc_send(ipc_handle, &wire);
+    send_message(ipc_handle, &wire);
     term.write_prompt();
     term.render(&mut canvas, &theme);
     let commit = GuiMessage::commit_rect(1, 0, 0, WIN_W, WIN_H).encode();
-    let _ = libvoid::ipc_send(ipc_handle, &commit);
+    send_message(ipc_handle, &commit);
 
     let mut rx = [0u8; PROTO_WIRE_BYTES];
     loop {
@@ -253,6 +268,7 @@ extern "C" fn program_main(arg: u64) -> ! {
                             let _ = libvoid::shm_unmap(shm_id as u64);
                             libvoid::exit(0);
                         }
+                        let _ = libvoid::write_console(b"VoidOS terminal command processed\n");
                         term.write_prompt();
                     } else if ch == 8 {
                         if term.input_len > 0 {
@@ -268,12 +284,29 @@ extern "C" fn program_main(arg: u64) -> ! {
                         term.write_bytes(&[ch]);
                     }
                     term.render(&mut canvas, &theme);
-                    let _ = libvoid::ipc_send(ipc_handle, &commit);
+                    send_message(ipc_handle, &commit);
                 }
             }
-        } else {
+        } else if n == libvoid::ERR_WOULD_BLOCK {
             libvoid::yield_now();
+        } else {
+            libvoid::exit(96);
         }
+    }
+}
+
+// ====== send_message ======
+
+fn send_message(handle: u64, wire: &[u8]) {
+    loop {
+        let result = libvoid::ipc_send(handle, wire);
+        if result == wire.len() as i64 {
+            return;
+        }
+        if result != libvoid::ERR_WOULD_BLOCK {
+            libvoid::exit(97);
+        }
+        libvoid::yield_now();
     }
 }
 

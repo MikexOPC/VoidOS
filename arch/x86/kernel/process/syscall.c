@@ -232,6 +232,8 @@ static BOOT_U64 sys_unlink(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 pat
 
 static BOOT_U64 sys_spawn(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path_len, BOOT_U64 args_ptr)
 {
+    if (cpu != &x86_process_cpus[0])
+        return RESULT_QUOTA;
     if (!cpu->Table || !cpu->Pid || !x86_process_manager_ready())
         return RESULT_UNKNOWN;
     char path[KERNEL_VFS_PATH_CAPACITY] = {0};
@@ -246,6 +248,23 @@ static BOOT_U64 sys_spawn(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path
         if (args.UseBudget)
             budget_ptr = &args.Budget;
     }
+    if (args.Flags & ~1U)
+        return RESULT_RANGE;
+    if (args.Flags == 1U) {
+        if (x86_process_copy_range(args.InitialArg, 16U) != 1)
+            return RESULT_RANGE;
+        uint64_t result[2] = {0};
+        if (!x86_process_spawn_connected(path, cpu->Pid, budget_ptr, &result[0], &result[1]))
+            return RESULT_UNKNOWN;
+        if (copy_checked(cpu, (void *)args.InitialArg, result, args.InitialArg, sizeof(result), 1)) {
+            uint32_t wake = KERNEL_TASK_NONE;
+            (void)kernel_ipc_close_handle(cpu->Table, cpu->Pid, result[1], &wake);
+            (void)x86_process_kill(result[0]);
+            (void)x86_process_reap(result[0], NULL);
+            return RESULT_RANGE;
+        }
+        return result[0];
+    }
     uint64_t child_pid = 0;
     if (!x86_process_spawn_vfs(path, cpu->Pid, 0, budget_ptr, &child_pid))
         return RESULT_UNKNOWN;
@@ -257,6 +276,29 @@ static BOOT_U64 sys_spawn(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path
         }
     }
     return child_pid;
+}
+
+// ====== sys_process_stop ======
+
+static BOOT_U64 sys_process_stop(X86_PROCESS_CPU *cpu, BOOT_U64 pid)
+{
+    KERNEL_PROCESS_INFO info = {0};
+    if (!cpu->Pid ||
+        !x86_process_query(pid, &info) ||
+        info.ParentPid != cpu->Pid
+    )
+        return RESULT_RANGE;
+    if (info.State == KERNEL_PROC_ZOMBIE)
+        return 0;
+    return x86_process_kill(pid) ? 0 : RESULT_UNKNOWN;
+}
+
+// ====== sys_ipc_close ======
+
+static BOOT_U64 sys_ipc_close(X86_PROCESS_CPU *cpu, BOOT_U64 handle)
+{
+    uint32_t wake = KERNEL_TASK_NONE;
+    return kernel_ipc_close_handle(cpu->Table, cpu->Pid, handle, &wake) ? 0 : RESULT_RANGE;
 }
 
 // ====== sys_wait_pid ======
@@ -475,6 +517,18 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_SHM_MAP) {
         GPR(frame, GPR_RAX) = x86_gui_sys_shm_map(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_PROCESS_STOP) {
+        GPR(frame, GPR_RAX) = sys_process_stop(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_IPC_CLOSE) {
+        GPR(frame, GPR_RAX) = sys_ipc_close(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_SHM_PUBLISH) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_shm_publish(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_SHM_VIEW) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_shm_view(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_SHM_UNMAP) {
         GPR(frame, GPR_RAX) = x86_gui_sys_shm_unmap(cpu, GPR(frame, GPR_RDI));

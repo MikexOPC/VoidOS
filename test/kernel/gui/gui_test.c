@@ -183,7 +183,15 @@ static void test_shm_lifecycle_and_growth(KERNEL_HEAP *heap)
     }
     assert(gui.ShmObjectCapacity >= 40 && gui.ShmMappingCapacity >= 40);
 
-    // Duplicate mapping in same process rejected; second process sharing succeeds.
+    uint64_t display = 0;
+    assert(kernel_gui_set_display_geometry(&gui, 800, 600, 800, 1));
+    assert(kernel_gui_shm_create(&gui, 101, 1, 0xa000000ULL, 1, &display));
+    assert(kernel_gui_display_acquire(&gui, 101, display));
+    assert(!kernel_gui_shm_map_record(&gui, 101, ids[0], 0x10000000ULL));
+    assert(!kernel_gui_shm_publish(&gui, 102, ids[0]));
+    assert(!kernel_gui_shm_publish(&gui, 101, display));
+    assert(kernel_gui_shm_publish(&gui, 100, ids[0]));
+    assert(!kernel_gui_shm_map_record(&gui, 102, ids[0], 0x10000000ULL));
     assert(!kernel_gui_shm_map_record(&gui, 100, ids[0], 0x20000000ULL));
     assert(kernel_gui_shm_map_record(&gui, 101, ids[0], 0x10000000ULL));
 
@@ -210,8 +218,49 @@ static void test_shm_lifecycle_and_growth(KERNEL_HEAP *heap)
         ++popped;
     }
     assert(popped == 40);
-    assert(gui.ShmObjectCount == 0 && gui.ShmMappingCount == 0);
+    assert(gui.ShmObjectCount == 1 && gui.ShmMappingCount == 0);
+    assert(kernel_gui_shm_release_unmapped(&gui, display, NULL, NULL, NULL));
 
+    assert(kernel_gui_destroy(&gui));
+}
+
+// ====== test_shm_authorization_and_pin ======
+
+static void test_shm_authorization_and_pin(KERNEL_HEAP *heap)
+{
+    KERNEL_GUI gui;
+    assert(kernel_gui_init(&gui, heap));
+    assert(kernel_gui_set_display_geometry(&gui, 800, 600, 800, 1));
+    uint64_t display = 0, surface = 0;
+    assert(kernel_gui_shm_create(&gui, 10, 1, 0x100000ULL, 1, &display));
+    assert(kernel_gui_shm_create(&gui, 20, 2, 0x200000ULL, 0, &surface));
+    uint32_t pages = 0;
+    uint64_t phys = 0;
+    int writable = 0, freed = 0;
+    assert(!kernel_gui_shm_pin(&gui, 10, surface, &pages, &phys, &writable));
+    assert(!kernel_gui_shm_publish(&gui, 20, surface));
+    assert(kernel_gui_display_acquire(&gui, 10, display));
+    assert(kernel_gui_shm_pin(&gui, 20, surface, &pages, &phys, &writable));
+    assert(kernel_gui_shm_unpin(&gui, surface, &freed) && !freed);
+    assert(kernel_gui_shm_lookup(&gui, surface, NULL, NULL));
+    assert(kernel_gui_shm_map_record(&gui, 20, surface, 0x10000000ULL));
+    assert(kernel_gui_shm_publish(&gui, 20, surface));
+    assert(!kernel_gui_shm_pin(&gui, 30, surface, &pages, &phys, &writable));
+    assert(kernel_gui_shm_pin(&gui, 20, surface, &pages, &phys, &writable));
+    assert(writable == 1 && pages == 2 && phys == 0x200000ULL);
+    assert(kernel_gui_shm_unpin(&gui, surface, &freed) && !freed);
+    assert(kernel_gui_shm_pin(&gui, 10, surface, &pages, &phys, &writable));
+    assert(writable == 0);
+    assert(kernel_gui_shm_unmap_record(&gui, 20, surface, NULL, NULL, NULL, &freed));
+    assert(!freed);
+    assert(kernel_gui_shm_lookup(&gui, surface, NULL, NULL));
+    assert(kernel_gui_shm_map_record(&gui, 10, surface, 0x10000000ULL));
+    assert(kernel_gui_shm_unpin(&gui, surface, &freed) && !freed);
+    assert(kernel_gui_display_release(&gui, 10, NULL));
+    assert(!kernel_gui_shm_pin(&gui, 10, surface, &pages, &phys, &writable));
+    assert(kernel_gui_shm_unmap_record(&gui, 10, surface, NULL, NULL, NULL, &freed));
+    assert(freed && !kernel_gui_shm_lookup(&gui, surface, NULL, NULL));
+    assert(kernel_gui_shm_release_unmapped(&gui, display, NULL, NULL, NULL));
     assert(kernel_gui_destroy(&gui));
 }
 
@@ -245,6 +294,7 @@ int main(void)
     test_display_ownership_and_rects(&heap);
     test_input_ring(&heap);
     test_shm_lifecycle_and_growth(&heap);
+    test_shm_authorization_and_pin(&heap);
     test_budget_display_flag();
     _aligned_free(backing);
     printf("KERNEL_GUI_HOST_OK\n");

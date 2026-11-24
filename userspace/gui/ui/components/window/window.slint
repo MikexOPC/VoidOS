@@ -1,20 +1,20 @@
-// Layer 1: Reusable animated desktop window frame
+// Layer 1: Light-theme window with slim titlebar (32px), terminal.png icon,
+// and 3 compact Windows-style bordered mini-squares on the right (22x22).
 export component VoidWindow inherits Rectangle {
-    in property <string> title: "Window";
-    in property <bool> focused: false;
+    in property <string> title: "Terminal";
+    in property <bool> focused: true;
     callback close-clicked();
     callback focus-clicked();
 
-    background: #141A24;
+    background: #F7F9FFDC;
     border-radius: 12px;
-    border-width: 1.5px;
-    border-color: root.focused ? #3B82F6 : #2A3447;
+    border-width: 1px;
+    border-color: root.focused ? #7E8BA8AA : #AEB8CEA0;
     drop-shadow-blur: 22px;
     drop-shadow-offset-y: 8px;
-    drop-shadow-color: #00000088;
+    drop-shadow-color: #0B10203C;
     clip: true;
-
-    animate border-color { duration: 180ms; easing: ease-out; }
+    animate border-color { duration: 150ms; easing: ease-out; }
 
     TouchArea {
         clicked => { root.focus-clicked(); }
@@ -24,66 +24,131 @@ export component VoidWindow inherits Rectangle {
         padding: 0px;
         spacing: 0px;
 
-        // Titlebar
+        // Compact Titlebar (32px height, app icon + title on left, path pill in center, 3 mini-squares on right)
         Rectangle {
-            height: 34px;
-            background: root.focused ? #1D2638 : #18202E;
-            animate background { duration: 180ms; easing: ease-out; }
+            height: 32px;
+            background: #EEF2FBD8;
 
             HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                spacing: 8px;
+                padding-left: 10px;
+                padding-right: 7px;
+                padding-top: 5px;
+                padding-bottom: 5px;
                 alignment: space-between;
 
+                // Left: Terminal icon + compact window title
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: 7px;
                     alignment: start;
 
-                    // Window indicator dots
                     Rectangle {
-                        width: 11px;
-                        height: 11px;
+                        width: 22px;
+                        height: 22px;
                         border-radius: 6px;
-                        background: #EF4444;
-                        y: 11px;
-                        TouchArea {
-                            clicked => { root.close-clicked(); }
+                        border-width: 1px;
+                        border-color: #8896B278;
+                        background: #FFFFFF78;
+
+                        Image {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("../../../application/terminal/icon/terminal.png");
                         }
-                    }
-                    Rectangle {
-                        width: 11px;
-                        height: 11px;
-                        border-radius: 6px;
-                        background: #F59E0B;
-                        y: 11px;
-                    }
-                    Rectangle {
-                        width: 11px;
-                        height: 11px;
-                        border-radius: 6px;
-                        background: #22C55E;
-                        y: 11px;
                     }
 
                     Text {
                         text: root.title;
-                        color: root.focused ? #F1F5F9 : #94A3B8;
-                        font-size: 13px;
-                        font-weight: 600;
+                        color: #1E2436;
+                        font-size: 11px;
+                        font-weight: 700;
                         vertical-alignment: center;
+                    }
+                }
+
+                // Right: 3 compact Windows-style mini-squares (22x22) with Dock-like border frame
+                HorizontalLayout {
+                    spacing: 5px;
+                    alignment: end;
+
+                    // Minimize square (—)
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: min-ta.has-hover ? #5E6E94AA : #8896B280;
+                        background: min-ta.has-hover ? #FFFFFFCC : #FFFFFF68;
+                        animate background { duration: 150ms; easing: ease-out; }
+                        animate border-color { duration: 150ms; easing: ease-out; }
+                        min-ta := TouchArea { mouse-cursor: pointer; }
+                        Rectangle {
+                            x: 7px;
+                            y: 11px;
+                            width: 8px;
+                            height: 1.4px;
+                            background: #22283A;
+                        }
+                    }
+
+                    // Maximize square (□)
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: max-ta.has-hover ? #5E6E94AA : #8896B280;
+                        background: max-ta.has-hover ? #FFFFFFCC : #FFFFFF68;
+                        animate background { duration: 150ms; easing: ease-out; }
+                        animate border-color { duration: 150ms; easing: ease-out; }
+                        max-ta := TouchArea { mouse-cursor: pointer; }
+                        Rectangle {
+                            x: 7px;
+                            y: 7px;
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 1.5px;
+                            border-width: 1.4px;
+                            border-color: #22283A;
+                            background: transparent;
+                        }
+                    }
+
+                    // Close square (×)
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: close-ta.has-hover ? #DC2626AA : #8896B280;
+                        background: close-ta.has-hover ? #FEE2E2CC : #FFFFFF68;
+                        animate background { duration: 150ms; easing: ease-out; }
+                        animate border-color { duration: 150ms; easing: ease-out; }
+                        close-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.close-clicked(); }
+                        }
+                        Text {
+                            text: "×";
+                            color: close-ta.has-hover ? #B91C1C : #22283A;
+                            font-size: 13px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }
         }
 
-        // Thin divider
+        // Crisp 1px separator line
         Rectangle {
             height: 1px;
-            background: #243044;
+            background: #C4CCDE88;
         }
 
-        // Client content area
+        // Window content area
         Rectangle {
             vertical-stretch: 1;
             @children

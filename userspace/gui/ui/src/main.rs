@@ -3,10 +3,14 @@
 
 extern crate alloc;
 
+mod apps;
+
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use alloc::format;
 use alloc::rc::Rc;
 use core::arch::global_asm;
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use core::panic::PanicInfo;
 use core::time::Duration;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, TargetPixel};
@@ -24,7 +28,7 @@ global_asm!(
 );
 
 #[global_allocator]
-static ALLOCATOR: libvoid::heap::ShmAllocator = libvoid::heap::ShmAllocator::new(1024); // 4 MiB SHM heap
+static ALLOCATOR: libvoid::heap::ShmAllocator = libvoid::heap::ShmAllocator::new(2048); // 8 MiB SHM heap
 
 // ====== BgrxPixel (UEFI GOP / VirtIO-GPU native 32-bit pixel) ======
 
@@ -65,7 +69,6 @@ impl TargetPixel for BgrxPixel {
 struct VoidPlatform {
     window: Rc<MinimalSoftwareWindow>,
     start_ms: u64,
-    fake_ms: Rc<Cell<Option<u64>>>,
 }
 
 impl Platform for VoidPlatform {
@@ -74,14 +77,11 @@ impl Platform for VoidPlatform {
     }
 
     fn duration_since_start(&self) -> Duration {
-        if let Some(ms) = self.fake_ms.get() {
-            return Duration::from_millis(ms);
-        }
         let mut info = libvoid::DisplayInfo::default();
         if libvoid::display_info(&mut info) == 0 {
             Duration::from_millis(info.uptime_ms.saturating_sub(self.start_ms))
         } else {
-            Duration::from_millis(0)
+            libvoid::exit(96)
         }
     }
 }
@@ -97,7 +97,12 @@ fn present_region(
     let mut n = 0usize;
     for (origin, size) in region.iter() {
         if n >= 16 {
-            break;
+            return libvoid::display_present(&[libvoid::DisplayRect {
+                x: 0,
+                y: 0,
+                width: max_w,
+                height: max_h,
+            }]) == 0;
         }
         let x0 = origin.x.max(0) as u32;
         let y0 = origin.y.max(0) as u32;
@@ -119,6 +124,27 @@ fn present_region(
     libvoid::display_present(&wire[..n]) == 0
 }
 
+// ====== format_rtc_labels ======
+
+fn format_rtc_labels(dinfo: &libvoid::DisplayInfo, width: u32, height: u32) -> (slint::SharedString, slint::SharedString) {
+    const MONTHS: [&str; 12] = [
+        "Gen", "Feb", "Mar", "Apr", "Mag", "Giu",
+        "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
+    ];
+    if let Some((year, month, day, hour, minute, _second)) = dinfo.rtc_date_time() {
+        let mon = MONTHS.get((month as usize).saturating_sub(1)).copied().unwrap_or("---");
+        (
+            format!("{:02}:{:02}", hour, minute).into(),
+            format!("{:02} {} {}", day, mon, year).into(),
+        )
+    } else {
+        (
+            format!("{} × {}", width, height).into(),
+            format!("{} s", dinfo.uptime_ms / 1000).into(),
+        )
+    }
+}
+
 // ====== program_main ======
 
 #[unsafe(no_mangle)]
@@ -133,16 +159,16 @@ extern "C" fn program_main(mode: u64) -> ! {
     }
 
     let mut dinfo = libvoid::DisplayInfo::default();
-    let _ = libvoid::display_info(&mut dinfo);
+    if libvoid::display_info(&mut dinfo) != 0 {
+        libvoid::exit(86);
+    }
 
     let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
     window.set_size(PhysicalSize::new(acq.width, acq.height));
-    let fake_ms = Rc::new(Cell::new(if mode == 1 { Some(0u64) } else { None }));
 
     if slint::platform::set_platform(Box::new(VoidPlatform {
         window: window.clone(),
         start_ms: dinfo.uptime_ms,
-        fake_ms: fake_ms.clone(),
     }))
     .is_err()
     {
@@ -153,52 +179,124 @@ extern "C" fn program_main(mode: u64) -> ! {
         Ok(u) => u,
         Err(_) => libvoid::exit(82),
     };
-    let _ = ui.show();
+    let requests = Rc::new(RefCell::new(VecDeque::new()));
+    let launch = requests.clone();
+    ui.on_launch_app(move |kind| launch.borrow_mut().push_back((0, kind)));
+    let close = requests.clone();
+    ui.on_close_app(move |kind| close.borrow_mut().push_back((1, kind)));
+    let focus = requests.clone();
+    ui.on_focus_app(move |kind| focus.borrow_mut().push_back((2, kind)));
+    let quitting = Rc::new(Cell::new(false));
+    let quit = quitting.clone();
+    ui.on_quit_desktop(move || quit.set(true));
+    let mut applications = apps::Applications::new(mode == 1);
+    if ui.show().is_err() {
+        libvoid::exit(82);
+    }
+    let (clock_str, date_str) = format_rtc_labels(&dinfo, acq.width, acq.height);
+    ui.set_display_label(clock_str);
+    ui.set_uptime_label(date_str);
 
     let total_pixels = (acq.stride as usize).saturating_mul(acq.height as usize);
     let backbuffer =
         unsafe { core::slice::from_raw_parts_mut(acq.user_virt as *mut BgrxPixel, total_pixels) };
 
-    // Mode 1: self-verification pass (renders Slint desktop + Dock morph animation + clean exit).
-    if mode == 1 {
+    if mode == 1 || mode == 2 {
+        if !applications.launch(0) {
+            let _ = libvoid::write_console(b"GUI self-check error 87\n");
+            libvoid::exit(87);
+        }
+        let mut initial_commit = false;
+        for _ in 0..10000 {
+            if !applications.poll(&ui, acq.width, acq.height) {
+                let _ = libvoid::write_console(b"GUI self-check error 88\n");
+                libvoid::exit(88);
+            }
+            if applications.commits(0) != 0 {
+                initial_commit = true;
+                break;
+            }
+            libvoid::yield_now();
+        }
+        if !initial_commit {
+            let _ = libvoid::write_console(b"GUI self-check error 89\n");
+            libvoid::exit(89);
+        }
+        if mode == 2 {
+            let _ = libvoid::write_console(b"VoidOS gui parent exit probe\n");
+            libvoid::exit(42);
+        }
+        for scalar in b"print gui_ipc_ok\n" {
+            if !applications.key(0, u32::from(*scalar), 0) {
+                let _ = libvoid::write_console(b"GUI self-check error 90\n");
+                libvoid::exit(90);
+            }
+        }
+        let before = applications.commits(0);
+        for _ in 0..10000 {
+            if !applications.poll(&ui, acq.width, acq.height) {
+                let _ = libvoid::write_console(b"GUI self-check error 91\n");
+                libvoid::exit(91);
+            }
+            if applications.commits(0) >= before + 17 {
+                break;
+            }
+            libvoid::yield_now();
+        }
+        if applications.commits(0) < before + 17 {
+            let _ = libvoid::write_console(b"GUI self-check error 92\n");
+            libvoid::exit(92);
+        }
         slint::platform::update_timers_and_animations();
         let mut presented = false;
         window.draw_if_needed(|renderer| {
             let dirty = renderer.render(backbuffer, acq.stride as usize);
             presented = present_region(dirty, acq.width, acq.height);
         });
-        if !presented {
-            libvoid::exit(83);
+        if !presented || !applications.shutdown() {
+            let _ = libvoid::write_console(b"GUI self-check error 93\n");
+            libvoid::exit(93);
         }
-        // Verify Slint actually rendered non-zero pixels into the backbuffer.
-        if backbuffer[0].0 == 0 || backbuffer[(120 * acq.stride as usize) + 120].0 == 0 {
-            libvoid::exit(84);
-        }
-
-        // Trigger DefaultDock morph (0 = Floating -> 1 = Full Bar) and advance animation clock.
-        ui.set_dock_mode(1);
-        fake_ms.set(Some(250));
-        slint::platform::update_timers_and_animations();
-        window.draw_if_needed(|renderer| {
-            let dirty = renderer.render(backbuffer, acq.stride as usize);
-            presented = present_region(dirty, acq.width, acq.height);
-        });
-        if !presented {
-            libvoid::exit(85);
-        }
-
-        let _ = libvoid::write_console(b"VoidOS slint compositor ok\n");
+        let _ = libvoid::write_console(b"VoidOS gui terminal IPC ok\nVoidOS slint compositor ok\n");
         libvoid::exit(0);
     }
+
+    let _ = libvoid::write_console(b"VoidOS desktop ready\n");
 
     // Mode 0: live interactive Slint event loop.
     let mut cx = (acq.width as f32) * 0.5;
     let mut cy = (acq.height as f32) * 0.5;
     let mut prev_buttons = 0u32;
+    let mut last_uptime_second = dinfo.uptime_ms / 1000;
     loop {
+        if libvoid::display_info(&mut dinfo) != 0 {
+            let _ = applications.shutdown();
+            libvoid::exit(96);
+        }
+        {
+            let second = dinfo.uptime_ms / 1000;
+            if second < last_uptime_second {
+                let _ = applications.shutdown();
+                libvoid::exit(97);
+            }
+            if second != last_uptime_second {
+                let (clock_str, date_str) = format_rtc_labels(&dinfo, acq.width, acq.height);
+                ui.set_display_label(clock_str);
+                ui.set_uptime_label(date_str);
+                last_uptime_second = second;
+            }
+        }
         slint::platform::update_timers_and_animations();
         let mut ev = libvoid::InputEvent::default();
-        while libvoid::input_poll(&mut ev) == 1 {
+        loop {
+            let received = libvoid::input_poll(&mut ev);
+            if received == 0 {
+                break;
+            }
+            if received != 1 {
+                let _ = applications.shutdown();
+                libvoid::exit(96);
+            }
             if ev.kind == libvoid::INPUT_MOUSE {
                 cx = (cx + ev.delta_x as f32).clamp(0.0, (acq.width - 1) as f32);
                 cy = (cy - ev.delta_y as f32).clamp(0.0, (acq.height - 1) as f32);
@@ -221,18 +319,47 @@ extern "C" fn program_main(mode: u64) -> ! {
                 }
                 prev_buttons = ev.flags;
             } else if ev.kind == libvoid::INPUT_KEY {
-                if ev.value == 27 {
-                    libvoid::exit(0);
-                }
-                if ev.value == b'\t' as u32 {
-                    ui.set_dock_mode((ui.get_dock_mode() + 1) % 4);
+                let scalar = match ev.value {
+                    0x110001 => 8,
+                    0x110002 => 9,
+                    0x110003 => 10,
+                    value => value,
+                };
+                if !applications.key(ev.code, scalar, ev.flags) {
+                    ui.set_status("Coda tastiera piena".into());
                 }
             }
         }
+        while let Some((operation, kind)) = requests.borrow_mut().pop_front() {
+            let ok = match operation {
+                0 => applications.launch(kind),
+                1 => applications.close(kind),
+                _ => {
+                    applications.focused = kind;
+                    true
+                }
+            };
+            if !ok {
+                ui.set_status("Applicazione non disponibile".into());
+            }
+            applications.refresh(&ui);
+        }
+        if !applications.poll(&ui, acq.width, acq.height) {
+            ui.set_status("Errore nel canale dell'applicazione".into());
+        }
+        if quitting.get() {
+            let ok = applications.shutdown();
+            libvoid::exit(if ok { 0 } else { 94 });
+        }
+        let mut presented = true;
         window.draw_if_needed(|renderer| {
             let dirty = renderer.render(backbuffer, acq.stride as usize);
-            let _ = present_region(dirty, acq.width, acq.height);
+            presented = present_region(dirty, acq.width, acq.height);
         });
+        if !presented {
+            let _ = applications.shutdown();
+            libvoid::exit(95);
+        }
         libvoid::yield_now();
     }
 }

@@ -1,44 +1,62 @@
-# Validazione — Obiettivo 6 & 6B: GUI di VoidOS su Slint 1.19
+# Validazione del desktop e delle applicazioni
 
-## Stato
-**Fatta** (sull'immagine di produzione `ordinary` in QEMU; hardware fisico non ancora provato).
+## Stato corrente
 
-- `kernel.elf` SHA-256: `0FFC9084D46C14730AB3702D592FF639E77939FC1323F2253AC96EF80C1B7BC5`
-- `/bin/ui.elf` (`user-ui.elf`, Slint 1.19 `no_std` + software renderer, `GPL-3.0-only`):
-  - SHA-256: `AAC21418DAB61BF3B1981AEEA22DE493B5C975F6A439C9A2786C9FE7A3991C57`
-  - Dimensione: **443.504 byte** (~433 KiB) con `opt-level="z"`, LTO e strip
-- Volume VirtIO-blk FAT32: 16 MiB (32.768 settori) contenente `/bin/{init,bridge,worker,sh,ui,terminal,sysmon}.elf` e `/ETC/UI/THEME.VSS`.
-- Loader ELF utente: 4 Page Table consecutive (`0x400000..0xC00000`, tetto immagine 6 MiB = 1536 pagine, stack utente 64 KiB con guard page).
+**Parziale.** Il Terminale è collegato al dock. La campagna conclusiva della
+prima task è in corso. Restano System Monitor con dati reali e la verifica
+delle due app insieme. Hardware fisico non provato.
 
----
+## Candidato della prima task
 
-## 1. Test host (Meson `voidos-host-tests`: 7/7 PASS)
+Immagine `ordinary`, QEMU/OVMF q35 TCG, 128 MiB, quattro vCPU. Tutti gli ELF
+sono congelati in `kernel/build/desktop-terminal-candidate1/`; gli hash
+completi sono nel relativo `hashes.json`.
 
-| Suite | Risultato | Cosa verifica |
-|---|---|---|
-| `gui_host` (C + ASan) | **PASS** | Ownership esclusiva display, bounds/overflow rect, input ring PS/2, crescita dinamica SHM, refcounting, rilascio automatico, non-escalation `BUDGET_FLAG_DISPLAY`. |
-| `libvoid_rust` | **4/4 PASS** | ABI struct GUI (`DisplayInfo`/`DisplayAcquireOut`/`DisplayRect`/`InputEvent`), allocatore `alloc` Ring 3 (`HeapCore` alloc/dealloc/alignment/coalescing + OOM), token splitting, formattazione. |
-| `libui_rust` | **4/4 PASS** | Animazioni fixed-point, parser mini-CSS `.vss`, renderer 2D + `DirtyList`, protocollo IPC `GuiMessage`. |
-| `process_table_host` (C + ASan) | **PASS** | Tabella processi dinamica, IPC, non-escalation budget, zero leak heap. |
-| `process_policy_rust` | **14/14 PASS** | Policy ELF fino a 1536 pagine, range `0x400000..0xC00000`, IPC, return frames. |
-| `elf_parser_rust` | **9/9 PASS** | Parser ELF64 e mutazioni header/segmenti. |
-| `security_random_host` (C + ASan) | **PASS** | Entropia, RCT/APT, `HMAC_DRBG`, canary `/GS`. |
+| Binario | SHA-256 |
+| --- | --- |
+| kernel.elf | `7EC8457E4B8E81EE7BE54D244709FB050428DA2034D7F9D1644C434284A4AD3B` |
+| user-ui.elf | `F771BFDC15197B56E4B5856ED6F5F76549676E6012C6E9B0EFE5E3C6B66F46BE` |
+| user-init.elf | `D45FB995467AF9AC63E2C49B88B864466BF7F4AD7CA875BD296F4D2AAC7CE4BC` |
+| user-terminal.elf | `1F977C72F66CEEBD9ACC7035054B96295A3303BCD46B819000167376053C25CC` |
 
----
+## Prove eseguite
 
-## 2. Prove sull'immagine di produzione in QEMU
+- **10/10 boot consecutivi PASS** sul candidato congelato.
+  `kernel/build/desktop-terminal-candidate1-boots10/`.
+  Ogni boot avvia il Terminale dal compositor, riceve create e commit reali,
+  invia un comando, compone la superficie e recupera le risorse. Una seconda
+  istanza del compositor termina con un figlio ancora attivo; la raccolta
+  del padre deve ripristinare il budget fisico. Le prove ordinarie includono
+  anche processi, IPC BSP/AP, shell e continuità del dispatcher dopo `exit`.
+- Il tentativo di ricevere un messaggio IPC nella superficie condivisa
+  read-only restituisce errore di copia. La ricezione successiva nel buffer
+  scrivibile conserva il messaggio. Il Terminale deve vedersi negare il
+  mapping del backbuffer del compositor.
+- **7/7 suite host PASS**, `desktop-terminal-host-final.log`.
+  `gui_host`, `process_table_host`, `process_policy_rust`, `shell_command_rust`,
+  `libvoid_rust`, `libui_rust`, `clock`. ASan sui test C dove configurato.
+  Includono autorizzazione SHM, pin durante unmap, retry, crescita e cleanup,
+  overflow dei range, finestre SHM per user-copy e wrap del clock.
+- Rendering Slint host e callback del launcher PASS,
+  `desktop-connected-render.log`. Il clock e la piattaforma sono fixture host.
+  Questa prova verifica rendering e richieste UI; l'integrazione OS viene
+  verificata in QEMU.
+- Runner **2/2 suite PASS**, `desktop-runner-tests.log`; piano di build
+  `plan_parity` PASS, `desktop-terminal-plan.log`.
 
-- **Campagna:** `qemu_runner.exe --image kernel/build/meson-kernel/kernel.elf --ordinary-shell --smp 4 --boots 10`
-- **Risultato:** **10/10 PASS** (`kernel/build/qemu-runner-18eab3e45e58763c-c124`).
-- **Comportamento reale verificato su ogni boot:**
-  1. `/bin/ui.elf` (Slint 1.19 `no_std`) alloca il proprio heap `alloc` da 4 MiB su `SYS_SHM_CREATE` + `SYS_SHM_MAP` (`RW+NX`).
-  2. Acquisisce il display con `BUDGET_FLAG_DISPLAY`, mappa il backbuffer SHM (768 pagine a 1024×768×32), inizializza `VoidPlatform` + `MinimalSoftwareWindow`.
-  3. Renderizza `desktop.slint` e tutti i componenti modulari (`background/`, `window/`, `dock/default/`, `overlay/`, `cursor/`), esegue il morph animato di `DefaultDock` (`0 -> 1`), presenta i dirty rect via `SYS_DISPLAY_PRESENT`, stampa `USER: VoidOS slint compositor ok` ed esce rilasciando display e SHM (zero perdite fisiche confermate dal watchdog HPET + ripristino console testuale).
-  4. `/bin/terminal.elf` e `/bin/sysmon.elf` girano concorrentemente in sandbox senza `BUDGET_FLAG_DISPLAY`, confermano isolamento e zero leak.
+## Correzioni emerse
 
----
+La prima prova visiva forzava con GDB il modo interattivo dentro il self-check
+prima dell'inizializzazione PS/2. L'ingresso ordinario `gui` elimina quella
+modalità di prova. Sono stati corretti l'autorizzazione SHM, il rollback
+parziale delle PTE, le copie syscall dall'heap SHM e il wrap dell'uptime.
 
-## 3. Licenze e limiti noti
+Una campagna è stata invalidata da una mia ricompilazione durante i boot.
+Dopo otto successi il nono boot ha mescolato init/kernel e UI di revisioni
+diverse. Quella campagna non vale per la chiusura. La campagna da 10/10 usa
+il candidato congelato sopra. Un link del runner è stato ritentato dopo la
+chiusura dell'eseguibile che Windows teneva occupato.
 
-- **Licenza Slint:** `userspace/gui/ui/` usa Slint sotto **`GPL-3.0-only`** (`userspace/gui/ui/LICENSE-GPL-3.0.txt`, sorgenti pubblici sul repo; nessun badge richiesto nella GUI o nella `.iso`).
-- **Limiti noti:** rendering CPU software (niente GPU 3D); input PS/2 (USB xHCI in Obiettivo 7); hardware fisico non ancora provato; budget CPU per singolo turno legato a meta periodo del timer ACPI PM 24-bit (`2000 ms < 2343 ms`).
+Il checkpoint `329392a` provava rendering e self-check delle app separate.
+Le sue prove non dimostravano il dock collegato ai processi applicativi.
+Il design attuale è in [gui.md](../design/gui.md).

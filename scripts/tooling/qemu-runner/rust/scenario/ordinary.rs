@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 pub const SHELL_CASE: u32 = 1;
 pub const SHELL_BRIDGE_FAULT_CASE: u32 = 2;
 pub const NO_PS2_CASE: u32 = 3;
+pub const GUI_CASE_BASE: u32 = 2000;
 // --ordinary-soak N is encoded as SOAK_CASE_BASE + N minutes.
 pub const SOAK_CASE_BASE: u32 = 1000;
 const SOAK_PAUSE: Duration = Duration::from_secs(5);
@@ -739,7 +740,7 @@ pub fn input_prefix_valid(log: &SerialLog, command: &str, first: usize) -> bool 
 
 // ====== shell_type ======
 
-fn shell_type(vm: &mut Vm, command: &str) -> Result<(), String> {
+pub(super) fn shell_type(vm: &mut Vm, command: &str) -> Result<(), String> {
     let before = vm.log();
     let first = before.numbers("PS2_UNICODE").len();
     let lines = before.text.split_inclusive('\n').filter_map(|line| line.strip_suffix('\n'))
@@ -816,6 +817,7 @@ pub fn run_ordinary(
         Some(SHELL_CASE) => shell_boot(&mut vm, plan, false),
         Some(SHELL_BRIDGE_FAULT_CASE) => shell_boot(&mut vm, plan, true),
         Some(NO_PS2_CASE) => no_ps2_boot(&mut vm, plan),
+        Some(case) if case > GUI_CASE_BASE => super::gui::run(&mut vm, case - GUI_CASE_BASE),
         Some(case) if case > SOAK_CASE_BASE => soak_boot(&mut vm, plan, case - SOAK_CASE_BASE),
         _ => ordinary_boot(&mut vm, plan),
     };

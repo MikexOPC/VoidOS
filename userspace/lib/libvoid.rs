@@ -30,6 +30,10 @@ pub const SYS_INPUT_POLL: u64 = 19;
 pub const SYS_SHM_CREATE: u64 = 20;
 pub const SYS_SHM_MAP: u64 = 21;
 pub const SYS_SHM_UNMAP: u64 = 22;
+pub const SYS_SHM_PUBLISH: u64 = 23;
+pub const SYS_SHM_VIEW: u64 = 24;
+pub const SYS_PROCESS_STOP: u64 = 25;
+pub const SYS_IPC_CLOSE: u64 = 26;
 
 // ====== flags and errors ======
 
@@ -274,7 +278,29 @@ pub struct DisplayInfo {
     pub uptime_ms: u64,
     pub owner_pid: u64,
     pub backbuffer_shm_id: u64,
-    pub reserved: u64,
+    pub rtc_packed: u64,
+}
+
+impl DisplayInfo {
+    // ====== rtc_date_time ======
+
+    pub fn rtc_date_time(&self) -> Option<(u16, u8, u8, u8, u8, u8)> {
+        if (self.rtc_packed & 0xFF) != 1 {
+            return None;
+        }
+        let year = ((self.rtc_packed >> 48) & 0xFFFF) as u16;
+        let month = ((self.rtc_packed >> 40) & 0xFF) as u8;
+        let day = ((self.rtc_packed >> 32) & 0xFF) as u8;
+        let hour = ((self.rtc_packed >> 24) & 0xFF) as u8;
+        let minute = ((self.rtc_packed >> 16) & 0xFF) as u8;
+        let second = ((self.rtc_packed >> 8) & 0xFF) as u8;
+        if year < 2000 || !(1..=12).contains(&month) || !(1..=31).contains(&day)
+            || hour > 23 || minute > 59 || second > 59
+        {
+            return None;
+        }
+        Some((year, month, day, hour, minute, second))
+    }
 }
 
 #[repr(C)]
@@ -460,4 +486,59 @@ mod tests {
         assert_eq!(format_u64(42, &mut buf), b"42");
         assert_eq!(format_u64(18446744073709551615, &mut buf), b"18446744073709551615");
     }
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct ShmView {
+    pub address: u64,
+    pub bytes: u64,
+}
+
+// ====== shm_publish ======
+
+#[cfg(not(test))]
+pub fn shm_publish(shm_id: u64) -> i64 {
+    raw_syscall(SYS_SHM_PUBLISH, shm_id, 0, 0)
+}
+
+// ====== shm_view ======
+
+#[cfg(not(test))]
+pub fn shm_view(shm_id: u64, view: &mut ShmView) -> i64 {
+    raw_syscall(SYS_SHM_VIEW, shm_id, view as *mut ShmView as u64, 0)
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct ConnectedChild {
+    pub pid: u64,
+    pub endpoint: u64,
+}
+
+// ====== spawn_connected ======
+
+#[cfg(not(test))]
+pub fn spawn_connected(path: &[u8], budget: SpawnBudget, child: &mut ConnectedChild) -> i64 {
+    let args = SpawnArgs {
+        initial_arg: child as *mut ConnectedChild as u64,
+        flags: 1,
+        use_budget: 1,
+        budget,
+    };
+    spawn(path, Some(&args))
+}
+
+// ====== process_stop ======
+
+#[cfg(not(test))]
+pub fn process_stop(pid: u64) -> i64 {
+    raw_syscall(SYS_PROCESS_STOP, pid, 0, 0)
+}
+
+// ====== ipc_close ======
+
+#[cfg(not(test))]
+pub fn ipc_close(handle: u64) -> i64 {
+    raw_syscall(SYS_IPC_CLOSE, handle, 0, 0)
 }

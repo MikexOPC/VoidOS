@@ -1,8 +1,15 @@
 import { DesktopBackground } from "components/background/background.slint";
 import { VoidWindow } from "components/window/window.slint";
 import { DefaultDock } from "components/dock/default/dock.slint";
-import { OverlayPill } from "components/overlay/overlay.slint";
 import { SoftwareCursor } from "components/cursor/cursor.slint";
+
+export struct AppSurface {
+    kind: int,
+    title: string,
+    pixels: image,
+    client-width: length,
+    client-height: length,
+}
 
 export component VoidDesktop inherits Window {
     width: 1024px;
@@ -11,151 +18,103 @@ export component VoidDesktop inherits Window {
 
     in-out property <int> dock-mode: 0;
     in-out property <bool> terminal-open: true;
-    in-out property <bool> sysmon-open: true;
+    in-out property <bool> sysmon-open: false;
     in-out property <int> focused-window: 0;
-    in-out property <string> overlay-text: "VoidOS Desktop (Slint)";
-    in-out property <float> cpu-load: 0.68;
-    in-out property <float> mem-load: 0.42;
-    in-out property <string> display-label: "1024 x 768";
-    in-out property <string> uptime-label: "4210 ms";
-    in-out property <length> cursor-x: 512px;
-    in-out property <length> cursor-y: 384px;
+    in-out property <string> overlay-text: "";
+    in-out property <string> status: "";
+    in-out property <[AppSurface]> surfaces: [];
+    in-out property <float> cpu-load: 0.12;
+    in-out property <float> mem-load: 0.47;
+    in-out property <string> display-label: "15:44";
+    in-out property <string> uptime-label: "24 Nov 2026";
+    in-out property <length> cursor-x: 540px;
+    in-out property <length> cursor-y: 380px;
 
-    // Layer 0: Background
+    callback launch-app(int);
+    callback close-app(int);
+    callback focus-app(int);
+    callback quit-desktop();
+
+    // Layer 0: Wallpaper background (no VoidOS text on top)
     DesktopBackground {
         width: root.width;
         height: root.height;
     }
 
-    // Layer 1: Windows
-    if root.sysmon-open: VoidWindow {
-        x: 576px;
-        y: 120px;
-        width: 396px;
-        height: 270px;
-        title: "System Monitor";
-        focused: root.focused-window == 1;
-        focus-clicked => { root.focused-window = 1; }
-        close-clicked => { root.sysmon-open = false; }
+    // Layer 1: Live application surfaces from /bin/terminal.elf when running in QEMU
+    for surface in root.surfaces: VoidWindow {
+        x: 202px;
+        y: 104px;
+        width: surface.client-width + 2px;
+        height: surface.client-height + 34px;
+        title: surface.title;
+        focused: root.focused-window == surface.kind;
+        focus-clicked => {
+            root.focused-window = surface.kind;
+            root.focus-app(surface.kind);
+        }
+        close-clicked => {
+            root.close-app(surface.kind);
+        }
 
-        VerticalLayout {
-            padding: 16px;
-            spacing: 12px;
-
-            Text {
-                text: "CPU Load";
-                color: #CBD5E1;
-                font-size: 12px;
-                font-weight: 600;
-            }
-            Rectangle {
-                height: 14px;
-                border-radius: 7px;
-                background: #1E293B;
-                clip: true;
-                Rectangle {
-                    x: 0px;
-                    height: 100%;
-                    width: parent.width * root.cpu-load;
-                    border-radius: 7px;
-                    background: @linear-gradient(90deg, #2563EB 0%, #60A5FA 100%);
-                    animate width { duration: 220ms; easing: ease-out; }
-                }
-            }
-
-            Text {
-                text: "Memory";
-                color: #CBD5E1;
-                font-size: 12px;
-                font-weight: 600;
-            }
-            Rectangle {
-                height: 14px;
-                border-radius: 7px;
-                background: #1E293B;
-                clip: true;
-                Rectangle {
-                    x: 0px;
-                    height: 100%;
-                    width: parent.width * root.mem-load;
-                    border-radius: 7px;
-                    background: @linear-gradient(90deg, #059669 0%, #34D399 100%);
-                    animate width { duration: 220ms; easing: ease-out; }
-                }
-            }
-
-            Rectangle { height: 6px; }
-
-            HorizontalLayout {
-                alignment: space-between;
-                Text { text: "Display"; color: #64748B; font-size: 12px; }
-                Text { text: root.display-label; color: #E2E8F0; font-size: 12px; font-weight: 600; }
-            }
-            HorizontalLayout {
-                alignment: space-between;
-                Text { text: "Uptime"; color: #64748B; font-size: 12px; }
-                Text { text: root.uptime-label; color: #E2E8F0; font-size: 12px; font-weight: 600; }
-            }
+        Image {
+            width: 100%;
+            height: 100%;
+            source: surface.pixels;
         }
     }
 
-    if root.terminal-open: VoidWindow {
-        x: 56px;
-        y: 84px;
-        width: 484px;
-        height: 316px;
+    // Fallback / preview light-theme Terminal window when no external SHM surface is attached yet
+    if root.surfaces.length == 0 && root.terminal-open: VoidWindow {
+        x: 202px;
+        y: 104px;
+        width: 620px;
+        height: 380px;
         title: "Terminal";
-        focused: root.focused-window == 0;
-        focus-clicked => { root.focused-window = 0; }
-        close-clicked => { root.terminal-open = false; }
+        focused: true;
+        close-clicked => {
+            root.terminal-open = false;
+            root.close-app(0);
+        }
 
         Rectangle {
-            background: #0C111B;
+            background: #F9FBFFE0;
             VerticalLayout {
                 padding: 14px;
-                spacing: 6px;
+                spacing: 7px;
                 alignment: start;
 
-                Text { text: "VoidOS Ring 3 Terminal"; color: #60A5FA; font-size: 13px; font-weight: 600; }
-                Text { text: "void> print VoidOS GUI Ready"; color: #94A3B8; font-size: 12px; }
-                Text { text: "VoidOS GUI Ready"; color: #E2E8F0; font-size: 12px; }
-                Text { text: "void> fl /"; color: #94A3B8; font-size: 12px; }
-                Text { text: "HELLO.TXT   BIN/   ETC/"; color: #E2E8F0; font-size: 12px; }
-                Text { text: "void> rp /HELLO.TXT"; color: #94A3B8; font-size: 12px; }
-                Text { text: "VoidOS FAT32 disk ok"; color: #34D399; font-size: 12px; }
-                Text { text: "void> _"; color: #3B82F6; font-size: 12px; font-weight: 700; }
+                Text { text: "void> print VoidOS Ready"; color: #4A5570; font-size: 12px; font-weight: 600; }
+                Text { text: "VoidOS Ready"; color: #1E2436; font-size: 12px; }
+                Text { text: "void> fl /"; color: #4A5570; font-size: 12px; font-weight: 600; }
+                Text { text: "HELLO.TXT   BIN/   ETC/"; color: #1E2436; font-size: 12px; }
+                Text { text: "void> rp /HELLO.TXT"; color: #4A5570; font-size: 12px; font-weight: 600; }
+                Text { text: "VoidOS FAT32 disk ok"; color: #1E2436; font-size: 12px; }
+                Text { text: "void> _"; color: #1E2436; font-size: 12px; font-weight: 700; }
             }
         }
     }
 
-    // Layer 2: Default Dock
+    // Layer 2: Compact transparent 3-zone Dock (shutdown + search | terminal icon | utility)
     DefaultDock {
         screen-width: root.width;
         screen-height: root.height;
         dock-mode: root.dock-mode;
         terminal-open: root.terminal-open;
-        sysmon-open: root.sysmon-open;
+        clock-text: root.display-label;
+        sub-clock-text: root.uptime-label;
         toggle-terminal => {
-            root.terminal-open = !root.terminal-open;
-            if (root.terminal-open) { root.focused-window = 0; }
+            if (root.terminal-open) {
+                root.terminal-open = false;
+                root.close-app(0);
+            } else {
+                root.terminal-open = true;
+                root.launch-app(0);
+            }
         }
-        toggle-sysmon => {
-            root.sysmon-open = !root.sysmon-open;
-            if (root.sysmon-open) { root.focused-window = 1; }
+        shutdown-clicked => {
+            root.quit-desktop();
         }
-        cycle-dock => {
-            root.dock-mode = mod(root.dock-mode + 1, 4);
-            root.overlay-text = root.dock-mode == 0 ? "Dock: Floating" :
-                                root.dock-mode == 1 ? "Dock: Full Bar" :
-                                root.dock-mode == 2 ? "Dock: Compact" : "Dock: Left";
-        }
-    }
-
-    // Layer 3: Overlay
-    OverlayPill {
-        x: (root.width - self.preferred-width) / 2;
-        y: 12px;
-        message: root.overlay-text;
     }
 
     // Layer 4: Cursor

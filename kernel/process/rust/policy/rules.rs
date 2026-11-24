@@ -19,6 +19,8 @@ pub const BUDGET_TICKS: u64 = 200;
 pub const MAX_PROCESS_WRITE: u64 = 4096;
 
 const LOWER_LIMIT: u64 = 1 << 47;
+const SHM_BASE: u64 = 0x1000_0000;
+const SHM_END: u64 = 0x4000_0000;
 const AC: u64 = 1 << 18;
 
 // ====== copy_range ======
@@ -28,7 +30,8 @@ pub fn copy_range(pointer: u64, length: u64) -> u32 {
         return LENGTH_BAD;
     }
     match pointer.checked_add(length) {
-        Some(end) if pointer >= USER_BASE && end <= USER_END => RANGE_OK,
+        Some(end) if (pointer >= USER_BASE && end <= USER_END)
+            || (pointer >= SHM_BASE && end <= SHM_END) => RANGE_OK,
         _ => RANGE_BAD,
     }
 }
@@ -139,10 +142,11 @@ mod tests {
 
     #[test]
     fn ranges() {
-        for (pointer, length) in [(USER_BASE, 0), (USER_END, 0), (USER_END - 256, 256), (0x5fd000, 8)] {
+        for (pointer, length) in [(USER_BASE, 0), (USER_END, 0), (USER_END - 256, 256), (0x5fd000, 8), (SHM_BASE, 256), (SHM_END - 1, 1)] {
             assert_eq!(copy_range(pointer, length), RANGE_OK);
         }
         for (pointer, length) in [
+            (SHM_BASE - 1, 2), (SHM_END - 1, 2), (SHM_END + 1, 0),
             (USER_BASE - 1, 1), (0, 0), (USER_END - 1, 2), (USER_END + 1, 0),
             (0xffffffff80000000, 8), (1 << 47, 8), (u64::MAX - 7, 16),
         ] {

@@ -18,6 +18,11 @@ static uint64_t bridge_kernel_handle;
 static int bridge_failed;
 static int bridge_pending, bridge_ready;
 
+static uint32_t gui_phase;
+static uint64_t gui_pid;
+static int gui_ready;
+static BOOT_U64 gui_free_before;
+
 static uint32_t proc_phase;
 static int proc_ready;
 static int proc_ap_offloaded;
@@ -290,12 +295,81 @@ int kernel_shell_proc_run(uint64_t result[6])
     return proc_ready;
 }
 
+// ====== gui_dispatch_private ======
+
+static void gui_dispatch_private(void)
+{
+    if (gui_phase == 1U) {
+        gui_ready = kernel_physical_budget_read(owner->Pool, &gui_free_before)
+            && x86_process_spawn_vfs("/bin/ui.elf", KERNEL_PID_KERNEL, 0, NULL, &gui_pid);
+        if (gui_ready)
+            gui_ready = x86_process_set_arg(gui_pid, 0);
+    }
+    else if (gui_phase == 2U) {
+        uint32_t state = 0;
+        if (!x86_process_step(gui_pid, 1, &state))
+            gui_ready = 0;
+        else if (state == KERNEL_PROC_ZOMBIE)
+            gui_ready = 0;
+        else if (!x86_process_step_children_budget(gui_pid, 1))
+            gui_ready = 0;
+    }
+    else if (gui_phase == 3U) {
+        KERNEL_PROCESS_TABLE *table = x86_process_manager_table();
+        uint64_t child = 0;
+        while (kernel_process_list_children(table, gui_pid, &child, 1U)) {
+            KERNEL_PROCESS_INFO info = {0};
+            if (!x86_process_query(child, &info) ||
+                (info.State != KERNEL_PROC_ZOMBIE && !x86_process_kill(child)) ||
+                !x86_process_reap(child, NULL)
+            )
+                kernel_panic("GUI_CHILD_CLEANUP_FAILED");
+        }
+        KERNEL_PROCESS_INFO info = {0};
+        if (gui_pid && x86_process_query(gui_pid, &info)) {
+            if (info.State != KERNEL_PROC_ZOMBIE)
+                (void)x86_process_kill(gui_pid);
+            gui_ready = x86_process_reap(gui_pid, &info)
+                && info.ExitKind == KERNEL_PROC_EXIT_NORMAL && info.ExitCode == 0;
+        }
+        gui_pid = 0;
+        gui_ready = gui_ready && kernel_physical_budget_matches(owner->Pool, gui_free_before);
+    }
+    gui_phase = 0;
+}
+
+// ====== kernel_shell_gui_run ======
+
+int kernel_shell_gui_run(void)
+{
+    if (!owner ||
+        bridge_pending ||
+        proc_phase ||
+        gui_phase ||
+        gui_pid ||
+        x86_scheduler_index() != 2 ||
+        !x86_scheduler_driver_task_valid()
+    )
+        return 0;
+    gui_phase = 1;
+    x86_scheduler_yield();
+    while (gui_ready) {
+        gui_phase = 2;
+        x86_scheduler_yield();
+    }
+    gui_phase = 3;
+    x86_scheduler_yield();
+    return gui_ready;
+}
+
 // ====== x86_shell_bridge_dispatch ======
 
 void x86_shell_bridge_dispatch(void)
 {
-    if (!bridge_pending && !proc_phase) return;
+    if (!bridge_pending && !proc_phase && !gui_phase) return;
     if (!owner || !x86_irq_ready() || !x86_irq_registry()) kernel_scheduler_fail_stop();
+    if (gui_phase)
+        gui_dispatch_private();
     if (bridge_pending) {
         bridge_dispatch_private();
         bridge_pending = 0;
@@ -318,7 +392,11 @@ void x86_shell_bridge_dispatch(void)
 int x86_shell_bridge_close(void)
 {
     if (!owner) return 1;
-    if (bridge_pending || proc_phase) return 0;
+    if (bridge_pending ||
+        proc_phase ||
+        gui_phase ||
+        gui_pid
+    ) return 0;
     uint32_t wake_task = KERNEL_TASK_NONE;
     if (bridge_kernel_handle) {
         (void)kernel_ipc_close_handle(x86_process_manager_table(), KERNEL_PID_KERNEL, bridge_kernel_handle, &wake_task);

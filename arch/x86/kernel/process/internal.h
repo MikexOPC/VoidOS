@@ -75,6 +75,10 @@
 #define SYS_SHM_CREATE 20ULL
 #define SYS_SHM_MAP 21ULL
 #define SYS_SHM_UNMAP 22ULL
+#define SYS_SHM_PUBLISH 23ULL
+#define SYS_SHM_VIEW 24ULL
+#define SYS_PROCESS_STOP 25ULL
+#define SYS_IPC_CLOSE 26ULL
 
 typedef struct {
     BOOT_U64               InitialArg;

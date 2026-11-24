@@ -1,5 +1,6 @@
 #include "gui.h"
 #include "manager.h"
+#include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/mm/physical/holdings.h"
@@ -36,6 +37,34 @@ static uint32_t x86_gui_shm_lease_cap;
 static X86_GUI_PT_LEASE *x86_gui_pt_leases;
 static uint32_t x86_gui_pt_lease_cap;
 static uint32_t x86_gui_ready;
+static const KERNEL_CLOCK *x86_gui_clock;
+static KERNEL_STOPWATCH x86_gui_uptime;
+static uint64_t x86_gui_uptime_base_ms;
+static uint64_t x86_gui_uptime_ms;
+static uint64_t x86_gui_clock_failed;
+
+// ====== x86_gui_clock_tick ======
+
+void x86_gui_clock_tick(void)
+{
+    if (!x86_gui_clock)
+        return;
+    if (!kernel_stopwatch_sample(x86_gui_clock, &x86_gui_uptime) ||
+        x86_gui_uptime.Lost
+    ) {
+        // 24-bit ACPI PM timer wrapped while idle/paused: re-anchor monotonically instead of poisoning display_info.
+        x86_gui_uptime_base_ms = ks_atomic_load_acquire(&x86_gui_uptime_ms);
+        if (!kernel_stopwatch_start(x86_gui_clock, &x86_gui_uptime)) {
+            ks_atomic_store_release(&x86_gui_clock_failed, 1);
+        }
+        return;
+    }
+    uint64_t ticks = x86_gui_uptime.Total;
+    uint64_t hz = x86_gui_clock->Hz;
+    uint64_t milliseconds = x86_gui_uptime_base_ms + ticks / hz * 1000ULL + ticks % hz * 1000ULL / hz;
+    ks_atomic_store_release(&x86_gui_uptime_ms, milliseconds);
+}
+
 
 // ====== update_holdings_private ======
 
@@ -172,9 +201,11 @@ static int store_pt_lease_private(uint64_t pid, uint64_t shm_id,
 // ====== map_shm_into_slot_private ======
 
 static int map_shm_into_slot_private(uint64_t pid, X86_PROCESS_SLOT *slot,
-    uint64_t shm_id, uint32_t pages, uint64_t phys_base, uint64_t *user_virt_out)
+    uint64_t shm_id, uint32_t pages, uint64_t phys_base, int writable, uint64_t *user_virt_out)
 {
     if (!slot || !pages || !phys_base || !user_virt_out)
+        return 0;
+    if (kernel_gui_shm_find_mapping(&x86_gui_state, pid, shm_id, NULL, NULL, NULL))
         return 0;
     uint32_t pd_count = (pages + 511U) / 512U;
     uint64_t saved_if = ks_irq_save();
@@ -211,8 +242,10 @@ static int map_shm_into_slot_private(uint64_t pid, X86_PROCESS_SLOT *slot,
         ks_irq_restore(saved_if);
         return 0;
     }
-    // Populate user PTEs as RW + NX (W^X enforced: shared memory is never executable).
-    BOOT_U64 pte_flags = PTE_PRESENT | PTE_WRITE | PTE_USER | PTE_NX;
+    // Intel SDM Vol. 3A (December 2024), section 5.6.1: leaf R/W bit 1 controls user writes.
+    BOOT_U64 pte_flags = PTE_PRESENT | PTE_USER | PTE_NX;
+    if (writable)
+        pte_flags |= PTE_WRITE;
     BOOT_U64 branch_flags = PTE_PRESENT | PTE_WRITE | PTE_USER;
     for (uint32_t pd_off = 0; pd_off < pd_count; ++pd_off) {
         BOOT_U64 pt_buf[512];
@@ -249,6 +282,12 @@ static int map_shm_into_slot_private(uint64_t pid, X86_PROCESS_SLOT *slot,
     uint64_t user_virt = (uint64_t)found * (2ULL * 1024ULL * 1024ULL);
     if (!store_pt_lease_private(pid, shm_id, &pt_lease, found, pd_count) ||
         !kernel_gui_shm_map_record(&x86_gui_state, pid, shm_id, user_virt)) {
+        for (uint32_t idx = 0; idx < x86_gui_pt_lease_cap; ++idx) {
+            if (x86_gui_pt_leases[idx].Active && x86_gui_pt_leases[idx].Pid == pid
+                && x86_gui_pt_leases[idx].ShmId == shm_id
+            )
+                x86_gui_pt_leases[idx].Active = 0;
+        }
         saved_if = ks_irq_save();
         for (uint32_t idx = 0; idx < pd_count; ++idx) {
             BOOT_U64 zero = 0;
@@ -361,6 +400,87 @@ void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
     }
 }
 
+// ====== read_cmos_reg_private ======
+
+static uint8_t read_cmos_reg_private(uint8_t reg)
+{
+    // Motorola MC146818 / Intel ICH LPC CMOS RTC: port 0x70 = index (bit 7 NMI=0), port 0x71 = data.
+    x86_write_port(0x70U, reg & 0x7FU);
+    return x86_read_port(0x71U);
+}
+
+// ====== bcd_to_bin_private ======
+
+static uint8_t bcd_to_bin_private(uint8_t value)
+{
+    return (uint8_t)(((value >> 4) * 10U) + (value & 0x0FU));
+}
+
+// ====== read_cmos_rtc_packed_private ======
+
+static uint64_t read_cmos_rtc_packed_private(void)
+{
+    // MC146818 Status Register A (0x0A) bit 7 = UIP (Update In Progress).
+    // Status Register B (0x0B) bit 2 = DM (0=BCD, 1=binary), bit 1 = 24/12h (1=24h).
+    uint8_t sec = 0, min = 0, hour = 0, day = 0, month = 0, year = 0, reg_b = 0;
+    uint8_t sec2 = 0, min2 = 0, hour2 = 0, day2 = 0, month2 = 0, year2 = 0;
+    int consistent = 0;
+    for (uint32_t attempt = 0; attempt < 8U; ++attempt) {
+        uint32_t spin = 0;
+        while ((read_cmos_reg_private(0x0AU) & 0x80U) != 0U && spin < 10000U)
+            ++spin;
+        if (spin >= 10000U)
+            return 0ULL;
+        sec = read_cmos_reg_private(0x00U);
+        min = read_cmos_reg_private(0x02U);
+        hour = read_cmos_reg_private(0x04U);
+        day = read_cmos_reg_private(0x07U);
+        month = read_cmos_reg_private(0x08U);
+        year = read_cmos_reg_private(0x09U);
+        reg_b = read_cmos_reg_private(0x0BU);
+        sec2 = read_cmos_reg_private(0x00U);
+        min2 = read_cmos_reg_private(0x02U);
+        hour2 = read_cmos_reg_private(0x04U);
+        day2 = read_cmos_reg_private(0x07U);
+        month2 = read_cmos_reg_private(0x08U);
+        year2 = read_cmos_reg_private(0x09U);
+        if (sec == sec2 && min == min2 && hour == hour2 &&
+            day == day2 && month == month2 && year == year2) {
+            consistent = 1;
+            break;
+        }
+    }
+    if (!consistent)
+        return 0ULL;
+    uint8_t pm = (uint8_t)(hour & 0x80U);
+    hour = (uint8_t)(hour & 0x7FU);
+    if ((reg_b & 0x04U) == 0U) {
+        sec = bcd_to_bin_private(sec);
+        min = bcd_to_bin_private(min);
+        hour = bcd_to_bin_private(hour);
+        day = bcd_to_bin_private(day);
+        month = bcd_to_bin_private(month);
+        year = bcd_to_bin_private(year);
+    }
+    if ((reg_b & 0x02U) == 0U) {
+        if (pm)
+            hour = (uint8_t)((hour % 12U) + 12U);
+        else if (hour == 12U)
+            hour = 0U;
+    }
+    uint16_t full_year = (uint16_t)(2000U + year);
+    if (month < 1U || month > 12U || day < 1U || day > 31U ||
+        hour > 23U || min > 59U || sec > 59U)
+        return 0ULL;
+    return ((uint64_t)full_year << 48)
+        | ((uint64_t)month << 40)
+        | ((uint64_t)day << 32)
+        | ((uint64_t)hour << 24)
+        | ((uint64_t)min << 16)
+        | ((uint64_t)sec << 8)
+        | 1ULL;
+}
+
 // ====== x86_gui_sys_display_info ======
 
 BOOT_U64 x86_gui_sys_display_info(X86_PROCESS_CPU *cpu, BOOT_U64 info_ptr)
@@ -371,15 +491,28 @@ BOOT_U64 x86_gui_sys_display_info(X86_PROCESS_CPU *cpu, BOOT_U64 info_ptr)
         return RESULT_RANGE;
     if (!refresh_display_geometry_private(NULL, NULL, NULL, NULL, NULL))
         return RESULT_UNKNOWN;
-    uint64_t uptime_ms = 0;
-    if (cpu->BudgetClock && cpu->BudgetClock->Read && cpu->BudgetClock->Hz) {
-        uint32_t ticks = 0;
-        if (cpu->BudgetClock->Read(cpu->BudgetClock->Context, &ticks))
-            uptime_ms = ((uint64_t)ticks * 1000ULL) / (uint64_t)cpu->BudgetClock->Hz;
+    if (cpu == &x86_process_cpus[0]) {
+        uint64_t saved_if = ks_irq_save();
+        if (!x86_gui_clock) {
+            x86_gui_clock = cpu->BudgetClock;
+            if (!kernel_stopwatch_start(x86_gui_clock, &x86_gui_uptime)) {
+                x86_gui_clock = NULL;
+                ks_irq_restore(saved_if);
+                return RESULT_UNKNOWN;
+            }
+        }
+        x86_gui_clock_tick();
+        ks_irq_restore(saved_if);
     }
+    if (ks_atomic_load_acquire(&x86_gui_clock_failed))
+        return RESULT_UNKNOWN;
+    uint64_t uptime_ms = ks_atomic_load_acquire(&x86_gui_uptime_ms);
     KERNEL_DISPLAY_INFO info = {0};
     if (!kernel_gui_display_info(&x86_gui_state, uptime_ms, &info))
         return RESULT_UNKNOWN;
+    uint64_t rtc_if = ks_irq_save();
+    info.RtcPacked = read_cmos_rtc_packed_private();
+    ks_irq_restore(rtc_if);
     if (x86_process_copy_user(cpu, (void *)info_ptr, &info, info_ptr, sizeof(info), 1))
         return RESULT_RANGE;
     return 0;
@@ -389,6 +522,8 @@ BOOT_U64 x86_gui_sys_display_info(X86_PROCESS_CPU *cpu, BOOT_U64 info_ptr)
 
 BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
 {
+    if (cpu != &x86_process_cpus[0])
+        return RESULT_QUOTA;
     if (!x86_gui_ready || !cpu || !cpu->Table || !cpu->Pid)
         return RESULT_UNKNOWN;
     if (x86_process_copy_range(out_ptr, sizeof(X86_DISPLAY_ACQUIRE_OUT)) != 1)
@@ -431,7 +566,7 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
         return RESULT_QUOTA;
     }
     uint64_t user_virt = 0;
-    if (!map_shm_into_slot_private(cpu->Pid, slot, shm_id, pages, lease.Base, &user_virt)) {
+    if (!map_shm_into_slot_private(cpu->Pid, slot, shm_id, pages, lease.Base, 1, &user_virt)) {
         (void)kernel_gui_shm_release_unmapped(&x86_gui_state, shm_id, NULL, NULL, NULL);
         free_shm_backing_private(shm_id);
         return RESULT_QUOTA;
@@ -542,6 +677,8 @@ BOOT_U64 x86_gui_sys_input_poll(X86_PROCESS_CPU *cpu, BOOT_U64 event_ptr)
 
 BOOT_U64 x86_gui_sys_shm_create(X86_PROCESS_CPU *cpu, BOOT_U64 pages)
 {
+    if (cpu != &x86_process_cpus[0])
+        return RESULT_QUOTA;
     if (!x86_gui_ready || !cpu || !cpu->Pid)
         return RESULT_UNKNOWN;
     if (!pages || pages > KERNEL_GUI_SHM_MAX_PAGES)
@@ -576,17 +713,27 @@ BOOT_U64 x86_gui_sys_shm_create(X86_PROCESS_CPU *cpu, BOOT_U64 pages)
 
 BOOT_U64 x86_gui_sys_shm_map(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id)
 {
+    if (cpu != &x86_process_cpus[0])
+        return RESULT_QUOTA;
     if (!x86_gui_ready || !cpu || !cpu->Pid || !shm_id)
         return RESULT_UNKNOWN;
-    uint32_t pages = 0;
-    uint64_t phys_base = 0;
-    if (!kernel_gui_shm_lookup(&x86_gui_state, shm_id, &pages, &phys_base))
-        return RESULT_RANGE;
     X86_PROCESS_SLOT *slot = x86_process_slot_for_pid(cpu->Pid);
     if (!slot)
         return RESULT_UNKNOWN;
+    uint32_t pages = 0;
+    uint64_t phys_base = 0;
+    int writable = 0;
+    if (!kernel_gui_shm_pin(&x86_gui_state, cpu->Pid, shm_id, &pages, &phys_base, &writable))
+        return RESULT_RANGE;
     uint64_t user_virt = 0;
-    if (!map_shm_into_slot_private(cpu->Pid, slot, shm_id, pages, phys_base, &user_virt))
+    int mapped = map_shm_into_slot_private(cpu->Pid, slot, shm_id, pages, phys_base,
+        writable, &user_virt);
+    int freed = 0;
+    if (!kernel_gui_shm_unpin(&x86_gui_state, shm_id, &freed))
+        kernel_panic("GUI_SHM_PIN_LOST");
+    if (freed)
+        free_shm_backing_private(shm_id);
+    if (!mapped)
         return RESULT_QUOTA;
     return user_virt;
 }
@@ -595,6 +742,8 @@ BOOT_U64 x86_gui_sys_shm_map(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id)
 
 BOOT_U64 x86_gui_sys_shm_unmap(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id)
 {
+    if (cpu != &x86_process_cpus[0])
+        return RESULT_QUOTA;
     if (!x86_gui_ready || !cpu || !cpu->Pid || !shm_id)
         return RESULT_UNKNOWN;
     X86_PROCESS_SLOT *slot = x86_process_slot_for_pid(cpu->Pid);
@@ -606,5 +755,45 @@ BOOT_U64 x86_gui_sys_shm_unmap(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id)
     unmap_pt_from_slot_private(cpu->Pid, slot, shm_id);
     if (freed)
         free_shm_backing_private(shm_id);
+    return 0;
+}
+
+// ====== x86_gui_sys_shm_publish ======
+
+BOOT_U64 x86_gui_sys_shm_publish(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id)
+{
+    if (cpu != &x86_process_cpus[0])
+        return RESULT_QUOTA;
+    if (!x86_gui_ready ||
+        !cpu ||
+        !cpu->Pid
+    )
+        return RESULT_UNKNOWN;
+    return kernel_gui_shm_publish(&x86_gui_state, cpu->Pid, shm_id) ? 0 : RESULT_RANGE;
+}
+
+// ====== x86_gui_sys_shm_view ======
+
+BOOT_U64 x86_gui_sys_shm_view(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id, BOOT_U64 out_ptr)
+{
+    if (cpu != &x86_process_cpus[0])
+        return RESULT_QUOTA;
+    if (!cpu ||
+        x86_process_copy_range(out_ptr, 16U) != 1
+    )
+        return RESULT_RANGE;
+    BOOT_U64 address = x86_gui_sys_shm_map(cpu, shm_id);
+    if (address >= RESULT_QUOTA)
+        return address;
+    uint32_t pages = 0;
+    if (!kernel_gui_shm_find_mapping(&x86_gui_state, cpu->Pid, shm_id, NULL, &pages, NULL)) {
+        (void)x86_gui_sys_shm_unmap(cpu, shm_id);
+        return RESULT_UNKNOWN;
+    }
+    BOOT_U64 out[2] = {address, (BOOT_U64)pages * PAGE_BYTES};
+    if (x86_process_copy_user(cpu, (void *)out_ptr, out, out_ptr, sizeof(out), 1)) {
+        (void)x86_gui_sys_shm_unmap(cpu, shm_id);
+        return RESULT_RANGE;
+    }
     return 0;
 }

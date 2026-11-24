@@ -226,6 +226,13 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         if (!stepped || !x86_process_reap(init_pid, &init_info) ||
             init_info.ExitKind != KERNEL_PROC_EXIT_NORMAL || init_info.ExitCode != 0 ||
             !kernel_physical_budget_matches(env->Window->Pool, free_before)) {
+            kernel_text("VFS_EXEC_EXIT_KIND: ");
+            kernel_number(init_info.ExitKind);
+            kernel_text("\nVFS_EXEC_EXIT_CODE: ");
+            kernel_number(init_info.ExitCode);
+            kernel_text("\nVFS_EXEC_FAULT_VECTOR: ");
+            kernel_number(init_info.FaultVector);
+            kernel_text("\n");
             kernel_log(3, "VFS_EXEC_RUN_FAILED"); return 0;
         }
         kernel_log(0, "KERNEL_VFS_EXEC_OK");

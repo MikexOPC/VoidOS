@@ -1,14 +1,17 @@
-// Layer 4: Software cursor pointer
+// Layer 4: Software cursor — rounded pointer arrow (cursor.png)
 export component SoftwareCursor inherits Rectangle {
     in property <length> pointer-x: 512px;
     in property <length> pointer-y: 384px;
 
     x: root.pointer-x;
     y: root.pointer-y;
-    width: 14px;
-    height: 14px;
-    border-radius: 7px;
-    background: #FFFFFFEE;
-    border-width: 2px;
-    border-color: #0F172A;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+
+    Image {
+        width: 24px;
+        height: 24px;
+        source: @image-url("cursor.png");
+    }
 }

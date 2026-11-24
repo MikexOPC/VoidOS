@@ -82,10 +82,10 @@ KERNEL_PROCESS_TABLE *x86_process_manager_table(void)
     return manager_ready ? &manager_table : NULL;
 }
 
-// ====== x86_process_spawn_with_budget ======
+// ====== spawn_private ======
 
-int x86_process_spawn_with_budget(const X86_PROCESS_IMAGE *image, uint64_t parent_pid,
-    uint32_t flags, const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out)
+static int spawn_private(const X86_PROCESS_IMAGE *image, uint64_t parent_pid,
+    uint32_t flags, const KERNEL_PROCESS_BUDGET *requested_budget, int publish, uint64_t *pid_out)
 {
     KERNEL_HEAP *heap = kernel_heap();
     if (!manager_ready || !heap || !image || !pid_out)
@@ -109,6 +109,8 @@ int x86_process_spawn_with_budget(const X86_PROCESS_IMAGE *image, uint64_t paren
         (void)kernel_heap_free(heap, arch);
         return 0;
     }
+    arch->InitialArg = 0;
+    arch->WaitHandle = 0;
     uint64_t pages = arch->Slot.Lease.Pages;
     if (!kernel_holdings_update(&manager_holding, manager_held_pages + pages)) {
         (void)x86_process_slot_reap(&arch->Slot);
@@ -119,7 +121,8 @@ int x86_process_spawn_with_budget(const X86_PROCESS_IMAGE *image, uint64_t paren
     uint64_t pid = 0;
     if (!kernel_process_create_with_budget(&manager_table, parent_pid, flags,
         (uint64_t)(uintptr_t)arch, requested_budget, &pid) ||
-        !kernel_process_set_state(&manager_table, pid, KERNEL_PROC_CREATED, KERNEL_PROC_RUNNABLE)) {
+        (publish && !kernel_process_set_state(&manager_table, pid, KERNEL_PROC_CREATED, KERNEL_PROC_RUNNABLE))
+    ) {
         if (pid)
             (void)kernel_process_reap(&manager_table, pid, NULL);
         manager_held_pages -= pages;
@@ -134,6 +137,14 @@ int x86_process_spawn_with_budget(const X86_PROCESS_IMAGE *image, uint64_t paren
     return 1;
 }
 
+// ====== x86_process_spawn_with_budget ======
+
+int x86_process_spawn_with_budget(const X86_PROCESS_IMAGE *image, uint64_t parent_pid,
+    uint32_t flags, const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out)
+{
+    return spawn_private(image, parent_pid, flags, requested_budget, 1, pid_out);
+}
+
 // ====== x86_process_spawn ======
 
 int x86_process_spawn(const X86_PROCESS_IMAGE *image, uint32_t flags, uint64_t *pid_out)
@@ -141,10 +152,10 @@ int x86_process_spawn(const X86_PROCESS_IMAGE *image, uint32_t flags, uint64_t *
     return x86_process_spawn_with_budget(image, KERNEL_PID_KERNEL, flags, NULL, pid_out);
 }
 
-// ====== x86_process_spawn_vfs ======
+// ====== spawn_vfs_private ======
 
-int x86_process_spawn_vfs(const char *path, uint64_t parent_pid, uint32_t flags,
-    const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out)
+static int spawn_vfs_private(const char *path, uint64_t parent_pid, uint32_t flags,
+    const KERNEL_PROCESS_BUDGET *requested_budget, int publish, uint64_t *pid_out)
 {
     KERNEL_VFS *vfs = kernel_vfs();
     KERNEL_HEAP *heap = kernel_heap();
@@ -162,10 +173,47 @@ int x86_process_spawn_vfs(const char *path, uint64_t parent_pid, uint32_t flags,
         read_bytes == st.Size;
     if (ok) {
         X86_PROCESS_IMAGE image = { buffer, st.Size };
-        ok = x86_process_spawn_with_budget(&image, parent_pid, flags, requested_budget, pid_out);
+        ok = spawn_private(&image, parent_pid, flags, requested_budget, publish, pid_out);
     }
     (void)kernel_heap_free(heap, buffer);
     return ok;
+}
+
+// ====== x86_process_spawn_vfs ======
+
+int x86_process_spawn_vfs(const char *path, uint64_t parent_pid, uint32_t flags,
+    const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out)
+{
+    return spawn_vfs_private(path, parent_pid, flags, requested_budget, 1, pid_out);
+}
+
+// ====== x86_process_spawn_connected ======
+
+int x86_process_spawn_connected(const char *path, uint64_t parent_pid,
+    const KERNEL_PROCESS_BUDGET *requested_budget, uint64_t *pid_out, uint64_t *handle_out)
+{
+    if (!pid_out ||
+        !handle_out
+    )
+        return 0;
+    uint64_t pid = 0, parent_handle = 0, child_handle = 0;
+    if (!spawn_vfs_private(path, parent_pid, 0, requested_budget, 0, &pid))
+        return 0;
+    if (!x86_process_channel_create(parent_pid, pid, &parent_handle, &child_handle) ||
+        (child_handle & (1ULL << 63)) ||
+        !x86_process_set_arg(pid, child_handle | (1ULL << 63)) ||
+        !kernel_process_set_state(&manager_table, pid, KERNEL_PROC_CREATED, KERNEL_PROC_RUNNABLE)
+    ) {
+        uint32_t wake = KERNEL_TASK_NONE;
+        if (parent_handle)
+            (void)kernel_ipc_close_handle(&manager_table, parent_pid, parent_handle, &wake);
+        (void)x86_process_kill(pid);
+        (void)x86_process_reap(pid, NULL);
+        return 0;
+    }
+    *pid_out = pid;
+    *handle_out = parent_handle;
+    return 1;
 }
 
 // ====== x86_process_set_arg ======
@@ -174,7 +222,10 @@ int x86_process_set_arg(uint64_t pid, uint64_t initial_arg)
 {
     KERNEL_PROCESS_INFO info;
     X86_PROCESS_ARCH *arch = arch_lookup_private(pid, &info);
-    if (!arch || info.State != KERNEL_PROC_RUNNABLE || arch->Slot.Yields)
+    if (!arch ||
+        (info.State != KERNEL_PROC_RUNNABLE && info.State != KERNEL_PROC_CREATED) ||
+        arch->Slot.Yields
+    )
         return 0;
     arch->InitialArg = initial_arg;
     return 1;
@@ -194,6 +245,11 @@ int x86_process_channel_create(uint64_t pid0, uint64_t pid1,
 
 int x86_process_step(uint64_t pid, int renew_budget, uint32_t *state_out)
 {
+    if (x86_process_cpu_current() == &x86_process_cpus[0]) {
+        uint64_t saved_if = ks_irq_save();
+        x86_gui_clock_tick();
+        ks_irq_restore(saved_if);
+    }
     KERNEL_PROCESS_INFO info;
     X86_PROCESS_ARCH *arch = arch_lookup_private(pid, &info);
     if (!arch)
@@ -249,6 +305,34 @@ int x86_process_kill(uint64_t pid)
         0, 0, 0, 0, NULL, 0, &wake_count);
 }
 
+// ====== reap_descendants_private ======
+
+static int reap_descendants_private(uint64_t pid)
+{
+    KERNEL_HEAP *heap = kernel_heap();
+    uint32_t capacity = KERNEL_PROCESS_MAX_CAPACITY;
+    uint64_t *children = kernel_heap_alloc(heap, (size_t)capacity * sizeof(*children), 16);
+    if (!children)
+        return 0;
+    uint32_t count = kernel_process_list_children(&manager_table, pid, children, capacity);
+    for (uint32_t index = 0; index < count && count < capacity; ++index) {
+        count += kernel_process_list_children(&manager_table, children[index],
+            children + count, capacity - count);
+    }
+    int ok = 1;
+    while (ok && count) {
+        uint64_t child = children[--count];
+        KERNEL_PROCESS_INFO info = {0};
+        ok = x86_process_query(child, &info);
+        if (ok && info.State != KERNEL_PROC_ZOMBIE)
+            ok = x86_process_kill(child);
+        if (ok)
+            ok = x86_process_reap(child, NULL);
+    }
+    (void)kernel_heap_free(heap, children);
+    return ok;
+}
+
 // ====== x86_process_reap ======
 
 int x86_process_reap(uint64_t pid, KERNEL_PROCESS_INFO *info_out)
@@ -257,6 +341,8 @@ int x86_process_reap(uint64_t pid, KERNEL_PROCESS_INFO *info_out)
     KERNEL_PROCESS_INFO info;
     X86_PROCESS_ARCH *arch = arch_lookup_private(pid, &info);
     if (!heap || !arch || (info.State != KERNEL_PROC_ZOMBIE && info.State != KERNEL_PROC_CREATED))
+        return 0;
+    if (!reap_descendants_private(pid))
         return 0;
     x86_gui_release_owned(pid, &arch->Slot);
     if (kernel_vfs())
@@ -302,18 +388,34 @@ X86_PROCESS_SLOT *x86_process_slot_for_pid(uint64_t pid)
     return arch ? &arch->Slot : NULL;
 }
 
+// ====== x86_process_step_children_budget ======
+
+int x86_process_step_children_budget(uint64_t parent_pid, int renew_budget)
+{
+    if (!manager_ready || !parent_pid)
+        return 0;
+    KERNEL_HEAP *heap = kernel_heap();
+    uint32_t capacity = KERNEL_PROCESS_MAX_CAPACITY;
+    uint64_t *children = kernel_heap_alloc(heap, (size_t)capacity * sizeof(*children), 16);
+    if (!children)
+        return 0;
+    uint32_t count = kernel_process_list_children(&manager_table, parent_pid, children, capacity);
+    int ok = 1;
+    for (uint32_t index = 0; ok && index < count; ++index) {
+        uint32_t state = 0;
+        ok = x86_process_step(children[index], renew_budget, &state);
+        if (ok && state != KERNEL_PROC_ZOMBIE && count < capacity) {
+            count += kernel_process_list_children(&manager_table, children[index],
+                children + count, capacity - count);
+        }
+    }
+    (void)kernel_heap_free(heap, children);
+    return ok;
+}
+
 // ====== x86_process_step_children ======
 
 int x86_process_step_children(uint64_t parent_pid)
 {
-    if (!manager_ready || !parent_pid)
-        return 0;
-    uint64_t children[16] = {0};
-    uint32_t count = kernel_process_list_children(&manager_table, parent_pid, children, 16U);
-    for (uint32_t index = 0; index < count; ++index) {
-        uint32_t state = 0;
-        if (!x86_process_step(children[index], 0, &state))
-            return 0;
-    }
-    return 1;
+    return x86_process_step_children_budget(parent_pid, 0);
 }

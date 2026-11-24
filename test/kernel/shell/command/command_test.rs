@@ -23,6 +23,8 @@ fn builtins_and_arguments() {
     assert_eq!(classify(0x6d72,2,0),6);
     assert_eq!(classify(0x636e7973,4,0),14);
     assert_eq!(classify(0x636e7973,4,1),6);
+    assert_eq!(classify(0x697567,3,0),15);
+    assert_eq!(classify(0x697567,3,1),6);
     assert_eq!(classify(0,0,1),u32::MAX);
     assert_eq!(classify(1,0,0),u32::MAX);
     assert_eq!(classify(0x100706c6568,4,0),u32::MAX);
@@ -36,7 +38,7 @@ fn bounds_and_mutated_tokens() {
         for arguments in 0..=2 {
             for word in [0,u64::MAX,0x706c6568,0x737574617473] {
                 let result = classify(word,length,arguments);
-                assert!(result <= 14 || result == u32::MAX);
+                assert!(result <= 15 || result == u32::MAX);
                 if length > 256 || arguments > 1 { assert_eq!(result,u32::MAX); }
             }
         }

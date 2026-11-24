@@ -15,6 +15,7 @@
 #endif
 #ifdef KERNEL_USER_PROCESS
 int x86_process_in_syscall(void);
+void x86_gui_clock_tick(void);
 #endif
 
 extern const unsigned char x86_scheduler_irq_compute_begin[], x86_scheduler_irq_compute_end[];
@@ -138,6 +139,10 @@ static int handle_private(void)
     if (!preempt.Open || !x86_timer_read(preempt.Timer->Mapping,0x320,&lvt) ||
         lvt != (preempt.Running ? PREEMPT_LVT : STOPPED_LVT) ||
         !x86_lapic_eoi_vector(preempt.Timer->Mapping,X86_PREEMPT_VECTOR)) return 0;
+#ifdef KERNEL_USER_PROCESS
+    if (cpu_private() == 0)
+        x86_gui_clock_tick();
+#endif
     if (preempt.Ticks != UINT64_MAX) ++preempt.Ticks;
     return 1;
 }

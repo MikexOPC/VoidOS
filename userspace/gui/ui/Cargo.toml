@@ -10,6 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 libvoid = { path = "../../lib" }
+libui = { path = "../libui" }
 slint = { version = "1.9", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "renderer-software", "libm"] }
 
 [build-dependencies]
