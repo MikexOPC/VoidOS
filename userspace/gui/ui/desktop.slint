@@ -12,8 +12,8 @@ export struct AppSurface {
 }
 
 export component VoidDesktop inherits Window {
-    width: 1024px;
-    height: 768px;
+    width: 1280px;
+    height: 720px;
     title: "VoidOS Desktop";
 
     in-out property <int> dock-mode: 0;
@@ -43,8 +43,8 @@ export component VoidDesktop inherits Window {
 
     // Layer 1: Live application surfaces from /bin/terminal.elf when running in QEMU
     for surface in root.surfaces: VoidWindow {
-        x: 202px;
-        y: 104px;
+        x: (root.width - self.width) / 2;
+        y: 84px;
         width: surface.client-width + 2px;
         height: surface.client-height + 34px;
         title: surface.title;
@@ -66,9 +66,9 @@ export component VoidDesktop inherits Window {
 
     // Fallback / preview light-theme Terminal window when no external SHM surface is attached yet
     if root.surfaces.length == 0 && root.terminal-open: VoidWindow {
-        x: 202px;
-        y: 104px;
-        width: 620px;
+        x: (root.width - self.width) / 2;
+        y: 84px;
+        width: 640px;
         height: 380px;
         title: "Terminal";
         focused: true;

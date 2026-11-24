@@ -13,7 +13,7 @@ pub fn fb_mode_bytes(width: u32, height: u32, stride: u32, format: u32) -> u64 {
 
 pub fn fb_mode_score(width: u32, height: u32, stride: u32, format: u32) -> u32 {
     if fb_mode_bytes(width, height, stride, format) == 0 { return u32::MAX; }
-    width.abs_diff(1024) + height.abs_diff(768)
+    width.abs_diff(1280) + height.abs_diff(720)
 }
 
 // ====== fb_descriptor_bytes ======

@@ -6,9 +6,9 @@ use super::*;
 fn supported_geometry_and_stride() {
     assert_eq!(fb_mode_bytes(1024,768,1024,0),3145728);
     assert_eq!(fb_mode_bytes(1024,768,1088,1),3342336);
-    assert_eq!(fb_mode_score(1024,768,1088,1),0);
-    assert_eq!(fb_mode_score(800,600,800,0),392);
-    assert_eq!(fb_mode_score(1280,720,1280,0),304);
+    assert_eq!(fb_mode_score(1280,720,1280,1),0);
+    assert_eq!(fb_mode_score(1024,768,1088,1),304);
+    assert_eq!(fb_mode_score(800,600,800,0),600);
 }
 
 // ====== invalid_geometry ======
