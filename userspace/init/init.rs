@@ -166,7 +166,7 @@ fn run_vfs_supervisor() -> ! {
         libvoid::exit(75);
     }
 
-    // 5) Launch /bin/ui.elf in self-check mode (5 layers + Dock morph + console restore on exit).
+    // 5) Launch /bin/ui.elf once in self-check mode (Slint render + terminal IPC + read-only SHM + clean release).
     let ui_args = libvoid::SpawnArgs {
         initial_arg: 1,
         flags: 0,
@@ -188,18 +188,6 @@ fn run_vfs_supervisor() -> ! {
         || ui_status.exit_code != 0
     {
         libvoid::exit(77);
-    }
-
-    let orphan_args = libvoid::SpawnArgs { initial_arg: 2, ..ui_args };
-    let orphan_pid = libvoid::spawn(b"/bin/ui.elf", Some(&orphan_args));
-    if orphan_pid <= 0 {
-        libvoid::exit(84);
-    }
-    let mut orphan_status = libvoid::WaitStatus::default();
-    if libvoid::wait_pid(orphan_pid as u64, Some(&mut orphan_status)) != 0
-        || orphan_status.exit_kind != libvoid::EXIT_KIND_NORMAL
-        || orphan_status.exit_code != 42 {
-        libvoid::exit(85);
     }
 
     // 6) Launch /bin/terminal.elf and /bin/sysmon.elf concurrently (sandboxed, no DISPLAY flag)

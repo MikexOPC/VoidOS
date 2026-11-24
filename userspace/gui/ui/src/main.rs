@@ -268,8 +268,14 @@ extern "C" fn program_main(mode: u64) -> ! {
         slint::platform::update_timers_and_animations();
         let mut presented = false;
         window.draw_if_needed(|renderer| {
-            let dirty = renderer.render(backbuffer, acq.stride as usize);
-            presented = present_rects(Some(dirty), None, None, acq.width, acq.height);
+            let _dirty = renderer.render(backbuffer, acq.stride as usize);
+            // Verify display_present syscall on 1x1 rect without flashing the full desktop before the shell.
+            presented = libvoid::display_present(&[libvoid::DisplayRect {
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            }]) == 0;
         });
         if !presented || !applications.shutdown() {
             let _ = libvoid::write_console(b"GUI self-check error 93\n");
