@@ -20,7 +20,6 @@
 #include "arch/x86/kernel/scheduler/irq/preempt.h"
 #include "arch/x86/kernel/drivers/storage/virtio_blk/native.h"
 #include "arch/x86/kernel/drivers/storage/ahci/native.h"
-#include "arch/x86/kernel/drivers/video/virtio/direct.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/security/random.h"
@@ -192,7 +191,6 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!x86_ahci_start(env, directory, clock)) {
         kernel_log(3, "AHCI_START_FAILED"); return 0;
     }
-    (void)x86_vgpu_direct_start(clock);
     if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;
     }

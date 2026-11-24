@@ -7,7 +7,7 @@
 #endif
 #ifdef KERNEL_USER_PROCESS
 #include "kernel/gui/gui.h"
-#include "arch/x86/kernel/drivers/video/virtio/direct.h"
+#include "arch/x86/kernel/process/gui.h"
 #endif
 
 // ====== pop_private ======
@@ -95,7 +95,7 @@ void x86_ps2_mouse_task(void)
             mouse->Buttons = event.Buttons;
 #ifdef KERNEL_USER_PROCESS
             if (kernel_gui_global() && kernel_gui_display_owner(kernel_gui_global()) != 0) {
-                x86_vgpu_direct_cursor_move_delta(event.DeltaX, event.DeltaY);
+                x86_gui_cursor_move(event.DeltaX, event.DeltaY);
                 (void)kernel_gui_input_push_mouse(kernel_gui_global(), event.DeltaX, event.DeltaY, event.Buttons);
             } else {
 #endif

@@ -2,7 +2,7 @@
 #include "manager.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
-#include "arch/x86/kernel/drivers/video/virtio/direct.h"
+#include "kernel/console/video/pointer/shape.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/mm/physical/holdings.h"
 
@@ -47,6 +47,85 @@ static uint64_t x86_gui_rtc_cached;
 static uint64_t x86_gui_rtc_last_sec = ~0ULL;
 // BSP-only row staging buffer (8 KiB) for fast 64-bit framebuffer blits up to 2048 px wide.
 static uint32_t x86_gui_blit_buf[2048];
+
+// Direct kernel-level 18x18 console pointer overlay (zero userspace roundtrip).
+static struct {
+    int32_t   X;
+    int32_t   Y;
+    uint32_t  W;
+    uint32_t  H;
+    uint32_t  Active;
+    uint32_t  Drawn;
+    uint32_t  Saved[18U * 18U];
+} x86_gui_cursor;
+
+// ====== gui_cursor_restore_private ======
+
+static void gui_cursor_restore_private(volatile uint32_t *fb_pixels, uint32_t fb_stride)
+{
+    if (!x86_gui_cursor.Drawn)
+        return;
+    uint32_t x0 = (uint32_t)x86_gui_cursor.X;
+    uint32_t y0 = (uint32_t)x86_gui_cursor.Y;
+    for (uint32_t row = 0; row < x86_gui_cursor.H; ++row) {
+        volatile uint32_t *dst = fb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)x0;
+        const uint32_t *src = &x86_gui_cursor.Saved[row * 18U];
+        for (uint32_t col = 0; col < x86_gui_cursor.W; ++col)
+            dst[col] = src[col];
+    }
+    x86_gui_cursor.Drawn = 0U;
+}
+
+// ====== gui_cursor_draw_private ======
+
+static void gui_cursor_draw_private(volatile uint32_t *fb_pixels, uint32_t fb_w, uint32_t fb_h, uint32_t fb_stride)
+{
+    if (!x86_gui_cursor.Active || !fb_w || !fb_h)
+        return;
+    if (x86_gui_cursor.X < 0) x86_gui_cursor.X = 0;
+    if (x86_gui_cursor.Y < 0) x86_gui_cursor.Y = 0;
+    if ((uint32_t)x86_gui_cursor.X >= fb_w) x86_gui_cursor.X = (int32_t)(fb_w - 1U);
+    if ((uint32_t)x86_gui_cursor.Y >= fb_h) x86_gui_cursor.Y = (int32_t)(fb_h - 1U);
+    uint32_t x0 = (uint32_t)x86_gui_cursor.X;
+    uint32_t y0 = (uint32_t)x86_gui_cursor.Y;
+    uint32_t cw = fb_w - x0;
+    uint32_t ch = fb_h - y0;
+    if (cw > 18U) cw = 18U;
+    if (ch > 18U) ch = 18U;
+    for (uint32_t row = 0; row < ch; ++row) {
+        volatile uint32_t *dst = fb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)x0;
+        uint32_t *sav = &x86_gui_cursor.Saved[row * 18U];
+        for (uint32_t col = 0; col < cw; ++col) {
+            uint32_t bg = dst[col];
+            sav[col] = bg;
+            uint32_t sample = kernel_pointer_sample(col, row);
+            if (sample)
+                dst[col] = kernel_pointer_blend(sample, bg & 0x00FFFFFFU) | 0xFF000000U;
+        }
+    }
+    x86_gui_cursor.W = cw;
+    x86_gui_cursor.H = ch;
+    x86_gui_cursor.Drawn = 1U;
+}
+
+// ====== x86_gui_cursor_move ======
+
+void x86_gui_cursor_move(int32_t dx, int32_t dy)
+{
+    if (!x86_gui_ready || !x86_gui_cursor.Active || (!dx && !dy))
+        return;
+    BOOT_U64 fb_base = 0;
+    BOOT_U32 fb_w = 0, fb_h = 0, fb_stride = 0, fb_fmt = 0;
+    if (!x86_fb_kernel_surface_info(&fb_base, &fb_w, &fb_h, &fb_stride, &fb_fmt) || !fb_base)
+        return;
+    volatile uint32_t *fb_pixels = (volatile uint32_t *)(uintptr_t)fb_base;
+    uint64_t saved_if = ks_irq_save();
+    gui_cursor_restore_private(fb_pixels, fb_stride);
+    x86_gui_cursor.X += dx;
+    x86_gui_cursor.Y -= dy;
+    gui_cursor_draw_private(fb_pixels, fb_w, fb_h, fb_stride);
+    ks_irq_restore(saved_if);
+}
 
 // ====== x86_gui_clock_tick ======
 
@@ -394,8 +473,10 @@ void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
         return;
     uint64_t disp_shm = 0;
     (void)kernel_gui_display_release(&x86_gui_state, pid, &disp_shm);
-    if (disp_shm != 0 && x86_vgpu_direct_active())
-        x86_vgpu_direct_unbind_backbuffer();
+    if (disp_shm != 0) {
+        x86_gui_cursor.Active = 0U;
+        x86_gui_cursor.Drawn = 0U;
+    }
     uint64_t shm_id = 0, user_virt = 0, phys_base = 0;
     uint32_t pages = 0;
     int freed = 0;
@@ -591,16 +672,17 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
             free_shm_backing_private(shm_id);
         return RESULT_QUOTA;
     }
-    int vgpu_bound = 0;
-    if (x86_vgpu_direct_active() && stride == w)
-        vgpu_bound = x86_vgpu_direct_bind_backbuffer(lease.Base, w, h);
+    x86_gui_cursor.X = (int32_t)(w / 2U);
+    x86_gui_cursor.Y = (int32_t)(h / 2U);
+    x86_gui_cursor.Drawn = 0U;
+    x86_gui_cursor.Active = 1U;
     X86_DISPLAY_ACQUIRE_OUT out = {0};
     out.ShmId = shm_id;
     out.UserVirt = user_virt;
     out.Width = w;
     out.Height = h;
     out.Stride = stride;
-    out.Format = fmt | ((vgpu_bound && x86_vgpu_direct_has_cursor()) ? 0x80000000U : 0U);
+    out.Format = fmt | 0x80000000U;
     if (x86_process_copy_user(cpu, (void *)out_ptr, &out, out_ptr, sizeof(out), 1)) {
         x86_gui_release_owned(cpu->Pid, slot);
         return RESULT_RANGE;
@@ -638,21 +720,11 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
         if (!kernel_gui_rect_valid(fb_w, fb_h, &rects[idx]))
             return RESULT_RANGE;
     }
-    // Zero-copy VirtIO-GPU 2D DMA path when virtio-vga is bound; otherwise fast 64-bit GOP blit.
-    if (x86_vgpu_direct_active()) {
-        int all_ok = 1;
-        for (BOOT_U64 idx = 0; idx < count; ++idx) {
-            const KERNEL_DISPLAY_RECT *r = &rects[idx];
-            if (!x86_vgpu_direct_present_rect(r->X, r->Y, r->Width, r->Height)) {
-                all_ok = 0;
-                break;
-            }
-        }
-        if (all_ok)
-            return 0;
-    }
-    // Fast row blit: stage up to 2048 pixels (full 1080p row) per lease read and write 64-bit pairs to VRAM.
+    // Fast row blit: hide kernel 18x18 pointer, stage up to 2048 px per lease read, write 64-bit pairs, redraw pointer.
     volatile uint32_t *fb_pixels = (volatile uint32_t *)(uintptr_t)fb_base;
+    uint64_t cur_if = ks_irq_save();
+    gui_cursor_restore_private(fb_pixels, fb_stride);
+    ks_irq_restore(cur_if);
     for (BOOT_U64 idx = 0; idx < count; ++idx) {
         const KERNEL_DISPLAY_RECT *r = &rects[idx];
         for (uint32_t row = 0; row < r->Height; ++row) {
@@ -693,6 +765,9 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
                 return RESULT_UNKNOWN;
         }
     }
+    cur_if = ks_irq_save();
+    gui_cursor_draw_private(fb_pixels, fb_w, fb_h, fb_stride);
+    ks_irq_restore(cur_if);
     return 0;
 }
 

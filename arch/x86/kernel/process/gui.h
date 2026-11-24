@@ -18,6 +18,7 @@ _Static_assert(sizeof(X86_DISPLAY_ACQUIRE_OUT) == 32U, "X86_DISPLAY_ACQUIRE_OUT 
 
 int x86_gui_init(void);
 void x86_gui_clock_tick(void);
+void x86_gui_cursor_move(int32_t dx, int32_t dy);
 void x86_gui_bind_display(KERNEL_DISPLAY display);
 void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot);
 
