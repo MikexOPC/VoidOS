@@ -90,20 +90,23 @@ void x86_ps2_mouse_task(void)
         } else if (result == KERNEL_PS2_MOUSE_EVENT_READY) {
             mouse->Streak = 0;
             if (mouse->Events == UINT32_MAX) kernel_scheduler_fail_stop();
-#ifndef KERNEL_INPUT_INTERACTIVE
-            if (!kernel_text("MOUSE_EVENT: ") ||
-                !delta_private(event.DeltaX) || !kernel_text(" ") || !delta_private(event.DeltaY) ||
-                !kernel_text(" ") || !kernel_number(event.Buttons) || !kernel_text("\n")) kernel_scheduler_fail_stop();
-#endif
             ++mouse->Events;
             mouse->Buttons = event.Buttons;
 #ifdef KERNEL_USER_PROCESS
             if (kernel_gui_global() && kernel_gui_display_owner(kernel_gui_global()) != 0) {
                 (void)kernel_gui_input_push_mouse(kernel_gui_global(), event.DeltaX, event.DeltaY, event.Buttons);
-            } else
+            } else {
+#endif
+#ifndef KERNEL_INPUT_INTERACTIVE
+                if (!kernel_text("MOUSE_EVENT: ") ||
+                    !delta_private(event.DeltaX) || !kernel_text(" ") || !delta_private(event.DeltaY) ||
+                    !kernel_text(" ") || !kernel_number(event.Buttons) || !kernel_text("\n")) kernel_scheduler_fail_stop();
 #endif
 #ifdef KERNEL_CONSOLE_SHELL
-            if (!x86_console_mouse(owner, event.DeltaX, event.DeltaY, event.Buttons)) kernel_scheduler_fail_stop();
+                if (!x86_console_mouse(owner, event.DeltaX, event.DeltaY, event.Buttons)) kernel_scheduler_fail_stop();
+#endif
+#ifdef KERNEL_USER_PROCESS
+            }
 #endif
         }
         if (owner->Stop || ++burst == 32) { burst = 0; x86_scheduler_yield(); }
