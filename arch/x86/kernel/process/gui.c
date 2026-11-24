@@ -42,6 +42,8 @@ static KERNEL_STOPWATCH x86_gui_uptime;
 static uint64_t x86_gui_uptime_base_ms;
 static uint64_t x86_gui_uptime_ms;
 static uint64_t x86_gui_clock_failed;
+// BSP-only row staging buffer (8 KiB) for fast 64-bit framebuffer blits up to 2048 px wide.
+static uint32_t x86_gui_blit_buf[2048];
 
 // ====== x86_gui_clock_tick ======
 
@@ -597,6 +599,8 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
 
 BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, BOOT_U64 count)
 {
+    if (cpu != &x86_process_cpus[0])
+        return RESULT_QUOTA;
     if (!x86_gui_ready || !cpu || !cpu->Pid)
         return RESULT_UNKNOWN;
     if (!count || count > X86_GUI_MAX_RECTS_CALL)
@@ -621,8 +625,7 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
         if (!kernel_gui_rect_valid(fb_w, fb_h, &rects[idx]))
             return RESULT_RANGE;
     }
-    // Blit each validated dirty rectangle row-by-row from the RAM backbuffer lease to the framebuffer.
-    uint32_t row_buf[256];
+    // Fast row blit: stage up to 2048 pixels (full 1080p row) per lease read and write 64-bit pairs to VRAM.
     volatile uint32_t *fb_pixels = (volatile uint32_t *)(uintptr_t)fb_base;
     for (BOOT_U64 idx = 0; idx < count; ++idx) {
         const KERNEL_DISPLAY_RECT *r = &rects[idx];
@@ -631,18 +634,31 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
             uint32_t col = 0;
             while (col < r->Width) {
                 uint32_t chunk = r->Width - col;
-                if (chunk > 256U)
-                    chunk = 256U;
+                if (chunk > 2048U)
+                    chunk = 2048U;
                 uint64_t byte_off = ((uint64_t)y * (uint64_t)fb_stride + (uint64_t)(r->X + col)) * 4ULL;
                 uint64_t saved_if = ks_irq_save();
                 int ok = x86_page_window_read_lease(process_rt.Window, &backbuffer->Lease,
-                    byte_off, row_buf, (BOOT_U64)chunk * 4ULL);
+                    byte_off, x86_gui_blit_buf, (BOOT_U64)chunk * 4ULL);
                 ks_irq_restore(saved_if);
                 if (!ok)
                     return RESULT_UNKNOWN;
-                volatile uint32_t *dst = fb_pixels + (size_t)y * (size_t)fb_stride + (size_t)(r->X + col);
-                for (uint32_t p = 0; p < chunk; ++p)
-                    dst[p] = row_buf[p];
+                volatile uint32_t *dst32 = fb_pixels + (size_t)y * (size_t)fb_stride + (size_t)(r->X + col);
+                uint32_t p = 0;
+                if ((((uintptr_t)dst32) & 7U) != 0U && p < chunk) {
+                    dst32[0] = x86_gui_blit_buf[0];
+                    ++p;
+                }
+                volatile uint64_t *dst64 = (volatile uint64_t *)(dst32 + p);
+                const uint32_t *src32 = x86_gui_blit_buf + p;
+                uint32_t pairs = (chunk - p) >> 1;
+                for (uint32_t q = 0; q < pairs; ++q) {
+                    uint64_t packed = (uint64_t)src32[q * 2U] | ((uint64_t)src32[q * 2U + 1U] << 32);
+                    dst64[q] = packed;
+                }
+                p += pairs * 2U;
+                if (p < chunk)
+                    dst32[p] = x86_gui_blit_buf[p];
                 col += chunk;
             }
         }
