@@ -316,7 +316,6 @@ extern "C" fn program_main(mode: u64) -> ! {
         slint::platform::update_timers_and_animations();
         let mut ev = libvoid::InputEvent::default();
         let mut mouse_moved = false;
-        let mut any_input = false;
         loop {
             let received = libvoid::input_poll(&mut ev);
             if received == 0 {
@@ -326,7 +325,6 @@ extern "C" fn program_main(mode: u64) -> ! {
                 let _ = applications.shutdown();
                 libvoid::exit(96);
             }
-            any_input = true;
             if ev.kind == libvoid::INPUT_MOUSE {
                 if ev.delta_x != 0 || ev.delta_y != 0 {
                     cx = (cx + ev.delta_x as f32).clamp(0.0, (acq.width - 1) as f32);
@@ -421,9 +419,7 @@ extern "C" fn program_main(mode: u64) -> ! {
             let _ = applications.shutdown();
             libvoid::exit(95);
         }
-        if !any_input {
-            libvoid::yield_now();
-        }
+        libvoid::yield_now();
     }
 }
 

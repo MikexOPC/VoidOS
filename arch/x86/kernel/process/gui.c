@@ -76,12 +76,18 @@ static void gui_cursor_restore_private(volatile uint32_t *fb_pixels, uint32_t fb
     x86_gui_cursor.Drawn = 0U;
 }
 
+static X86_GUI_SHM_LEASE *find_shm_lease_private(uint64_t shm_id);
+
 // ====== gui_cursor_draw_private ======
 
 static void gui_cursor_draw_private(volatile uint32_t *fb_pixels, uint32_t fb_w, uint32_t fb_h, uint32_t fb_stride)
 {
     if (!x86_gui_cursor.Active || !fb_w || !fb_h)
         return;
+    KERNEL_DISPLAY_INFO dinfo = {0};
+    X86_GUI_SHM_LEASE *bb = kernel_gui_display_info(&x86_gui_state, 0, &dinfo)
+        ? find_shm_lease_private(dinfo.BackbufferShmId)
+        : NULL;
     if (x86_gui_cursor.X < 0) x86_gui_cursor.X = 0;
     if (x86_gui_cursor.Y < 0) x86_gui_cursor.Y = 0;
     if ((uint32_t)x86_gui_cursor.X >= fb_w) x86_gui_cursor.X = (int32_t)(fb_w - 1U);
@@ -95,9 +101,15 @@ static void gui_cursor_draw_private(volatile uint32_t *fb_pixels, uint32_t fb_w,
     for (uint32_t row = 0; row < ch; ++row) {
         volatile uint32_t *dst = fb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)x0;
         uint32_t *sav = &x86_gui_cursor.Saved[row * 18U];
+        int from_ram = 0;
+        if (bb) {
+            uint64_t byte_off = ((uint64_t)(y0 + row) * (uint64_t)fb_stride + (uint64_t)x0) * 4ULL;
+            from_ram = x86_page_window_read_lease(process_rt.Window, &bb->Lease, byte_off, sav, (BOOT_U64)cw * 4ULL);
+        }
         for (uint32_t col = 0; col < cw; ++col) {
-            uint32_t bg = dst[col];
-            sav[col] = bg;
+            uint32_t bg = from_ram ? sav[col] : dst[col];
+            if (!from_ram)
+                sav[col] = bg;
             uint32_t sample = kernel_pointer_sample(col, row);
             if (sample)
                 dst[col] = kernel_pointer_blend(sample, bg & 0x00FFFFFFU) | 0xFF000000U;
