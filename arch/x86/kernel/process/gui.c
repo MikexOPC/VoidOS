@@ -42,6 +42,8 @@ static KERNEL_STOPWATCH x86_gui_uptime;
 static uint64_t x86_gui_uptime_base_ms;
 static uint64_t x86_gui_uptime_ms;
 static uint64_t x86_gui_clock_failed;
+static uint64_t x86_gui_rtc_cached;
+static uint64_t x86_gui_rtc_last_sec = ~0ULL;
 // BSP-only row staging buffer (8 KiB) for fast 64-bit framebuffer blits up to 2048 px wide.
 static uint32_t x86_gui_blit_buf[2048];
 
@@ -512,9 +514,14 @@ BOOT_U64 x86_gui_sys_display_info(X86_PROCESS_CPU *cpu, BOOT_U64 info_ptr)
     KERNEL_DISPLAY_INFO info = {0};
     if (!kernel_gui_display_info(&x86_gui_state, uptime_ms, &info))
         return RESULT_UNKNOWN;
-    uint64_t rtc_if = ks_irq_save();
-    info.RtcPacked = read_cmos_rtc_packed_private();
-    ks_irq_restore(rtc_if);
+    uint64_t cur_sec = uptime_ms / 1000ULL;
+    if (cpu == &x86_process_cpus[0] && cur_sec != x86_gui_rtc_last_sec) {
+        uint64_t rtc_if = ks_irq_save();
+        x86_gui_rtc_cached = read_cmos_rtc_packed_private();
+        x86_gui_rtc_last_sec = cur_sec;
+        ks_irq_restore(rtc_if);
+    }
+    info.RtcPacked = x86_gui_rtc_cached;
     if (x86_process_copy_user(cpu, (void *)info_ptr, &info, info_ptr, sizeof(info), 1))
         return RESULT_RANGE;
     return 0;
