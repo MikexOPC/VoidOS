@@ -8,6 +8,36 @@ delle due app insieme. Hardware fisico non provato.
 
 ## Candidato della prima task
 
+### Correzione del primo click — 24 novembre 2026
+
+**Fatta.** La UI viene inizializzata dall'elenco reale delle applicazioni
+prima di essere mostrata. Il primo click sul dock avvia il Terminale.
+In precedenza `terminal-open` era vero per l'anteprima, anche senza processo,
+e il primo click chiudeva soltanto quella finestra.
+
+Il runner valida il payload PPM usando le dimensioni del file e seleziona
+i controlli del dock attuale. I movimenti sono limitati a 100 per asse.
+La geometria dei controlli resta quella del layout corrente.
+
+Immagine `ordinary`, QEMU/OVMF q35 TCG, quattro vCPU, 1280×720.
+Kernel SHA-256 `4C6E2900E2C285FC4B2AB1F8BDBF03CADC1E90BD07C732F4C1606E48C92BDE94`.
+UI SHA-256 `C51605252F1CCB7F760A18445F12B2EE2FBFA6A6BF4C08774CD4C15E3E8E4F13`.
+
+- 3/3 boot GUI PASS, 21 cicli, 42 avvii del Terminale e 21 comandi VFS.
+  Le sessioni GUI durano 69, 68 e 70 secondi. Verificati chiusura,
+  riapertura, ritorno alla shell e `bridge status`.
+  Evidenze `kernel/build/qemu-runner-18eb0d2e419e47a8-5c88/` e
+  `kernel/build/qemu-runner-18eb0d446ee4d0f4-8598/`.
+- Runner host 22/22 test unitari PASS e 8/8 test con VM simulata PASS.
+  Questi ultimi verificano il runner. Il percorso OS è verificato dai boot.
+- Screenshot del comando nel Terminale reale ispezionato visivamente.
+  Hardware fisico, stress da 30 minuti e latenza ingresso-pixel non provati.
+
+Le precedenti campagne fallite si fermavano sul formato PPM fisso o sul
+primo click. Non contribuiscono ai conteggi PASS.
+
+### Candidato storico
+
 Immagine `ordinary`, QEMU/OVMF q35 TCG, 128 MiB, quattro vCPU. Tutti gli ELF
 sono congelati in `kernel/build/desktop-terminal-candidate1/`; gli hash
 completi sono nel relativo `hashes.json`.

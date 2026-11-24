@@ -208,6 +208,7 @@ extern "C" fn program_main(mode: u64) -> ! {
     let quit = quitting.clone();
     ui.on_quit_desktop(move || quit.set(true));
     let mut applications = apps::Applications::new(mode == 1);
+    applications.refresh(&ui);
     if ui.show().is_err() {
         libvoid::exit(82);
     }

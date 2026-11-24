@@ -24,8 +24,20 @@ fn wait_text(vm: &mut Vm, marker: &str, count: usize) -> Result<(), String> {
 
 // ====== click ======
 
-fn click(vm: &mut Vm, dx: i32, dy: i32) {
-    vm.command(&format!("mouse_move {dx} {dy}"));
+fn click(vm: &mut Vm, x: i32, y: i32) {
+    for _ in 0..40 {
+        vm.command("mouse_move -100 -100");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let (mut remaining_x, mut remaining_y) = (x, y);
+    while remaining_x != 0 || remaining_y != 0 {
+        let dx = remaining_x.clamp(-100, 100);
+        let dy = remaining_y.clamp(-100, 100);
+        vm.command(&format!("mouse_move {dx} {dy}"));
+        remaining_x -= dx;
+        remaining_y -= dy;
+        std::thread::sleep(Duration::from_millis(20));
+    }
     std::thread::sleep(Duration::from_millis(150));
     vm.command("mouse_button 1");
     std::thread::sleep(Duration::from_millis(100));
@@ -33,17 +45,36 @@ fn click(vm: &mut Vm, dx: i32, dy: i32) {
     std::thread::sleep(Duration::from_millis(150));
 }
 
+// ====== screenshot_size ======
+
+pub fn screenshot_size(bytes: &[u8]) -> Option<(i32, i32)> {
+    let mut lines = bytes.splitn(4, |byte| *byte == b'\n');
+    if lines.next()? != b"P6" {
+        return None;
+    }
+    let dimensions = std::str::from_utf8(lines.next()?).ok()?;
+    let mut dimensions = dimensions.split_ascii_whitespace();
+    let width = dimensions.next()?.parse::<i32>().ok()?;
+    let height = dimensions.next()?.parse::<i32>().ok()?;
+    if width <= 0 || height <= 0 || dimensions.next().is_some() || lines.next()? != b"255" {
+        return None;
+    }
+    let pixels = lines.next()?;
+    let expected = (width as usize).checked_mul(height as usize)?.checked_mul(3)?;
+    (pixels.len() == expected).then_some((width, height))
+}
+
 // ====== screenshot ======
 
-fn screenshot(vm: &mut Vm, name: &str) -> Result<(), String> {
+fn screenshot(vm: &mut Vm, name: &str) -> Result<(i32, i32), String> {
     let path = vm.directory.join(format!("{name}.ppm"));
     let path_text = path.to_string_lossy().replace('\\', "/");
     vm.command(&format!("screendump \"{path_text}\""));
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
         if let Ok(bytes) = std::fs::read(&path) {
-            if bytes.starts_with(b"P6\n1024 768\n255\n") && bytes.len() == 1024 * 768 * 3 + 16 {
-                return Ok(());
+            if let Some(size) = screenshot_size(&bytes) {
+                return Ok(size);
             }
         }
         std::thread::sleep(Duration::from_millis(20));
@@ -67,10 +98,9 @@ pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
         super::ordinary::shell_type(vm, "gui")?;
         wait_text(vm, "VoidOS desktop ready", ready + 1)?;
         std::thread::sleep(Duration::from_millis(500));
-        if cycles == 0 {
-            screenshot(vm, "desktop")?;
-        }
-        click(vm, -109, 326);
+        let (width, height) = screenshot(vm, "desktop")?;
+        click(vm, 341, height - 37);
+        screenshot(vm, "terminal-click")?;
         wait_text(vm, "VoidOS desktop terminal ready", terminal + 1)?;
         for key in ["r", "p", "spc", "shift-7", "h", "e", "l", "l", "o", "dot", "t", "x", "t", "ret"] {
             vm.command(&format!("sendkey {key} 20"));
@@ -82,11 +112,11 @@ pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
         if cycles == 0 {
             screenshot(vm, "terminal-command")?;
         }
-        click(vm, 159, -585);
+        click(vm, width / 2 + 223, 100);
         std::thread::sleep(Duration::from_millis(400));
-        click(vm, -159, 585);
+        click(vm, 341, height - 37);
         wait_text(vm, "VoidOS desktop terminal ready", terminal + 2)?;
-        click(vm, 571, -676);
+        click(vm, 71, height - 37);
         vm.wait("SHELL_GUI_OK", cycles + 1, Some("OK"))?;
         cycles += 1;
         if started.elapsed() >= duration {

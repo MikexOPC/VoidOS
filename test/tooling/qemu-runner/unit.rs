@@ -8,6 +8,25 @@ use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, arguments};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+// ====== screenshots_validate_dimensions_and_complete_pixel_payload ======
+
+#[test]
+fn screenshots_validate_dimensions_and_complete_pixel_payload() {
+    use qemu_runner_core::scenario::gui::screenshot_size;
+    for (width, height) in [(1024, 768), (1280, 720)] {
+        let mut ppm = format!("P6\n{width} {height}\n255\n").into_bytes();
+        ppm.resize(ppm.len() + width * height * 3, 10);
+        assert_eq!(screenshot_size(&ppm), Some((width as i32, height as i32)));
+        ppm.pop();
+        assert_eq!(screenshot_size(&ppm), None);
+        ppm.extend_from_slice(&[0, 0]);
+        assert_eq!(screenshot_size(&ppm), None);
+    }
+    for invalid in [b"P6\n0 720\n255\n".as_slice(), b"P6\n-1 1\n255\n", b"P3\n1 1\n255\n000", b"P6\n1 1\n256\n000", b"P6\n1 1 1\n255\n000"] {
+        assert_eq!(screenshot_size(invalid), None);
+    }
+}
+
 // ====== migration_records_validate_context_handoff ======
 
 #[test]
