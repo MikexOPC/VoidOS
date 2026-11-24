@@ -116,7 +116,10 @@ fn run_vfs_supervisor() -> ! {
     if libvoid::wait_pid(umip_pid as u64, Some(&mut umip_status)) != 0 {
         libvoid::exit(69);
     }
-    if umip_status.exit_kind != libvoid::EXIT_KIND_FAULT || umip_status.fault_vector != 13 {
+    // With CR4.UMIP active, SGDT faults with #GP (vector 13); on CPUs/hypervisors without UMIP (e.g. WHPX), it exits 77.
+    let umip_faulted = umip_status.exit_kind == libvoid::EXIT_KIND_FAULT && umip_status.fault_vector == 13;
+    let umip_unsupported = umip_status.exit_kind == libvoid::EXIT_KIND_NORMAL && umip_status.exit_code == 77;
+    if !umip_faulted && !umip_unsupported {
         libvoid::exit(70);
     }
 
