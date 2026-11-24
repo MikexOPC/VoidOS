@@ -58,6 +58,7 @@ c	arch/x86/kernel/drivers/video/virtio/construction.c
 c	arch/x86/kernel/drivers/video/virtio/lifecycle.c
 c	arch/x86/kernel/drivers/video/virtio/pci/access.c
 c	arch/x86/kernel/drivers/video/virtio/integration/kernel.c
+c	arch/x86/kernel/drivers/video/virtio/direct.c
 c	kernel/mm/inventory.c
 c	kernel/mm/physical/allocator.c
 c	kernel/mm/physical/allocation/state.c

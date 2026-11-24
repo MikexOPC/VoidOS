@@ -287,7 +287,8 @@ extern "C" fn program_main(mode: u64) -> ! {
 
     let _ = libvoid::write_console(b"VoidOS desktop ready\n");
 
-    // Mode 0: live interactive Slint event loop with decoupled 20x20 cursor overlay + mouse coalescing.
+    // Mode 0: live interactive Slint event loop (hardware GPU cursor when bit 31 of format is set, else 20x20 overlay).
+    let hw_cursor = (acq.format & 0x8000_0000) != 0;
     let mut cx = (acq.width as f32) * 0.5;
     let mut cy = (acq.height as f32) * 0.5;
     let mut prev_buttons = 0u32;
@@ -398,12 +399,17 @@ extern "C" fn program_main(mode: u64) -> ! {
         let mut slint_drew = false;
         window.draw_if_needed(|renderer| {
             slint_drew = true;
-            let old_rect = cursor.restore(backbuffer, acq.stride as usize);
-            let dirty = renderer.render(backbuffer, acq.stride as usize);
-            let new_rect = cursor.draw(backbuffer, acq.stride as usize, acq.width, acq.height, ix, iy);
-            presented = present_rects(Some(dirty), old_rect, new_rect, acq.width, acq.height);
+            if hw_cursor {
+                let dirty = renderer.render(backbuffer, acq.stride as usize);
+                presented = present_rects(Some(dirty), None, None, acq.width, acq.height);
+            } else {
+                let old_rect = cursor.restore(backbuffer, acq.stride as usize);
+                let dirty = renderer.render(backbuffer, acq.stride as usize);
+                let new_rect = cursor.draw(backbuffer, acq.stride as usize, acq.width, acq.height, ix, iy);
+                presented = present_rects(Some(dirty), old_rect, new_rect, acq.width, acq.height);
+            }
         });
-        if !slint_drew {
+        if !slint_drew && !hw_cursor {
             let (ox, oy, drawn) = cursor.pos();
             if !drawn || ox != ix || oy != iy {
                 let old_rect = cursor.restore(backbuffer, acq.stride as usize);

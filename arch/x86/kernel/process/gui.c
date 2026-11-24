@@ -2,6 +2,7 @@
 #include "manager.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
+#include "arch/x86/kernel/drivers/video/virtio/direct.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/mm/physical/holdings.h"
 
@@ -393,6 +394,8 @@ void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
         return;
     uint64_t disp_shm = 0;
     (void)kernel_gui_display_release(&x86_gui_state, pid, &disp_shm);
+    if (disp_shm != 0 && x86_vgpu_direct_active())
+        x86_vgpu_direct_unbind_backbuffer();
     uint64_t shm_id = 0, user_virt = 0, phys_base = 0;
     uint32_t pages = 0;
     int freed = 0;
@@ -588,13 +591,16 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
             free_shm_backing_private(shm_id);
         return RESULT_QUOTA;
     }
+    int vgpu_bound = 0;
+    if (x86_vgpu_direct_active() && stride == w)
+        vgpu_bound = x86_vgpu_direct_bind_backbuffer(lease.Base, w, h);
     X86_DISPLAY_ACQUIRE_OUT out = {0};
     out.ShmId = shm_id;
     out.UserVirt = user_virt;
     out.Width = w;
     out.Height = h;
     out.Stride = stride;
-    out.Format = fmt;
+    out.Format = fmt | ((vgpu_bound && x86_vgpu_direct_has_cursor()) ? 0x80000000U : 0U);
     if (x86_process_copy_user(cpu, (void *)out_ptr, &out, out_ptr, sizeof(out), 1)) {
         x86_gui_release_owned(cpu->Pid, slot);
         return RESULT_RANGE;
@@ -631,6 +637,19 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
     for (BOOT_U64 idx = 0; idx < count; ++idx) {
         if (!kernel_gui_rect_valid(fb_w, fb_h, &rects[idx]))
             return RESULT_RANGE;
+    }
+    // Zero-copy VirtIO-GPU 2D DMA path when virtio-vga is bound; otherwise fast 64-bit GOP blit.
+    if (x86_vgpu_direct_active()) {
+        int all_ok = 1;
+        for (BOOT_U64 idx = 0; idx < count; ++idx) {
+            const KERNEL_DISPLAY_RECT *r = &rects[idx];
+            if (!x86_vgpu_direct_present_rect(r->X, r->Y, r->Width, r->Height)) {
+                all_ok = 0;
+                break;
+            }
+        }
+        if (all_ok)
+            return 0;
     }
     // Fast row blit: stage up to 2048 pixels (full 1080p row) per lease read and write 64-bit pairs to VRAM.
     volatile uint32_t *fb_pixels = (volatile uint32_t *)(uintptr_t)fb_base;
