@@ -108,6 +108,7 @@ typedef struct {
     uint16_t           CurAvailIdx;
     uint16_t           CurLastUsed;
     X86_PM_CLOCK       Clock;
+    uint32_t           Available;
     uint32_t           Ready;
     uint32_t           CursorReady;
     uint32_t           ScanoutBound;
@@ -303,6 +304,80 @@ static void build_cursor_sprite_private(uint32_t *pixels)
     }
 }
 
+// ====== init_device_private ======
+
+static int init_device_private(void)
+{
+    vgpu_dir.CtrlAvailIdx = 0U;
+    vgpu_dir.CtrlLastUsed = 0U;
+    vgpu_dir.CurAvailIdx = 0U;
+    vgpu_dir.CurLastUsed = 0U;
+    vgpu_dir.Ready = 0U;
+    vgpu_dir.CursorReady = 0U;
+    vgpu_dir.ScanoutBound = 0U;
+
+    // VirtIO 1.2 Section 3.1.1: Device Initialization Sequence.
+    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, 0U);
+    fence_all();
+    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, VGPU_STATUS_ACK);
+    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, VGPU_STATUS_ACK | VGPU_STATUS_DRIVER);
+
+    // Negotiate VIRTIO_F_VERSION_1 (bit 32 = word 1 bit 0).
+    wr32(vgpu_dir.Common, VGPU_COMMON_DEV_FEAT_SEL, 1U);
+    uint32_t feat_hi = rd32(vgpu_dir.Common, VGPU_COMMON_DEV_FEAT);
+    if ((feat_hi & 1U) == 0U)
+        return 0;
+    wr32(vgpu_dir.Common, VGPU_COMMON_DRV_FEAT_SEL, 0U);
+    wr32(vgpu_dir.Common, VGPU_COMMON_DRV_FEAT, 0U);
+    wr32(vgpu_dir.Common, VGPU_COMMON_DRV_FEAT_SEL, 1U);
+    wr32(vgpu_dir.Common, VGPU_COMMON_DRV_FEAT, 1U);
+
+    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, VGPU_STATUS_ACK | VGPU_STATUS_DRIVER | VGPU_STATUS_FEATURES_OK);
+    fence_all();
+    if ((rd8(vgpu_dir.Common, VGPU_COMMON_STATUS) & VGPU_STATUS_FEATURES_OK) == 0U)
+        return 0;
+
+    if (!setup_queue_private(VGPU_Q_CONTROL, vgpu_dir.CtrlRing, vgpu_dir.CtrlRingPhys, &vgpu_dir.CtrlNotifyOff))
+        return 0;
+    int has_cur = setup_queue_private(VGPU_Q_CURSOR, vgpu_dir.CurRing, vgpu_dir.CurRingPhys, &vgpu_dir.CurNotifyOff);
+
+    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS,
+        VGPU_STATUS_ACK | VGPU_STATUS_DRIVER | VGPU_STATUS_FEATURES_OK | VGPU_STATUS_DRIVER_OK);
+    fence_all();
+
+    vgpu_dir.Ready = 1U;
+
+    // Create 64x64 hardware cursor Resource ID 2 (VirtIO 1.2 Section 5.7.6.10).
+    if (has_cur) {
+        build_cursor_sprite_private(vgpu_dir.CurPixels);
+        zero_bytes(vgpu_dir.CtrlCmd, 64U);
+        put32(vgpu_dir.CtrlCmd, 0U, VGPU_CMD_RESOURCE_CREATE_2D);
+        put32(vgpu_dir.CtrlCmd, 24U, 2U); // resource_id = 2
+        put32(vgpu_dir.CtrlCmd, 28U, VGPU_FORMAT_B8G8R8A8_UNORM);
+        put32(vgpu_dir.CtrlCmd, 32U, 64U);
+        put32(vgpu_dir.CtrlCmd, 36U, 64U);
+        if (ctrl_exec_private(40U)) {
+            zero_bytes(vgpu_dir.CtrlCmd, 64U);
+            put32(vgpu_dir.CtrlCmd, 0U, VGPU_CMD_RESOURCE_ATTACH_BACKING);
+            put32(vgpu_dir.CtrlCmd, 24U, 2U); // resource_id = 2
+            put32(vgpu_dir.CtrlCmd, 28U, 1U); // nr_entries = 1
+            put64(vgpu_dir.CtrlCmd, 32U, vgpu_dir.CurPixelsPhys);
+            put32(vgpu_dir.CtrlCmd, 40U, 64U * 64U * 4U);
+            if (ctrl_exec_private(48U)) {
+                zero_bytes(vgpu_dir.CtrlCmd, 64U);
+                put32(vgpu_dir.CtrlCmd, 0U, VGPU_CMD_TRANSFER_TO_HOST_2D);
+                put32(vgpu_dir.CtrlCmd, 32U, 64U);
+                put32(vgpu_dir.CtrlCmd, 36U, 64U);
+                put64(vgpu_dir.CtrlCmd, 40U, 0ULL);
+                put32(vgpu_dir.CtrlCmd, 48U, 2U);
+                if (ctrl_exec_private(56U))
+                    vgpu_dir.CursorReady = 1U;
+            }
+        }
+    }
+    return 1;
+}
+
 // ====== x86_vgpu_direct_start ======
 
 int x86_vgpu_direct_start(const X86_PM_CLOCK *clock)
@@ -349,86 +424,33 @@ int x86_vgpu_direct_start(const X86_PM_CLOCK *clock)
     vgpu_dir.CurPixels = (uint32_t *)(dma + 8192U);
     vgpu_dir.CurPixelsPhys = dma_phys + 8192U;
 
-    // VirtIO 1.2 Section 3.1.1: Device Initialization Sequence.
-    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, 0U);
-    fence_all();
-    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, VGPU_STATUS_ACK);
-    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, VGPU_STATUS_ACK | VGPU_STATUS_DRIVER);
-
-    // Negotiate VIRTIO_F_VERSION_1 (bit 32 = word 1 bit 0).
-    wr32(vgpu_dir.Common, VGPU_COMMON_DEV_FEAT_SEL, 1U);
-    uint32_t feat_hi = rd32(vgpu_dir.Common, VGPU_COMMON_DEV_FEAT);
-    if ((feat_hi & 1U) == 0U)
+    if (!init_device_private())
         return 1;
-    wr32(vgpu_dir.Common, VGPU_COMMON_DRV_FEAT_SEL, 0U);
-    wr32(vgpu_dir.Common, VGPU_COMMON_DRV_FEAT, 0U);
-    wr32(vgpu_dir.Common, VGPU_COMMON_DRV_FEAT_SEL, 1U);
-    wr32(vgpu_dir.Common, VGPU_COMMON_DRV_FEAT, 1U);
-
-    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, VGPU_STATUS_ACK | VGPU_STATUS_DRIVER | VGPU_STATUS_FEATURES_OK);
-    fence_all();
-    if ((rd8(vgpu_dir.Common, VGPU_COMMON_STATUS) & VGPU_STATUS_FEATURES_OK) == 0U)
-        return 1;
-
-    if (!setup_queue_private(VGPU_Q_CONTROL, vgpu_dir.CtrlRing, vgpu_dir.CtrlRingPhys, &vgpu_dir.CtrlNotifyOff))
-        return 1;
-    int has_cur = setup_queue_private(VGPU_Q_CURSOR, vgpu_dir.CurRing, vgpu_dir.CurRingPhys, &vgpu_dir.CurNotifyOff);
-
-    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS,
-        VGPU_STATUS_ACK | VGPU_STATUS_DRIVER | VGPU_STATUS_FEATURES_OK | VGPU_STATUS_DRIVER_OK);
-    fence_all();
-
-    vgpu_dir.Ready = 1U;
-
-    // Create 64x64 hardware cursor Resource ID 2 (VirtIO 1.2 Section 5.7.6.10).
-    if (has_cur) {
-        build_cursor_sprite_private(vgpu_dir.CurPixels);
-        zero_bytes(vgpu_dir.CtrlCmd, 64U);
-        put32(vgpu_dir.CtrlCmd, 0U, VGPU_CMD_RESOURCE_CREATE_2D);
-        put32(vgpu_dir.CtrlCmd, 24U, 2U); // resource_id = 2
-        put32(vgpu_dir.CtrlCmd, 28U, VGPU_FORMAT_B8G8R8A8_UNORM);
-        put32(vgpu_dir.CtrlCmd, 32U, 64U);
-        put32(vgpu_dir.CtrlCmd, 36U, 64U);
-        if (ctrl_exec_private(40U)) {
-            zero_bytes(vgpu_dir.CtrlCmd, 64U);
-            put32(vgpu_dir.CtrlCmd, 0U, VGPU_CMD_RESOURCE_ATTACH_BACKING);
-            put32(vgpu_dir.CtrlCmd, 24U, 2U); // resource_id = 2
-            put32(vgpu_dir.CtrlCmd, 28U, 1U); // nr_entries = 1
-            put64(vgpu_dir.CtrlCmd, 32U, vgpu_dir.CurPixelsPhys);
-            put32(vgpu_dir.CtrlCmd, 40U, 64U * 64U * 4U);
-            if (ctrl_exec_private(48U)) {
-                zero_bytes(vgpu_dir.CtrlCmd, 64U);
-                put32(vgpu_dir.CtrlCmd, 0U, VGPU_CMD_TRANSFER_TO_HOST_2D);
-                put32(vgpu_dir.CtrlCmd, 32U, 64U);
-                put32(vgpu_dir.CtrlCmd, 36U, 64U);
-                put64(vgpu_dir.CtrlCmd, 40U, 0ULL);
-                put32(vgpu_dir.CtrlCmd, 48U, 2U);
-                if (ctrl_exec_private(56U))
-                    vgpu_dir.CursorReady = 1U;
-            }
-        }
-    }
-
+    vgpu_dir.Available = 1U;
     (void)kernel_log(0, vgpu_dir.CursorReady ? "KERNEL_VGPU_2D_CURSOR_READY" : "KERNEL_VGPU_2D_READY");
     return 1;
 }
 
 // ====== x86_vgpu_direct_active ======
 
-int x86_vgpu_direct_active(void) { return vgpu_dir.Ready != 0U; }
+int x86_vgpu_direct_active(void) { return vgpu_dir.Available != 0U; }
 
 // ====== x86_vgpu_direct_has_cursor ======
 
-int x86_vgpu_direct_has_cursor(void) { return vgpu_dir.Ready != 0U && vgpu_dir.CursorReady != 0U; }
+int x86_vgpu_direct_has_cursor(void) { return vgpu_dir.Available != 0U && vgpu_dir.CursorReady != 0U; }
 
 // ====== x86_vgpu_direct_bind_backbuffer ======
 
 int x86_vgpu_direct_bind_backbuffer(uint64_t phys_base, uint32_t width, uint32_t height)
 {
-    if (!vgpu_dir.Ready || !phys_base || !width || !height)
+    if (!vgpu_dir.Available || !phys_base || !width || !height)
+        return 0;
+    if (!vgpu_dir.Ready && !init_device_private())
         return 0;
     if (vgpu_dir.ScanoutBound)
         x86_vgpu_direct_unbind_backbuffer();
+    if (!vgpu_dir.Ready && !init_device_private())
+        return 0;
 
     // 1) RESOURCE_CREATE_2D (resource_id = 1, B8G8R8X8_UNORM).
     zero_bytes(vgpu_dir.CtrlCmd, 64U);
@@ -477,18 +499,12 @@ void x86_vgpu_direct_unbind_backbuffer(void)
     if (!vgpu_dir.Ready || !vgpu_dir.ScanoutBound)
         return;
     x86_vgpu_direct_cursor_hide();
-    // Detach scanout 0 (resource_id = 0) and unref resource 1.
-    zero_bytes(vgpu_dir.CtrlCmd, 64U);
-    put32(vgpu_dir.CtrlCmd, 0U, VGPU_CMD_SET_SCANOUT);
-    put32(vgpu_dir.CtrlCmd, 40U, 0U);
-    put32(vgpu_dir.CtrlCmd, 44U, 0U);
-    (void)ctrl_exec_private(48U);
-
-    zero_bytes(vgpu_dir.CtrlCmd, 64U);
-    put32(vgpu_dir.CtrlCmd, 0U, VGPU_CMD_RESOURCE_UNREF);
-    put32(vgpu_dir.CtrlCmd, 24U, 1U);
-    (void)ctrl_exec_private(32U);
+    // VirtIO 1.2 Section 2.4: device status 0 resets virtio-vga back to active VGA/GOP console display.
+    wr8(vgpu_dir.Common, VGPU_COMMON_STATUS, 0U);
+    fence_all();
     vgpu_dir.ScanoutBound = 0U;
+    vgpu_dir.Ready = 0U;
+    vgpu_dir.CursorReady = 0U;
 }
 
 // ====== x86_vgpu_direct_present_rect ======
