@@ -91,6 +91,11 @@ mov ss, ax
 mov esi, ebx
 lea esp, [esi + 4096]
 lidt [esi + 144]
+; Intel SDM Vol. 3A, Section 12.12.4: sync IA32_PAT (MSR 0x277) on AP with BSP before paging.
+mov eax, [esi + 88]
+mov edx, [esi + 92]
+mov ecx, 0x277
+wrmsr
 mov ecx, 0x277
 rdmsr
 cmp eax, [esi + 88]

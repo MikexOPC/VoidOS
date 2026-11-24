@@ -22,6 +22,7 @@ BOOT_U32 x86_apic_mode(BOOT_U64 base, BOOT_U32 ecx, BOOT_U32 edx, BOOT_U32 bits)
 BOOT_U32 x86_apic_uc_slot(BOOT_U64 pat);
 BOOT_U64 x86_apic_cache_bits(BOOT_U32 index);
 int x86_apic_read_profile(X86_APIC_RAW *output);
+int x86_apic_enable_pat_wc(void);
 int x86_apic_plan(const KERNEL_MADT_TOPOLOGY *topology, const X86_APIC_RAW *raw,
                    BOOT_U32 bits, X86_APIC_PROFILE *output);
 int x86_apic_profile_valid(const KERNEL_MADT_TOPOLOGY *topology, const X86_APIC_PROFILE *profile, BOOT_U32 bits);

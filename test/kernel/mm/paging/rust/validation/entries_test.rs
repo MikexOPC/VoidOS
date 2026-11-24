@@ -103,6 +103,8 @@ fn video_uc_policy() {
     for address in [0, base - 4096, base + 1, base + 4096, RV + 4096] {
         assert_eq!(entries::x86_paging_video_policy(address, 0xc000_0000, 3, 8, 0x18, pat, 32), 0);
     }
+    let pat_wc = 0x0007_0401_0007_0406;
+    assert_eq!(entries::x86_paging_video_policy(base, 0xc000_0000, 3, 8, 0x80, pat_wc, 32), 1);
 }
 
 // ====== video_leaf_permissions_and_guards ======

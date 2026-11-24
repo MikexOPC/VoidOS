@@ -42,6 +42,17 @@ static int aperture_aliases_absent(const X86_PAGING_INVENTORY *inventory,
     return 1;
 }
 
+// ====== fb_pat_slot ======
+
+static BOOT_U32 fb_pat_slot(BOOT_U64 pat)
+{
+    for (BOOT_U32 slot = 0; slot < 8U; ++slot) {
+        if (((pat >> (slot * 8U)) & 255ULL) == 1ULL)
+            return slot + 1U;
+    }
+    return x86_apic_uc_slot(pat);
+}
+
 // ====== x86_fb_preflight ======
 
 int x86_fb_preflight(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
@@ -68,7 +79,7 @@ int x86_fb_preflight(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
     if (!root || root[X86_FB_SLOT]) return 0;
     if (!geometry->Pages) return 1;
     aperture = (geometry->Offset + context->Info.Framebuffer.Capacity + 4095) / 4096;
-    index = x86_apic_uc_slot(cpu->Pat);
+    index = fb_pat_slot(cpu->Pat);
     return index && kernel_physical_budget_at_least(window->Pool, geometry->TablePages) &&
         x86_paging_video_policy(X86_FB_VIRTUAL, geometry->Physical, geometry->Pages,
             aperture, x86_apic_cache_bits(index - 1), cpu->Pat, cpu->PhysicalBits) &&

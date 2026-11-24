@@ -68,6 +68,54 @@ capture_null:
     xor eax, eax
     ret
 x86_apic_read_profile ENDP
+; ====== x86_apic_enable_pat_wc ======
+; Intel SDM Vol. 3A, Section 12.12.2 Table 12-10: IA32_PAT (MSR 0x277), PAT4 = bits 39:32.
+; Program PAT4 from default WB (0x06) to WC (0x01) after CPUID.01H:EDX[5|16] and IF=0 check.
+
+PUBLIC x86_apic_enable_pat_wc
+x86_apic_enable_pat_wc PROC
+    push rbx
+    pushfq
+    pop rax
+    test eax, 200h
+    jnz pat_wc_fail
+    xor eax, eax
+    xor ecx, ecx
+    cpuid
+    cmp eax, 1
+    jb pat_wc_fail
+    mov eax, 1
+    xor ecx, ecx
+    cpuid
+    and edx, 10020h
+    cmp edx, 10020h
+    jne pat_wc_fail
+    mov ecx, 277h
+    rdmsr
+    cmp dl, 06h
+    jne pat_wc_done
+    and edx, 0ffffff00h
+    or edx, 01h
+    mov r8d, eax
+    mov r9d, edx
+    mov ecx, 277h
+    wrmsr
+    mov ecx, 277h
+    rdmsr
+    cmp eax, r8d
+    jne pat_wc_fail
+    cmp edx, r9d
+    jne pat_wc_fail
+pat_wc_done:
+    mov eax, 1
+    pop rbx
+    ret
+pat_wc_fail:
+    xor eax, eax
+    pop rbx
+    ret
+x86_apic_enable_pat_wc ENDP
+
 ; ====== IF zero e caching normale senza cambiare CR0 ===== ;
 
 PUBLIC x86_apic_cache_state

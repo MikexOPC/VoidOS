@@ -133,6 +133,7 @@ void kernel_startup_platform(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CO
 
     if (context->Info.Acpi.Source &&
         (
+            !x86_apic_enable_pat_wc() ||
             !x86_apic_initialize(madt, memory->Physical.PhysicalBits, startup->ApicProfile) ||
             !x86_paging_inventory_verify(context, &memory->Physical, paging)
         )

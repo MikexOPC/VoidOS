@@ -64,6 +64,17 @@ int x86_fb_unbind(X86_FB_MAPPING *owner)
     return 1;
 }
 
+// ====== fb_pat_slot ======
+
+static BOOT_U32 fb_pat_slot(BOOT_U64 pat)
+{
+    for (BOOT_U32 slot = 0; slot < 8U; ++slot) {
+        if (((pat >> (slot * 8U)) & 255ULL) == 1ULL)
+            return slot + 1U;
+    }
+    return x86_apic_uc_slot(pat);
+}
+
 // ====== adopt_plan ======
 
 static int adopt_plan(X86_FB_MAPPING *owner, const KERNEL_BOOT_CONTEXT *context,
@@ -79,7 +90,7 @@ static int adopt_plan(X86_FB_MAPPING *owner, const KERNEL_BOOT_CONTEXT *context,
     auth->Region.Virtual = X86_FB_VIRTUAL; auth->Region.Physical = geometry->Physical;
     auth->Region.Pages = geometry->Pages; auth->Region.TableCount = (BOOT_U32)geometry->TablePages;
     auth->Region.AperturePages = (geometry->Offset + context->Info.Framebuffer.Capacity + 4095) / 4096;
-    auth->Region.Cache = x86_apic_cache_bits(x86_apic_uc_slot(cpu->Pat) - 1);
+    auth->Region.Cache = x86_apic_cache_bits(fb_pat_slot(cpu->Pat) - 1);
     auth->Region.Pat = cpu->Pat; auth->Region.Owner = (BOOT_U64)auth;
     return 1;
 }

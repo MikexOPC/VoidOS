@@ -89,7 +89,8 @@ pub extern "C" fn x86_paging_video_policy(address: u64, physical: u64, pages: u6
         if !matches!((pat >> (slot * 8)) & 255, 0 | 1 | 4 | 5 | 6 | 7) { return 0; }
     }
     let index = ((cache >> 5) & 4) | ((cache >> 3) & 3);
-    u32::from((pat >> (index * 8)) & 255 == 0)
+    // Intel SDM Vol. 3A Section 12.12.2: framebuffer accepts WC (0x01) or UC (0x00).
+    u32::from(matches!((pat >> (index * 8)) & 255, 0 | 1))
 }
 
 // ====== x86_paging_video_leaf ======
