@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 pub const USAGE: &str = "qemu_runner --image FILE [--boots 1..10] (--copy | --copy-negative 20..25 | --process | --process-negative 31..37 | --process-disabled | --ordinary | --ordinary-shell | --ordinary-shell-bridge-fault | --ordinary-no-ps2 | --ordinary-soak 1..120 | --ordinary-gui 1..120) [--cpu MODEL] [--smp 1..8]\n\
     \x20   [--root DIR] [--qemu-dir DIR] [--loader FILE] [--out DIR] [--inject drop|stop|quit]\n\
     qemu_runner dump BOOT_DIR\n\
-    qemu_runner parity CAMPAIGN_DIR CAMPAIGN_DIR";
+    qemu_runner parity CAMPAIGN_DIR CAMPAIGN_DIR\n\
+    qemu_runner desktop [--tcg]";
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RunOptions {
@@ -25,6 +26,7 @@ pub struct RunOptions {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Mode {
+    Desktop { tcg: bool },
     Run(RunOptions),
     Dump(PathBuf),
     Parity(PathBuf, PathBuf),
@@ -59,6 +61,15 @@ fn parse_inject(text: &str) -> Result<Inject, String> {
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Mode, String> {
     let mut arguments = arguments.into_iter().peekable();
     match arguments.peek().map(String::as_str) {
+        Some("desktop") => {
+            arguments.next();
+            let remaining: Vec<String> = arguments.collect();
+            return match remaining.as_slice() {
+                [] => Ok(Mode::Desktop { tcg: false }),
+                [option] if option == "--tcg" => Ok(Mode::Desktop { tcg: true }),
+                _ => Err("Usage: qemu_runner desktop [--tcg]".into()),
+            };
+        }
         Some("dump") => {
             arguments.next();
             return Ok(Mode::Dump(value_of(&mut arguments, "dump")?.into()));

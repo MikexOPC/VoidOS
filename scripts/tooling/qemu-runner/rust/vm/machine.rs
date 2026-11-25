@@ -218,7 +218,7 @@ fn build_vblk_fat32(image_dir: Option<&Path>) -> Result<Vec<u8>, String> {
 
 // ====== prepare_esp ======
 
-fn prepare_esp(directory: &Path, image: &Path, paths: &Paths) -> Result<PathBuf, String> {
+pub fn prepare_esp(directory: &Path, image: &Path, paths: &Paths) -> Result<PathBuf, String> {
     fs::create_dir(directory).map_err(|error| format!("Boot directory: {error}"))?;
     let esp = directory.join("esp");
     let boot = esp.join("EFI/BOOT");

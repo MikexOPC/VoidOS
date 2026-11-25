@@ -69,6 +69,7 @@ fn main() -> ExitCode {
         }
     };
     let outcome = match mode {
+        Mode::Desktop { tcg } => qemu_runner_core::desktop::run(tcg),
         Mode::Run(options) => run_campaign(options),
         Mode::Dump(directory) => {
             print!("{}", parity::dump_boot(&directory));

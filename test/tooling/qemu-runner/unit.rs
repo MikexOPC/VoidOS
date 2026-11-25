@@ -8,6 +8,17 @@ use qemu_runner_core::vm::machine::{Inject, Limits, Paths, Plan, arguments};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+// ====== desktop_options ======
+
+#[test]
+fn desktop_options() {
+    let parse = |values: &[&str]| cli::parse(values.iter().map(|value| value.to_string()));
+    assert_eq!(parse(&["desktop"]), Ok(Mode::Desktop { tcg: false }));
+    assert_eq!(parse(&["desktop", "--tcg"]), Ok(Mode::Desktop { tcg: true }));
+    assert!(parse(&["desktop", "--unknown"]).is_err());
+    assert!(parse(&["desktop", "--tcg", "--tcg"]).is_err());
+}
+
 // ====== screenshots_validate_dimensions_and_complete_pixel_payload ======
 
 #[test]

@@ -44,6 +44,14 @@ entropia e stack canary. Vedi lo [stato del progetto](docs/status.md).
 
 ## Compilazione e avvio
 
+Per avviare il desktop su Windows, esegui `avvia.bat` dalla radice del
+repository dopo la preparazione dei prerequisiti e del loader UEFI.
+Il launcher compila kernel e programmi, usa WHPX con SDL e apre `gui`
+automaticamente. `avvia.bat --tcg` seleziona TCG. `QEMU_DIR` permette di
+specificare una diversa installazione QEMU.
+Il disco FAT32 di sviluppo viene rigenerato a ogni avvio dai programmi
+appena compilati. Dischi e log sono conservati in `kernel/build/desktop-*`.
+
 Da PowerShell 7, nella radice del repository, esegui in ordine questi comandi.
 Su una build già configurata puoi saltare i due passaggi `meson setup`. Scarica
 NASM alla prima preparazione della cache.

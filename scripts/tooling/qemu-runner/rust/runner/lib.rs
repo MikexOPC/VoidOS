@@ -7,4 +7,5 @@ pub mod vm;
 
 pub mod campaign;
 pub mod cli;
+pub mod desktop;
 pub mod parity;
