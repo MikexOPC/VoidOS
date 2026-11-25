@@ -141,8 +141,12 @@ static void test_input_ring(KERNEL_HEAP *heap)
     uint64_t disp_shm = 0;
     assert(kernel_gui_shm_create(&gui, 20, 469, 0x300000ULL, 1, &disp_shm));
     assert(kernel_gui_display_acquire(&gui, 20, disp_shm));
+    assert(!kernel_gui_has_input(&gui, 20));
+    assert(!kernel_gui_has_input(&gui, 21));
 
     assert(kernel_gui_input_push_key(&gui, 0x1E, 'a', 1));
+    assert(kernel_gui_has_input(&gui, 20));
+    assert(!kernel_gui_has_input(&gui, 21));
     assert(kernel_gui_input_push_mouse(&gui, -5, 12, 3));
 
     KERNEL_INPUT_EVENT ev = {0};

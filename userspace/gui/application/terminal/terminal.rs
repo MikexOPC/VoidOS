@@ -364,7 +364,13 @@ extern "C" fn program_main(arg: u64) -> ! {
                 }
             }
         } else if n == libvoid::ERR_WOULD_BLOCK {
-            libvoid::yield_now();
+            let wait = libvoid::ipc_wait_readable(ipc_handle);
+            if wait == libvoid::ERR_PEER_CLOSED {
+                libvoid::exit(0);
+            }
+            if wait < 0 && wait != libvoid::ERR_WOULD_BLOCK {
+                libvoid::exit(96);
+            }
         } else {
             libvoid::exit(96);
         }

@@ -466,6 +466,23 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
             cpu->Yielded = 1;
             outcome = 2;
         }
+    } else if (cpu->YieldFrame && cpu->Table && number == SYS_GUI_WAIT) {
+        BOOT_U64 timeout_ms = GPR(frame, GPR_RDI);
+        if (timeout_ms > 10000ULL)
+            timeout_ms = 10000ULL;
+        BOOT_U64 now_ms = x86_gui_uptime_now_ms();
+        GPR(frame, GPR_RAX) = 0;
+        if (timeout_ms == 0ULL || x86_gui_wait_ready(cpu->Pid) ||
+            kernel_ipc_any_readable(cpu->Table, cpu->Pid)) {
+            outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+        } else {
+            BOOT_U64 deadline = now_ms + timeout_ms;
+            cpu->Waiting = 1;
+            cpu->WaitHandle = WAIT_HANDLE_GUI_MASK | (deadline & ~WAIT_HANDLE_GUI_MASK);
+            for (BOOT_U32 index = 0; index < USER_FRAME_WORDS; ++index) cpu->YieldFrame[index] = frame[index];
+            cpu->Yielded = 1;
+            outcome = 2;
+        }
     } else if (ipc_enabled && (number == SYS_SEND || number == SYS_RECV)) {
         BOOT_U64 handle = GPR(frame, GPR_RDI), pointer = GPR(frame, GPR_RSI), length = GPR(frame, GPR_RDX);
         GPR(frame, GPR_RAX) = number == SYS_SEND ? sys_send(cpu, handle, pointer, length) : sys_recv(cpu, handle, pointer, length);

@@ -34,6 +34,7 @@ pub const SYS_SHM_PUBLISH: u64 = 23;
 pub const SYS_SHM_VIEW: u64 = 24;
 pub const SYS_PROCESS_STOP: u64 = 25;
 pub const SYS_IPC_CLOSE: u64 = 26;
+pub const SYS_GUI_WAIT: u64 = 27;
 
 // ====== flags and errors ======
 
@@ -167,6 +168,14 @@ pub fn ipc_recv(handle: u64, buf: &mut [u8]) -> i64 {
 #[inline]
 pub fn ipc_wait_readable(handle: u64) -> i64 {
     raw_syscall(SYS_WAIT_READABLE, handle, 0, 0)
+}
+
+// ====== gui_wait ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn gui_wait(timeout_ms: u64) -> i64 {
+    raw_syscall(SYS_GUI_WAIT, timeout_ms, 0, 0)
 }
 
 // ====== open ======

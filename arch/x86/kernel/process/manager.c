@@ -259,10 +259,21 @@ int x86_process_step(uint64_t pid, int renew_budget, uint32_t *state_out)
         return 1;
     }
     if (info.State == KERNEL_PROC_BLOCKED) {
-        BOOT_U64 ready = kernel_ipc_receive_ready(&manager_table, pid, arch->WaitHandle);
-        if (ready == KERNEL_IPC_WOULD_BLOCK) {
-            if (state_out) *state_out = KERNEL_PROC_BLOCKED;
-            return 1;
+        if ((arch->WaitHandle & WAIT_HANDLE_GUI_MASK) != 0ULL) {
+            uint64_t deadline = arch->WaitHandle & ~WAIT_HANDLE_GUI_MASK;
+            if (!x86_gui_wait_ready(pid) &&
+                !kernel_ipc_any_readable(&manager_table, pid) &&
+                x86_gui_uptime_now_ms() < deadline) {
+                if (state_out) *state_out = KERNEL_PROC_BLOCKED;
+                return 1;
+            }
+            arch->WaitHandle = 0;
+        } else {
+            BOOT_U64 ready = kernel_ipc_receive_ready(&manager_table, pid, arch->WaitHandle);
+            if (ready == KERNEL_IPC_WOULD_BLOCK) {
+                if (state_out) *state_out = KERNEL_PROC_BLOCKED;
+                return 1;
+            }
         }
         (void)kernel_process_set_state(&manager_table, pid, KERNEL_PROC_BLOCKED, KERNEL_PROC_RUNNABLE);
     }
@@ -388,17 +399,17 @@ X86_PROCESS_SLOT *x86_process_slot_for_pid(uint64_t pid)
     return arch ? &arch->Slot : NULL;
 }
 
+// Reusable BSP scratch buffer to avoid heap alloc/free on every GUI step.
+static uint64_t manager_step_children_buf[KERNEL_PROCESS_MAX_CAPACITY];
+
 // ====== x86_process_step_children_budget ======
 
 int x86_process_step_children_budget(uint64_t parent_pid, int renew_budget)
 {
     if (!manager_ready || !parent_pid)
         return 0;
-    KERNEL_HEAP *heap = kernel_heap();
     uint32_t capacity = KERNEL_PROCESS_MAX_CAPACITY;
-    uint64_t *children = kernel_heap_alloc(heap, (size_t)capacity * sizeof(*children), 16);
-    if (!children)
-        return 0;
+    uint64_t *children = manager_step_children_buf;
     uint32_t count = kernel_process_list_children(&manager_table, parent_pid, children, capacity);
     int ok = 1;
     for (uint32_t index = 0; ok && index < count; ++index) {
@@ -409,7 +420,6 @@ int x86_process_step_children_budget(uint64_t parent_pid, int renew_budget)
                 children + count, capacity - count);
         }
     }
-    (void)kernel_heap_free(heap, children);
     return ok;
 }
 

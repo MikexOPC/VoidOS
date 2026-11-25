@@ -952,6 +952,36 @@ uint64_t kernel_ipc_receive_ready(KERNEL_PROCESS_TABLE *table, uint64_t caller_p
     return status;
 }
 
+// ====== kernel_ipc_any_readable ======
+
+int kernel_ipc_any_readable(KERNEL_PROCESS_TABLE *table, uint64_t caller_pid)
+{
+    if (!caller_pid)
+        return 0;
+    PROCESS_ACCESS access;
+    if (!enter_private(table, &access))
+        return 0;
+    int ready = 0;
+    for (uint32_t idx = 0; idx < table->ChannelCapacity; ++idx) {
+        KERNEL_IPC_SLOT *slot = &table->Channels[idx];
+        if (!slot->InUse)
+            continue;
+        for (uint32_t side = 0; side < 2U; ++side) {
+            if ((slot->AttachedMask & (1U << side)) && slot->OwnerPid[side] == caller_pid) {
+                uint64_t owner = slot->EndpointBase | side;
+                if (x86_ipc_receive_ready(&slot->Channel, owner, owner) != KERNEL_IPC_WOULD_BLOCK) {
+                    ready = 1;
+                    break;
+                }
+            }
+        }
+        if (ready)
+            break;
+    }
+    leave_private(&access);
+    return ready;
+}
+
 // ====== kernel_ipc_wait_register ======
 
 uint64_t kernel_ipc_wait_register(KERNEL_PROCESS_TABLE *table, uint64_t caller_pid,

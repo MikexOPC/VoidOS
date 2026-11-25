@@ -134,6 +134,7 @@ uint64_t kernel_gui_epoch_to_rtc_packed(uint64_t epoch_sec);
 int kernel_gui_input_push_key(KERNEL_GUI *gui, uint32_t code, uint32_t scalar, uint32_t flags);
 int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_t buttons);
 int kernel_gui_input_poll(KERNEL_GUI *gui, uint64_t pid, KERNEL_INPUT_EVENT *out);
+int kernel_gui_has_input(KERNEL_GUI *gui, uint64_t pid);
 
 int kernel_gui_shm_create(KERNEL_GUI *gui, uint64_t pid, uint32_t pages,
     uint64_t phys_base, int is_display, uint64_t *shm_id_out);

@@ -79,6 +79,8 @@
 #define SYS_SHM_VIEW 24ULL
 #define SYS_PROCESS_STOP 25ULL
 #define SYS_IPC_CLOSE 26ULL
+#define SYS_GUI_WAIT 27ULL
+#define WAIT_HANDLE_GUI_MASK (1ULL << 63)
 
 typedef struct {
     BOOT_U64               InitialArg;

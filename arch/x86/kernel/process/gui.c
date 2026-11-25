@@ -327,6 +327,22 @@ void x86_gui_clock_tick(void)
     ks_atomic_store_release(&x86_gui_uptime_ms, milliseconds);
 }
 
+// ====== x86_gui_uptime_now_ms ======
+
+uint64_t x86_gui_uptime_now_ms(void)
+{
+    return ks_atomic_load_acquire(&x86_gui_uptime_ms);
+}
+
+// ====== x86_gui_wait_ready ======
+
+int x86_gui_wait_ready(uint64_t pid)
+{
+    if (!x86_gui_ready || !pid)
+        return 0;
+    return kernel_gui_has_input(&x86_gui_state, pid);
+}
+
 
 // ====== update_holdings_private ======
 

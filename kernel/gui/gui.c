@@ -467,6 +467,21 @@ int kernel_gui_input_poll(KERNEL_GUI *gui, uint64_t pid, KERNEL_INPUT_EVENT *out
     return status;
 }
 
+// ====== kernel_gui_has_input ======
+
+int kernel_gui_has_input(KERNEL_GUI *gui, uint64_t pid)
+{
+    if (!pid)
+        return 0;
+    GUI_ACCESS access;
+    if (!enter_private(gui, &access))
+        return 0;
+    int has = gui->DisplayOwnerPid == pid
+        && (gui->InputCount > 0U || gui->PendingMouseResync != 0U || gui->PendingKeyResync != 0U);
+    leave_private(&access);
+    return has;
+}
+
 // ====== kernel_gui_shm_create ======
 
 int kernel_gui_shm_create(KERNEL_GUI *gui, uint64_t pid, uint32_t pages,

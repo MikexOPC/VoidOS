@@ -22,6 +22,7 @@ pub struct Application {
 pub struct Applications {
     windows: Vec<Application>,
     model: Rc<VecModel<AppSurface>>,
+    rr_cursor: usize,
     pub focused: i32,
     verify: bool,
 }
@@ -33,6 +34,7 @@ impl Applications {
         Self {
             windows: Vec::new(),
             model: Rc::new(VecModel::default()),
+            rr_cursor: 0,
             focused: 0,
             verify,
         }
@@ -126,81 +128,128 @@ impl Applications {
     // ====== poll ======
 
     pub fn poll(&mut self, ui: &VoidDesktop, display_width: u32, display_height: u32) -> bool {
+        self.poll_with_activity(ui, display_width, display_height).0
+    }
+
+    // ====== poll_with_activity ======
+
+    pub fn poll_with_activity(
+        &mut self,
+        ui: &VoidDesktop,
+        display_width: u32,
+        display_height: u32,
+    ) -> (bool, bool) {
+        const MAX_MSGS_PER_APP: usize = 16;
         let mut changed = false;
+        let mut activity = false;
         let mut healthy = true;
         let mut dead = Vec::new();
-        for app in &mut self.windows {
-            if app.probe_read_only && app.shm != 0 {
-                let result = libvoid::raw_syscall(
-                    libvoid::SYS_RECV,
-                    app.child.endpoint,
-                    app.view.address,
-                    PROTO_WIRE_BYTES as u64,
-                );
-                if result == libvoid::ERR_WOULD_BLOCK {
-                    continue;
+        let count = self.windows.len();
+        if count > 0 {
+            let start = self.rr_cursor % count;
+            self.rr_cursor = (start + 1) % count;
+            for step in 0..count {
+                let idx = (start + step) % count;
+                let app = &mut self.windows[idx];
+                let mut skip_recv = false;
+                if app.probe_read_only && app.shm != 0 {
+                    let result = libvoid::raw_syscall(
+                        libvoid::SYS_RECV,
+                        app.child.endpoint,
+                        app.view.address,
+                        PROTO_WIRE_BYTES as u64,
+                    );
+                    if result == libvoid::ERR_WOULD_BLOCK {
+                        skip_recv = true;
+                    } else if result != -2 {
+                        healthy = false;
+                        dead.push(app.kind);
+                        continue;
+                    } else {
+                        app.probe_read_only = false;
+                        activity = true;
+                        let _ = libvoid::write_console(b"VoidOS gui surface read-only ok\n");
+                    }
                 }
-                if result != -2 {
-                    healthy = false;
-                    dead.push(app.kind);
-                    continue;
-                }
-                app.probe_read_only = false;
-                let _ = libvoid::write_console(b"VoidOS gui surface read-only ok\n");
-            }
-            let mut wire = [0; PROTO_WIRE_BYTES];
-            let result = libvoid::ipc_recv(app.child.endpoint, &mut wire);
-            if result == PROTO_WIRE_BYTES as i64 {
-                let valid = GuiMessage::decode(&wire).is_some_and(|message| {
-                    if message.kind == MSG_COMMIT_RECT {
-                        // Drop model's Image reference before in-place buffer update so
-                        // SharedPixelBuffer::make_mut_slice() stays refcount == 1 (zero alloc).
-                        for row in 0..self.model.row_count() {
-                            if let Some(mut surface) = self.model.row_data(row) {
-                                if surface.kind == app.kind {
-                                    surface.pixels = Image::default();
-                                    self.model.set_row_data(row, surface);
-                                    break;
+                let mut app_dead = false;
+                if !skip_recv {
+                    for _ in 0..MAX_MSGS_PER_APP {
+                        let mut wire = [0; PROTO_WIRE_BYTES];
+                        let result = libvoid::ipc_recv(app.child.endpoint, &mut wire);
+                        if result == PROTO_WIRE_BYTES as i64 {
+                            let valid = GuiMessage::decode(&wire).is_some_and(|message| {
+                                if message.kind == MSG_COMMIT_RECT {
+                                    // Drop model's Image reference before in-place buffer update so
+                                    // SharedPixelBuffer::make_mut_slice() stays refcount == 1 (zero alloc).
+                                    for row in 0..self.model.row_count() {
+                                        if let Some(mut surface) = self.model.row_data(row) {
+                                            if surface.kind == app.kind {
+                                                surface.pixels = Image::default();
+                                                self.model.set_row_data(row, surface);
+                                                break;
+                                            }
+                                        }
+                                    }
                                 }
+                                app.receive(message, display_width, display_height)
+                            });
+                            if !valid {
+                                healthy = false;
+                                dead.push(app.kind);
+                                app_dead = true;
+                                break;
                             }
+                            changed = true;
+                            activity = true;
+                            if app.probe_read_only && app.shm != 0 {
+                                break;
+                            }
+                        } else if result == libvoid::ERR_PEER_CLOSED {
+                            dead.push(app.kind);
+                            app_dead = true;
+                            break;
+                        } else if result == libvoid::ERR_WOULD_BLOCK {
+                            break;
+                        } else {
+                            healthy = false;
+                            dead.push(app.kind);
+                            app_dead = true;
+                            break;
                         }
                     }
-                    app.receive(message, display_width, display_height)
-                });
-                if !valid {
-                    healthy = false;
-                    dead.push(app.kind);
+                }
+                if app_dead {
                     continue;
                 }
-                changed = true;
-            } else if result == libvoid::ERR_PEER_CLOSED {
-                dead.push(app.kind);
-                continue;
-            } else if result != libvoid::ERR_WOULD_BLOCK {
-                healthy = false;
-                dead.push(app.kind);
-                continue;
-            }
-            if let Some(wire) = app.pending.front() {
-                let result = libvoid::ipc_send(app.child.endpoint, wire);
-                if result == PROTO_WIRE_BYTES as i64 {
-                    app.pending.pop_front();
-                } else if result != libvoid::ERR_WOULD_BLOCK {
-                    healthy = false;
-                    dead.push(app.kind);
+                for _ in 0..MAX_MSGS_PER_APP {
+                    let Some(wire) = app.pending.front() else {
+                        break;
+                    };
+                    let result = libvoid::ipc_send(app.child.endpoint, wire);
+                    if result == PROTO_WIRE_BYTES as i64 {
+                        app.pending.pop_front();
+                        activity = true;
+                    } else if result == libvoid::ERR_WOULD_BLOCK {
+                        break;
+                    } else {
+                        healthy = false;
+                        dead.push(app.kind);
+                        break;
+                    }
                 }
             }
         }
         for kind in dead {
             if !self.close(kind) {
-                return false;
+                return (false, true);
             }
             changed = true;
+            activity = true;
         }
         if changed {
             self.refresh(ui);
         }
-        healthy
+        (healthy, activity)
     }
 
     // ====== refresh ======

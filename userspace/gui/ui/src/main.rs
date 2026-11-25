@@ -311,6 +311,7 @@ extern "C" fn program_main(mode: u64) -> ! {
         slint::platform::update_timers_and_animations();
         let mut ev = libvoid::InputEvent::default();
         let mut mouse_moved = false;
+        let mut had_work = false;
         loop {
             let received = libvoid::input_poll(&mut ev);
             if received == 0 {
@@ -320,6 +321,7 @@ extern "C" fn program_main(mode: u64) -> ! {
                 let _ = applications.shutdown();
                 libvoid::exit(96);
             }
+            had_work = true;
             if ev.kind == libvoid::INPUT_MOUSE {
                 if ev.delta_x != 0 || ev.delta_y != 0 {
                     cx = (cx + ev.delta_x as f32).clamp(0.0, (acq.width - 1) as f32);
@@ -369,6 +371,7 @@ extern "C" fn program_main(mode: u64) -> ! {
             });
         }
         while let Some((operation, kind)) = requests.borrow_mut().pop_front() {
+            had_work = true;
             let ok = match operation {
                 0 => applications.launch(kind),
                 1 => applications.close(kind),
@@ -382,7 +385,11 @@ extern "C" fn program_main(mode: u64) -> ! {
             }
             applications.refresh(&ui);
         }
-        if !applications.poll(&ui, acq.width, acq.height) {
+        let (apps_ok, apps_active) = applications.poll_with_activity(&ui, acq.width, acq.height);
+        if apps_active {
+            had_work = true;
+        }
+        if !apps_ok {
             ui.set_status("Errore nel canale dell'applicazione".into());
         }
         if quitting.get() {
@@ -396,6 +403,7 @@ extern "C" fn program_main(mode: u64) -> ! {
         let mut slint_drew = false;
         window.draw_if_needed(|renderer| {
             slint_drew = true;
+            had_work = true;
             if hw_cursor {
                 let dirty = renderer.render(backbuffer, acq.stride as usize);
                 presented = present_rects(Some(dirty), None, None, acq.width, acq.height);
@@ -409,6 +417,7 @@ extern "C" fn program_main(mode: u64) -> ! {
         if !slint_drew && !hw_cursor {
             let (ox, oy, drawn) = cursor.pos();
             if !drawn || ox != ix || oy != iy {
+                had_work = true;
                 let old_rect = cursor.restore(backbuffer, acq.stride as usize);
                 let new_rect = cursor.draw(backbuffer, acq.stride as usize, acq.width, acq.height, ix, iy);
                 presented = present_rects(None, old_rect, new_rect, acq.width, acq.height);
@@ -418,7 +427,14 @@ extern "C" fn program_main(mode: u64) -> ! {
             let _ = applications.shutdown();
             libvoid::exit(95);
         }
-        libvoid::yield_now();
+        if had_work {
+            libvoid::yield_now();
+        } else {
+            let wait_ms = slint::platform::duration_until_next_timer_update()
+                .map(|d| (d.as_millis() as u64).clamp(1, 250))
+                .unwrap_or(250);
+            let _ = libvoid::gui_wait(wait_ms);
+        }
     }
 }
 

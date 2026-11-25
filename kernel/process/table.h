@@ -194,6 +194,7 @@ uint64_t kernel_ipc_peek(KERNEL_PROCESS_TABLE *table, uint64_t caller_pid, uint6
     unsigned char *bytes, uint64_t capacity);
 uint64_t kernel_ipc_consume(KERNEL_PROCESS_TABLE *table, uint64_t caller_pid, uint64_t handle);
 uint64_t kernel_ipc_receive_ready(KERNEL_PROCESS_TABLE *table, uint64_t caller_pid, uint64_t handle);
+int kernel_ipc_any_readable(KERNEL_PROCESS_TABLE *table, uint64_t caller_pid);
 uint64_t kernel_ipc_wait_register(KERNEL_PROCESS_TABLE *table, uint64_t caller_pid,
     uint64_t handle, uint32_t task_index);
 int kernel_ipc_wait_cancel(KERNEL_PROCESS_TABLE *table, uint64_t caller_pid, uint64_t handle);
