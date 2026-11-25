@@ -285,6 +285,39 @@ static void test_budget_display_flag(void)
     assert(!kernel_process_budget_derive(&derived, &escalate, &out));
 }
 
+// ====== test_rtc_calendar ======
+
+static void test_rtc_calendar(void)
+{
+    int valid = 0;
+    uint64_t y2k = kernel_gui_rtc_to_epoch(2000, 1, 1, 0, 0, 0, &valid);
+    assert(valid && y2k == 946684800ULL);
+    uint64_t packed = kernel_gui_epoch_to_rtc_packed(y2k);
+    assert((packed & 1ULL) == 1ULL);
+    assert((packed >> 48) == 2000ULL && ((packed >> 40) & 0xFFU) == 1U && ((packed >> 32) & 0xFFU) == 1U);
+    assert(((packed >> 24) & 0xFFU) == 0U && ((packed >> 16) & 0xFFU) == 0U && ((packed >> 8) & 0xFFU) == 0U);
+
+    // Leap day 2024-02-29 23:59:59 + 1s -> 2024-03-01 00:00:00.
+    uint64_t leap = kernel_gui_rtc_to_epoch(2024, 2, 29, 23, 59, 59, &valid);
+    assert(valid);
+    uint64_t mar1 = kernel_gui_epoch_to_rtc_packed(leap + 1ULL);
+    assert((mar1 >> 48) == 2024ULL && ((mar1 >> 40) & 0xFFU) == 3U && ((mar1 >> 32) & 0xFFU) == 1U);
+    assert(((mar1 >> 24) & 0xFFU) == 0U && ((mar1 >> 16) & 0xFFU) == 0U && ((mar1 >> 8) & 0xFFU) == 0U);
+
+    // Year rollover 2026-12-31 23:59:59 + 1s -> 2027-01-01 00:00:00.
+    uint64_t nye = kernel_gui_rtc_to_epoch(2026, 12, 31, 23, 59, 59, &valid);
+    assert(valid);
+    uint64_t ny = kernel_gui_epoch_to_rtc_packed(nye + 1ULL);
+    assert((ny >> 48) == 2027ULL && ((ny >> 40) & 0xFFU) == 1U && ((ny >> 32) & 0xFFU) == 1U);
+
+    // Invalid dates must fail closed.
+    assert(kernel_gui_rtc_to_epoch(2026, 2, 29, 12, 0, 0, &valid) == 0ULL && !valid);
+    assert(kernel_gui_rtc_to_epoch(2100, 2, 29, 12, 0, 0, &valid) == 0ULL && !valid);
+    assert(kernel_gui_rtc_to_epoch(2026, 4, 31, 12, 0, 0, &valid) == 0ULL && !valid);
+    assert(kernel_gui_rtc_to_epoch(2026, 13, 1, 0, 0, 0, &valid) == 0ULL && !valid);
+    assert(kernel_gui_rtc_to_epoch(2026, 1, 1, 24, 0, 0, &valid) == 0ULL && !valid);
+}
+
 // ====== main ======
 
 int main(void)
@@ -296,6 +329,7 @@ int main(void)
     test_shm_lifecycle_and_growth(&heap);
     test_shm_authorization_and_pin(&heap);
     test_budget_display_flag();
+    test_rtc_calendar();
     _aligned_free(backing);
     printf("KERNEL_GUI_HOST_OK\n");
     return 0;

@@ -120,6 +120,9 @@ uint64_t kernel_gui_display_owner(KERNEL_GUI *gui);
 int kernel_gui_take_console_restore(KERNEL_GUI *gui);
 int kernel_gui_rect_valid(uint32_t display_width, uint32_t display_height,
     const KERNEL_DISPLAY_RECT *rect);
+uint64_t kernel_gui_rtc_to_epoch(uint32_t year, uint32_t month, uint32_t day,
+    uint32_t hour, uint32_t minute, uint32_t second, int *valid_out);
+uint64_t kernel_gui_epoch_to_rtc_packed(uint64_t epoch_sec);
 
 int kernel_gui_input_push_key(KERNEL_GUI *gui, uint32_t code, uint32_t scalar, uint32_t flags);
 int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_t buttons);

@@ -729,3 +729,71 @@ int kernel_gui_shm_release_unmapped(KERNEL_GUI *gui, uint64_t shm_id,
     leave_private(&access);
     return ok;
 }
+
+// ====== rtc_days_in_month_private ======
+
+static uint32_t rtc_days_in_month_private(uint32_t year, uint32_t month)
+{
+    static const uint8_t days[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (month < 1U || month > 12U)
+        return 0U;
+    uint32_t count = days[month - 1U];
+    if (month == 2U && ((year % 4U == 0U && year % 100U != 0U) || (year % 400U == 0U)))
+        count = 29U;
+    return count;
+}
+
+// ====== kernel_gui_rtc_to_epoch ======
+
+uint64_t kernel_gui_rtc_to_epoch(uint32_t year, uint32_t month, uint32_t day,
+    uint32_t hour, uint32_t minute, uint32_t second, int *valid_out)
+{
+    if (valid_out)
+        *valid_out = 0;
+    if (year < 1970U || year > 2999U || month < 1U || month > 12U ||
+        day < 1U || day > rtc_days_in_month_private(year, month) ||
+        hour > 23U || minute > 59U || second > 59U)
+        return 0ULL;
+    uint64_t y = (uint64_t)year - (month <= 2U ? 1ULL : 0ULL);
+    uint64_t era = y / 400ULL;
+    uint64_t yoe = y - era * 400ULL;
+    uint64_t mp = month > 2U ? (uint64_t)(month - 3U) : (uint64_t)(month + 9U);
+    uint64_t doy = (153ULL * mp + 2ULL) / 5ULL + (uint64_t)(day - 1U);
+    uint64_t doe = yoe * 365ULL + yoe / 4ULL - yoe / 100ULL + doy;
+    uint64_t days = era * 146097ULL + doe - 719468ULL;
+    if (valid_out)
+        *valid_out = 1;
+    return days * 86400ULL + (uint64_t)hour * 3600ULL + (uint64_t)minute * 60ULL + (uint64_t)second;
+}
+
+// ====== kernel_gui_epoch_to_rtc_packed ======
+
+uint64_t kernel_gui_epoch_to_rtc_packed(uint64_t epoch_sec)
+{
+    uint64_t days = epoch_sec / 86400ULL;
+    uint64_t rem = epoch_sec % 86400ULL;
+    uint64_t hour = rem / 3600ULL;
+    rem %= 3600ULL;
+    uint64_t minute = rem / 60ULL;
+    uint64_t second = rem % 60ULL;
+
+    uint64_t z = days + 719468ULL;
+    uint64_t era = z / 146097ULL;
+    uint64_t doe = z - era * 146097ULL;
+    uint64_t yoe = (doe - doe / 1460ULL + doe / 36524ULL - doe / 146096ULL) / 365ULL;
+    uint64_t y = yoe + era * 400ULL;
+    uint64_t doy = doe - (365ULL * yoe + yoe / 4ULL - yoe / 100ULL);
+    uint64_t mp = (5ULL * doy + 2ULL) / 153ULL;
+    uint64_t day = doy - (153ULL * mp + 2ULL) / 5ULL + 1ULL;
+    uint64_t month = mp < 10ULL ? (mp + 3ULL) : (mp - 9ULL);
+    y += (month <= 2ULL ? 1ULL : 0ULL);
+    if (y > 65535ULL)
+        return 0ULL;
+    return (y << 48)
+        | (month << 40)
+        | (day << 32)
+        | (hour << 24)
+        | (minute << 16)
+        | (second << 8)
+        | 1ULL;
+}

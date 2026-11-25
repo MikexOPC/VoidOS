@@ -5,6 +5,7 @@
 #include "kernel/console/video/pointer/shape.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/mm/physical/holdings.h"
+#include "kernel/diagnostics/log.h"
 
 // User SHM virtual window: PD[128..511] = [0x10000000, 0x40000000) (768 MiB, 2 MiB-aligned slots).
 #define X86_GUI_PD_START       128U
@@ -45,6 +46,10 @@ static uint64_t x86_gui_uptime_ms;
 static uint64_t x86_gui_clock_failed;
 static uint64_t x86_gui_rtc_cached;
 static uint64_t x86_gui_rtc_last_sec = ~0ULL;
+static uint64_t x86_gui_rtc_base_epoch;
+static uint64_t x86_gui_rtc_base_uptime_sec;
+static uint32_t x86_gui_rtc_base_valid;
+static uint64_t x86_gui_present_gen;
 // BSP-only row staging buffer (8 KiB) for fast 64-bit framebuffer blits up to 2048 px wide.
 static uint32_t x86_gui_blit_buf[2048];
 
@@ -56,8 +61,48 @@ static struct {
     uint32_t  H;
     uint32_t  Active;
     uint32_t  Drawn;
+    uint64_t  BackbufferShmId;
     uint32_t  Saved[18U * 18U];
+    uint32_t  Sprite[18U * 18U];
+    uint8_t   RowStart[18U];
+    uint8_t   RowEnd[18U];
+    uint64_t  Moves;
+    uint64_t  IrqOffTicksTotal;
+    uint32_t  IrqOffTicksMax;
+    uint32_t  Retries;
 } x86_gui_cursor;
+
+typedef struct {
+    uint32_t  X;
+    uint32_t  Y;
+    uint32_t  W;
+    uint32_t  H;
+    uint32_t  Saved[18U * 18U];
+    uint32_t  Composed[18U * 18U];
+} X86_GUI_CURSOR_FRAME;
+
+static X86_GUI_SHM_LEASE *find_shm_lease_private(uint64_t shm_id);
+
+// ====== gui_cursor_init_sprite_private ======
+
+static void gui_cursor_init_sprite_private(void)
+{
+    for (uint32_t row = 0; row < 18U; ++row) {
+        uint8_t start = 18U;
+        uint8_t end = 0U;
+        for (uint32_t col = 0; col < 18U; ++col) {
+            uint32_t sample = kernel_pointer_sample(col, row);
+            x86_gui_cursor.Sprite[row * 18U + col] = sample;
+            if (sample) {
+                if (start == 18U)
+                    start = (uint8_t)col;
+                end = (uint8_t)(col + 1U);
+            }
+        }
+        x86_gui_cursor.RowStart[row] = start;
+        x86_gui_cursor.RowEnd[row] = end;
+    }
+}
 
 // ====== gui_cursor_restore_private ======
 
@@ -67,54 +112,130 @@ static void gui_cursor_restore_private(volatile uint32_t *fb_pixels, uint32_t fb
         return;
     uint32_t x0 = (uint32_t)x86_gui_cursor.X;
     uint32_t y0 = (uint32_t)x86_gui_cursor.Y;
+    uint32_t w = x86_gui_cursor.W;
     for (uint32_t row = 0; row < x86_gui_cursor.H; ++row) {
-        volatile uint32_t *dst = fb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)x0;
-        const uint32_t *src = &x86_gui_cursor.Saved[row * 18U];
-        for (uint32_t col = 0; col < x86_gui_cursor.W; ++col)
-            dst[col] = src[col];
+        uint32_t start = x86_gui_cursor.RowStart[row];
+        uint32_t end = x86_gui_cursor.RowEnd[row];
+        if (start >= end || start >= w)
+            continue;
+        if (end > w)
+            end = w;
+        volatile uint32_t *dst32 = fb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)(x0 + start);
+        const uint32_t *src32 = &x86_gui_cursor.Saved[row * 18U + start];
+        uint32_t count = end - start;
+        uint32_t p = 0;
+        if ((((uintptr_t)dst32) & 7U) != 0U && p < count) {
+            dst32[0] = src32[0];
+            ++p;
+        }
+        volatile uint64_t *dst64 = (volatile uint64_t *)(dst32 + p);
+        uint32_t pairs = (count - p) >> 1;
+        for (uint32_t q = 0; q < pairs; ++q) {
+            uint64_t packed = (uint64_t)src32[p + q * 2U] | ((uint64_t)src32[p + q * 2U + 1U] << 32);
+            dst64[q] = packed;
+        }
+        p += pairs * 2U;
+        if (p < count)
+            dst32[p] = src32[p];
     }
     x86_gui_cursor.Drawn = 0U;
 }
 
-static X86_GUI_SHM_LEASE *find_shm_lease_private(uint64_t shm_id);
+// ====== gui_cursor_prepare_private ======
 
-// ====== gui_cursor_draw_private ======
-
-static void gui_cursor_draw_private(volatile uint32_t *fb_pixels, uint32_t fb_w, uint32_t fb_h, uint32_t fb_stride)
+static int gui_cursor_prepare_private(int32_t target_x, int32_t target_y,
+    uint32_t fb_w, uint32_t fb_h, uint32_t fb_stride,
+    X86_GUI_CURSOR_FRAME *frame)
 {
-    if (!x86_gui_cursor.Active || !fb_w || !fb_h)
-        return;
-    KERNEL_DISPLAY_INFO dinfo = {0};
-    X86_GUI_SHM_LEASE *bb = kernel_gui_display_info(&x86_gui_state, 0, &dinfo)
-        ? find_shm_lease_private(dinfo.BackbufferShmId)
-        : NULL;
-    if (x86_gui_cursor.X < 0) x86_gui_cursor.X = 0;
-    if (x86_gui_cursor.Y < 0) x86_gui_cursor.Y = 0;
-    if ((uint32_t)x86_gui_cursor.X >= fb_w) x86_gui_cursor.X = (int32_t)(fb_w - 1U);
-    if ((uint32_t)x86_gui_cursor.Y >= fb_h) x86_gui_cursor.Y = (int32_t)(fb_h - 1U);
-    uint32_t x0 = (uint32_t)x86_gui_cursor.X;
-    uint32_t y0 = (uint32_t)x86_gui_cursor.Y;
+    if (!fb_w || !fb_h || !frame)
+        return 0;
+    if (target_x < 0) target_x = 0;
+    if (target_y < 0) target_y = 0;
+    if ((uint32_t)target_x >= fb_w) target_x = (int32_t)(fb_w - 1U);
+    if ((uint32_t)target_y >= fb_h) target_y = (int32_t)(fb_h - 1U);
+    uint32_t x0 = (uint32_t)target_x;
+    uint32_t y0 = (uint32_t)target_y;
     uint32_t cw = fb_w - x0;
     uint32_t ch = fb_h - y0;
     if (cw > 18U) cw = 18U;
     if (ch > 18U) ch = 18U;
+
+    uint64_t shm_id = x86_gui_cursor.BackbufferShmId;
+    X86_GUI_SHM_LEASE *bb = shm_id ? find_shm_lease_private(shm_id) : NULL;
+    if (!bb)
+        return 0;
+    KERNEL_PHYSICAL_LEASE lease = bb->Lease;
+
     for (uint32_t row = 0; row < ch; ++row) {
-        volatile uint32_t *dst = fb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)x0;
-        uint32_t *sav = &x86_gui_cursor.Saved[row * 18U];
-        int from_ram = 0;
-        if (bb) {
-            uint64_t byte_off = ((uint64_t)(y0 + row) * (uint64_t)fb_stride + (uint64_t)x0) * 4ULL;
-            from_ram = x86_page_window_read_lease(process_rt.Window, &bb->Lease, byte_off, sav, (BOOT_U64)cw * 4ULL);
-        }
-        for (uint32_t col = 0; col < cw; ++col) {
-            uint32_t bg = from_ram ? sav[col] : dst[col];
-            if (!from_ram)
-                sav[col] = bg;
-            uint32_t sample = kernel_pointer_sample(col, row);
-            if (sample)
-                dst[col] = kernel_pointer_blend(sample, bg & 0x00FFFFFFU) | 0xFF000000U;
+        uint32_t start = x86_gui_cursor.RowStart[row];
+        uint32_t end = x86_gui_cursor.RowEnd[row];
+        if (start >= end || start >= cw)
+            continue;
+        if (end > cw)
+            end = cw;
+        uint32_t span = end - start;
+        uint32_t *sav = &frame->Saved[row * 18U + start];
+        uint32_t *comp = &frame->Composed[row * 18U + start];
+        uint64_t byte_off = ((uint64_t)(y0 + row) * (uint64_t)fb_stride + (uint64_t)(x0 + start)) * 4ULL;
+        uint64_t saved_if = ks_irq_save();
+        int ok = x86_page_window_read_lease(process_rt.Window, &lease, byte_off, sav, (BOOT_U64)span * 4ULL);
+        ks_irq_restore(saved_if);
+        if (!ok)
+            return 0;
+        for (uint32_t i = 0; i < span; ++i) {
+            uint32_t sample = x86_gui_cursor.Sprite[row * 18U + start + i];
+            comp[i] = sample
+                ? (kernel_pointer_blend(sample, sav[i] & 0x00FFFFFFU) | 0xFF000000U)
+                : sav[i];
         }
     }
+    frame->X = x0;
+    frame->Y = y0;
+    frame->W = cw;
+    frame->H = ch;
+    return 1;
+}
+
+// ====== gui_cursor_commit_private ======
+
+static void gui_cursor_commit_private(volatile uint32_t *fb_pixels, uint32_t fb_stride,
+    const X86_GUI_CURSOR_FRAME *frame)
+{
+    uint32_t x0 = frame->X;
+    uint32_t y0 = frame->Y;
+    uint32_t cw = frame->W;
+    uint32_t ch = frame->H;
+    for (uint32_t row = 0; row < ch; ++row) {
+        uint32_t start = x86_gui_cursor.RowStart[row];
+        uint32_t end = x86_gui_cursor.RowEnd[row];
+        if (start >= end || start >= cw)
+            continue;
+        if (end > cw)
+            end = cw;
+        uint32_t count = end - start;
+        volatile uint32_t *dst32 = fb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)(x0 + start);
+        const uint32_t *src32 = &frame->Composed[row * 18U + start];
+        const uint32_t *sav_src = &frame->Saved[row * 18U + start];
+        uint32_t *sav_dst = &x86_gui_cursor.Saved[row * 18U + start];
+        for (uint32_t i = 0; i < count; ++i)
+            sav_dst[i] = sav_src[i];
+        uint32_t p = 0;
+        if ((((uintptr_t)dst32) & 7U) != 0U && p < count) {
+            dst32[0] = src32[0];
+            ++p;
+        }
+        volatile uint64_t *dst64 = (volatile uint64_t *)(dst32 + p);
+        uint32_t pairs = (count - p) >> 1;
+        for (uint32_t q = 0; q < pairs; ++q) {
+            uint64_t packed = (uint64_t)src32[p + q * 2U] | ((uint64_t)src32[p + q * 2U + 1U] << 32);
+            dst64[q] = packed;
+        }
+        p += pairs * 2U;
+        if (p < count)
+            dst32[p] = src32[p];
+    }
+    x86_gui_cursor.X = (int32_t)x0;
+    x86_gui_cursor.Y = (int32_t)y0;
     x86_gui_cursor.W = cw;
     x86_gui_cursor.H = ch;
     x86_gui_cursor.Drawn = 1U;
@@ -131,12 +252,37 @@ void x86_gui_cursor_move(int32_t dx, int32_t dy)
     if (!x86_fb_kernel_surface_info(&fb_base, &fb_w, &fb_h, &fb_stride, &fb_fmt) || !fb_base)
         return;
     volatile uint32_t *fb_pixels = (volatile uint32_t *)(uintptr_t)fb_base;
-    uint64_t saved_if = ks_irq_save();
-    gui_cursor_restore_private(fb_pixels, fb_stride);
-    x86_gui_cursor.X += dx;
-    x86_gui_cursor.Y -= dy;
-    gui_cursor_draw_private(fb_pixels, fb_w, fb_h, fb_stride);
-    ks_irq_restore(saved_if);
+    X86_GUI_CURSOR_FRAME frame;
+    for (uint32_t attempt = 0; attempt < 2U; ++attempt) {
+        uint64_t gen_before = ks_atomic_load_acquire(&x86_gui_present_gen);
+        int32_t target_x = x86_gui_cursor.X + dx;
+        int32_t target_y = x86_gui_cursor.Y - dy;
+        if (!gui_cursor_prepare_private(target_x, target_y, fb_w, fb_h, fb_stride, &frame))
+            return;
+        uint32_t t0 = 0, t1 = 0;
+        int timed = x86_gui_clock && kernel_clock_now(x86_gui_clock, &t0);
+        uint64_t saved_if = ks_irq_save();
+        if (!x86_gui_cursor.Active) {
+            ks_irq_restore(saved_if);
+            return;
+        }
+        if (ks_atomic_load_acquire(&x86_gui_present_gen) != gen_before && attempt == 0U) {
+            ++x86_gui_cursor.Retries;
+            ks_irq_restore(saved_if);
+            continue;
+        }
+        gui_cursor_restore_private(fb_pixels, fb_stride);
+        gui_cursor_commit_private(fb_pixels, fb_stride, &frame);
+        ks_irq_restore(saved_if);
+        if (timed && kernel_clock_now(x86_gui_clock, &t1)) {
+            uint32_t delta = kernel_clock_delta(x86_gui_clock, t0, t1);
+            x86_gui_cursor.IrqOffTicksTotal += delta;
+            if (delta > x86_gui_cursor.IrqOffTicksMax)
+                x86_gui_cursor.IrqOffTicksMax = delta;
+        }
+        ++x86_gui_cursor.Moves;
+        return;
+    }
 }
 
 // ====== x86_gui_clock_tick ======
@@ -448,6 +594,8 @@ static int refresh_display_geometry_private(BOOT_U64 *fb_base_out,
     return 1;
 }
 
+static void init_cmos_rtc_base_private(void);
+
 // ====== x86_gui_init ======
 
 int x86_gui_init(void)
@@ -463,6 +611,8 @@ int x86_gui_init(void)
         return 0;
     }
     kernel_gui_global_set(&x86_gui_state);
+    gui_cursor_init_sprite_private();
+    init_cmos_rtc_base_private();
     (void)refresh_display_geometry_private(NULL, NULL, NULL, NULL, NULL);
     x86_gui_ready = 1;
     return 1;
@@ -486,8 +636,22 @@ void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
     uint64_t disp_shm = 0;
     (void)kernel_gui_display_release(&x86_gui_state, pid, &disp_shm);
     if (disp_shm != 0) {
+        if (x86_gui_cursor.Moves > 0ULL && x86_gui_clock && x86_gui_clock->Hz) {
+            uint64_t avg_ns = (x86_gui_cursor.IrqOffTicksTotal / x86_gui_cursor.Moves) * 1000000000ULL / x86_gui_clock->Hz;
+            uint64_t max_ns = (uint64_t)x86_gui_cursor.IrqOffTicksMax * 1000000000ULL / x86_gui_clock->Hz;
+            (void)kernel_text("GUI_CURSOR_STATS moves=");
+            (void)kernel_number(x86_gui_cursor.Moves);
+            (void)kernel_text(" avg_ns=");
+            (void)kernel_number(avg_ns);
+            (void)kernel_text(" max_ns=");
+            (void)kernel_number(max_ns);
+            (void)kernel_text(" retries=");
+            (void)kernel_number(x86_gui_cursor.Retries);
+            (void)kernel_text("\n");
+        }
         x86_gui_cursor.Active = 0U;
         x86_gui_cursor.Drawn = 0U;
+        x86_gui_cursor.BackbufferShmId = 0ULL;
     }
     uint64_t shm_id = 0, user_virt = 0, phys_base = 0;
     uint32_t pages = 0;
@@ -505,8 +669,11 @@ void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
 static uint8_t read_cmos_reg_private(uint8_t reg)
 {
     // Motorola MC146818 / Intel ICH LPC CMOS RTC: port 0x70 = index (bit 7 NMI=0), port 0x71 = data.
+    uint64_t saved_if = ks_irq_save();
     x86_write_port(0x70U, reg & 0x7FU);
-    return x86_read_port(0x71U);
+    uint8_t value = x86_read_port(0x71U);
+    ks_irq_restore(saved_if);
+    return value;
 }
 
 // ====== bcd_to_bin_private ======
@@ -516,12 +683,13 @@ static uint8_t bcd_to_bin_private(uint8_t value)
     return (uint8_t)(((value >> 4) * 10U) + (value & 0x0FU));
 }
 
-// ====== read_cmos_rtc_packed_private ======
+// ====== init_cmos_rtc_base_private ======
 
-static uint64_t read_cmos_rtc_packed_private(void)
+static void init_cmos_rtc_base_private(void)
 {
     // MC146818 Status Register A (0x0A) bit 7 = UIP (Update In Progress).
     // Status Register B (0x0B) bit 2 = DM (0=BCD, 1=binary), bit 1 = 24/12h (1=24h).
+    // Read once at GUI init with interrupts enabled during UIP wait; SYS_DISPLAY_INFO advances by uptime_ms.
     uint8_t sec = 0, min = 0, hour = 0, day = 0, month = 0, year = 0, reg_b = 0;
     uint8_t sec2 = 0, min2 = 0, hour2 = 0, day2 = 0, month2 = 0, year2 = 0;
     int consistent = 0;
@@ -530,7 +698,7 @@ static uint64_t read_cmos_rtc_packed_private(void)
         while ((read_cmos_reg_private(0x0AU) & 0x80U) != 0U && spin < 10000U)
             ++spin;
         if (spin >= 10000U)
-            return 0ULL;
+            return;
         sec = read_cmos_reg_private(0x00U);
         min = read_cmos_reg_private(0x02U);
         hour = read_cmos_reg_private(0x04U);
@@ -551,7 +719,7 @@ static uint64_t read_cmos_rtc_packed_private(void)
         }
     }
     if (!consistent)
-        return 0ULL;
+        return;
     uint8_t pm = (uint8_t)(hour & 0x80U);
     hour = (uint8_t)(hour & 0x7FU);
     if ((reg_b & 0x04U) == 0U) {
@@ -568,17 +736,15 @@ static uint64_t read_cmos_rtc_packed_private(void)
         else if (hour == 12U)
             hour = 0U;
     }
-    uint16_t full_year = (uint16_t)(2000U + year);
-    if (month < 1U || month > 12U || day < 1U || day > 31U ||
-        hour > 23U || min > 59U || sec > 59U)
-        return 0ULL;
-    return ((uint64_t)full_year << 48)
-        | ((uint64_t)month << 40)
-        | ((uint64_t)day << 32)
-        | ((uint64_t)hour << 24)
-        | ((uint64_t)min << 16)
-        | ((uint64_t)sec << 8)
-        | 1ULL;
+    int valid = 0;
+    uint64_t epoch = kernel_gui_rtc_to_epoch(2000U + (uint32_t)year, month, day, hour, min, sec, &valid);
+    if (!valid)
+        return;
+    x86_gui_rtc_base_epoch = epoch;
+    x86_gui_rtc_base_uptime_sec = ks_atomic_load_acquire(&x86_gui_uptime_ms) / 1000ULL;
+    x86_gui_rtc_base_valid = 1U;
+    x86_gui_rtc_cached = kernel_gui_epoch_to_rtc_packed(epoch);
+    x86_gui_rtc_last_sec = x86_gui_rtc_base_uptime_sec;
 }
 
 // ====== x86_gui_sys_display_info ======
@@ -611,11 +777,12 @@ BOOT_U64 x86_gui_sys_display_info(X86_PROCESS_CPU *cpu, BOOT_U64 info_ptr)
     if (!kernel_gui_display_info(&x86_gui_state, uptime_ms, &info))
         return RESULT_UNKNOWN;
     uint64_t cur_sec = uptime_ms / 1000ULL;
-    if (cpu == &x86_process_cpus[0] && cur_sec != x86_gui_rtc_last_sec) {
-        uint64_t rtc_if = ks_irq_save();
-        x86_gui_rtc_cached = read_cmos_rtc_packed_private();
+    if (cpu == &x86_process_cpus[0] && x86_gui_rtc_base_valid && cur_sec != x86_gui_rtc_last_sec) {
+        uint64_t delta_sec = cur_sec >= x86_gui_rtc_base_uptime_sec
+            ? (cur_sec - x86_gui_rtc_base_uptime_sec)
+            : 0ULL;
+        x86_gui_rtc_cached = kernel_gui_epoch_to_rtc_packed(x86_gui_rtc_base_epoch + delta_sec);
         x86_gui_rtc_last_sec = cur_sec;
-        ks_irq_restore(rtc_if);
     }
     info.RtcPacked = x86_gui_rtc_cached;
     if (x86_process_copy_user(cpu, (void *)info_ptr, &info, info_ptr, sizeof(info), 1))
@@ -687,6 +854,11 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
     x86_gui_cursor.X = (int32_t)(w / 2U);
     x86_gui_cursor.Y = (int32_t)(h / 2U);
     x86_gui_cursor.Drawn = 0U;
+    x86_gui_cursor.BackbufferShmId = shm_id;
+    x86_gui_cursor.Moves = 0ULL;
+    x86_gui_cursor.IrqOffTicksTotal = 0ULL;
+    x86_gui_cursor.IrqOffTicksMax = 0U;
+    x86_gui_cursor.Retries = 0U;
     x86_gui_cursor.Active = 1U;
     X86_DISPLAY_ACQUIRE_OUT out = {0};
     out.ShmId = shm_id;
@@ -777,9 +949,16 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
                 return RESULT_UNKNOWN;
         }
     }
-    cur_if = ks_irq_save();
-    gui_cursor_draw_private(fb_pixels, fb_w, fb_h, fb_stride);
-    ks_irq_restore(cur_if);
+    ks_atomic_store_release(&x86_gui_present_gen, ks_atomic_load_relaxed(&x86_gui_present_gen) + 1ULL);
+    X86_GUI_CURSOR_FRAME cursor_frame;
+    int cursor_prepared = x86_gui_cursor.Active
+        && gui_cursor_prepare_private(x86_gui_cursor.X, x86_gui_cursor.Y, fb_w, fb_h, fb_stride, &cursor_frame);
+    if (cursor_prepared) {
+        cur_if = ks_irq_save();
+        if (x86_gui_cursor.Active)
+            gui_cursor_commit_private(fb_pixels, fb_stride, &cursor_frame);
+        ks_irq_restore(cur_if);
+    }
     return 0;
 }
 
