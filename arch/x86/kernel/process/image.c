@@ -269,14 +269,19 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
         slot->RemainingIrqs = x86_process_budget_initial();
     }
     if (slot->Waiting) {
-        BOOT_U64 ready = kernel_ipc_receive_ready(table, pid, *wait_handle_io);
-        if (ready == KERNEL_IPC_WOULD_BLOCK) {
-            ks_irq_restore(saved_if);
-            return 0;
+        if (*wait_handle_io == 0ULL) {
+            GPR(slot->Frame, GPR_RAX) = 0;
+            slot->Waiting = 0;
+        } else {
+            BOOT_U64 ready = kernel_ipc_receive_ready(table, pid, *wait_handle_io);
+            if (ready == KERNEL_IPC_WOULD_BLOCK) {
+                ks_irq_restore(saved_if);
+                return 0;
+            }
+            GPR(slot->Frame, GPR_RAX) = ready;
+            slot->Waiting = 0;
+            *wait_handle_io = 0;
         }
-        GPR(slot->Frame, GPR_RAX) = ready;
-        slot->Waiting = 0;
-        *wait_handle_io = 0;
     }
     cpu->UserRoot = slot->Lease.Base;
     cpu->Current = result;
