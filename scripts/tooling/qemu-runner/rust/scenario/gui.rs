@@ -29,7 +29,7 @@ fn click(vm: &mut Vm, x: i32, y: i32) {
         vm.command("mouse_move -100 -100");
         std::thread::sleep(Duration::from_millis(20));
     }
-    let (mut remaining_x, mut remaining_y) = (x, y);
+    let (mut remaining_x, mut remaining_y) = (x / 2, y / 2);
     while remaining_x != 0 || remaining_y != 0 {
         let dx = remaining_x.clamp(-100, 100);
         let dy = remaining_y.clamp(-100, 100);

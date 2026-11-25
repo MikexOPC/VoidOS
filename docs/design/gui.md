@@ -18,6 +18,15 @@ Ogni task termina con verifiche e commit locale. Lo stato è nella
 
 ## Ownership e stati
 
+Il puntatore ha una posizione autorevole in `KERNEL_GUI`, inizializzata al
+centro all'acquisizione del display. Ogni report PS/2 applica il guadagno 2x
+e il limite ai bordi prima dell'accorpamento. Il cursore kernel usa questa
+posizione. Gli eventi mouse conservano i delta e pubblicano X/Y in Code/Value
+con `KERNEL_INPUT_FLAG_ABSOLUTE`, mantenendo l'ABI da 24 byte. Il compositor
+usa le coordinate assolute quando il flag e presente. L'accorpamento conserva
+l'ultima posizione e separa le transizioni dei pulsanti. Il recupero da
+overflow pubblica posizione e pulsanti correnti.
+
 - Il compositor possiede display, heap e backbuffer. Le app ricevono un
   budget ristretto con SPAWN e DISPLAY revocati.
 - Lo spawn con connessione prepara processo ed endpoint prima di pubblicare

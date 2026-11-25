@@ -8,6 +8,7 @@
 #ifdef KERNEL_USER_PROCESS
 #include "kernel/gui/gui.h"
 #include "arch/x86/kernel/process/gui.h"
+#define GUI_MOUSE_GAIN 2
 #endif
 
 // ====== pop_private ======
@@ -55,12 +56,15 @@ static void flush_gui_mouse_private(X86_PS2_MOUSE *mouse, int32_t *dx, int32_t *
         return;
     KERNEL_GUI *gui = kernel_gui_global();
     if (gui && kernel_gui_display_owner(gui) != 0) {
-        if (*dx || *dy)
-            x86_gui_cursor_move(*dx, *dy);
-        if (!kernel_gui_input_push_mouse(gui, *dx, *dy, buttons)) {
+        int32_t screen_dx = *dx * GUI_MOUSE_GAIN;
+        int32_t screen_dy = *dy * GUI_MOUSE_GAIN;
+        if (!kernel_gui_input_push_mouse(gui, screen_dx, screen_dy, buttons)) {
             if (mouse->GuiDrops != UINT32_MAX)
                 ++mouse->GuiDrops;
         }
+        int32_t x, y;
+        if (kernel_gui_pointer_position(gui, &x, &y))
+            x86_gui_cursor_position(x, y);
     }
     *dx = 0;
     *dy = 0;
@@ -135,14 +139,12 @@ void x86_ps2_mouse_task(void)
                     flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
                     gui_last_flushed_buttons = gui_buttons;
                 }
-                gui_dx += event.DeltaX;
-                gui_dy += event.DeltaY;
+                gui_dx = event.DeltaX;
+                gui_dy = event.DeltaY;
                 gui_buttons = event.Buttons;
                 gui_pending = 1;
-                if (gui_buttons != gui_last_flushed_buttons) {
-                    flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
-                    gui_last_flushed_buttons = gui_buttons;
-                }
+                flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
+                gui_last_flushed_buttons = gui_buttons;
             } else {
                 gui_dx = 0;
                 gui_dy = 0;

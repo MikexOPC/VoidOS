@@ -261,11 +261,12 @@ static void gui_cursor_commit_private(volatile uint32_t *fb_pixels, uint32_t fb_
     x86_gui_cursor.Drawn = 1U;
 }
 
-// ====== x86_gui_cursor_move ======
+// ====== x86_gui_cursor_position ======
 
-void x86_gui_cursor_move(int32_t dx, int32_t dy)
+void x86_gui_cursor_position(int32_t x, int32_t y)
 {
-    if (!x86_gui_ready || !x86_gui_cursor.Active || (!dx && !dy))
+    if (!x86_gui_ready || !x86_gui_cursor.Active ||
+        (x == x86_gui_cursor.X && y == x86_gui_cursor.Y))
         return;
     BOOT_U64 fb_base = 0;
     BOOT_U32 fb_w = 0, fb_h = 0, fb_stride = 0, fb_fmt = 0;
@@ -275,8 +276,8 @@ void x86_gui_cursor_move(int32_t dx, int32_t dy)
     X86_GUI_CURSOR_FRAME frame;
     for (uint32_t attempt = 0; attempt < 2U; ++attempt) {
         uint64_t gen_before = ks_atomic_load_acquire(&x86_gui_present_gen);
-        int32_t target_x = x86_gui_cursor.X + dx;
-        int32_t target_y = x86_gui_cursor.Y - dy;
+        int32_t target_x = x;
+        int32_t target_y = y;
         if (!gui_cursor_prepare_private(target_x, target_y, fb_w, fb_h, fb_stride, &frame))
             return;
         uint32_t t0 = 0, t1 = 0;

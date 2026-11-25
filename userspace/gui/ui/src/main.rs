@@ -323,9 +323,15 @@ extern "C" fn program_main(mode: u64) -> ! {
             }
             had_work = true;
             if ev.kind == libvoid::INPUT_MOUSE {
-                if ev.delta_x != 0 || ev.delta_y != 0 {
+                let previous_position = (cx, cy);
+                if (ev.flags & libvoid::INPUT_FLAG_ABSOLUTE) != 0 {
+                    cx = (ev.code as f32).clamp(0.0, (acq.width - 1) as f32);
+                    cy = (ev.value as f32).clamp(0.0, (acq.height - 1) as f32);
+                } else {
                     cx = (cx + ev.delta_x as f32).clamp(0.0, (acq.width - 1) as f32);
                     cy = (cy - ev.delta_y as f32).clamp(0.0, (acq.height - 1) as f32);
+                }
+                if (cx, cy) != previous_position {
                     mouse_moved = true;
                 }
                 let buttons = ev.flags & 0x7;

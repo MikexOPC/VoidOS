@@ -8,6 +8,23 @@ delle due app insieme. Hardware fisico non provato.
 
 ## Candidato della prima task
 
+### Puntatore coerente — 25 novembre 2026
+
+**Fatta.** Posizione autorevole nel kernel, coordinate assolute nella stessa
+ABI input da 24 byte e guadagno 2x comune a cursore e click. Ogni report
+applica i bordi prima dell'accorpamento. Il test host GUI passa con casi
+di inversione al bordo, delta estremi, pulsanti e recupero overflow.
+
+Campagna `kernel/build/qemu-runner-18eb59e66ff77a20-8630/`, ordinary q35 TCG
+con quattro vCPU, 3/3 boot GUI PASS. Kernel SHA-256
+`5E156CDCEFCEC7080F6776A9F453B60D0CFB2529C617300E441194880D0F513C` e UI
+`5F9F889F0F98BAF3A0DFFCC9DF30273850B4057BA9D5DB7200BAEE68014BA01E`.
+La build kernel e il test host sono stati compilati con Meson. Il wrapper
+PowerShell della UI e rimasto senza esito; Cargo offline e copia esplicita
+dell'ELF hanno completato la preparazione dell'immagine prima dei boot.
+Il miglioramento della fluidita nella VM interattiva dell'utente e lo
+stress da 30 minuti restano da verificare. Nessuna prova su hardware fisico.
+
 ### Correzione del primo click — 24 novembre 2026
 
 **Fatta.** La UI viene inizializzata dall'elenco reale delle applicazioni

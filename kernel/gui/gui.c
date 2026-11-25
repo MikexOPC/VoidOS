@@ -146,6 +146,8 @@ static void reset_input_state_locked(KERNEL_GUI *gui)
     gui->InputTail = 0;
     gui->InputCount = 0;
     gui->LastMouseButtons = 0;
+    gui->MouseX = (int32_t)(gui->Width / 2U);
+    gui->MouseY = (int32_t)(gui->Height / 2U);
     gui->LastKeyFlags = 0;
     gui->PendingMouseDx = 0;
     gui->PendingMouseDy = 0;
@@ -399,21 +401,29 @@ int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_
         return 0;
     int ok = 0;
     if (gui->DisplayOwnerPid) {
-        uint32_t clean_buttons = buttons & ~KERNEL_INPUT_FLAG_RESYNC;
+        uint32_t clean_buttons = buttons & 7U;
+        int64_t x = (int64_t)gui->MouseX + dx;
+        int64_t y = (int64_t)gui->MouseY - dy;
+        gui->MouseX = (int32_t)(x < 0 ? 0 : x >= gui->Width ? gui->Width - 1U : x);
+        gui->MouseY = (int32_t)(y < 0 ? 0 : y >= gui->Height ? gui->Height - 1U : y);
         gui->LastMouseButtons = clean_buttons;
         if (gui->InputCount > 0U && !gui->PendingMouseResync) {
             uint32_t last_idx = (gui->InputTail + KERNEL_GUI_INPUT_CAPACITY - 1U) % KERNEL_GUI_INPUT_CAPACITY;
             KERNEL_INPUT_EVENT *last = &gui->InputRing[last_idx];
-            if (last->Kind == KERNEL_INPUT_MOUSE && last->Flags == clean_buttons) {
+            if (last->Kind == KERNEL_INPUT_MOUSE && last->Flags == (clean_buttons | KERNEL_INPUT_FLAG_ABSOLUTE)) {
                 last->DeltaX = sat_add_i32_private(last->DeltaX, dx);
                 last->DeltaY = sat_add_i32_private(last->DeltaY, dy);
+                last->Code = (uint32_t)gui->MouseX;
+                last->Value = (uint32_t)gui->MouseY;
                 leave_private(&access);
                 return 1;
             }
         }
         KERNEL_INPUT_EVENT event = {0};
         event.Kind = KERNEL_INPUT_MOUSE;
-        event.Flags = clean_buttons;
+        event.Flags = clean_buttons | KERNEL_INPUT_FLAG_ABSOLUTE;
+        event.Code = (uint32_t)gui->MouseX;
+        event.Value = (uint32_t)gui->MouseY;
         event.DeltaX = dx;
         event.DeltaY = dy;
         ok = push_input_locked(gui, &event);
@@ -425,6 +435,22 @@ int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_
     }
     leave_private(&access);
     return ok;
+}
+
+// ====== kernel_gui_pointer_position ======
+
+int kernel_gui_pointer_position(KERNEL_GUI *gui, int32_t *x, int32_t *y)
+{
+    GUI_ACCESS access;
+    if (!x || !y || !enter_private(gui, &access))
+        return 0;
+    int active = gui->DisplayOwnerPid != 0;
+    if (active) {
+        *x = gui->MouseX;
+        *y = gui->MouseY;
+    }
+    leave_private(&access);
+    return active;
 }
 
 // ====== kernel_gui_input_poll ======
@@ -446,7 +472,9 @@ int kernel_gui_input_poll(KERNEL_GUI *gui, uint64_t pid, KERNEL_INPUT_EVENT *out
         } else if (gui->PendingMouseResync) {
             zero_bytes_private(out, sizeof(*out));
             out->Kind = KERNEL_INPUT_MOUSE;
-            out->Flags = gui->LastMouseButtons | KERNEL_INPUT_FLAG_RESYNC;
+            out->Flags = gui->LastMouseButtons | KERNEL_INPUT_FLAG_RESYNC | KERNEL_INPUT_FLAG_ABSOLUTE;
+            out->Code = (uint32_t)gui->MouseX;
+            out->Value = (uint32_t)gui->MouseY;
             out->DeltaX = gui->PendingMouseDx;
             out->DeltaY = gui->PendingMouseDy;
             gui->PendingMouseDx = 0;
