@@ -1,5 +1,9 @@
 #include "internal.h"
 #include "arch/x86/kernel/cpu/percpu/resources/geometry.h"
+#include "kernel/sync/lock.h"
+#ifdef KERNEL_PS2_INPUT
+#include "arch/x86/kernel/scheduler/irq/preempt.h"
+#endif
 
 #ifdef KERNEL_TEST_K6_PROCESS
 volatile BOOT_U64 process_window, process_window_budget, process_negative = KERNEL_K6_NEGATIVE;
@@ -49,6 +53,51 @@ int x86_process_in_syscall(void)
 {
     const X86_PROCESS_CPU *cpu = x86_process_cpu_current();
     return cpu && cpu->InSyscall != 0;
+}
+
+// ====== x86_process_syscall_stack_range ======
+
+int x86_process_syscall_stack_range(BOOT_U64 *floor_out, BOOT_U64 *top_out)
+{
+    const X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!cpu || !cpu->InSyscall || !cpu->KernelStackBase || !cpu->KernelStackTop)
+        return 0;
+    if (floor_out) *floor_out = cpu->KernelStackBase;
+    if (top_out) *top_out = cpu->KernelStackTop;
+    return 1;
+}
+
+// ====== x86_process_try_suspend_syscall ======
+
+int x86_process_try_suspend_syscall(const void *irq_frame)
+{
+    const X86_IRQ_FRAME *frame = (const X86_IRQ_FRAME *)irq_frame;
+    X86_PROCESS_CPU *cpu = x86_process_cpu_current();
+    if (!frame || !cpu || !cpu->InSyscall || !cpu->Current || !cpu->YieldFrame ||
+        !cpu->KernelStackBase || !cpu->KernelStackTop ||
+        cpu->SyscallNoSuspend || cpu->CopyPointer)
+        return 0;
+    if ((frame->Flags & 0x200ULL) == 0ULL)
+        return 0;
+    const KERNEL_LOCK_CONTEXT *locks = kernel_lock_current_context();
+    if (!locks || locks->Depth != 0U)
+        return 0;
+    const X86_CPU_LOCAL *local = x86_percpu_current_local();
+    if ((!local || local->Index == 0U) && kernel_log_line_open())
+        return 0;
+    BOOT_U64 addr = (BOOT_U64)(uintptr_t)frame;
+    if (addr < cpu->KernelStackBase + 64ULL || addr > cpu->KernelStackTop - sizeof(*frame))
+        return 0;
+
+    cpu->SyscallSuspended = 1U;
+    cpu->Yielded = 1U;
+    cpu->InSyscall = 0U;
+#ifdef KERNEL_PS2_INPUT
+    if (!x86_preempt_rearm())
+        kernel_panic("SYSCALL_PREEMPT_REARM_FAILED");
+#endif
+    x86_process_syscall_suspend();
+    return 1;
 }
 
 // ====== x86_process_runtime_ready ======

@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "arch/x86/mm/heap/binding.h"
 
 // ====== advance ======
 
@@ -169,6 +170,17 @@ int x86_process_slot_prepare_budgeted(X86_PROCESS_SLOT *slot, const X86_PROCESS_
     }
     BOOT_U32 ticks = kernel_clock_ms(cpu->BudgetClock, cpu_budget_ms);
     if (ticks == UINT32_MAX || !map_image(image, &plan, &slot->Lease)) return 0;
+    KERNEL_HEAP *heap = kernel_heap();
+    void *kstack = heap ? kernel_heap_alloc(heap, X86_PROCESS_KSTACK_BYTES, 16) : 0;
+    if (kstack) {
+        *(volatile BOOT_U64 *)kstack = STACK_CANARY;
+        slot->KernelStackBase = (BOOT_U64)(uintptr_t)kstack;
+    } else {
+        slot->KernelStackBase = 0;
+    }
+    slot->SyscallResumeRsp = 0;
+    slot->SyscallSuspended = 0;
+    slot->SyscallPreempts = 0;
     slot->KernelRoot = cpu->KernelRoot;
     slot->ImageEntry = process_rt.ExpectedImage;
     slot->WindowEntry = process_rt.ExpectedWindows;
@@ -216,6 +228,11 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     cpu->Waiting = 0;
     cpu->LeaveRequested = 0;
     cpu->Active = 1;
+    cpu->KernelStackBase = 0;
+    cpu->KernelStackTop = 0;
+    cpu->SyscallResumeRsp = 0;
+    cpu->SyscallSuspended = 0;
+    cpu->SyscallNoSuspend = 0;
     cpu->YieldFrame = slot->Frame;
     cpu->IpcChannel = channel;
     cpu->IpcEndpoint = endpoint;
@@ -293,6 +310,11 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
     cpu->WaitHandle = 0;
     cpu->LeaveRequested = 0;
     cpu->Active = 1;
+    cpu->KernelStackBase = slot->KernelStackBase;
+    cpu->KernelStackTop = slot->KernelStackBase ? (slot->KernelStackBase + X86_PROCESS_KSTACK_BYTES) : 0;
+    cpu->SyscallResumeRsp = 0;
+    cpu->SyscallSuspended = 0;
+    cpu->SyscallNoSuspend = 0;
     cpu->YieldFrame = slot->Frame;
     cpu->IpcChannel = 0;
     cpu->IpcEndpoint = 0;
@@ -300,15 +322,27 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
     cpu->Pid = pid;
     if (!kernel_deadline_start(cpu->BudgetClock, slot->RemainingTicks, &cpu->BudgetDeadline)) process_die("PROCESS_CLOCK_FAILED");
     process_timer_arm();
-    if (slot->Yields) x86_process_resume(slot->Frame);
-    else x86_process_enter(slot->Entry, STACK_TOP, initial_arg);
+    if (slot->SyscallSuspended) {
+        BOOT_U64 resume_rsp = slot->SyscallResumeRsp;
+        slot->SyscallSuspended = 0;
+        slot->SyscallResumeRsp = 0;
+        cpu->InSyscall = 1;
+        x86_process_syscall_resume(resume_rsp);
+    } else if (slot->Yields) {
+        x86_process_resume(slot->Frame);
+    } else {
+        x86_process_enter(slot->Entry, STACK_TOP, initial_arg);
+    }
     BOOT_U32 elapsed = kernel_clock_elapsed(cpu->BudgetClock, cpu->BudgetDeadline.Start);
     cpu->YieldFrame = 0;
+    cpu->KernelStackBase = 0;
+    cpu->KernelStackTop = 0;
     cpu->Table = 0;
     cpu->Pid = 0;
     turn_finish(cpu, result);
     BOOT_U64 canary_addr = cpu->SyscallTop - X86_KERNEL_SYSCALL_BYTES;
-    if (__readcr3() != cpu->KernelRoot || !roots_stable() || *(volatile BOOT_U64 *)canary_addr != STACK_CANARY)
+    if (__readcr3() != cpu->KernelRoot || !roots_stable() || *(volatile BOOT_U64 *)canary_addr != STACK_CANARY ||
+        (slot->KernelStackBase && *(volatile BOOT_U64 *)(uintptr_t)slot->KernelStackBase != STACK_CANARY))
         process_die("PROCESS_ROOT_CHANGED");
     slot->Written = cpu->WrittenBytes;
     slot->RemainingIrqs = cpu->BudgetLeft;
@@ -316,6 +350,11 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
         ++slot->Yields;
         slot->Waiting = cpu->Waiting;
         *wait_handle_io = cpu->Waiting ? cpu->WaitHandle : 0;
+        if (cpu->SyscallSuspended) {
+            slot->SyscallSuspended = 1;
+            slot->SyscallResumeRsp = cpu->SyscallResumeRsp;
+            ++slot->SyscallPreempts;
+        }
         if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
         else slot->RemainingTicks -= elapsed;
     }
@@ -329,6 +368,11 @@ int x86_process_slot_reap(X86_PROCESS_SLOT *slot)
 {
     X86_PROCESS_CPU *cpu = x86_process_cpu_current();
     if (!process_rt.Opened || !cpu || (cpu->Current && !cpu->InSyscall) || !slot || !slot->Lease.Id || !reap(cpu, &slot->Lease)) return 0;
+    if (slot->KernelStackBase) {
+        KERNEL_HEAP *heap = kernel_heap();
+        if (heap)
+            (void)kernel_heap_free(heap, (void *)(uintptr_t)slot->KernelStackBase);
+    }
     *slot = (X86_PROCESS_SLOT){0};
     return 1;
 }

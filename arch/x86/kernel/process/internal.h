@@ -148,6 +148,8 @@ BOOT_U32 x86_process_nmi_valid(BOOT_U64 window, BOOT_U32 user_root, BOOT_U32 ker
 #endif
 BOOT_U64 x86_ipc_send_check(const IPC_CHANNEL *channel, BOOT_U64 owner, BOOT_U64 handle, BOOT_U64 len);
 void x86_process_resume(const BOOT_U64 *frame);
+void x86_process_syscall_suspend(void);
+void x86_process_syscall_resume(BOOT_U64 resume_rsp);
 void x86_process_leave(void);
 void x86_process_syscall(void);
 void x86_process_nmi(void);
@@ -198,6 +200,11 @@ typedef struct {
     volatile BOOT_U32           InSyscall;
     BOOT_U32                    Reserved;
     _Alignas(16) unsigned char  FxSaved[512];
+    BOOT_U64                    KernelStackTop;
+    BOOT_U64                    KernelStackBase;
+    BOOT_U64                    SyscallResumeRsp;
+    volatile BOOT_U32           SyscallSuspended;
+    volatile BOOT_U32           SyscallNoSuspend;
     BOOT_U64                    BudgetLeft;
     BOOT_U64                    WrittenBytes;
     const KERNEL_CLOCK         *BudgetClock;
@@ -212,6 +219,7 @@ typedef struct {
     BOOT_U64                    WaitHandle;
     X86_PROCESS_RESULT         *Current;
     unsigned char               Buffer[MAX_COPY + 1];
+    unsigned char               CopyScratch[256];
 } X86_PROCESS_CPU;
 
 _Static_assert(offsetof(X86_PROCESS_CPU, KernelRoot) == 0, "X86_PROCESS_CPU KernelRoot offset");
@@ -230,6 +238,11 @@ _Static_assert(offsetof(X86_PROCESS_CPU, Active) == 144, "X86_PROCESS_CPU Active
 _Static_assert(offsetof(X86_PROCESS_CPU, LeaveRequested) == 148, "X86_PROCESS_CPU LeaveRequested offset");
 _Static_assert(offsetof(X86_PROCESS_CPU, InSyscall) == 152, "X86_PROCESS_CPU InSyscall offset");
 _Static_assert(offsetof(X86_PROCESS_CPU, FxSaved) == 160, "X86_PROCESS_CPU FxSaved offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, KernelStackTop) == 672, "X86_PROCESS_CPU KernelStackTop offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, KernelStackBase) == 680, "X86_PROCESS_CPU KernelStackBase offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, SyscallResumeRsp) == 688, "X86_PROCESS_CPU SyscallResumeRsp offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, SyscallSuspended) == 696, "X86_PROCESS_CPU SyscallSuspended offset");
+_Static_assert(offsetof(X86_PROCESS_CPU, SyscallNoSuspend) == 700, "X86_PROCESS_CPU SyscallNoSuspend offset");
 
 // ====== stato condiviso del runtime dei processi ======
 

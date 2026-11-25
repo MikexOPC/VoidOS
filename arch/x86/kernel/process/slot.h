@@ -3,6 +3,7 @@
 #include "process.h"
 
 #define X86_PROCESS_FRAME_WORDS 84U
+#define X86_PROCESS_KSTACK_BYTES 16384U
 #define IPC_MESSAGE_BYTES 128U
 #define IPC_WOULD_BLOCK (~5ULL)
 
@@ -12,7 +13,9 @@ typedef struct {
     KERNEL_PHYSICAL_LEASE Lease;
     BOOT_U64 KernelRoot, ImageEntry, WindowEntry;
     BOOT_U64 Entry, RemainingIrqs, Written;
+    BOOT_U64 KernelStackBase, SyscallResumeRsp;
     BOOT_U32 RemainingTicks, Yields, Waiting;
+    BOOT_U32 SyscallSuspended, SyscallPreempts;
 } X86_PROCESS_SLOT;
 
 BOOT_U64 x86_ipc_open(IPC_CHANNEL *channel);

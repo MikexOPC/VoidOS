@@ -15,6 +15,7 @@
 #endif
 #ifdef KERNEL_USER_PROCESS
 int x86_process_in_syscall(void);
+int x86_process_try_suspend_syscall(const void *irq_frame);
 void x86_gui_clock_tick(void);
 #endif
 
@@ -216,6 +217,8 @@ void x86_preempt_after(const X86_IRQ_FRAME *frame)
     if (!preempt.Open || !preempt.Running || frame->Vector != X86_PREEMPT_VECTOR) return;
 #ifdef KERNEL_USER_PROCESS
     if (x86_process_in_syscall()) {
+        if (x86_process_try_suspend_syscall(frame))
+            return;
         if (!x86_preempt_rearm())
             kernel_panic("PREEMPT_REARM_FAILED");
         return;

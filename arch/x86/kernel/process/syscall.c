@@ -33,16 +33,42 @@ int x86_process_console_push(const unsigned char *bytes, uint32_t length)
 static BOOT_U64 copy_checked(X86_PROCESS_CPU *cpu, void *target, const void *source,
     BOOT_U64 pointer, BOOT_U64 length, BOOT_U64 write)
 {
-    // Critical section: UserRoot CR3 and STAC/CLAC must never be interrupted by an IRQ.
-    uint64_t saved_if = ks_irq_save();
-    cpu->CopyPointer = pointer;
-    cpu->CopyLength = length;
-    cpu->CopyWrite = write;
-    BOOT_U64 failed = x86_process_copy(target, source, length);
-    cpu->CopyLength = 0;
-    if (__readeflags() & FLAG_AC) process_die("PROCESS_AC_RETAINED");
-    ks_irq_restore(saved_if);
-    return failed;
+    if (!length)
+        return 0;
+    // Stage through cpu->CopyScratch (in kernel .bss, mapped in both KernelRoot and UserRoot)
+    // so kernel buffers on heap-backed per-process syscall stacks stay KPTI-isolated from UserRoot.
+    unsigned char *dst_bytes = (unsigned char *)target;
+    const unsigned char *src_bytes = (const unsigned char *)source;
+    BOOT_U64 offset = 0;
+    while (offset < length) {
+        BOOT_U64 chunk = length - offset;
+        if (chunk > sizeof(cpu->CopyScratch))
+            chunk = sizeof(cpu->CopyScratch);
+        if (write) {
+            for (BOOT_U64 i = 0; i < chunk; ++i)
+                cpu->CopyScratch[i] = src_bytes[offset + i];
+        }
+        // Critical section: UserRoot CR3 and STAC/CLAC must never be interrupted by an IRQ.
+        uint64_t saved_if = ks_irq_save();
+        cpu->CopyPointer = pointer + offset;
+        cpu->CopyLength = chunk;
+        cpu->CopyWrite = write;
+        BOOT_U64 failed = write
+            ? x86_process_copy(dst_bytes + offset, cpu->CopyScratch, chunk)
+            : x86_process_copy(cpu->CopyScratch, src_bytes + offset, chunk);
+        cpu->CopyPointer = 0;
+        cpu->CopyLength = 0;
+        if (__readeflags() & FLAG_AC) process_die("PROCESS_AC_RETAINED");
+        ks_irq_restore(saved_if);
+        if (failed)
+            return failed;
+        if (!write) {
+            for (BOOT_U64 i = 0; i < chunk; ++i)
+                dst_bytes[offset + i] = cpu->CopyScratch[i];
+        }
+        offset += chunk;
+    }
+    return 0;
 }
 
 // ====== x86_process_copy_user ======
@@ -503,7 +529,9 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         GPR(frame, GPR_RAX) = sys_unlink(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_SPAWN) {
+        ++cpu->SyscallNoSuspend;
         GPR(frame, GPR_RAX) = sys_spawn(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI), GPR(frame, GPR_RDX));
+        --cpu->SyscallNoSuspend;
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_WAIT_PID) {
         GPR(frame, GPR_RAX) = sys_wait_pid(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
@@ -521,7 +549,9 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         GPR(frame, GPR_RAX) = x86_gui_sys_display_info(cpu, GPR(frame, GPR_RDI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_DISPLAY_ACQUIRE) {
+        ++cpu->SyscallNoSuspend;
         GPR(frame, GPR_RAX) = x86_gui_sys_display_acquire(cpu, GPR(frame, GPR_RDI));
+        --cpu->SyscallNoSuspend;
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_DISPLAY_PRESENT) {
         GPR(frame, GPR_RAX) = x86_gui_sys_display_present(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
@@ -530,13 +560,19 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         GPR(frame, GPR_RAX) = x86_gui_sys_input_poll(cpu, GPR(frame, GPR_RDI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_SHM_CREATE) {
+        ++cpu->SyscallNoSuspend;
         GPR(frame, GPR_RAX) = x86_gui_sys_shm_create(cpu, GPR(frame, GPR_RDI));
+        --cpu->SyscallNoSuspend;
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_SHM_MAP) {
+        ++cpu->SyscallNoSuspend;
         GPR(frame, GPR_RAX) = x86_gui_sys_shm_map(cpu, GPR(frame, GPR_RDI));
+        --cpu->SyscallNoSuspend;
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_PROCESS_STOP) {
+        ++cpu->SyscallNoSuspend;
         GPR(frame, GPR_RAX) = sys_process_stop(cpu, GPR(frame, GPR_RDI));
+        --cpu->SyscallNoSuspend;
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_IPC_CLOSE) {
         GPR(frame, GPR_RAX) = sys_ipc_close(cpu, GPR(frame, GPR_RDI));
@@ -545,10 +581,14 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         GPR(frame, GPR_RAX) = x86_gui_sys_shm_publish(cpu, GPR(frame, GPR_RDI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_SHM_VIEW) {
+        ++cpu->SyscallNoSuspend;
         GPR(frame, GPR_RAX) = x86_gui_sys_shm_view(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
+        --cpu->SyscallNoSuspend;
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_SHM_UNMAP) {
+        ++cpu->SyscallNoSuspend;
         GPR(frame, GPR_RAX) = x86_gui_sys_shm_unmap(cpu, GPR(frame, GPR_RDI));
+        --cpu->SyscallNoSuspend;
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else {
         GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;

@@ -34,6 +34,8 @@ CPU_FAULT_CR2  EQU 48
 CPU_FAULT      EQU 56
 CPU_OWNER      EQU 112
 CPU_FX_SAVED   EQU 160
+CPU_KSTACK_TOP EQU 672
+CPU_SYSCALL_RESUME_RSP EQU 688
 
 .code
 
@@ -137,6 +139,19 @@ syscall_swapped:
     mov rax, QWORD PTR [rbx+CPU_KROOT]
     mov cr3, rax
     K6_WAIT 3
+    ; Per-process kernel syscall stack (mapped only in KernelRoot for KPTI):
+    ; move the 20-qword (15 GPR + 5 IRETQ) frame off the shared trampoline stack.
+    mov rax, QWORD PTR [rbx+CPU_KSTACK_TOP]
+    test rax, rax
+    jz syscall_use_trampoline
+    sub rax, 160
+    mov rsi, rsp
+    mov rdi, rax
+    mov ecx, 20
+    cld
+    rep movsq
+    mov rsp, rax
+syscall_use_trampoline:
     sub rsp, 512
     fxsave64 [rsp]
     fxrstor64 [process_fx_clean]
@@ -157,6 +172,19 @@ syscall_swapped:
 syscall_return:
     fxrstor64 [rsp]
     add rsp, 512
+    ; KPTI: copy the 20-qword frame back onto the shared trampoline stack before loading UserRoot.
+    mov rax, QWORD PTR [rbx+CPU_KSTACK_TOP]
+    test rax, rax
+    jz syscall_return_trampoline
+    mov rdi, QWORD PTR gs:[GS_SYSCALL_TOP]
+    sub rdi, 160
+    mov rsi, rsp
+    mov rdx, rdi
+    mov ecx, 20
+    cld
+    rep movsq
+    mov rsp, rdx
+syscall_return_trampoline:
     K6_WAIT 4
     mov rax, QWORD PTR [rbx+CPU_UROOT]
     mov cr3, rax
@@ -245,6 +273,60 @@ x86_process_resume PROC
     K6_POP_GPR
     iretq
 x86_process_resume ENDP
+
+; ====== x86_process_syscall_suspend ======
+
+; Saves callee-saved GPRs + 16-byte-aligned FXSAVE64 on the per-process kernel stack
+; and returns to the scheduler caller via x86_process_leave.
+PUBLIC x86_process_syscall_suspend
+x86_process_syscall_suspend PROC
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rax, rsp
+    and rsp, -16
+    sub rsp, 528
+    mov QWORD PTR [rsp+512], rax
+    fxsave64 [rsp]
+    mov rbx, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov QWORD PTR [rbx+CPU_SYSCALL_RESUME_RSP], rsp
+    jmp x86_process_leave
+x86_process_syscall_suspend ENDP
+
+; ====== x86_process_syscall_resume ======
+
+; Microsoft x64 ABI: RCX = saved SyscallResumeRsp on the per-process kernel stack.
+PUBLIC x86_process_syscall_resume
+x86_process_syscall_resume PROC
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rbx, QWORD PTR gs:[GS_PROCESS_CPU]
+    mov QWORD PTR [rbx+CPU_SAVED_RSP], rsp
+    fxsave64 [rbx+CPU_FX_SAVED]
+    mov rsp, rcx
+    fxrstor64 [rsp]
+    mov rsp, QWORD PTR [rsp+512]
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rbx
+    ret
+x86_process_syscall_resume ENDP
 
 ; ====== x86_process_leave ======
 

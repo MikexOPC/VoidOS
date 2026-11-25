@@ -18,6 +18,7 @@
 #ifdef KERNEL_USER_PROCESS
 void x86_process_on_preempt_tick(const X86_IRQ_FRAME *frame);
 int x86_process_in_syscall(void);
+int x86_process_syscall_stack_range(BOOT_U64 *floor_out, BOOT_U64 *top_out);
 #endif
 extern const BOOT_U64 x86_irq_targets[224];
 extern const unsigned char x86_irq_begin[], x86_irq_end[];
@@ -263,8 +264,14 @@ static int frame_owner(const X86_IRQ_FRAME *frame)
     }
 #ifdef KERNEL_USER_PROCESS
     if (x86_process_in_syscall()) {
-        const X86_CPU_LOCAL *sys_owner = x86_percpu_current_local();
         BOOT_U64 address = (BOOT_U64)frame;
+        BOOT_U64 kfloor = 0, ktop = 0;
+        if (x86_process_syscall_stack_range(&kfloor, &ktop) &&
+            address >= kfloor && address <= ktop - sizeof(*frame))
+            return x86_irq_saved_area(address, kfloor, ktop) &&
+                frame->Rsp >= address + sizeof(*frame) && frame->Rsp <= ktop &&
+                frame->Rip >= X86_KERNEL_IMAGE_BASE && frame->Rip < X86_KERNEL_IMAGE_LIMIT;
+        const X86_CPU_LOCAL *sys_owner = x86_percpu_current_local();
         if (sys_owner && sys_owner->SyscallTop) {
             BOOT_U64 top = sys_owner->SyscallTop;
             BOOT_U64 floor = top - X86_KERNEL_SYSCALL_BYTES;

@@ -27,6 +27,8 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result);
 int x86_process_input_irqs(BOOT_U32 mask);
 int x86_process_close(void);
 int x86_process_in_syscall(void);
+int x86_process_syscall_stack_range(BOOT_U64 *floor_out, BOOT_U64 *top_out);
+int x86_process_try_suspend_syscall(const void *irq_frame);
 #ifdef KERNEL_TEST_K6_PROCESS
 int x86_process_nmi_report(BOOT_U64 window);
 void x86_process_nmi_arm(BOOT_U64 window);
