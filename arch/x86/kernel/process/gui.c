@@ -1,4 +1,5 @@
 #include "gui.h"
+#include <intrin.h>
 #include "manager.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
@@ -50,8 +51,12 @@ static uint64_t x86_gui_rtc_base_epoch;
 static uint64_t x86_gui_rtc_base_uptime_sec;
 static uint32_t x86_gui_rtc_base_valid;
 static uint64_t x86_gui_present_gen;
-// BSP-only row staging buffer (8 KiB) for fast 64-bit framebuffer blits up to 2048 px wide.
-static uint32_t x86_gui_blit_buf[2048];
+static KERNEL_PHYSICAL_LEASE x86_gui_kmap_tables;
+static uint32_t x86_gui_kmap_pages;
+static uint32_t x86_gui_kmap_active;
+static uint64_t x86_gui_present_calls;
+static uint64_t x86_gui_present_ticks_total;
+static uint32_t x86_gui_present_ticks_max;
 
 // Direct kernel-level 18x18 console pointer overlay (zero userspace roundtrip).
 static struct {
@@ -160,12 +165,18 @@ static int gui_cursor_prepare_private(int32_t target_x, int32_t target_y,
     if (cw > 18U) cw = 18U;
     if (ch > 18U) ch = 18U;
 
-    uint64_t shm_id = x86_gui_cursor.BackbufferShmId;
-    X86_GUI_SHM_LEASE *bb = shm_id ? find_shm_lease_private(shm_id) : NULL;
-    if (!bb)
+    uint64_t saved_if = ks_irq_save();
+    if (!x86_gui_cursor.Active || !x86_gui_kmap_active) {
+        ks_irq_restore(saved_if);
         return 0;
-    KERNEL_PHYSICAL_LEASE lease = bb->Lease;
-
+    }
+    uint64_t mapped_bytes = (uint64_t)x86_gui_kmap_pages * PAGE_BYTES;
+    uint64_t max_row_end = ((uint64_t)(y0 + ch - 1U) * (uint64_t)fb_stride + (uint64_t)(x0 + cw)) * 4ULL;
+    if (max_row_end > mapped_bytes) {
+        ks_irq_restore(saved_if);
+        return 0;
+    }
+    const uint32_t *bb_pixels = (const uint32_t *)(uintptr_t)X86_LAYOUT_GUI_BACKBUFFER_VIRTUAL;
     for (uint32_t row = 0; row < ch; ++row) {
         uint32_t start = x86_gui_cursor.RowStart[row];
         uint32_t end = x86_gui_cursor.RowEnd[row];
@@ -175,13 +186,22 @@ static int gui_cursor_prepare_private(int32_t target_x, int32_t target_y,
             end = cw;
         uint32_t span = end - start;
         uint32_t *sav = &frame->Saved[row * 18U + start];
+        const uint32_t *src = bb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)(x0 + start);
+        for (uint32_t i = 0; i < span; ++i)
+            sav[i] = src[i];
+    }
+    ks_irq_restore(saved_if);
+
+    for (uint32_t row = 0; row < ch; ++row) {
+        uint32_t start = x86_gui_cursor.RowStart[row];
+        uint32_t end = x86_gui_cursor.RowEnd[row];
+        if (start >= end || start >= cw)
+            continue;
+        if (end > cw)
+            end = cw;
+        uint32_t span = end - start;
+        const uint32_t *sav = &frame->Saved[row * 18U + start];
         uint32_t *comp = &frame->Composed[row * 18U + start];
-        uint64_t byte_off = ((uint64_t)(y0 + row) * (uint64_t)fb_stride + (uint64_t)(x0 + start)) * 4ULL;
-        uint64_t saved_if = ks_irq_save();
-        int ok = x86_page_window_read_lease(process_rt.Window, &lease, byte_off, sav, (BOOT_U64)span * 4ULL);
-        ks_irq_restore(saved_if);
-        if (!ok)
-            return 0;
         for (uint32_t i = 0; i < span; ++i) {
             uint32_t sample = x86_gui_cursor.Sprite[row * 18U + start + i];
             comp[i] = sample
@@ -627,6 +647,107 @@ void x86_gui_bind_display(KERNEL_DISPLAY display)
         (void)refresh_display_geometry_private(NULL, NULL, NULL, NULL, NULL);
 }
 
+// ====== gui_kmap_backbuffer_private ======
+
+// Intel SDM Vol. 3A §4.5 (4-level paging): supervisor-only (U/S=0), read-only (R/W=0), NX=1 leaf mapping.
+static int gui_kmap_backbuffer_private(uint64_t phys_base, uint32_t pages)
+{
+    if (x86_gui_kmap_active || !phys_base || !pages || pages > KERNEL_GUI_SHM_MAX_PAGES)
+        return 0;
+    volatile BOOT_U64 *root = x86_window_entries(0);
+    if (!root || root[X86_LAYOUT_GUI_BACKBUFFER_SLOT] != 0ULL)
+        return 0;
+    uint32_t pd_count = (pages + 511U) / 512U;
+    uint32_t table_pages = 2U + pd_count; // [0]=PDPT, [1]=PD, [2..]=PTs
+    KERNEL_PHYSICAL_LEASE tables = {0};
+    uint64_t saved_if = ks_irq_save();
+    int alloc_ok = x86_page_window_allocate_lease(process_rt.Window, table_pages, &tables);
+    ks_irq_restore(saved_if);
+    if (!alloc_ok)
+        return 0;
+    if (!update_holdings_private((int64_t)table_pages)) {
+        saved_if = ks_irq_save();
+        (void)x86_page_window_free_lease(process_rt.Window, &tables);
+        ks_irq_restore(saved_if);
+        return 0;
+    }
+
+    BOOT_U64 page_buf[512];
+    for (uint32_t i = 0; i < 512U; ++i)
+        page_buf[i] = 0ULL;
+    // PDPT[0] -> PD (supervisor-only, U/S=0)
+    page_buf[0] = (tables.Base + PAGE_BYTES) | PTE_PRESENT | PTE_WRITE;
+    saved_if = ks_irq_save();
+    int ok = x86_page_window_write_lease(process_rt.Window, &tables, 0ULL, page_buf, sizeof(page_buf));
+    ks_irq_restore(saved_if);
+    if (!ok)
+        goto fail;
+
+    // PD[0..pd_count-1] -> PTs (supervisor-only, U/S=0)
+    for (uint32_t i = 0; i < 512U; ++i)
+        page_buf[i] = (i < pd_count)
+            ? ((tables.Base + (BOOT_U64)(2U + i) * PAGE_BYTES) | PTE_PRESENT | PTE_WRITE)
+            : 0ULL;
+    saved_if = ks_irq_save();
+    ok = x86_page_window_write_lease(process_rt.Window, &tables, PAGE_BYTES, page_buf, sizeof(page_buf));
+    ks_irq_restore(saved_if);
+    if (!ok)
+        goto fail;
+
+    // PT leaves: supervisor-only (U/S=0), read-only (R/W=0), non-executable (NX=1), WB cacheable.
+    BOOT_U64 leaf_flags = PTE_PRESENT | PTE_NX;
+    for (uint32_t pd_off = 0; pd_off < pd_count; ++pd_off) {
+        for (uint32_t i = 0; i < 512U; ++i) {
+            uint32_t pg = pd_off * 512U + i;
+            page_buf[i] = (pg < pages) ? ((phys_base + (BOOT_U64)pg * PAGE_BYTES) | leaf_flags) : 0ULL;
+        }
+        saved_if = ks_irq_save();
+        ok = x86_page_window_write_lease(process_rt.Window, &tables,
+            (BOOT_U64)(2U + pd_off) * PAGE_BYTES, page_buf, sizeof(page_buf));
+        ks_irq_restore(saved_if);
+        if (!ok)
+            goto fail;
+    }
+
+    saved_if = ks_irq_save();
+    root[X86_LAYOUT_GUI_BACKBUFFER_SLOT] = tables.Base | PTE_PRESENT | PTE_WRITE;
+    x86_gui_kmap_tables = tables;
+    x86_gui_kmap_pages = pages;
+    x86_gui_kmap_active = 1U;
+    ks_irq_restore(saved_if);
+    return 1;
+
+fail:
+    saved_if = ks_irq_save();
+    (void)x86_page_window_free_lease(process_rt.Window, &tables);
+    ks_irq_restore(saved_if);
+    (void)update_holdings_private(-(int64_t)table_pages);
+    return 0;
+}
+
+// ====== gui_kunmap_backbuffer_private ======
+
+static void gui_kunmap_backbuffer_private(void)
+{
+    if (!x86_gui_kmap_active)
+        return;
+    volatile BOOT_U64 *root = x86_window_entries(0);
+    KERNEL_PHYSICAL_LEASE tables = x86_gui_kmap_tables;
+    uint64_t table_pages = tables.Pages;
+    uint64_t saved_if = ks_irq_save();
+    x86_gui_kmap_active = 0U;
+    x86_gui_kmap_pages = 0U;
+    if (root)
+        root[X86_LAYOUT_GUI_BACKBUFFER_SLOT] = 0ULL;
+    // Intel SDM Vol. 3A §4.10.4.1: MOV CR3 invalidates non-global TLB entries for the unmapped slot.
+    __writecr3(__readcr3());
+    if (!x86_page_window_free_lease(process_rt.Window, &tables))
+        process_die("GUI_KMAP_FREE_FAILED");
+    ks_irq_restore(saved_if);
+    if (!update_holdings_private(-(int64_t)table_pages))
+        process_die("GUI_KMAP_HOLDING_UNDERFLOW");
+}
+
 // ====== x86_gui_release_owned ======
 
 void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
@@ -636,6 +757,12 @@ void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
     uint64_t disp_shm = 0;
     (void)kernel_gui_display_release(&x86_gui_state, pid, &disp_shm);
     if (disp_shm != 0) {
+        uint64_t saved_if = ks_irq_save();
+        x86_gui_cursor.Active = 0U;
+        x86_gui_cursor.Drawn = 0U;
+        x86_gui_cursor.BackbufferShmId = 0ULL;
+        ks_irq_restore(saved_if);
+        gui_kunmap_backbuffer_private();
         if (x86_gui_cursor.Moves > 0ULL && x86_gui_clock && x86_gui_clock->Hz) {
             uint64_t avg_ns = (x86_gui_cursor.IrqOffTicksTotal / x86_gui_cursor.Moves) * 1000000000ULL / x86_gui_clock->Hz;
             uint64_t max_ns = (uint64_t)x86_gui_cursor.IrqOffTicksMax * 1000000000ULL / x86_gui_clock->Hz;
@@ -649,9 +776,17 @@ void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
             (void)kernel_number(x86_gui_cursor.Retries);
             (void)kernel_text("\n");
         }
-        x86_gui_cursor.Active = 0U;
-        x86_gui_cursor.Drawn = 0U;
-        x86_gui_cursor.BackbufferShmId = 0ULL;
+        if (x86_gui_present_calls > 0ULL && x86_gui_clock && x86_gui_clock->Hz) {
+            uint64_t avg_us = (x86_gui_present_ticks_total / x86_gui_present_calls) * 1000000ULL / x86_gui_clock->Hz;
+            uint64_t max_us = (uint64_t)x86_gui_present_ticks_max * 1000000ULL / x86_gui_clock->Hz;
+            (void)kernel_text("GUI_PRESENT_STATS calls=");
+            (void)kernel_number(x86_gui_present_calls);
+            (void)kernel_text(" avg_us=");
+            (void)kernel_number(avg_us);
+            (void)kernel_text(" max_us=");
+            (void)kernel_number(max_us);
+            (void)kernel_text("\n");
+        }
     }
     uint64_t shm_id = 0, user_virt = 0, phys_base = 0;
     uint32_t pages = 0;
@@ -843,7 +978,7 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
         free_shm_backing_private(shm_id);
         return RESULT_QUOTA;
     }
-    if (!kernel_gui_display_acquire(&x86_gui_state, cpu->Pid, shm_id)) {
+    if (!gui_kmap_backbuffer_private(lease.Base, pages)) {
         int freed = 0;
         (void)kernel_gui_shm_unmap_record(&x86_gui_state, cpu->Pid, shm_id, NULL, NULL, NULL, &freed);
         unmap_pt_from_slot_private(cpu->Pid, slot, shm_id);
@@ -851,6 +986,18 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
             free_shm_backing_private(shm_id);
         return RESULT_QUOTA;
     }
+    if (!kernel_gui_display_acquire(&x86_gui_state, cpu->Pid, shm_id)) {
+        gui_kunmap_backbuffer_private();
+        int freed = 0;
+        (void)kernel_gui_shm_unmap_record(&x86_gui_state, cpu->Pid, shm_id, NULL, NULL, NULL, &freed);
+        unmap_pt_from_slot_private(cpu->Pid, slot, shm_id);
+        if (freed)
+            free_shm_backing_private(shm_id);
+        return RESULT_QUOTA;
+    }
+    x86_gui_present_calls = 0ULL;
+    x86_gui_present_ticks_total = 0ULL;
+    x86_gui_present_ticks_max = 0U;
     x86_gui_cursor.X = (int32_t)(w / 2U);
     x86_gui_cursor.Y = (int32_t)(h / 2U);
     x86_gui_cursor.Drawn = 0U;
@@ -897,14 +1044,20 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
     BOOT_U32 fb_w = 0, fb_h = 0, fb_stride = 0, fb_fmt = 0;
     if (!refresh_display_geometry_private(&fb_base, &fb_w, &fb_h, &fb_stride, &fb_fmt))
         return RESULT_UNKNOWN;
-    X86_GUI_SHM_LEASE *backbuffer = find_shm_lease_private(info.BackbufferShmId);
-    if (!backbuffer)
+    if (!x86_gui_kmap_active)
+        return RESULT_UNKNOWN;
+    uint64_t mapped_bytes = (uint64_t)x86_gui_kmap_pages * PAGE_BYTES;
+    uint64_t needed_bytes = (uint64_t)fb_stride * (uint64_t)fb_h * 4ULL;
+    if (needed_bytes > mapped_bytes)
         return RESULT_UNKNOWN;
     for (BOOT_U64 idx = 0; idx < count; ++idx) {
         if (!kernel_gui_rect_valid(fb_w, fb_h, &rects[idx]))
             return RESULT_RANGE;
     }
-    // Fast row blit: hide kernel 18x18 pointer, stage up to 2048 px per lease read, write 64-bit pairs, redraw pointer.
+    uint32_t t0 = 0, t1 = 0;
+    int timed = x86_gui_clock && kernel_clock_now(x86_gui_clock, &t0);
+    // Direct single-pass 64-bit blit from persistent RO kernel mapping to WC framebuffer (zero invlpg, IF=1).
+    const uint32_t *bb_pixels = (const uint32_t *)(uintptr_t)X86_LAYOUT_GUI_BACKBUFFER_VIRTUAL;
     volatile uint32_t *fb_pixels = (volatile uint32_t *)(uintptr_t)fb_base;
     uint64_t cur_if = ks_irq_save();
     gui_cursor_restore_private(fb_pixels, fb_stride);
@@ -912,37 +1065,25 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
     for (BOOT_U64 idx = 0; idx < count; ++idx) {
         const KERNEL_DISPLAY_RECT *r = &rects[idx];
         for (uint32_t row = 0; row < r->Height; ++row) {
-            uint32_t y = r->Y + row;
-            uint32_t col = 0;
-            while (col < r->Width) {
-                uint32_t chunk = r->Width - col;
-                if (chunk > 2048U)
-                    chunk = 2048U;
-                uint64_t byte_off = ((uint64_t)y * (uint64_t)fb_stride + (uint64_t)(r->X + col)) * 4ULL;
-                uint64_t saved_if = ks_irq_save();
-                int ok = x86_page_window_read_lease(process_rt.Window, &backbuffer->Lease,
-                    byte_off, x86_gui_blit_buf, (BOOT_U64)chunk * 4ULL);
-                ks_irq_restore(saved_if);
-                if (!ok)
-                    return RESULT_UNKNOWN;
-                volatile uint32_t *dst32 = fb_pixels + (size_t)y * (size_t)fb_stride + (size_t)(r->X + col);
-                uint32_t p = 0;
-                if ((((uintptr_t)dst32) & 7U) != 0U && p < chunk) {
-                    dst32[0] = x86_gui_blit_buf[0];
-                    ++p;
-                }
-                volatile uint64_t *dst64 = (volatile uint64_t *)(dst32 + p);
-                const uint32_t *src32 = x86_gui_blit_buf + p;
-                uint32_t pairs = (chunk - p) >> 1;
-                for (uint32_t q = 0; q < pairs; ++q) {
-                    uint64_t packed = (uint64_t)src32[q * 2U] | ((uint64_t)src32[q * 2U + 1U] << 32);
-                    dst64[q] = packed;
-                }
-                p += pairs * 2U;
-                if (p < chunk)
-                    dst32[p] = x86_gui_blit_buf[p];
-                col += chunk;
+            size_t row_off = (size_t)(r->Y + row) * (size_t)fb_stride + (size_t)r->X;
+            const uint32_t *src32 = bb_pixels + row_off;
+            volatile uint32_t *dst32 = fb_pixels + row_off;
+            uint32_t width = r->Width;
+            uint32_t p = 0;
+            if ((((uintptr_t)dst32) & 7U) != 0U && p < width) {
+                dst32[0] = src32[0];
+                ++p;
             }
+            volatile uint64_t *dst64 = (volatile uint64_t *)(dst32 + p);
+            const uint32_t *s = src32 + p;
+            uint32_t pairs = (width - p) >> 1;
+            for (uint32_t q = 0; q < pairs; ++q) {
+                uint64_t packed = (uint64_t)s[q * 2U] | ((uint64_t)s[q * 2U + 1U] << 32);
+                dst64[q] = packed;
+            }
+            p += pairs * 2U;
+            if (p < width)
+                dst32[p] = src32[p];
         }
         if (x86_gui_display.Ops && x86_gui_display.Ops->Rect) {
             if (!x86_gui_display.Ops->Rect(x86_gui_display.Self, r->X, r->Y, r->Width, r->Height))
@@ -959,6 +1100,13 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
             gui_cursor_commit_private(fb_pixels, fb_stride, &cursor_frame);
         ks_irq_restore(cur_if);
     }
+    if (timed && kernel_clock_now(x86_gui_clock, &t1)) {
+        uint32_t delta = kernel_clock_delta(x86_gui_clock, t0, t1);
+        x86_gui_present_ticks_total += delta;
+        if (delta > x86_gui_present_ticks_max)
+            x86_gui_present_ticks_max = delta;
+    }
+    ++x86_gui_present_calls;
     return 0;
 }
 
