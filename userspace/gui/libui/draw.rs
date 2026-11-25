@@ -47,6 +47,15 @@ impl Rect {
         }
     }
 
+    #[inline]
+    pub const fn area(&self) -> u64 {
+        if self.w <= 0 || self.h <= 0 {
+            0
+        } else {
+            (self.w as u64) * (self.h as u64)
+        }
+    }
+
     pub fn union(&self, other: Rect) -> Rect {
         if self.is_empty() {
             return other;
@@ -88,29 +97,72 @@ impl DirtyList {
         &self.rects[..self.count]
     }
 
+    pub fn total_area(&self) -> u64 {
+        let mut total = 0u64;
+        for r in &self.rects[..self.count] {
+            total = total.saturating_add(r.area());
+        }
+        total
+    }
+
+    fn merge_waste(a: Rect, b: Rect) -> u64 {
+        let u = a.union(b).area();
+        let sum = a.area().saturating_add(b.area());
+        u.saturating_sub(sum)
+    }
+
     pub fn add(&mut self, rect: Rect, bounds: Rect) {
-        let clipped = rect.intersect(bounds);
+        let mut clipped = rect.intersect(bounds);
         if clipped.is_empty() {
             return;
         }
-        // Merge with an existing overlapping rectangle to keep present calls compact.
-        for existing in &mut self.rects[..self.count] {
-            if !existing.intersect(clipped).is_empty() {
-                *existing = existing.union(clipped);
-                return;
+        // Merge with any overlapping existing rectangle (transitively to avoid duplicates).
+        let mut idx = 0;
+        while idx < self.count {
+            if !self.rects[idx].intersect(clipped).is_empty() {
+                clipped = self.rects[idx].union(clipped);
+                self.count -= 1;
+                self.rects[idx] = self.rects[self.count];
+            } else {
+                idx += 1;
             }
         }
         if self.count < MAX_DIRTY_RECTS {
             self.rects[self.count] = clipped;
             self.count += 1;
-        } else {
-            // Coalesce into bounding box of all rects when saturated.
-            let mut merged = clipped;
-            for r in &self.rects[..self.count] {
-                merged = merged.union(*r);
+            return;
+        }
+        // Saturated (16 rects): merge the single pair with minimum pixel-area overhead
+        // instead of collapsing the entire screen to fullscreen.
+        let mut best_waste = u64::MAX;
+        let mut best_union_area = u64::MAX;
+        let mut best_i = 0usize;
+        let mut best_j = MAX_DIRTY_RECTS; // MAX_DIRTY_RECTS represents `clipped`
+        for i in 0..self.count {
+            let w_new = Self::merge_waste(self.rects[i], clipped);
+            let u_new = self.rects[i].union(clipped).area();
+            if w_new < best_waste || (w_new == best_waste && u_new < best_union_area) {
+                best_waste = w_new;
+                best_union_area = u_new;
+                best_i = i;
+                best_j = MAX_DIRTY_RECTS;
             }
-            self.rects[0] = merged;
-            self.count = 1;
+            for j in (i + 1)..self.count {
+                let w_pair = Self::merge_waste(self.rects[i], self.rects[j]);
+                let u_pair = self.rects[i].union(self.rects[j]).area();
+                if w_pair < best_waste || (w_pair == best_waste && u_pair < best_union_area) {
+                    best_waste = w_pair;
+                    best_union_area = u_pair;
+                    best_i = i;
+                    best_j = j;
+                }
+            }
+        }
+        if best_j == MAX_DIRTY_RECTS {
+            self.rects[best_i] = self.rects[best_i].union(clipped);
+        } else {
+            self.rects[best_i] = self.rects[best_i].union(self.rects[best_j]);
+            self.rects[best_j] = clipped;
         }
     }
 }

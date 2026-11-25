@@ -26,8 +26,12 @@ const LINE_CAP: usize = 128;
 
 struct TerminalBuffer {
     cells: [[u8; COLS]; ROWS],
+    prev_cells: [[u8; COLS]; ROWS],
     row: usize,
     col: usize,
+    prev_row: usize,
+    prev_col: usize,
+    full_dirty: bool,
     input: [u8; LINE_CAP],
     input_len: usize,
 }
@@ -36,8 +40,12 @@ impl TerminalBuffer {
     const fn new() -> Self {
         Self {
             cells: [[b' '; COLS]; ROWS],
+            prev_cells: [[b' '; COLS]; ROWS],
             row: 0,
             col: 0,
+            prev_row: 0,
+            prev_col: 0,
+            full_dirty: true,
             input: [0u8; LINE_CAP],
             input_len: 0,
         }
@@ -51,6 +59,7 @@ impl TerminalBuffer {
         }
         self.row = 0;
         self.col = 0;
+        self.full_dirty = true;
     }
 
     fn newline(&mut self) {
@@ -62,6 +71,7 @@ impl TerminalBuffer {
                 self.cells[r - 1] = self.cells[r];
             }
             self.cells[ROWS - 1] = [b' '; COLS];
+            self.full_dirty = true;
         }
     }
 
@@ -146,6 +156,10 @@ impl TerminalBuffer {
         true
     }
 
+    fn cell_rect(r: usize, c: usize) -> Rect {
+        Rect::new(10 + (c as i32) * 8, 8 + (r as i32) * 18, 8, 16)
+    }
+
     fn render(&self, canvas: &mut Canvas<'_>, theme: &Theme) {
         let bg = rgb(0x0E, 0x13, 0x1C);
         canvas.fill_rect(Rect::new(0, 0, WIN_W as i32, WIN_H as i32), bg);
@@ -156,6 +170,51 @@ impl TerminalBuffer {
         let cx = 10 + (self.col.min(COLS - 1) as i32) * 8;
         let cy = 8 + (self.row.min(ROWS - 1) as i32) * 18;
         canvas.fill_rect(Rect::new(cx, cy, 8, 16), theme.accent);
+    }
+
+    fn render_dirty(&mut self, canvas: &mut Canvas<'_>, theme: &Theme) -> Rect {
+        let cur_r = self.row.min(ROWS - 1);
+        let cur_c = self.col.min(COLS - 1);
+        if self.full_dirty {
+            self.render(canvas, theme);
+            self.prev_cells = self.cells;
+            self.prev_row = cur_r;
+            self.prev_col = cur_c;
+            self.full_dirty = false;
+            return Rect::new(0, 0, WIN_W as i32, WIN_H as i32);
+        }
+        let bg = rgb(0x0E, 0x13, 0x1C);
+        let mut dirty = Rect::new(0, 0, 0, 0);
+        if self.prev_row != cur_r || self.prev_col != cur_c {
+            let rect = Self::cell_rect(self.prev_row, self.prev_col);
+            canvas.fill_rect(rect, bg);
+            let ch = self.cells[self.prev_row][self.prev_col];
+            if ch != b' ' {
+                canvas.draw_text(rect.x, rect.y, &[ch], theme.text_primary);
+            }
+            self.prev_cells[self.prev_row][self.prev_col] = ch;
+            dirty = dirty.union(rect);
+        }
+        for r in 0..ROWS {
+            for c in 0..COLS {
+                let ch = self.cells[r][c];
+                if ch != self.prev_cells[r][c] {
+                    let rect = Self::cell_rect(r, c);
+                    canvas.fill_rect(rect, bg);
+                    if ch != b' ' {
+                        canvas.draw_text(rect.x, rect.y, &[ch], theme.text_primary);
+                    }
+                    self.prev_cells[r][c] = ch;
+                    dirty = dirty.union(rect);
+                }
+            }
+        }
+        let cur_rect = Self::cell_rect(cur_r, cur_c);
+        canvas.fill_rect(cur_rect, theme.accent);
+        self.prev_row = cur_r;
+        self.prev_col = cur_c;
+        dirty = dirty.union(cur_rect);
+        dirty
     }
 }
 
@@ -247,9 +306,16 @@ extern "C" fn program_main(arg: u64) -> ! {
     let wire = create.encode();
     send_message(ipc_handle, &wire);
     term.write_prompt();
-    term.render(&mut canvas, &theme);
-    let commit = GuiMessage::commit_rect(1, 0, 0, WIN_W, WIN_H).encode();
-    send_message(ipc_handle, &commit);
+    let initial_dirty = term.render_dirty(&mut canvas, &theme);
+    let initial_commit = GuiMessage::commit_rect(
+        1,
+        initial_dirty.x.max(0) as u32,
+        initial_dirty.y.max(0) as u32,
+        initial_dirty.w as u32,
+        initial_dirty.h as u32,
+    )
+    .encode();
+    send_message(ipc_handle, &initial_commit);
 
     let mut rx = [0u8; PROTO_WIRE_BYTES];
     loop {
@@ -283,8 +349,18 @@ extern "C" fn program_main(arg: u64) -> ! {
                         term.input_len += 1;
                         term.write_bytes(&[ch]);
                     }
-                    term.render(&mut canvas, &theme);
-                    send_message(ipc_handle, &commit);
+                    let dirty = term.render_dirty(&mut canvas, &theme);
+                    if !dirty.is_empty() {
+                        let commit = GuiMessage::commit_rect(
+                            1,
+                            dirty.x.max(0) as u32,
+                            dirty.y.max(0) as u32,
+                            dirty.w as u32,
+                            dirty.h as u32,
+                        )
+                        .encode();
+                        send_message(ipc_handle, &commit);
+                    }
                 }
             }
         } else if n == libvoid::ERR_WOULD_BLOCK {

@@ -97,49 +97,42 @@ fn present_rects(
     max_w: u32,
     max_h: u32,
 ) -> bool {
-    let mut wire = [libvoid::DisplayRect::default(); 16];
-    let mut n = 0usize;
+    let bounds = libui::draw::Rect::new(0, 0, max_w as i32, max_h as i32);
+    let mut dirty = libui::draw::DirtyList::new();
     if let Some(reg) = region {
         for (origin, size) in reg.iter() {
-            if n >= 14 {
-                return libvoid::display_present(&[libvoid::DisplayRect {
-                    x: 0,
-                    y: 0,
-                    width: max_w,
-                    height: max_h,
-                }]) == 0;
-            }
-            let x0 = origin.x.max(0) as u32;
-            let y0 = origin.y.max(0) as u32;
-            let w = size.width.min(max_w.saturating_sub(x0));
-            let h = size.height.min(max_h.saturating_sub(y0));
-            if w > 0 && h > 0 {
-                wire[n] = libvoid::DisplayRect {
-                    x: x0,
-                    y: y0,
-                    width: w,
-                    height: h,
-                };
-                n += 1;
-            }
+            dirty.add(
+                libui::draw::Rect::new(origin.x, origin.y, size.width as i32, size.height as i32),
+                bounds,
+            );
         }
     }
     if let Some(r) = extra0 {
-        if r.width > 0 && r.height > 0 && n < 16 {
-            wire[n] = r;
-            n += 1;
-        }
+        dirty.add(
+            libui::draw::Rect::new(r.x as i32, r.y as i32, r.width as i32, r.height as i32),
+            bounds,
+        );
     }
     if let Some(r) = extra1 {
-        if r.width > 0 && r.height > 0 && n < 16 {
-            wire[n] = r;
-            n += 1;
-        }
+        dirty.add(
+            libui::draw::Rect::new(r.x as i32, r.y as i32, r.width as i32, r.height as i32),
+            bounds,
+        );
     }
-    if n == 0 {
+    let rects = dirty.as_slice();
+    if rects.is_empty() {
         return true;
     }
-    libvoid::display_present(&wire[..n]) == 0
+    let mut wire = [libvoid::DisplayRect::default(); libui::draw::MAX_DIRTY_RECTS];
+    for (idx, r) in rects.iter().enumerate() {
+        wire[idx] = libvoid::DisplayRect {
+            x: r.x as u32,
+            y: r.y as u32,
+            width: r.w as u32,
+            height: r.h as u32,
+        };
+    }
+    libvoid::display_present(&wire[..rects.len()]) == 0
 }
 
 // ====== format_rtc_labels ======
@@ -208,6 +201,7 @@ extern "C" fn program_main(mode: u64) -> ! {
     let quit = quitting.clone();
     ui.on_quit_desktop(move || quit.set(true));
     let mut applications = apps::Applications::new(mode == 1);
+    ui.set_surfaces(applications.model().into());
     applications.refresh(&ui);
     if ui.show().is_err() {
         libvoid::exit(82);

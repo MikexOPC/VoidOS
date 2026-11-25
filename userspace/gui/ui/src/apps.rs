@@ -3,7 +3,7 @@ use alloc::collections::VecDeque;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
 use libui::proto::{GuiMessage, MSG_COMMIT_RECT, MSG_CREATE_WINDOW, PROTO_WIRE_BYTES};
-use slint::{Image, Rgb8Pixel, SharedPixelBuffer, VecModel};
+use slint::{Image, Model, Rgb8Pixel, SharedPixelBuffer, VecModel};
 
 pub struct Application {
     kind: i32,
@@ -12,6 +12,7 @@ pub struct Application {
     view: libvoid::ShmView,
     width: u32,
     height: u32,
+    buffer: SharedPixelBuffer<Rgb8Pixel>,
     image: Image,
     pending: VecDeque<[u8; PROTO_WIRE_BYTES]>,
     pub commits: u64,
@@ -20,6 +21,7 @@ pub struct Application {
 
 pub struct Applications {
     windows: Vec<Application>,
+    model: Rc<VecModel<AppSurface>>,
     pub focused: i32,
     verify: bool,
 }
@@ -30,9 +32,16 @@ impl Applications {
     pub fn new(verify: bool) -> Self {
         Self {
             windows: Vec::new(),
+            model: Rc::new(VecModel::default()),
             focused: 0,
             verify,
         }
+    }
+
+    // ====== model ======
+
+    pub fn model(&self) -> Rc<VecModel<AppSurface>> {
+        self.model.clone()
     }
 
     // ====== launch ======
@@ -62,6 +71,7 @@ impl Applications {
             view: libvoid::ShmView::default(),
             width: 0,
             height: 0,
+            buffer: SharedPixelBuffer::new(0, 0),
             image: Image::default(),
             pending: VecDeque::new(),
             commits: 0,
@@ -141,8 +151,22 @@ impl Applications {
             let mut wire = [0; PROTO_WIRE_BYTES];
             let result = libvoid::ipc_recv(app.child.endpoint, &mut wire);
             if result == PROTO_WIRE_BYTES as i64 {
-                let valid = GuiMessage::decode(&wire)
-                    .is_some_and(|message| app.receive(message, display_width, display_height));
+                let valid = GuiMessage::decode(&wire).is_some_and(|message| {
+                    if message.kind == MSG_COMMIT_RECT {
+                        // Drop model's Image reference before in-place buffer update so
+                        // SharedPixelBuffer::make_mut_slice() stays refcount == 1 (zero alloc).
+                        for row in 0..self.model.row_count() {
+                            if let Some(mut surface) = self.model.row_data(row) {
+                                if surface.kind == app.kind {
+                                    surface.pixels = Image::default();
+                                    self.model.set_row_data(row, surface);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    app.receive(message, display_width, display_height)
+                });
                 if !valid {
                     healthy = false;
                     dead.push(app.kind);
@@ -200,7 +224,7 @@ impl Applications {
                 client_height: app.height as f32,
             });
         }
-        ui.set_surfaces(Rc::new(VecModel::from(surfaces)).into());
+        self.model.set_vec(surfaces);
         ui.set_terminal_open(self.windows.iter().any(|app| app.kind == 0));
         ui.set_sysmon_open(false);
         ui.set_focused_window(self.focused);
@@ -248,6 +272,8 @@ impl Application {
             self.view = view;
             self.width = msg.e;
             self.height = msg.f;
+            self.buffer = SharedPixelBuffer::<Rgb8Pixel>::new(self.width, self.height);
+            self.image = Image::default();
             return true;
         }
         if msg.kind != MSG_COMMIT_RECT
@@ -262,16 +288,27 @@ impl Application {
         {
             return false;
         }
-        let mut pixels = SharedPixelBuffer::<Rgb8Pixel>::new(self.width, self.height);
-        for (index, pixel) in pixels.make_mut_slice().iter_mut().enumerate() {
-            let source = unsafe { (self.view.address as *const u32).add(index).read_volatile() };
-            *pixel = Rgb8Pixel {
-                r: (source >> 16) as u8,
-                g: (source >> 8) as u8,
-                b: source as u8,
-            };
+        let rx = msg.c as usize;
+        let ry = msg.d as usize;
+        let rw = msg.e as usize;
+        let rh = msg.f as usize;
+        let stride = self.width as usize;
+        self.image = Image::default();
+        let dst = self.buffer.make_mut_slice();
+        let src_base = self.view.address as *const u32;
+        for row in ry..(ry + rh) {
+            let row_off = row * stride + rx;
+            for col in 0..rw {
+                let idx = row_off + col;
+                let source = unsafe { src_base.add(idx).read_volatile() };
+                dst[idx] = Rgb8Pixel {
+                    r: (source >> 16) as u8,
+                    g: (source >> 8) as u8,
+                    b: source as u8,
+                };
+            }
         }
-        self.image = Image::from_rgb8(pixels);
+        self.image = Image::from_rgb8(self.buffer.clone());
         if self.commits == 0 {
             let _ = libvoid::write_console(b"VoidOS desktop terminal ready\n");
         }

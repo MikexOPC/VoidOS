@@ -81,6 +81,15 @@ mod tests {
         dirty.add(Rect::new(5, 5, 10, 10), bounds);
         assert_eq!(dirty.as_slice().len(), 1);
         assert_eq!(dirty.as_slice()[0], Rect::new(0, 0, 15, 15));
+
+        // 20 small disjoint rects on a 1280x720 screen must merge cheapest pairs instead of fullscreen.
+        let mut many = DirtyList::new();
+        let screen = Rect::new(0, 0, 1280, 720);
+        for i in 0..20 {
+            many.add(Rect::new(i * 20, (i % 4) * 20, 8, 8), screen);
+        }
+        assert_eq!(many.as_slice().len(), 16);
+        assert!(many.total_area() < 10_000);
     }
 
     #[test]
