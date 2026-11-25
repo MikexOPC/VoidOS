@@ -86,7 +86,10 @@ static int text_private(uint32_t event)
     if (!scalar) return 1;
 #ifdef KERNEL_USER_PROCESS
     if (kernel_gui_global() && kernel_gui_display_owner(kernel_gui_global()) != 0) {
-        (void)kernel_gui_input_push_key(kernel_gui_global(), event, scalar, owner->TextState);
+        if (!kernel_gui_input_push_key(kernel_gui_global(), event, scalar, owner->TextState)) {
+            if (owner->GuiKeyDrops != UINT32_MAX)
+                ++owner->GuiKeyDrops;
+        }
         return 1;
     }
 #endif

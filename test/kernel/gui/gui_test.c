@@ -154,15 +154,38 @@ static void test_input_ring(KERNEL_HEAP *heap)
     assert(ev.Kind == KERNEL_INPUT_MOUSE && ev.DeltaX == -5 && ev.DeltaY == 12 && ev.Flags == 3);
     assert(kernel_gui_input_poll(&gui, 20, &ev) == 0);
 
-    // Fill ring to capacity and verify overflow drops cleanly without corrupting FIFO.
+    // Consecutive mouse moves with identical buttons must coalesce into one ring slot.
+    assert(kernel_gui_input_push_mouse(&gui, 10, -4, 0));
+    assert(kernel_gui_input_push_mouse(&gui, 5, 6, 0));
+    assert(gui.InputCount == 1);
+    // Button change must NOT coalesce with the previous move.
+    assert(kernel_gui_input_push_mouse(&gui, 1, 2, 1));
+    assert(gui.InputCount == 2);
+    assert(kernel_gui_input_poll(&gui, 20, &ev) == 1);
+    assert(ev.Kind == KERNEL_INPUT_MOUSE && ev.DeltaX == 15 && ev.DeltaY == 2 && ev.Flags == 0);
+    assert(kernel_gui_input_poll(&gui, 20, &ev) == 1);
+    assert(ev.Kind == KERNEL_INPUT_MOUSE && ev.DeltaX == 1 && ev.DeltaY == 2 && ev.Flags == 1);
+    assert(kernel_gui_input_poll(&gui, 20, &ev) == 0);
+
+    // Fill ring to capacity and verify overflow drops cleanly AND delivers key + mouse resync.
     for (uint32_t idx = 0; idx < KERNEL_GUI_INPUT_CAPACITY; ++idx)
         assert(kernel_gui_input_push_key(&gui, idx, idx, 0));
-    assert(!kernel_gui_input_push_key(&gui, 999, 999, 0));
-    assert(gui.InputDropped == 1);
+    assert(!kernel_gui_input_push_key(&gui, 999, 999, 7));
+    assert(!kernel_gui_input_push_mouse(&gui, 12, -3, 1));
+    assert(!kernel_gui_input_push_mouse(&gui, 4, 5, 0));
+    assert(gui.InputDropped == 3);
     for (uint32_t idx = 0; idx < KERNEL_GUI_INPUT_CAPACITY; ++idx) {
         assert(kernel_gui_input_poll(&gui, 20, &ev) == 1);
-        assert(ev.Code == idx);
+        assert(ev.Kind == KERNEL_INPUT_KEY && ev.Code == idx);
     }
+    // Mouse resync must recover final released button state (0) and accumulated delta (16, 2).
+    assert(kernel_gui_input_poll(&gui, 20, &ev) == 1);
+    assert(ev.Kind == KERNEL_INPUT_MOUSE && ev.Flags == KERNEL_INPUT_FLAG_RESYNC);
+    assert(ev.DeltaX == 16 && ev.DeltaY == 2);
+    // Key resync must deliver latest modifier/key flags (7 | RESYNC).
+    assert(kernel_gui_input_poll(&gui, 20, &ev) == 1);
+    assert(ev.Kind == KERNEL_INPUT_KEY && ev.Code == 0 && ev.Value == 0);
+    assert(ev.Flags == (7U | KERNEL_INPUT_FLAG_RESYNC));
     assert(kernel_gui_input_poll(&gui, 20, &ev) == 0);
 
     assert(kernel_gui_destroy(&gui));

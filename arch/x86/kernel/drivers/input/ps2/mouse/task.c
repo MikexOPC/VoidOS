@@ -45,6 +45,29 @@ static void framing_error_private(X86_PS2_SESSION *owner, X86_PS2_MOUSE *mouse)
     if (mouse->Streak > X86_PS2_MOUSE_RESYNC_LIMIT) owner->Failed = owner->Stop = 1;
 }
 
+#ifdef KERNEL_USER_PROCESS
+// ====== flush_gui_mouse_private ======
+
+static void flush_gui_mouse_private(X86_PS2_MOUSE *mouse, int32_t *dx, int32_t *dy,
+    uint32_t buttons, int *pending)
+{
+    if (!*pending)
+        return;
+    KERNEL_GUI *gui = kernel_gui_global();
+    if (gui && kernel_gui_display_owner(gui) != 0) {
+        if (*dx || *dy)
+            x86_gui_cursor_move(*dx, *dy);
+        if (!kernel_gui_input_push_mouse(gui, *dx, *dy, buttons)) {
+            if (mouse->GuiDrops != UINT32_MAX)
+                ++mouse->GuiDrops;
+        }
+    }
+    *dx = 0;
+    *dy = 0;
+    *pending = 0;
+}
+#endif
+
 // ====== x86_ps2_mouse_task ======
 
 void x86_ps2_mouse_task(void)
@@ -52,12 +75,21 @@ void x86_ps2_mouse_task(void)
     X86_PS2_SESSION *owner = x86_ps2_session();
     X86_PS2_MOUSE *mouse = &owner->Mouse;
     uint32_t burst = 0;
+#ifdef KERNEL_USER_PROCESS
+    int32_t gui_dx = 0, gui_dy = 0;
+    uint32_t gui_buttons = 0, gui_last_flushed_buttons = 0;
+    int gui_pending = 0;
+#endif
     mouse->Generation = x86_scheduler_generation();
     for (;;) {
         BOOT_U64 value = pop_private(owner, 1);
         KERNEL_PS2_MOUSE_EVENT event;
         KERNEL_PS2_MOUSE_RESULT result;
         if (value == KERNEL_PAYLOAD_EMPTY) {
+#ifdef KERNEL_USER_PROCESS
+            flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
+            gui_last_flushed_buttons = gui_buttons;
+#endif
             burst = 0;
             KERNEL_EVENT_REPLY observed;
             if (owner->Stop && owner->Quiet) break;
@@ -70,6 +102,10 @@ void x86_ps2_mouse_task(void)
             }
         }
         if ((uint32_t)value == KERNEL_PAYLOAD_LOSS) {
+#ifdef KERNEL_USER_PROCESS
+            flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
+            gui_last_flushed_buttons = gui_buttons;
+#endif
             if (mouse->Losses == UINT32_MAX) kernel_scheduler_fail_stop();
             ++mouse->Losses;
             framing_error_private(owner, mouse);
@@ -95,9 +131,24 @@ void x86_ps2_mouse_task(void)
             mouse->Buttons = event.Buttons;
 #ifdef KERNEL_USER_PROCESS
             if (kernel_gui_global() && kernel_gui_display_owner(kernel_gui_global()) != 0) {
-                x86_gui_cursor_move(event.DeltaX, event.DeltaY);
-                (void)kernel_gui_input_push_mouse(kernel_gui_global(), event.DeltaX, event.DeltaY, event.Buttons);
+                if (gui_pending && event.Buttons != gui_buttons) {
+                    flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
+                    gui_last_flushed_buttons = gui_buttons;
+                }
+                gui_dx += event.DeltaX;
+                gui_dy += event.DeltaY;
+                gui_buttons = event.Buttons;
+                gui_pending = 1;
+                if (gui_buttons != gui_last_flushed_buttons) {
+                    flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
+                    gui_last_flushed_buttons = gui_buttons;
+                }
             } else {
+                gui_dx = 0;
+                gui_dy = 0;
+                gui_pending = 0;
+                gui_buttons = event.Buttons;
+                gui_last_flushed_buttons = event.Buttons;
 #endif
 #ifndef KERNEL_INPUT_INTERACTIVE
                 if (!kernel_text("MOUSE_EVENT: ") ||
@@ -111,7 +162,14 @@ void x86_ps2_mouse_task(void)
             }
 #endif
         }
-        if (owner->Stop || ++burst == 32) { burst = 0; x86_scheduler_yield(); }
+        if (owner->Stop || ++burst == 32) {
+#ifdef KERNEL_USER_PROCESS
+            flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
+            gui_last_flushed_buttons = gui_buttons;
+#endif
+            burst = 0;
+            x86_scheduler_yield();
+        }
     }
     kernel_ps2_mouse_reset(&mouse->Decoder);
     mouse->Buttons = 0;

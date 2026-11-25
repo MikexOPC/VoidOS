@@ -21,7 +21,7 @@ typedef struct {
     BOOT_U64 Binding, Generation;
     BOOT_U32 SavedLow, SavedHigh, RouteOwned, Done;
     BOOT_U32 Bytes, Irqs, Events, Buttons, Losses, TaskIrqs;
-    BOOT_U32 Rejected, Saturated, Streak;
+    BOOT_U32 Rejected, Saturated, Streak, GuiDrops;
     KERNEL_PS2_MOUSE_DECODER Decoder;
 } X86_PS2_MOUSE;
 /* Recoverable keyboard faults (B2): LOSS markers, decoder INVALID, i8042 parity/timeout,
@@ -56,7 +56,7 @@ typedef struct {
     // DeviceErrors/Discarded: written by the ISR. DeviceSeen/Streak: consumer only.
     volatile BOOT_U32 DeviceErrors;
     volatile BOOT_U32 DevicePending;
-    BOOT_U32 Discarded, DeviceSeen, Streak, Resyncs;
+    BOOT_U32 Discarded, DeviceSeen, Streak, Resyncs, GuiKeyDrops;
     // G6: the console object owned by this session (KERNEL_CONSOLE_SHELL), 0 otherwise.
     struct X86_CONSOLE *Console;
 } X86_PS2_SESSION;

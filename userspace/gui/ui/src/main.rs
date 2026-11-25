@@ -332,7 +332,8 @@ extern "C" fn program_main(mode: u64) -> ! {
                     cy = (cy - ev.delta_y as f32).clamp(0.0, (acq.height - 1) as f32);
                     mouse_moved = true;
                 }
-                let left_now = (ev.flags & 1) != 0;
+                let buttons = ev.flags & 0x7;
+                let left_now = (buttons & 1) != 0;
                 let left_prev = (prev_buttons & 1) != 0;
                 if left_now != left_prev {
                     let pos = LogicalPosition::new(cx, cy);
@@ -351,9 +352,12 @@ extern "C" fn program_main(mode: u64) -> ! {
                             button: PointerEventButton::Left,
                         });
                     }
-                    prev_buttons = ev.flags;
+                    prev_buttons = buttons;
                 }
             } else if ev.kind == libvoid::INPUT_KEY {
+                if (ev.flags & libvoid::INPUT_FLAG_RESYNC) != 0 && ev.code == 0 && ev.value == 0 {
+                    continue;
+                }
                 let scalar = match ev.value {
                     0x110001 => 8,
                     0x110002 => 9,

@@ -49,6 +49,7 @@ pub const BUDGET_FLAG_DISPLAY: u32 = 2;
 pub const INPUT_NONE: u32 = 0;
 pub const INPUT_KEY: u32 = 1;
 pub const INPUT_MOUSE: u32 = 2;
+pub const INPUT_FLAG_RESYNC: u32 = 0x8000_0000;
 
 pub const ERR_WOULD_BLOCK: i64 = -6;
 pub const ERR_PEER_CLOSED: i64 = -7;

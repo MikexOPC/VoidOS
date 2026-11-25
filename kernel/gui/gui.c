@@ -126,6 +126,33 @@ static int grow_shm_mappings_private(KERNEL_GUI *gui)
     return 1;
 }
 
+// ====== sat_add_i32_private ======
+
+static int32_t sat_add_i32_private(int32_t a, int32_t b)
+{
+    int64_t sum = (int64_t)a + (int64_t)b;
+    if (sum > INT32_MAX)
+        return INT32_MAX;
+    if (sum < INT32_MIN)
+        return INT32_MIN;
+    return (int32_t)sum;
+}
+
+// ====== reset_input_state_locked ======
+
+static void reset_input_state_locked(KERNEL_GUI *gui)
+{
+    gui->InputHead = 0;
+    gui->InputTail = 0;
+    gui->InputCount = 0;
+    gui->LastMouseButtons = 0;
+    gui->LastKeyFlags = 0;
+    gui->PendingMouseDx = 0;
+    gui->PendingMouseDy = 0;
+    gui->PendingMouseResync = 0;
+    gui->PendingKeyResync = 0;
+}
+
 // ====== push_input_locked ======
 
 static int push_input_locked(KERNEL_GUI *gui, const KERNEL_INPUT_EVENT *event)
@@ -270,9 +297,7 @@ int kernel_gui_display_acquire(KERNEL_GUI *gui, uint64_t pid, uint64_t backbuffe
             gui->DisplayOwnerPid = pid;
             gui->BackbufferShmId = backbuffer_shm_id;
             gui->ConsoleRestorePending = 0;
-            gui->InputHead = 0;
-            gui->InputTail = 0;
-            gui->InputCount = 0;
+            reset_input_state_locked(gui);
             ok = 1;
         }
     }
@@ -296,9 +321,7 @@ int kernel_gui_display_release(KERNEL_GUI *gui, uint64_t pid, uint64_t *backbuff
         gui->DisplayOwnerPid = 0;
         gui->BackbufferShmId = 0;
         gui->ConsoleRestorePending = 1;
-        gui->InputHead = 0;
-        gui->InputTail = 0;
-        gui->InputCount = 0;
+        reset_input_state_locked(gui);
         released = 1;
     }
     leave_private(&access);
@@ -351,12 +374,18 @@ int kernel_gui_input_push_key(KERNEL_GUI *gui, uint32_t code, uint32_t scalar, u
     GUI_ACCESS access;
     if (!enter_private(gui, &access))
         return 0;
-    KERNEL_INPUT_EVENT event = {0};
-    event.Kind = KERNEL_INPUT_KEY;
-    event.Flags = flags;
-    event.Code = code;
-    event.Value = scalar;
-    int ok = push_input_locked(gui, &event);
+    int ok = 0;
+    if (gui->DisplayOwnerPid) {
+        gui->LastKeyFlags = flags & ~KERNEL_INPUT_FLAG_RESYNC;
+        KERNEL_INPUT_EVENT event = {0};
+        event.Kind = KERNEL_INPUT_KEY;
+        event.Flags = flags & ~KERNEL_INPUT_FLAG_RESYNC;
+        event.Code = code;
+        event.Value = scalar;
+        ok = push_input_locked(gui, &event);
+        if (!ok)
+            gui->PendingKeyResync = 1U;
+    }
     leave_private(&access);
     return ok;
 }
@@ -368,12 +397,32 @@ int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_
     GUI_ACCESS access;
     if (!enter_private(gui, &access))
         return 0;
-    KERNEL_INPUT_EVENT event = {0};
-    event.Kind = KERNEL_INPUT_MOUSE;
-    event.Flags = buttons;
-    event.DeltaX = dx;
-    event.DeltaY = dy;
-    int ok = push_input_locked(gui, &event);
+    int ok = 0;
+    if (gui->DisplayOwnerPid) {
+        uint32_t clean_buttons = buttons & ~KERNEL_INPUT_FLAG_RESYNC;
+        gui->LastMouseButtons = clean_buttons;
+        if (gui->InputCount > 0U && !gui->PendingMouseResync) {
+            uint32_t last_idx = (gui->InputTail + KERNEL_GUI_INPUT_CAPACITY - 1U) % KERNEL_GUI_INPUT_CAPACITY;
+            KERNEL_INPUT_EVENT *last = &gui->InputRing[last_idx];
+            if (last->Kind == KERNEL_INPUT_MOUSE && last->Flags == clean_buttons) {
+                last->DeltaX = sat_add_i32_private(last->DeltaX, dx);
+                last->DeltaY = sat_add_i32_private(last->DeltaY, dy);
+                leave_private(&access);
+                return 1;
+            }
+        }
+        KERNEL_INPUT_EVENT event = {0};
+        event.Kind = KERNEL_INPUT_MOUSE;
+        event.Flags = clean_buttons;
+        event.DeltaX = dx;
+        event.DeltaY = dy;
+        ok = push_input_locked(gui, &event);
+        if (!ok) {
+            gui->PendingMouseDx = sat_add_i32_private(gui->PendingMouseDx, dx);
+            gui->PendingMouseDy = sat_add_i32_private(gui->PendingMouseDy, dy);
+            gui->PendingMouseResync = 1U;
+        }
+    }
     leave_private(&access);
     return ok;
 }
@@ -389,13 +438,29 @@ int kernel_gui_input_poll(KERNEL_GUI *gui, uint64_t pid, KERNEL_INPUT_EVENT *out
         return -1;
     int status = -1;
     if (gui->DisplayOwnerPid == pid) {
-        if (gui->InputCount == 0) {
-            status = 0;
-        } else {
+        if (gui->InputCount > 0U) {
             *out = gui->InputRing[gui->InputHead];
             gui->InputHead = (gui->InputHead + 1U) % KERNEL_GUI_INPUT_CAPACITY;
             --gui->InputCount;
             status = 1;
+        } else if (gui->PendingMouseResync) {
+            zero_bytes_private(out, sizeof(*out));
+            out->Kind = KERNEL_INPUT_MOUSE;
+            out->Flags = gui->LastMouseButtons | KERNEL_INPUT_FLAG_RESYNC;
+            out->DeltaX = gui->PendingMouseDx;
+            out->DeltaY = gui->PendingMouseDy;
+            gui->PendingMouseDx = 0;
+            gui->PendingMouseDy = 0;
+            gui->PendingMouseResync = 0;
+            status = 1;
+        } else if (gui->PendingKeyResync) {
+            zero_bytes_private(out, sizeof(*out));
+            out->Kind = KERNEL_INPUT_KEY;
+            out->Flags = gui->LastKeyFlags | KERNEL_INPUT_FLAG_RESYNC;
+            gui->PendingKeyResync = 0;
+            status = 1;
+        } else {
+            status = 0;
         }
     }
     leave_private(&access);

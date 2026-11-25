@@ -23,6 +23,7 @@
 #define KERNEL_INPUT_NONE             0U
 #define KERNEL_INPUT_KEY              1U
 #define KERNEL_INPUT_MOUSE            2U
+#define KERNEL_INPUT_FLAG_RESYNC      0x80000000U
 
 typedef struct {
     uint32_t  Width;
@@ -96,6 +97,12 @@ typedef struct {
     uint32_t             InputTail;
     uint32_t             InputCount;
     uint32_t             InputDropped;
+    uint32_t             LastMouseButtons;
+    uint32_t             LastKeyFlags;
+    int32_t              PendingMouseDx;
+    int32_t              PendingMouseDy;
+    uint32_t             PendingMouseResync;
+    uint32_t             PendingKeyResync;
     KERNEL_SHM_OBJECT   *ShmObjects;
     uint32_t             ShmObjectCapacity;
     uint32_t             ShmObjectCount;
