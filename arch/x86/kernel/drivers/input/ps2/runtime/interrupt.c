@@ -101,7 +101,7 @@ int x86_ps2_quiet(void)
 int x86_ps2_irq_record(BOOT_U64 vector, BOOT_U64 rip, BOOT_U64 rsp, BOOT_U64 flags)
 {
     X86_PS2_SESSION *owner = x86_ps2_session();
-    int accepted = vector == 0x40 || vector == 0x41 || vector == 0x42 || vector == X86_PREEMPT_VECTOR;
+    int accepted = (vector >= 0x40 && vector <= 0x4f) || vector == X86_PREEMPT_VECTOR;
 #ifdef KERNEL_AP_TASKS
     accepted |= vector == XCN_VECTOR;
 #endif

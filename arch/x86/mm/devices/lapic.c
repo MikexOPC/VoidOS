@@ -205,10 +205,10 @@ int x86_lapic_eoi(const X86_LAPIC_MAPPING *owner) {
 
 // ====== EOI solo per un vettore autorizzato realmente in servizio ===== //
 
-// Intel SDM 078US 11.8.4/Fig11-20: vector43h = ISR120h bit3.
+// Intel SDM 078US 11.8.4/Fig11-20: device vectors 40h..4Fh in bank 2 (ISR 120h bits 0..15).
 // 11.8.5/Fig11-21: EOI b0h=0 only for the sole authorized in-service vector.
 int x86_lapic_eoi_vector(const X86_LAPIC_MAPPING *owner, BOOT_U32 vector) {
-    if ((vector < 0x40 || vector > 0x43) && vector != X86_PREEMPT_VECTOR) return 0;
+    if ((vector < 0x40 || vector > 0x4f) && vector != X86_PREEMPT_VECTOR) return 0;
     return isr(owner,vector) && x86_lapic_native_eoi() && isr(owner,0);
 }
 

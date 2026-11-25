@@ -5,11 +5,13 @@
 #define COMMON_DF               0x04U
 #define COMMON_GFSELECT         0x08U
 #define COMMON_GF               0x0CU
+#define COMMON_MSIX_CONFIG      0x10U
 #define COMMON_NUMQ             0x12U
 #define COMMON_STATUS           0x14U
 #define COMMON_CFGGEN           0x15U
 #define COMMON_Q_SELECT         0x16U
 #define COMMON_Q_SIZE           0x18U
+#define COMMON_Q_MSIX_VECTOR    0x1AU
 #define COMMON_Q_ENABLE         0x1CU
 #define COMMON_Q_NOTIFY_OFF     0x1EU
 #define COMMON_Q_DESCLO         0x20U
@@ -246,7 +248,17 @@ int kernel_virtio_blk_init(
     uint64_t used_phys = control_phys + offsetof(VIRTIO_BLK_DMA_CONTROL, UsedFlags);
 
     VIRTIO_BLK_DMA_CONTROL *ctrl = (VIRTIO_BLK_DMA_CONTROL *)control_page;
-    ctrl->AvailFlags = VIRTQ_AVAIL_F_NO_INTERRUPT;
+    ctrl->AvailFlags = transport->IrqEnabled ? 0U : VIRTQ_AVAIL_F_NO_INTERRUPT;
+
+    if (transport->IrqEnabled) {
+        uint32_t msix_vec = 0xFFFFU;
+        // VirtIO 1.2 §4.1.4.3: map queue 0 to MSI-X table entry 0 and read back to confirm != 0xFFFF.
+        if (!mmio_write_private(transport, VIRTIO_REGION_COMMON, COMMON_MSIX_CONFIG, 2, 0xFFFFU) ||
+            !mmio_write_private(transport, VIRTIO_REGION_COMMON, COMMON_Q_MSIX_VECTOR, 2, 0U) ||
+            !mmio_read_private(transport, VIRTIO_REGION_COMMON, COMMON_Q_MSIX_VECTOR, 2, &msix_vec) ||
+            (msix_vec & 0xFFFFU) != 0U)
+            return KERNEL_STORAGE_ERR_IO;
+    }
 
     if (!mmio_write_private(transport, VIRTIO_REGION_COMMON, COMMON_Q_SIZE, 2, qsize) ||
         !mmio_read_private(transport, VIRTIO_REGION_COMMON, COMMON_Q_NOTIFY_OFF, 2, &notify_off) ||
@@ -382,6 +394,10 @@ int kernel_virtio_blk_request(
     ctrl->AvailIdx = driver->AvailIdx;
     driver->Transport.Barrier(driver->Transport.Context);
 
+    uint64_t irq_seq = (driver->Transport.IrqEnabled && driver->Transport.IrqSeq)
+        ? driver->Transport.IrqSeq(driver->Transport.Context)
+        : 0ULL;
+
     if (!mmio_write_private(&driver->Transport, VIRTIO_REGION_NOTIFY, driver->NotifyOff, 2, 0U))
         return KERNEL_STORAGE_ERR_IO;
 
@@ -405,6 +421,12 @@ int kernel_virtio_blk_request(
             if (type == VIRTIO_BLK_T_IN)
                 copy_bytes(buffer, driver->DataBuffer, transfer_bytes);
             return KERNEL_STORAGE_OK;
+        }
+
+        if (driver->Transport.IrqEnabled && driver->Transport.Wait) {
+            driver->Transport.Wait(driver->Transport.Context, irq_seq);
+            if (driver->Transport.IrqSeq)
+                irq_seq = driver->Transport.IrqSeq(driver->Transport.Context);
         }
 
         uint32_t now = 0;

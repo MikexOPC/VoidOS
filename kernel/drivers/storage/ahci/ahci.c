@@ -261,6 +261,22 @@ int kernel_ahci_init(
     driver->Ready = 1U;
     driver->Self = (uintptr_t)driver;
 
+    if (transport->IrqEnabled) {
+        // Intel AHCI 1.3.1 §3.1.2 (GHC.IE), §3.1.3 (IS W1C), §3.3.5 (PxIS W1C), §3.3.6 (PxIE).
+        uint32_t port_base = PORT_BASE(driver->PortIndex);
+        uint32_t ghc_val = 0;
+        if (!mmio_write32(transport, port_base + PX_IS, 0xFFFFFFFFU) ||
+            !mmio_write32(transport, HBA_IS, 1U << driver->PortIndex) ||
+            !mmio_write32(transport, port_base + PX_IE, AHCI_PXIE_DHRE | AHCI_PXIE_DSE | AHCI_PXIE_TFEE) ||
+            !mmio_read32(transport, HBA_GHC, &ghc_val) ||
+            !mmio_write32(transport, HBA_GHC, ghc_val | AHCI_GHC_IE) ||
+            !mmio_read32(transport, HBA_GHC, &ghc_val) ||
+            !(ghc_val & AHCI_GHC_IE)) {
+            driver->Ready = 0;
+            return KERNEL_STORAGE_ERR_IO;
+        }
+    }
+
     status = kernel_ahci_command(
         driver,
         ATA_CMD_IDENTIFY,
@@ -338,6 +354,7 @@ int kernel_ahci_command(
         return status;
 
     if (!mmio_write32(&driver->Transport, base + PX_IS, 0xFFFFFFFFU) ||
+        !mmio_write32(&driver->Transport, HBA_IS, 1U << driver->PortIndex) ||
         !mmio_write32(&driver->Transport, base + PX_SERR, 0xFFFFFFFFU))
         return KERNEL_STORAGE_ERR_IO;
 
@@ -375,6 +392,10 @@ int kernel_ahci_command(
         ctrl->CommandTable.Prdt[0].ByteCountAndInterrupt = (uint32_t)(transfer_bytes - 1U);
     }
 
+    uint64_t irq_seq = (driver->Transport.IrqEnabled && driver->Transport.IrqSeq)
+        ? driver->Transport.IrqSeq(driver->Transport.Context)
+        : 0ULL;
+
     driver->Transport.Barrier(driver->Transport.Context);
     if (!mmio_write32(&driver->Transport, base + PX_CI, 1U))
         return KERNEL_STORAGE_ERR_IO;
@@ -393,14 +414,27 @@ int kernel_ahci_command(
             !mmio_read32(&driver->Transport, base + PX_TFD, &px_tfd))
             return KERNEL_STORAGE_ERR_IO;
 
-        if ((px_is & AHCI_PXIS_TFES) || (px_tfd & AHCI_PXTFD_ERR))
+        if ((px_is & AHCI_PXIS_TFES) || (px_tfd & AHCI_PXTFD_ERR)) {
+            (void)mmio_write32(&driver->Transport, base + PX_IS, px_is);
+            (void)mmio_write32(&driver->Transport, HBA_IS, 1U << driver->PortIndex);
             return KERNEL_STORAGE_ERR_IO;
+        }
 
         if ((px_ci & 1U) == 0U && (px_tfd & (AHCI_PXTFD_BSY | AHCI_PXTFD_DRQ)) == 0U) {
+            if (px_is) {
+                (void)mmio_write32(&driver->Transport, base + PX_IS, px_is);
+                (void)mmio_write32(&driver->Transport, HBA_IS, 1U << driver->PortIndex);
+            }
             driver->Transport.Barrier(driver->Transport.Context);
             if (has_data && !is_write)
                 copy_bytes(buffer, driver->DataBuffer, transfer_bytes);
             return KERNEL_STORAGE_OK;
+        }
+
+        if (driver->Transport.IrqEnabled && driver->Transport.Wait) {
+            driver->Transport.Wait(driver->Transport.Context, irq_seq);
+            if (driver->Transport.IrqSeq)
+                irq_seq = driver->Transport.IrqSeq(driver->Transport.Context);
         }
 
         uint32_t now = 0;

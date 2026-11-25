@@ -1,4 +1,5 @@
 #include "session.h"
+#include <intrin.h>
 #ifdef KERNEL_USER_PROCESS
 #include "../shell/bridge.h"
 #include "arch/x86/kernel/descriptors/protection.h"
@@ -111,14 +112,21 @@ int x86_ps2_after_dispatch(void)
     if (!kernel_ps2_stop(&session.Controller)) return 0;
 #endif
     session.Quiet = 1; session.Ready = 1;
-    // Drain any owned IRR before releasing the handler; independent HPET ack.
-    if (!x86_watchdog_idle(&session.Ready) || !x86_lapic_idle(session.Env.Mapping) ||
+    // Drain any owned IRR (including trailing storage MSI/MSI-X) before releasing the handler; independent HPET ack.
+    if (!x86_watchdog_idle(&session.Ready)) return 0;
+    _enable();
+    __nop();
+    __nop();
+    _disable();
+    if (!x86_lapic_idle(session.Env.Mapping) ||
         x86_irq_registry_deliveries(x86_irq_registry(),&session.Token) != session.Irqs ||
         !x86_irq_registry_unbind(x86_irq_registry(),&session.Token) || !x86_ps2_route_apply(&session,2)) return 0;
 #ifdef KERNEL_PS2_MOUSE
     if (x86_irq_registry_deliveries(x86_irq_registry(),&session.Mouse.Token) != session.Mouse.Irqs ||
         !x86_irq_registry_unbind(x86_irq_registry(),&session.Mouse.Token) || !x86_ps2_mouse_route_apply(&session,2)) return 0;
 #endif
+    x86_virtio_blk_stop();
+    x86_ahci_stop();
 #ifdef KERNEL_AP_TASKS
     // The dispatcher must still own the scheduler while xcn_close drains event 7.
     if (xis_native.Count >= 2 && (!kernel_text("KERNEL_AP_TASK_JOBS: ") ||
@@ -301,6 +309,11 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!x86_console_open(&session, x86_vgpu_kernel_display())) return 0;
 #endif
 #ifdef KERNEL_AP_TASKS
+    // Drain any trailing storage MSI/MSI-X completions before xcn_prepare checks LAPIC idle.
+    _enable();
+    __nop();
+    __nop();
+    _disable();
     if (xis_native.Count < 2) kernel_log(1,"KERNEL_AP_TASKS_ABSENT");
     else {
         uint64_t root = 0;

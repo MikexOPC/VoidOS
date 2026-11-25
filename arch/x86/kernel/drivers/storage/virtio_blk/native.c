@@ -2,6 +2,8 @@
 #include <intrin.h>
 #include "arch/x86/configs/layout.h"
 #include "arch/x86/kernel/interrupts/apic/probe.h"
+#include "arch/x86/kernel/interrupts/registry/registry.h"
+#include "arch/x86/mm/devices/lapic.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "arch/x86/mm/paging/heap/authority.h"
 #include "arch/x86/mm/window/access.h"
@@ -20,21 +22,29 @@ typedef struct {
     uint32_t  Value;
 } MMIO_BORROW_REQ;
 
+#define X86_VIRTIO_BLK_VECTOR 0x44U
+
 typedef struct {
-    uintptr_t              Self;
-    X86_PAGE_WINDOW       *Window;
-    X86_PM_CLOCK           Clock;
-    uint64_t               UcCacheBits;
-    VIRTIO_BLK_PCI_LAYOUT  Layout;
-    uint32_t               Segment;
-    uint32_t               Bus;
-    uint32_t               Device;
-    uint32_t               Function;
-    uint32_t               Present;
-    uint32_t               Ready;
-    KERNEL_LOCK            DeviceLock;
-    KERNEL_VIRTIO_BLK      Driver;
-    KERNEL_BLOCK_CACHE     Cache;
+    uintptr_t                  Self;
+    X86_PAGE_WINDOW           *Window;
+    const X86_LAPIC_MAPPING   *LapicMapping;
+    X86_PM_CLOCK               Clock;
+    uint64_t                   UcCacheBits;
+    uint64_t                   EcamRangeBase;
+    VIRTIO_BLK_PCI_LAYOUT      Layout;
+    uint32_t                   Segment;
+    uint32_t                   Bus;
+    uint32_t                   Device;
+    uint32_t                   Function;
+    uint32_t                   Present;
+    uint32_t                   Ready;
+    uint32_t                   IrqEnabled;
+    uint32_t                   MsixCapOffset;
+    X86_IRQ_TOKEN              IrqToken;
+    uint64_t                   IrqSeq;
+    KERNEL_LOCK                DeviceLock;
+    KERNEL_VIRTIO_BLK          Driver;
+    KERNEL_BLOCK_CACHE         Cache;
 } X86_VIRTIO_BLK_RUNTIME;
 
 static X86_VIRTIO_BLK_RUNTIME vblk_rt;
@@ -152,6 +162,50 @@ static void transport_barrier_private(void *context)
     _ReadWriteBarrier();
 }
 
+// ====== transport_irq_seq_private ======
+
+static uint64_t transport_irq_seq_private(void *context)
+{
+    const X86_VIRTIO_BLK_RUNTIME *rt = (const X86_VIRTIO_BLK_RUNTIME *)context;
+    return rt ? ks_atomic_load_acquire(&rt->IrqSeq) : 0ULL;
+}
+
+// ====== transport_wait_private ======
+
+static void transport_wait_private(void *context, uint64_t expected_seq)
+{
+    const X86_VIRTIO_BLK_RUNTIME *rt = (const X86_VIRTIO_BLK_RUNTIME *)context;
+    if (!rt || !rt->IrqEnabled || !ks_irq_state()) {
+        _mm_pause();
+        return;
+    }
+    // Intel SDM Vol. 2B STI: IF becomes 1 after the following HLT instruction (atomic sleep, no lost wakeup).
+    uint64_t saved_if = ks_irq_save();
+    if (ks_atomic_load_acquire(&rt->IrqSeq) == expected_seq) {
+        _enable();
+        __halt();
+    } else {
+        ks_irq_restore(saved_if);
+    }
+}
+
+// ====== vblk_irq_handle_private ======
+
+static int vblk_irq_handle_private(void)
+{
+    if (!vblk_rt.LapicMapping || !x86_lapic_eoi_vector(vblk_rt.LapicMapping, X86_VIRTIO_BLK_VECTOR))
+        return 0;
+    ks_atomic_store_release(&vblk_rt.IrqSeq, ks_atomic_load_relaxed(&vblk_rt.IrqSeq) + 1ULL);
+    return 1;
+}
+
+// ====== vblk_irq_quiet_private ======
+
+static int vblk_irq_quiet_private(void)
+{
+    return 1;
+}
+
 // ====== ecam_rw_private ======
 
 static int ecam_rw_private(
@@ -245,6 +299,7 @@ static int discover_pci_private(
                             config_out[word * 4U + 2U] = (uint8_t)((val >> 16) & 0xFFU);
                             config_out[word * 4U + 3U] = (uint8_t)((val >> 24) & 0xFFU);
                         }
+                        vblk_rt.EcamRangeBase = range->Base;
                         vblk_rt.Segment = range->Segment;
                         vblk_rt.Bus = bus;
                         vblk_rt.Device = dev;
@@ -312,6 +367,121 @@ static int verify_io_private(KERNEL_BLOCK_CACHE *cache)
     return 1;
 }
 
+// ====== enable_msix_private ======
+
+// PCIe 4.0 §7.7.2 (MSI-X Cap 0x11) & Intel SDM Vol. 3A §11.11 (LAPIC MSI address 0xFEE00000).
+static int enable_msix_private(const uint8_t pci_cfg[256], uint32_t bsp_apic_id)
+{
+    if (!(pci_cfg[0x06U] & 0x10U) || !vblk_rt.EcamRangeBase || !x86_irq_registry())
+        return 0;
+    uint32_t cap = pci_cfg[0x34U] & 0xFCU;
+    uint32_t msix_cap = 0U;
+    for (uint32_t steps = 0; cap >= 0x40U && cap <= 0xFCU && steps < 48U; ++steps) {
+        if (pci_cfg[cap] == 0x11U) {
+            msix_cap = cap;
+            break;
+        }
+        cap = pci_cfg[cap + 1U] & 0xFCU;
+    }
+    if (!msix_cap || msix_cap + 8U > 256U)
+        return 0;
+
+    uint32_t table_info = (uint32_t)pci_cfg[msix_cap + 4U]
+        | ((uint32_t)pci_cfg[msix_cap + 5U] << 8)
+        | ((uint32_t)pci_cfg[msix_cap + 6U] << 16)
+        | ((uint32_t)pci_cfg[msix_cap + 7U] << 24);
+    uint32_t bir = table_info & 0x7U;
+    uint32_t table_off = table_info & ~0x7U;
+    if (bir >= 6U)
+        return 0;
+
+    uint32_t bar_off = 0x10U + bir * 4U;
+    uint32_t bar_lo = (uint32_t)pci_cfg[bar_off]
+        | ((uint32_t)pci_cfg[bar_off + 1U] << 8)
+        | ((uint32_t)pci_cfg[bar_off + 2U] << 16)
+        | ((uint32_t)pci_cfg[bar_off + 3U] << 24);
+    if ((bar_lo & 1U) != 0U)
+        return 0;
+    uint64_t bar_phys = (uint64_t)(bar_lo & ~0xFU);
+    if ((bar_lo & 0x6U) == 0x4U && bir + 1U < 6U) {
+        uint32_t bar_hi = (uint32_t)pci_cfg[bar_off + 4U]
+            | ((uint32_t)pci_cfg[bar_off + 5U] << 8)
+            | ((uint32_t)pci_cfg[bar_off + 6U] << 16)
+            | ((uint32_t)pci_cfg[bar_off + 7U] << 24);
+        bar_phys |= ((uint64_t)bar_hi << 32);
+    }
+    if (!bar_phys)
+        return 0;
+
+    if (!x86_irq_registry_bind(x86_irq_registry(), X86_VIRTIO_BLK_VECTOR,
+            vblk_irq_handle_private, vblk_irq_quiet_private, &vblk_rt.IrqToken))
+        return 0;
+
+    uint64_t entry_phys = bar_phys + table_off;
+    uint32_t entry_words[4] = {
+        0xFEE00000U | ((bsp_apic_id & 0xFFU) << 12),
+        0U,
+        X86_VIRTIO_BLK_VECTOR,
+        0U
+    };
+    for (uint32_t w = 0; w < 4U; ++w) {
+        uint64_t addr = entry_phys + (uint64_t)w * 4ULL;
+        MMIO_BORROW_REQ req = {(uint32_t)(addr & 4095ULL), 4U, 1, entry_words[w]};
+        uint64_t saved_if = ks_irq_save();
+        int ok = x86_apic_borrow(vblk_rt.Window, addr & ~4095ULL, vblk_rt.UcCacheBits, 1, mmio_window_cb, &req);
+        ks_irq_restore(saved_if);
+        if (!ok) {
+            (void)x86_irq_registry_unbind(x86_irq_registry(), &vblk_rt.IrqToken);
+            return 0;
+        }
+    }
+
+    uint32_t ctrl = 0, readback = 0, cmd = 0;
+    if (!ecam_rw_private(vblk_rt.Window, vblk_rt.UcCacheBits, vblk_rt.EcamRangeBase,
+            vblk_rt.Bus, vblk_rt.Device, vblk_rt.Function, msix_cap + 2U, 2U, 0, &ctrl)) {
+        (void)x86_irq_registry_unbind(x86_irq_registry(), &vblk_rt.IrqToken);
+        return 0;
+    }
+    ctrl = (ctrl & ~0x4000U) | 0x8000U;
+    if (!ecam_rw_private(vblk_rt.Window, vblk_rt.UcCacheBits, vblk_rt.EcamRangeBase,
+            vblk_rt.Bus, vblk_rt.Device, vblk_rt.Function, msix_cap + 2U, 2U, 1, &ctrl) ||
+        !ecam_rw_private(vblk_rt.Window, vblk_rt.UcCacheBits, vblk_rt.EcamRangeBase,
+            vblk_rt.Bus, vblk_rt.Device, vblk_rt.Function, msix_cap + 2U, 2U, 0, &readback) ||
+        (readback & 0xC000U) != 0x8000U) {
+        (void)x86_irq_registry_unbind(x86_irq_registry(), &vblk_rt.IrqToken);
+        return 0;
+    }
+    if (ecam_rw_private(vblk_rt.Window, vblk_rt.UcCacheBits, vblk_rt.EcamRangeBase,
+            vblk_rt.Bus, vblk_rt.Device, vblk_rt.Function, 0x04U, 2U, 0, &cmd)) {
+        cmd |= 0x0400U;
+        (void)ecam_rw_private(vblk_rt.Window, vblk_rt.UcCacheBits, vblk_rt.EcamRangeBase,
+            vblk_rt.Bus, vblk_rt.Device, vblk_rt.Function, 0x04U, 2U, 1, &cmd);
+    }
+    vblk_rt.MsixCapOffset = msix_cap;
+    return 1;
+}
+
+// ====== x86_virtio_blk_stop ======
+
+void x86_virtio_blk_stop(void)
+{
+    if (!vblk_rt.IrqEnabled)
+        return;
+    if (vblk_rt.MsixCapOffset && vblk_rt.EcamRangeBase) {
+        uint32_t ctrl = 0;
+        if (ecam_rw_private(vblk_rt.Window, vblk_rt.UcCacheBits, vblk_rt.EcamRangeBase,
+                vblk_rt.Bus, vblk_rt.Device, vblk_rt.Function, vblk_rt.MsixCapOffset + 2U, 2U, 0, &ctrl)) {
+            ctrl &= ~0x8000U;
+            (void)ecam_rw_private(vblk_rt.Window, vblk_rt.UcCacheBits, vblk_rt.EcamRangeBase,
+                vblk_rt.Bus, vblk_rt.Device, vblk_rt.Function, vblk_rt.MsixCapOffset + 2U, 2U, 1, &ctrl);
+        }
+    }
+    if (vblk_rt.IrqToken.Id && x86_irq_registry())
+        (void)x86_irq_registry_unbind(x86_irq_registry(), &vblk_rt.IrqToken);
+    vblk_rt.IrqEnabled = 0U;
+    vblk_rt.Driver.Transport.IrqEnabled = 0U;
+}
+
 // ====== x86_virtio_blk_start ======
 
 int x86_virtio_blk_start(
@@ -371,10 +541,17 @@ int x86_virtio_blk_start(
         return 0;
 
     vblk_rt.Window = env->Window;
+    vblk_rt.LapicMapping = env->Mapping;
     vblk_rt.Clock = *clock;
     vblk_rt.UcCacheBits = x86_apic_cache_bits(x86_apic_uc_slot(cpu.Pat) - 1U);
     vblk_rt.Present = 1U;
     vblk_rt.Self = (uintptr_t)&vblk_rt;
+
+    BOOT_U32 lapic_id_reg = 0;
+    uint32_t bsp_apic_id = (env->Mapping && x86_lapic_read(env->Mapping, 0x020U, &lapic_id_reg))
+        ? (lapic_id_reg >> 24)
+        : 0U;
+    vblk_rt.IrqEnabled = enable_msix_private(pci_cfg, bsp_apic_id) ? 1U : 0U;
 
     VIRTIO_BLK_TRANSPORT transport = {
         &vblk_rt,
@@ -383,7 +560,10 @@ int x86_virtio_blk_start(
         transport_barrier_private,
         clock->Mask,
         3579545U,
-        1000000U
+        1000000U,
+        transport_wait_private,
+        transport_irq_seq_private,
+        vblk_rt.IrqEnabled
     };
 
     if (kernel_virtio_blk_init(
@@ -410,6 +590,7 @@ int x86_virtio_blk_start(
     vblk_rt.Ready = 1U;
     uint64_t bdf = ((uint64_t)vblk_rt.Bus << 8) | ((uint64_t)vblk_rt.Device << 3) | vblk_rt.Function;
     return kernel_text("KERNEL_VIRTIO_BLK_BDF: ") && kernel_number(bdf) &&
+        kernel_text("\nKERNEL_VIRTIO_BLK_IRQ: ") && kernel_number(vblk_rt.IrqEnabled ? X86_VIRTIO_BLK_VECTOR : 0ULL) &&
         kernel_text("\nKERNEL_VIRTIO_BLK_SECTORS: ") && kernel_number(vblk_rt.Driver.CapacitySectors) &&
         kernel_text("\n") && kernel_log(0, "KERNEL_VIRTIO_BLK_READY");
 }

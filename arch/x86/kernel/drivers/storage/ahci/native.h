@@ -12,6 +12,7 @@ int x86_ahci_start(
     const KERNEL_ACPI_DIRECTORY *directory,
     const X86_PM_CLOCK *clock
 );
+void x86_ahci_stop(void);
 
 KERNEL_BLOCK_DEVICE *x86_ahci_device(void);
 KERNEL_BLOCK_CACHE  *x86_ahci_cache(void);

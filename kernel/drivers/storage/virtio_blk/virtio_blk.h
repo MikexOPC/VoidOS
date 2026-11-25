@@ -115,6 +115,8 @@ typedef int (*VIRTIO_BLK_MMIO_FN)(
 
 typedef int (*VIRTIO_BLK_CLOCK_FN)(void *context, uint32_t *ticks_out);
 typedef void (*VIRTIO_BLK_BARRIER_FN)(void *context);
+typedef void (*VIRTIO_BLK_WAIT_FN)(void *context, uint64_t expected_seq);
+typedef uint64_t (*VIRTIO_BLK_IRQ_SEQ_FN)(void *context);
 
 typedef struct {
     void                   *Context;
@@ -124,6 +126,9 @@ typedef struct {
     uint32_t                ClockMask;
     uint32_t                TimeoutTicks;
     uint32_t                MaxPolls;
+    VIRTIO_BLK_WAIT_FN      Wait;
+    VIRTIO_BLK_IRQ_SEQ_FN   IrqSeq;
+    uint32_t                IrqEnabled;
 } VIRTIO_BLK_TRANSPORT;
 
 typedef struct {

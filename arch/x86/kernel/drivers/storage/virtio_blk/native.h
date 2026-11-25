@@ -12,6 +12,7 @@ int x86_virtio_blk_start(
     const KERNEL_ACPI_DIRECTORY *directory,
     const X86_PM_CLOCK *clock
 );
+void x86_virtio_blk_stop(void);
 
 KERNEL_BLOCK_DEVICE *x86_virtio_blk_device(void);
 KERNEL_BLOCK_CACHE  *x86_virtio_blk_cache(void);

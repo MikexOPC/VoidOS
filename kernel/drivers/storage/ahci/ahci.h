@@ -23,6 +23,9 @@
 #define AHCI_PXCMD_CR               (1U << 15)
 
 #define AHCI_PXIS_TFES              (1U << 30)
+#define AHCI_PXIE_DHRE              (1U << 0)
+#define AHCI_PXIE_DSE               (1U << 2)
+#define AHCI_PXIE_TFEE              (1U << 30)
 #define AHCI_PXTFD_ERR              (1U << 0)
 #define AHCI_PXTFD_DRQ              (1U << 3)
 #define AHCI_PXTFD_BSY              (1U << 7)
@@ -94,6 +97,8 @@ typedef int (*AHCI_MMIO_FN)(
 
 typedef int (*AHCI_CLOCK_FN)(void *context, uint32_t *ticks_out);
 typedef void (*AHCI_BARRIER_FN)(void *context);
+typedef void (*AHCI_WAIT_FN)(void *context, uint64_t expected_seq);
+typedef uint64_t (*AHCI_IRQ_SEQ_FN)(void *context);
 
 typedef struct {
     void             *Context;
@@ -103,6 +108,9 @@ typedef struct {
     uint32_t          ClockMask;
     uint32_t          TimeoutTicks;
     uint32_t          MaxPolls;
+    AHCI_WAIT_FN      Wait;
+    AHCI_IRQ_SEQ_FN   IrqSeq;
+    uint32_t          IrqEnabled;
 } AHCI_TRANSPORT;
 
 typedef struct {
