@@ -7,6 +7,24 @@ typedef struct {
     KERNEL_DEADLINE  Deadline;
 } KERNEL_LOCK_PROGRESS;
 
+static uint64_t lock_stat_acquires;
+static uint64_t lock_stat_contended;
+static uint64_t lock_stat_wait_polls;
+static uint64_t lock_stat_max_packed;
+
+// ====== kernel_lock_stats_read ======
+
+void kernel_lock_stats_read(KERNEL_LOCK_STATS *out) {
+    if (!out)
+        return;
+    uint64_t packed = ks_atomic_load_acquire(&lock_stat_max_packed);
+    out->Acquires = ks_atomic_load_acquire(&lock_stat_acquires);
+    out->Contended = ks_atomic_load_acquire(&lock_stat_contended);
+    out->TotalWaitPolls = ks_atomic_load_acquire(&lock_stat_wait_polls);
+    out->MaxWaitPolls = (uint32_t)(packed >> 32);
+    out->MaxWaitRank = (uint32_t)(packed & 0xFFFFFFFFU);
+}
+
 // ====== wait_private ======
 
 static int wait_private(const KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_PROGRESS *progress) {
@@ -92,12 +110,15 @@ static int acquire_private(KERNEL_LOCK *lock, KERNEL_LOCK_CONTEXT *context,
     }
     progress = (KERNEL_LOCK_PROGRESS){0};
     uint64_t observed = ks_atomic_load_acquire(&lock->Serving.Value);
+    int was_contended = (observed != ticket);
+    uint64_t wait_polls = 0;
     for (;;) {
         uint64_t serving = ks_atomic_load_acquire(&lock->Serving.Value);
         if (serving == ticket) break;
         if (serving > ticket) ks_fail_stop("LOCK_TICKET_PASSED");
         if (serving != observed) {
             observed = serving;
+            wait_polls += progress.Polls;
             progress = (KERNEL_LOCK_PROGRESS){0};
         }
         if (attempt_only ||
@@ -108,6 +129,19 @@ static int acquire_private(KERNEL_LOCK *lock, KERNEL_LOCK_CONTEXT *context,
             if (!attempt_only && latest != serving)
                 continue;
             ks_fail_stop("LOCK_WAIT_FAILED");
+        }
+    }
+    wait_polls += progress.Polls;
+    ks_atomic_store_relaxed(&lock_stat_acquires, ks_atomic_load_relaxed(&lock_stat_acquires) + 1ULL);
+    if (was_contended) {
+        ks_atomic_store_relaxed(&lock_stat_contended, ks_atomic_load_relaxed(&lock_stat_contended) + 1ULL);
+        ks_atomic_store_relaxed(&lock_stat_wait_polls,
+            ks_atomic_load_relaxed(&lock_stat_wait_polls) + wait_polls);
+        uint32_t clamped = wait_polls > UINT32_MAX ? UINT32_MAX : (uint32_t)wait_polls;
+        uint64_t cur = ks_atomic_load_relaxed(&lock_stat_max_packed);
+        if (clamped > (uint32_t)(cur >> 32)) {
+            uint64_t next = ((uint64_t)clamped << 32) | (uint64_t)lock->Rank;
+            (void)ks_atomic_compare(&lock_stat_max_packed, cur, next);
         }
     }
     KERNEL_LOCK_FRAME *frame = &context->Frames[context->Depth];

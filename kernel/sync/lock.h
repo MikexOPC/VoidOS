@@ -56,7 +56,16 @@ int kernel_lock_context_bind_wait(KERNEL_LOCK_CONTEXT *context, const KERNEL_LOC
 int kernel_lock_bootstrap_initialize(void);
 int kernel_lock_bootstrap_promote(void);
 KERNEL_LOCK_CONTEXT *kernel_lock_current_context(void);
+typedef struct {
+    uint64_t  Acquires;
+    uint64_t  Contended;
+    uint64_t  TotalWaitPolls;
+    uint32_t  MaxWaitPolls;
+    uint32_t  MaxWaitRank;
+} KERNEL_LOCK_STATS;
+
 int kernel_lock_acquire(KERNEL_LOCK *lock, KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard);
 int kernel_lock_try(KERNEL_LOCK *lock, KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard);
 int kernel_lock_release(KERNEL_LOCK_CONTEXT *context, KERNEL_LOCK_GUARD *guard);
+void kernel_lock_stats_read(KERNEL_LOCK_STATS *out);
 #endif

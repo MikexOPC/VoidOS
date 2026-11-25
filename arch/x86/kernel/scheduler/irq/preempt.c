@@ -364,6 +364,8 @@ int x86_preempt_task_frame_valid(const X86_IRQ_FRAME *frame) {
 int x86_preempt_report(void)
 {
     const KERNEL_PREEMPT_STATE *policy = &preempt.Policy;
+    KERNEL_LOCK_STATS lstats = {0};
+    kernel_lock_stats_read(&lstats);
     return kernel_text("KERNEL_PREEMPT_CPUS: ") && kernel_number((BOOT_U64)preempt_cpus) &&
         kernel_text("\nKERNEL_PREEMPT_CPU_BYTES: ") && kernel_number(sizeof(X86_PREEMPT_CPU)) &&
         kernel_text("\nKERNEL_PREEMPT_TICKS: ") && kernel_number(preempt.Ticks) &&
@@ -373,5 +375,10 @@ int x86_preempt_report(void)
         kernel_text("\nKERNEL_PREEMPT_DEFERRED_LINE: ") && kernel_number(policy->deferred_line) &&
         kernel_text("\nKERNEL_PREEMPT_OVERRUNS: ") && kernel_number(policy->overruns) &&
         kernel_text("\nKERNEL_PREEMPT_PAUSES: ") && kernel_number(preempt.Pauses) &&
+        kernel_text("\nKERNEL_LOCK_ACQUIRES: ") && kernel_number(lstats.Acquires) &&
+        kernel_text("\nKERNEL_LOCK_CONTENDED: ") && kernel_number(lstats.Contended) &&
+        kernel_text("\nKERNEL_LOCK_WAIT_POLLS: ") && kernel_number(lstats.TotalWaitPolls) &&
+        kernel_text("\nKERNEL_LOCK_MAX_WAIT_POLLS: ") && kernel_number(lstats.MaxWaitPolls) &&
+        kernel_text("\nKERNEL_LOCK_MAX_WAIT_RANK: ") && kernel_number(lstats.MaxWaitRank) &&
         kernel_text("\n");
 }
