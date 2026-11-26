@@ -329,6 +329,8 @@ ordinary	c	arch/x86/kernel/drivers/storage/virtio_blk/native.c	virtio-blk-native
 ordinary	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	ahci_protocol	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	{repo}/kernel/drivers/storage/ahci/rust/protocol.rs	-o	{out}/ahci-protocol.obj
 ordinary	c	kernel/drivers/storage/ahci/ahci.c	ahci.obj
 ordinary	c	arch/x86/kernel/drivers/storage/ahci/native.c	ahci-native.obj
+ordinary	c	kernel/drivers/usb/xhci/xhci.c	xhci.obj
+ordinary	c	arch/x86/kernel/drivers/usb/xhci/native.c	xhci-native.obj
 user	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	vfs_fat	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	{repo}/kernel/vfs/rust/fat.rs	-o	{out}/vfs-fat.obj
 user	c	kernel/vfs/vfs.c	kernel-vfs.obj
 user	c	kernel/vfs/write.c	kernel-vfs-write.obj

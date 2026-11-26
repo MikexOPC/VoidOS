@@ -3,6 +3,7 @@
 #include "manager.h"
 #include "arch/x86/kernel/exceptions/terminal.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
+#include "arch/x86/kernel/drivers/usb/xhci/native.h"
 #include "kernel/console/video/pointer/shape.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/mm/physical/holdings.h"
@@ -341,6 +342,7 @@ int x86_gui_wait_ready(uint64_t pid)
 {
     if (!x86_gui_ready || !pid)
         return 0;
+    (void)x86_xhci_poll();
     return kernel_gui_has_input(&x86_gui_state, pid);
 }
 
@@ -1151,6 +1153,7 @@ BOOT_U64 x86_gui_sys_input_poll(X86_PROCESS_CPU *cpu, BOOT_U64 event_ptr)
         return RESULT_UNKNOWN;
     if (x86_process_copy_range(event_ptr, sizeof(KERNEL_INPUT_EVENT)) != 1)
         return RESULT_RANGE;
+    (void)x86_xhci_poll();
     KERNEL_INPUT_EVENT ev = {0};
     int status = kernel_gui_input_poll(&x86_gui_state, cpu->Pid, &ev);
     if (status < 0)

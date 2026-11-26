@@ -21,6 +21,7 @@
 #include "arch/x86/kernel/scheduler/irq/preempt.h"
 #include "arch/x86/kernel/drivers/storage/virtio_blk/native.h"
 #include "arch/x86/kernel/drivers/storage/ahci/native.h"
+#include "arch/x86/kernel/drivers/usb/xhci/native.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/vfs/vfs.h"
 #include "kernel/security/random.h"
@@ -99,6 +100,7 @@ int x86_ps2_after_dispatch(void)
 #ifdef KERNEL_USER_PROCESS
     x86_shell_bridge_dispatch();
 #endif
+    (void)x86_xhci_poll();
 #ifdef KERNEL_AP_TASKS
     x86_remote_service();
 #endif
@@ -127,6 +129,7 @@ int x86_ps2_after_dispatch(void)
 #endif
     x86_virtio_blk_stop();
     x86_ahci_stop();
+    x86_xhci_stop();
 #ifdef KERNEL_AP_TASKS
     // The dispatcher must still own the scheduler while xcn_close drains event 7.
     if (xis_native.Count >= 2 && (!kernel_text("KERNEL_AP_TASK_JOBS: ") ||
@@ -198,6 +201,9 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     }
     if (!x86_ahci_start(env, directory, clock)) {
         kernel_log(3, "AHCI_START_FAILED"); return 0;
+    }
+    if (!x86_xhci_start(env, directory, clock)) {
+        kernel_log(3, "XHCI_START_FAILED"); return 0;
     }
     if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;
