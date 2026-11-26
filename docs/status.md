@@ -53,8 +53,8 @@ Implementato driver xHCI 1.2 (BIOS handoff, `HCRST`, DCBAA/Scratchpad, Command/E
 e tutti gli AP con fallback automatico su xAPIC; verificati timer LAPIC, IPI
 INIT/SIPI, IPI di servizio/TLB shootdown, console wake AP1→BSP, NMI panic SMP e
 multi-app GUI.
-**Desktop, Rendering 2D e GPU Interface (`SYS_GPU_INFO`) — fatta (su QEMU TCG).**
-Introdotta syscall `SYS_GPU_INFO` (`29`, ABI 64 byte `X86_GPU_INFO`: backend `VirtIO-GPU 2D` `0x1AF4:0x1050` o `UEFI GOP SW`, capabilities 2D, contatore `present_calls`) e primitive di blitting 2D SSE2 in `libui` (`blit_span_opaque`, `Canvas::blit_rect`, `Canvas::blit_alpha_rect`). Esteso il compositor Slint con Window Manager interattivo (drag finestre via titlebar in-place, z-order reale su focus, minimize/restore dal dock). Aggiunto il File Manager Ring 3 reale (`/bin/files.elf`, `kind == 2` nel dock: lettura `/` e `/usb` via `SYS_LIST_DIR`, navigazione sottodirectory e preview file) e visualizzazione del backend GPU e contatore present in System Monitor (`/bin/sysmon.elf`, `kind == 1`). Verificati in parallelo `ui`, `terminal`, `sysmon` e `files` su ogni boot ordinario e rilevamento `KERNEL_VGPU_PCI_PRESENT` + `KERNEL_VGPU_MAPPING_LIVE` su `-device virtio-vga`.
+**Desktop, VirtIO-GPU 2D reale, cursore hardware e `SYS_LIST_DIR` — fatta (su QEMU TCG).**
+Attivato il driver **VirtIO-GPU 2D** nell'immagine di produzione `ordinary` (anche senza VT-d IOMMU tramite DMA diretto e senza GOP tramite display mode-setting nativo `GET_DISPLAY_INFO` -> `RESOURCE_CREATE_2D` -> `SET_SCANOUT` -> `TRANSFER_TO_HOST_2D` + `RESOURCE_FLUSH`), compatibile con lo scheduler preemptive `IF=1`. Aggiunto il **cursore hardware su `cursorq`** (VirtIO 1.2 §5.7.6.10, risorsa 64×64 `B8G8R8A8_UNORM`, `UPDATE_CURSOR`/`MOVE_CURSOR`, flag `X86_GPU_CAP_HW_CURSOR`, con fallback automatico al cursore software 18×18 su GOP). Introdotti `SYS_GPU_INFO` (`29`), primitive 2D SSE2 in `libui`, Window Manager con drag/z-order/minimize, File Manager Ring 3 (`/bin/files.elf`) e `SYS_LIST_DIR` estesa fino a 4096 byte (256 voci).
 Restano: prova interattiva WHPX/SDL e hardware fisico (xHCI USB, x2APIC).
 Il cancello "base solida" (10/10 boot + soak da 30+30 minuti senza errori né
 perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
@@ -88,13 +88,14 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Prove e prossimo passo
 
-Verifiche correnti sull'immagine di produzione (x2APIC + xHCI HID/MSC/Hub + GUI/GPU 2D):
+Verifiche correnti sull'immagine di produzione (x2APIC + xHCI HID/MSC/Hub + VirtIO-GPU 2D/cursorq):
 33/33 test host (`meson test`, ASan inclusi `libvoid_rust`, `libui_rust` SSE2,
 `xhci_host` e `vfs_fat_host`), 10/10 boot `--ordinary-shell --smp 4`
-(`qemu-runner-18ebb6015c9a398c-3fc0`, con self-test parallelo di `ui`, `terminal`,
+(`qemu-runner-18ebb7fecdffb170-a188`, con self-test parallelo di `ui`, `terminal`,
 `sysmon` e `files`), 1/1 boot multi-app `--ordinary-gui 1 --smp 4`
-(`qemu-runner-18ebb5dffc52c04c-8828`), 1/1 boot live `-device virtio-vga`
-(`KERNEL_VGPU_PCI_PRESENT` + `KERNEL_VGPU_MAPPING_LIVE` + `sysmon` + `terminal`),
+(`qemu-runner-18ebb7ecc17ac9b0-3c60`), 1/1 boot live `-vga none -device virtio-gpu-pci`
+(senza GOP né VT-d: `KERNEL_VGPU_PRESENTING`, `KERNEL_VGPU_CURSOR_READY`, `1280x800`),
+1/1 boot live `-vga none -device virtio-vga` (`KERNEL_VGPU_PRESENTING`, `KERNEL_VGPU_CURSOR_READY`),
 prove live QEMU `usb-storage`, hotplug VFS `/usb` e `-device usb-hub`,
 3/3 boot fallback xAPIC (`-cpu max,-x2apic`), 3/3 boot WHPX headless in x2APIC,
 e 1/1 soak continuo `--ordinary-soak 30 --smp 4`
