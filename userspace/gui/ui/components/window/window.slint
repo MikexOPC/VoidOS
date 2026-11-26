@@ -5,6 +5,8 @@ export component VoidWindow inherits Rectangle {
     in property <bool> focused: true;
     callback close-clicked();
     callback focus-clicked();
+    callback minimize-clicked();
+    callback move-delta(length, length);
 
     background: #F7F9FFDC;
     border-radius: 12px;
@@ -24,10 +26,24 @@ export component VoidWindow inherits Rectangle {
         padding: 0px;
         spacing: 0px;
 
-        // Compact Titlebar (32px height, app icon + title on left, path pill in center, 3 mini-squares on right)
+        // Compact Titlebar (32px height, draggable, app icon + title on left, 3 mini-squares on right)
         Rectangle {
             height: 32px;
             background: #EEF2FBD8;
+
+            title-drag := TouchArea {
+                mouse-cursor: move;
+                pointer-event(ev) => {
+                    if (ev.kind == PointerEventKind.down) {
+                        root.focus-clicked();
+                    }
+                }
+                moved => {
+                    if (self.pressed) {
+                        root.move-delta(self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+                    }
+                }
+            }
 
             HorizontalLayout {
                 padding-left: 10px;
@@ -82,7 +98,10 @@ export component VoidWindow inherits Rectangle {
                         background: min-ta.has-hover ? #FFFFFFCC : #FFFFFF68;
                         animate background { duration: 150ms; easing: ease-out; }
                         animate border-color { duration: 150ms; easing: ease-out; }
-                        min-ta := TouchArea { mouse-cursor: pointer; }
+                        min-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.minimize-clicked(); }
+                        }
                         Rectangle {
                             x: 7px;
                             y: 11px;

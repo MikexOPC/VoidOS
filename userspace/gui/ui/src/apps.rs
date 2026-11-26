@@ -12,6 +12,9 @@ pub struct Application {
     view: libvoid::ShmView,
     width: u32,
     height: u32,
+    pos_x: f32,
+    pos_y: f32,
+    minimized: bool,
     buffer: SharedPixelBuffer<Rgb8Pixel>,
     image: Image,
     pending: VecDeque<[u8; PROTO_WIRE_BYTES]>,
@@ -55,7 +58,8 @@ impl Applications {
             _ => return false,
         };
         self.focused = kind;
-        if self.windows.iter().any(|app| app.kind == kind) {
+        if let Some(app) = self.windows.iter_mut().find(|app| app.kind == kind) {
+            app.minimized = false;
             return true;
         }
         let budget = libvoid::SpawnBudget {
@@ -68,6 +72,11 @@ impl Applications {
         if libvoid::spawn_connected(path, budget, &mut child) <= 0 {
             return false;
         }
+        let (init_x, init_y) = match kind {
+            0 => (96.0, 84.0),
+            1 => (640.0, 84.0),
+            _ => (220.0, 120.0),
+        };
         self.windows.push(Application {
             kind,
             child,
@@ -75,6 +84,9 @@ impl Applications {
             view: libvoid::ShmView::default(),
             width: 0,
             height: 0,
+            pos_x: init_x,
+            pos_y: init_y,
+            minimized: false,
             buffer: SharedPixelBuffer::new(0, 0),
             image: Image::default(),
             pending: VecDeque::new(),
@@ -82,6 +94,47 @@ impl Applications {
             probe_read_only: self.verify,
         });
         true
+    }
+
+    // ====== move_by ======
+
+    pub fn move_by(&mut self, kind: i32, dx: f32, dy: f32, display_w: u32, display_h: u32) {
+        let Some(app) = self.windows.iter_mut().find(|a| a.kind == kind) else {
+            return;
+        };
+        let max_x = (display_w as f32 - 80.0).max(0.0);
+        let max_y = (display_h as f32 - 64.0).max(0.0);
+        app.pos_x = (app.pos_x + dx).clamp(0.0, max_x);
+        app.pos_y = (app.pos_y + dy).clamp(0.0, max_y);
+        let nx = app.pos_x;
+        let ny = app.pos_y;
+        for row in 0..self.model.row_count() {
+            if let Some(mut surface) = self.model.row_data(row) {
+                if surface.kind == kind {
+                    surface.pos_x = nx;
+                    surface.pos_y = ny;
+                    self.model.set_row_data(row, surface);
+                    break;
+                }
+            }
+        }
+    }
+
+    // ====== minimize ======
+
+    pub fn minimize(&mut self, kind: i32) {
+        if let Some(app) = self.windows.iter_mut().find(|a| a.kind == kind) {
+            app.minimized = true;
+            for row in 0..self.model.row_count() {
+                if let Some(mut surface) = self.model.row_data(row) {
+                    if surface.kind == kind {
+                        surface.minimized = true;
+                        self.model.set_row_data(row, surface);
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     // ====== close ======
@@ -297,11 +350,14 @@ impl Applications {
                 pixels: app.image.clone(),
                 client_width: app.width as f32,
                 client_height: app.height as f32,
+                pos_x: app.pos_x,
+                pos_y: app.pos_y,
+                minimized: app.minimized,
             });
         }
         self.model.set_vec(surfaces);
-        ui.set_terminal_open(self.windows.iter().any(|app| app.kind == 0));
-        ui.set_sysmon_open(self.windows.iter().any(|app| app.kind == 1));
+        ui.set_terminal_open(self.windows.iter().any(|app| app.kind == 0 && !app.minimized));
+        ui.set_sysmon_open(self.windows.iter().any(|app| app.kind == 1 && !app.minimized));
         ui.set_focused_window(self.focused);
     }
 

@@ -191,12 +191,17 @@ extern "C" fn program_main(mode: u64) -> ! {
         Err(_) => libvoid::exit(82),
     };
     let requests = Rc::new(RefCell::new(VecDeque::new()));
+    let moves = Rc::new(RefCell::new(VecDeque::<(i32, f32, f32)>::new()));
     let launch = requests.clone();
     ui.on_launch_app(move |kind| launch.borrow_mut().push_back((0, kind)));
     let close = requests.clone();
     ui.on_close_app(move |kind| close.borrow_mut().push_back((1, kind)));
     let focus = requests.clone();
     ui.on_focus_app(move |kind| focus.borrow_mut().push_back((2, kind)));
+    let minimize = requests.clone();
+    ui.on_minimize_app(move |kind| minimize.borrow_mut().push_back((3, kind)));
+    let mv = moves.clone();
+    ui.on_move_app(move |kind, dx, dy| mv.borrow_mut().push_back((kind, dx, dy)));
     let quitting = Rc::new(Cell::new(false));
     let quit = quitting.clone();
     ui.on_quit_desktop(move || quit.set(true));
@@ -373,13 +378,32 @@ extern "C" fn program_main(mode: u64) -> ! {
                 position: LogicalPosition::new(cx, cy),
             });
         }
+        while let Some((kind, dx, dy)) = moves.borrow_mut().pop_front() {
+            had_work = true;
+            applications.move_by(kind, dx, dy, acq.width, acq.height);
+        }
         while let Some((operation, kind)) = requests.borrow_mut().pop_front() {
             had_work = true;
+            let mut need_refresh = true;
             let ok = match operation {
                 0 => applications.launch(kind),
                 1 => applications.close(kind),
+                3 => {
+                    applications.minimize(kind);
+                    if kind == 0 {
+                        ui.set_terminal_open(false);
+                    } else if kind == 1 {
+                        ui.set_sysmon_open(false);
+                    }
+                    need_refresh = false;
+                    true
+                }
                 _ => {
-                    applications.focused = kind;
+                    if applications.focused == kind {
+                        need_refresh = false;
+                    } else {
+                        applications.focused = kind;
+                    }
                     true
                 }
             };
@@ -391,7 +415,9 @@ extern "C" fn program_main(mode: u64) -> ! {
                     b"VoidOS ui close failed\n"
                 });
             }
-            applications.refresh(&ui);
+            if need_refresh {
+                applications.refresh(&ui);
+            }
         }
         let (apps_ok, apps_active) = applications.poll_with_activity(&ui, acq.width, acq.height);
         if apps_active {
