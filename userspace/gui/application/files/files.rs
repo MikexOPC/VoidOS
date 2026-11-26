@@ -73,7 +73,7 @@ impl FileBrowser {
 
     fn reload(&mut self) {
         self.count = 0;
-        let mut raw = [0u8; 256];
+        let mut raw = [0u8; 2048];
         let n = libvoid::list_dir(&self.path[..self.path_len], &mut raw);
         if n <= 0 {
             return;

@@ -44,16 +44,19 @@ fn cmd_fl(arg: &[u8]) -> i64 {
         let len = make_path(arg, &mut path_buf);
         path_buf.get(..len).unwrap_or(b"/")
     };
-    let mut list_buf = [0u8; 256];
+    let mut list_buf = [0u8; 1024];
     let n = libvoid::list_dir(path, &mut list_buf);
     if n < 0 {
         return n;
     }
     let count = n as usize;
-    if let Some(slice) = list_buf.get(..count) {
-        if !slice.is_empty() {
-            let _ = libvoid::write_console(slice);
+    let mut off = 0usize;
+    while off < count {
+        let end = (off + 256).min(count);
+        if let Some(chunk) = list_buf.get(off..end) {
+            let _ = libvoid::write_console(chunk);
         }
+        off = end;
     }
     0
 }

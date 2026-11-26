@@ -374,16 +374,22 @@ static BOOT_U64 sys_list_dir(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 p
     BOOT_U64 path_len = packed_lens >> 32;
     BOOT_U64 buf_len = packed_lens & 0xFFFFFFFFULL;
     if (!buf_len) return 0ULL;
-    if (buf_len > MAX_COPY) return RESULT_LENGTH;
-    BOOT_U32 range = x86_process_copy_range(buf_ptr, buf_len);
-    if (range == 3) return RESULT_LENGTH;
-    if (range != 1) return RESULT_RANGE;
+    if (buf_len > 4096ULL) return RESULT_LENGTH;
+    for (BOOT_U64 off = 0ULL; off < buf_len; ) {
+        BOOT_U64 chunk = buf_len - off;
+        if (chunk > MAX_COPY) chunk = MAX_COPY;
+        BOOT_U32 range = x86_process_copy_range(buf_ptr + off, chunk);
+        if (range == 3) return RESULT_LENGTH;
+        if (range != 1) return RESULT_RANGE;
+        off += chunk;
+    }
     char path[KERNEL_VFS_PATH_CAPACITY] = {0};
     BOOT_U64 err = copy_user_path_private(cpu, path_ptr, path_len, path);
     if (err) return err;
-    unsigned char out[MAX_COPY] = {0};
-    uint32_t pos = 0U;
-    for (uint32_t idx = 0; idx < 64U; ++idx) {
+    unsigned char stage[MAX_COPY] = {0};
+    uint32_t stage_len = 0U;
+    uint32_t total = 0U;
+    for (uint32_t idx = 0U; idx < 256U; ++idx) {
         KERNEL_VFS_STAT st = {0};
         int r = kernel_vfs_readdir(vfs, path, idx, &st);
         if (r == KERNEL_STORAGE_ERR_NOT_FOUND)
@@ -391,17 +397,28 @@ static BOOT_U64 sys_list_dir(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 p
         if (r != KERNEL_STORAGE_OK)
             return RESULT_UNKNOWN;
         uint32_t needed = st.NameLen + (st.IsDirectory ? 2U : 1U);
-        if (pos + needed > (uint32_t)buf_len)
+        if (needed > MAX_COPY)
+            continue;
+        if (total + stage_len + needed > (uint32_t)buf_len)
             break;
-        for (uint32_t c = 0; c < st.NameLen; ++c)
-            out[pos++] = (unsigned char)st.Name[c];
+        if (stage_len + needed > MAX_COPY) {
+            if (copy_checked(cpu, (void *)(buf_ptr + total), stage, buf_ptr + total, stage_len, 1))
+                return RESULT_RANGE;
+            total += stage_len;
+            stage_len = 0U;
+        }
+        for (uint32_t c = 0U; c < st.NameLen; ++c)
+            stage[stage_len++] = (unsigned char)st.Name[c];
         if (st.IsDirectory)
-            out[pos++] = '/';
-        out[pos++] = '\n';
+            stage[stage_len++] = '/';
+        stage[stage_len++] = '\n';
     }
-    if (pos && copy_checked(cpu, (void *)buf_ptr, out, buf_ptr, pos, 1))
-        return RESULT_RANGE;
-    return (BOOT_U64)pos;
+    if (stage_len) {
+        if (copy_checked(cpu, (void *)(buf_ptr + total), stage, buf_ptr + total, stage_len, 1))
+            return RESULT_RANGE;
+        total += stage_len;
+    }
+    return (BOOT_U64)total;
 }
 
 // ====== sys_sync ======
