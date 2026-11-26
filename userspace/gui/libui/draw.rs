@@ -214,6 +214,32 @@ fn fill_span_opaque(dst: &mut [u32], color: u32) {
     }
 }
 
+// ====== SIMD SSE2 4-pixel blit helper ======
+
+#[inline]
+fn blit_span_opaque(dst: &mut [u32], src: &[u32]) {
+    let len = dst.len().min(src.len());
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+    {
+        use core::arch::x86_64::{_mm_loadu_si128, _mm_storeu_si128, __m128i};
+        let mut idx = 0usize;
+        let dptr = dst.as_mut_ptr();
+        let sptr = src.as_ptr();
+        unsafe {
+            while idx + 4 <= len {
+                let v = _mm_loadu_si128(sptr.add(idx) as *const __m128i);
+                _mm_storeu_si128(dptr.add(idx) as *mut __m128i, v);
+                idx += 4;
+            }
+        }
+        dst[idx..len].copy_from_slice(&src[idx..len]);
+    }
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "sse2")))]
+    {
+        dst[..len].copy_from_slice(&src[..len]);
+    }
+}
+
 // ====== Canvas ======
 
 pub struct Canvas<'a> {
@@ -276,6 +302,78 @@ impl<'a> Canvas<'a> {
                 for slot in &mut self.pixels[row_start..row_end] {
                     *slot = blend_bgra(*slot, color);
                 }
+            }
+        }
+    }
+
+    pub fn blit_rect(
+        &mut self,
+        dst_x: i32,
+        dst_y: i32,
+        src: &[u32],
+        src_w: u32,
+        src_h: u32,
+        src_stride: u32,
+        src_rect: Rect,
+    ) {
+        let sbounds = Rect::new(0, 0, src_w as i32, src_h as i32);
+        let sr = src_rect.intersect(sbounds);
+        if sr.is_empty() {
+            return;
+        }
+        let dst_rect = Rect::new(dst_x, dst_y, sr.w, sr.h);
+        let dr = dst_rect.intersect(self.clip);
+        if dr.is_empty() {
+            return;
+        }
+        let dx_off = (dr.x - dst_x) as usize;
+        let dy_off = (dr.y - dst_y) as usize;
+        let copy_w = dr.w as usize;
+        let d_stride = self.stride as usize;
+        let s_stride = src_stride as usize;
+        for row in 0..(dr.h as usize) {
+            let d0 = (dr.y as usize + row) * d_stride + dr.x as usize;
+            let s0 = (sr.y as usize + dy_off + row) * s_stride + (sr.x as usize + dx_off);
+            if d0 + copy_w > self.pixels.len() || s0 + copy_w > src.len() {
+                break;
+            }
+            blit_span_opaque(&mut self.pixels[d0..d0 + copy_w], &src[s0..s0 + copy_w]);
+        }
+    }
+
+    pub fn blit_alpha_rect(
+        &mut self,
+        dst_x: i32,
+        dst_y: i32,
+        src: &[u32],
+        src_w: u32,
+        src_h: u32,
+        src_stride: u32,
+        src_rect: Rect,
+    ) {
+        let sbounds = Rect::new(0, 0, src_w as i32, src_h as i32);
+        let sr = src_rect.intersect(sbounds);
+        if sr.is_empty() {
+            return;
+        }
+        let dst_rect = Rect::new(dst_x, dst_y, sr.w, sr.h);
+        let dr = dst_rect.intersect(self.clip);
+        if dr.is_empty() {
+            return;
+        }
+        let dx_off = (dr.x - dst_x) as usize;
+        let dy_off = (dr.y - dst_y) as usize;
+        let copy_w = dr.w as usize;
+        let d_stride = self.stride as usize;
+        let s_stride = src_stride as usize;
+        for row in 0..(dr.h as usize) {
+            let d0 = (dr.y as usize + row) * d_stride + dr.x as usize;
+            let s0 = (sr.y as usize + dy_off + row) * s_stride + (sr.x as usize + dx_off);
+            if d0 + copy_w > self.pixels.len() || s0 + copy_w > src.len() {
+                break;
+            }
+            for col in 0..copy_w {
+                self.pixels[d0 + col] = blend_bgra(self.pixels[d0 + col], src[s0 + col]);
             }
         }
     }

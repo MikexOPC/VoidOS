@@ -81,7 +81,35 @@
 #define SYS_IPC_CLOSE 26ULL
 #define SYS_GUI_WAIT 27ULL
 #define SYS_SYS_INFO 28ULL
+#define SYS_GPU_INFO 29ULL
 #define WAIT_HANDLE_GUI_MASK (1ULL << 63)
+
+#define X86_GPU_BACKEND_GOP_SW    0U
+#define X86_GPU_BACKEND_VIRTIO_2D 1U
+#define X86_GPU_BACKEND_VIRTIO_3D 2U
+#define X86_GPU_BACKEND_INTEL     3U
+#define X86_GPU_BACKEND_AMD       4U
+
+#define X86_GPU_CAP_2D_FLUSH      (1U << 0)
+#define X86_GPU_CAP_2D_BLIT       (1U << 1)
+#define X86_GPU_CAP_HW_CURSOR     (1U << 2)
+#define X86_GPU_CAP_3D_VIRGL      (1U << 3)
+#define X86_GPU_CAP_VULKAN_VENUS  (1U << 4)
+
+typedef struct {
+    BOOT_U32  Backend;
+    BOOT_U32  Caps;
+    BOOT_U32  Width;
+    BOOT_U32  Height;
+    BOOT_U32  Stride;
+    BOOT_U32  Format;
+    BOOT_U64  PresentCalls;
+    BOOT_U64  MaxShmBytes;
+    BOOT_U32  VendorId;
+    BOOT_U32  DeviceId;
+    char      Name[16];
+} X86_GPU_INFO;
+_Static_assert(sizeof(X86_GPU_INFO) == 64, "X86_GPU_INFO ABI size");
 
 typedef struct {
     BOOT_U64  TotalPhysPages;

@@ -1289,3 +1289,35 @@ BOOT_U64 x86_gui_sys_shm_view(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id, BOOT_U64 ou
     }
     return 0;
 }
+
+// ====== x86_gui_sys_gpu_info ======
+
+BOOT_U64 x86_gui_sys_gpu_info(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
+{
+    if (!cpu || !out_ptr || x86_process_copy_range(out_ptr, sizeof(X86_GPU_INFO)) != 1)
+        return RESULT_RANGE;
+
+    X86_GPU_INFO info = {0};
+    BOOT_U64 fb_base = 0;
+    BOOT_U32 fb_w = 0, fb_h = 0, fb_stride = 0, fb_fmt = 0;
+    (void)refresh_display_geometry_private(&fb_base, &fb_w, &fb_h, &fb_stride, &fb_fmt);
+
+    int has_virtio_2d = (x86_gui_display.Ops != NULL && x86_gui_display.Ops->Rect != NULL);
+    info.Backend = has_virtio_2d ? X86_GPU_BACKEND_VIRTIO_2D : X86_GPU_BACKEND_GOP_SW;
+    info.Caps = has_virtio_2d ? X86_GPU_CAP_2D_FLUSH : 0U;
+    info.Width = fb_w;
+    info.Height = fb_h;
+    info.Stride = fb_stride;
+    info.Format = fb_fmt;
+    info.PresentCalls = x86_gui_present_calls;
+    info.MaxShmBytes = (BOOT_U64)KERNEL_GUI_SHM_MAX_PAGES * PAGE_BYTES;
+    info.VendorId = has_virtio_2d ? 0x1AF4U : 0U;
+    info.DeviceId = has_virtio_2d ? 0x1050U : 0U;
+    const char *label = has_virtio_2d ? "VirtIO-GPU 2D" : "UEFI GOP SW";
+    for (uint32_t i = 0; i < 15U && label[i]; ++i)
+        info.Name[i] = label[i];
+
+    if (x86_process_copy_user(cpu, (void *)out_ptr, &info, out_ptr, sizeof(info), 1))
+        return RESULT_RANGE;
+    return 0;
+}

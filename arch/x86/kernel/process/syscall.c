@@ -642,6 +642,9 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
     } else if (number == SYS_SYS_INFO) {
         GPR(frame, GPR_RAX) = sys_sys_info(cpu, GPR(frame, GPR_RDI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_GPU_INFO) {
+        GPR(frame, GPR_RAX) = x86_gui_sys_gpu_info(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else {
         GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;
 #ifdef KERNEL_TEST_K6_PROCESS

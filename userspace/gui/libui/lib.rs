@@ -108,4 +108,22 @@ mod tests {
         bad[0] ^= 0xFF;
         assert!(GuiMessage::decode(&bad).is_none());
     }
+
+    #[test]
+    fn canvas_blit_and_alpha_clip() {
+        let mut dst = [rgb(0, 0, 0); 16 * 16];
+        let mut src = [rgb(0x11, 0x22, 0x33); 8 * 8];
+        src[0] = rgb(0xAA, 0xBB, 0xCC);
+        let mut canvas = Canvas::new(&mut dst, 16, 16, 16);
+        canvas.set_clip(Rect::new(4, 4, 6, 6));
+        canvas.blit_rect(2, 2, &src, 8, 8, 8, Rect::new(0, 0, 8, 8));
+        // Outside clip remains black, inside clip gets blitted pixels.
+        assert_eq!(canvas.pixels[2 * 16 + 2], rgb(0, 0, 0));
+        assert_eq!(canvas.pixels[4 * 16 + 4], rgb(0x11, 0x22, 0x33));
+
+        let semi = [rgba(0xFF, 0x00, 0x00, 128); 4 * 4];
+        canvas.blit_alpha_rect(4, 4, &semi, 4, 4, 4, Rect::new(0, 0, 4, 4));
+        let blended = canvas.pixels[4 * 16 + 4];
+        assert!(((blended >> 16) & 0xFF) > 0x70);
+    }
 }

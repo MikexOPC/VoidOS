@@ -36,6 +36,7 @@ pub const SYS_PROCESS_STOP: u64 = 25;
 pub const SYS_IPC_CLOSE: u64 = 26;
 pub const SYS_GUI_WAIT: u64 = 27;
 pub const SYS_SYS_INFO: u64 = 28;
+pub const SYS_GPU_INFO: u64 = 29;
 
 // ====== flags and errors ======
 
@@ -577,4 +578,49 @@ pub struct SysInfo {
 #[inline]
 pub fn sys_info(out: &mut SysInfo) -> i64 {
     raw_syscall(SYS_SYS_INFO, out as *mut SysInfo as u64, 0, 0)
+}
+
+pub const GPU_BACKEND_GOP_SW: u32 = 0;
+pub const GPU_BACKEND_VIRTIO_2D: u32 = 1;
+pub const GPU_BACKEND_VIRTIO_3D: u32 = 2;
+pub const GPU_BACKEND_INTEL: u32 = 3;
+pub const GPU_BACKEND_AMD: u32 = 4;
+
+pub const GPU_CAP_2D_FLUSH: u32 = 1 << 0;
+pub const GPU_CAP_2D_BLIT: u32 = 1 << 1;
+pub const GPU_CAP_HW_CURSOR: u32 = 1 << 2;
+pub const GPU_CAP_3D_VIRGL: u32 = 1 << 3;
+pub const GPU_CAP_VULKAN_VENUS: u32 = 1 << 4;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GpuInfo {
+    pub backend: u32,
+    pub caps: u32,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: u32,
+    pub present_calls: u64,
+    pub max_shm_bytes: u64,
+    pub vendor_id: u32,
+    pub device_id: u32,
+    pub name: [u8; 16],
+}
+
+const _: () = assert!(core::mem::size_of::<GpuInfo>() == 64);
+
+impl GpuInfo {
+    pub fn name_str(&self) -> &str {
+        let len = self.name.iter().position(|&b| b == 0).unwrap_or(self.name.len());
+        core::str::from_utf8(&self.name[..len]).unwrap_or("GPU")
+    }
+}
+
+// ====== gpu_info ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn gpu_info(out: &mut GpuInfo) -> i64 {
+    raw_syscall(SYS_GPU_INFO, out as *mut GpuInfo as u64, 0, 0)
 }

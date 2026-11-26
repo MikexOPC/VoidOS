@@ -34,5 +34,6 @@ BOOT_U64 x86_gui_sys_shm_unmap(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id);
 
 BOOT_U64 x86_gui_sys_shm_publish(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id);
 BOOT_U64 x86_gui_sys_shm_view(X86_PROCESS_CPU *cpu, BOOT_U64 shm_id, BOOT_U64 out_ptr);
+BOOT_U64 x86_gui_sys_gpu_info(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr);
 
 #endif
