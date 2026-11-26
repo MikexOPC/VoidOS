@@ -7,10 +7,8 @@ void xp_panic_integration_probe(void);
 #include "../diagnostics/log.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/integration/kernel.h"
 #include "arch/x86/kernel/drivers/video/virtio/integration/kernel.h"
-#ifdef KERNEL_VGPU_IOMMU
 #include "arch/x86/kernel/drivers/video/virtio/iommu/session.h"
 #include "arch/x86/mm/arena/objects.h"
-#endif
 #include "arch/x86/kernel/serial/interrupts/route.h"
 #include "arch/x86/kernel/timer/hpet/watchdog/integration/kernel.h"
 #include "arch/x86/mm/heap/binding.h"
@@ -26,12 +24,9 @@ static void video_private(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CONTE
         x86_uart_lapic_mapping(), paging)) kernel_panic("FRAMEBUFFER_MAPPING_FAILED");
     if (context->Info.Acpi.Source && !x86_vgpu_kernel_start(context,&startup->Memory->Window,
         x86_uart_lapic_mapping(),paging)) kernel_panic("VGPU_MAPPING_FAILED");
-#ifdef KERNEL_VGPU_IOMMU
-    // V2b: persistent GPU translation, started before the watchdog fixes its memory budget.
     if (context->Info.Acpi.Source && !x86_vgpu_kernel_session_start(
         (const KERNEL_ACPI_DIRECTORY *)x86_object_arena_data(&startup->Memory->Arena, startup->Acpi)))
     kernel_panic("VGPU_SESSION_FAILED");
-#endif
 #endif
 }
 
@@ -73,10 +68,7 @@ void kernel_startup_devices(const KERNEL_STARTUP *startup, const KERNEL_BOOT_CON
     #if !defined(KERNEL_TEST_CONSOLE_ACTIVE) && !defined(KERNEL_CONSOLE_SHELL)
         video_private(startup, context, paging);
     #else
-    #ifdef KERNEL_VGPU_IOMMU
-        // After the watchdog closed its accounting: TE off and the GPU domain released.
         if (!x86_vgpu_kernel_session_stop()) kernel_panic("VGPU_SESSION_RETAINED");
-    #endif
         if (!x86_fb_kernel_inventory_verify(context, &startup->Memory->Physical,
             x86_uart_lapic_mapping(), paging)
         )

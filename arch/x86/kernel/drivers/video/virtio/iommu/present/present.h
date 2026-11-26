@@ -1,6 +1,10 @@
 #ifndef X86_VGPU_PRESENT_H
 #define X86_VGPU_PRESENT_H
+#ifdef KERNEL_VGPU_IOMMU
 #include "../domain.h"
+#else
+#include "arch/x86/kernel/drivers/video/virtio/mapping.h"
+#endif
 #include "arch/x86/kernel/drivers/video/virtio/resources/mapping.h"
 #include "arch/x86/kernel/drivers/video/virtio/queues/native.h"
 #include "arch/x86/kernel/drivers/video/framebuffer/pixels/session.h"
@@ -47,6 +51,8 @@ typedef struct {
     BOOT_U64                    Slows, Timeouts, Recovered;
     // Test-only (KERNEL_TEST_VGPU_PRESENT_STALL): the observation of a completed TRANSFER is held.
     BOOT_U32                    StallHold;
+    // Direct physical DMA when VT-d IOMMU is absent (VIRTIO_F_ACCESS_PLATFORM = 0).
+    BOOT_U32                    DirectDma;
 } X86_VGPU_PRESENT;
 
 // Z5-A: inside the V2b start, after TE=1. Returns 0 only when the GPU reset could not be confirmed.

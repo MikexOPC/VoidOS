@@ -1,4 +1,5 @@
 #include "mapping.h"
+#include <intrin.h>
 #ifdef KERNEL_AP_RUNTIME
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #endif
@@ -10,8 +11,12 @@ int x86_vgpu_authority(const X86_PAGING_GPU_AUTH *owner)
 {
     X86_FB_CPU cpu;
     volatile BOOT_U64 *root;
-    if (!owner || owner->Self != (BOOT_U64)owner || owner->Ready != 1 ||
-        !x86_fb_cpu(&cpu) || cpu.Root != owner->Root || cpu.Pat != owner->Pat ||
+    if (!owner || owner->Self != (BOOT_U64)owner || owner->Ready != 1) return 0;
+    BOOT_U64 flags = __readeflags();
+    _disable();
+    int cpu_ok = x86_fb_cpu(&cpu);
+    if (flags & 512ULL) _enable();
+    if (!cpu_ok || cpu.Root != owner->Root || cpu.Pat != owner->Pat ||
         cpu.PhysicalBits != owner->PhysicalBits) return 0;
     root=x86_fb_root();
     return root && (root[X86_GPU_SLOT]&~0x60ULL)==(owner->Tables[0].Base|3);

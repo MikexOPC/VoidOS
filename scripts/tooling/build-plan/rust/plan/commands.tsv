@@ -58,6 +58,24 @@ c	arch/x86/kernel/drivers/video/virtio/construction.c
 c	arch/x86/kernel/drivers/video/virtio/lifecycle.c
 c	arch/x86/kernel/drivers/video/virtio/pci/access.c
 c	arch/x86/kernel/drivers/video/virtio/integration/kernel.c
+c	kernel/diagnostics/latency.c
+c	arch/x86/mm/dma/arena.c
+c	kernel/drivers/video/virtio/initialization/protocol.c
+c	kernel/drivers/video/virtio/queues/setup.c
+c	kernel/drivers/video/virtio/queues/exchange.c
+c	kernel/drivers/video/virtio/queues/response.c
+c	kernel/drivers/video/virtio/resources/resource.c
+c	kernel/drivers/video/virtio/resources/scanout.c
+c	arch/x86/kernel/drivers/video/virtio/initialization/access.c
+c	arch/x86/kernel/drivers/video/virtio/initialization/transport.c
+c	arch/x86/kernel/drivers/video/virtio/queues/access.c
+c	arch/x86/kernel/drivers/video/virtio/queues/native.c
+c	arch/x86/kernel/drivers/video/virtio/queues/pci.c
+c	arch/x86/kernel/drivers/video/virtio/resources/construction.c
+c	arch/x86/kernel/drivers/video/virtio/resources/mapping.c
+c	arch/x86/kernel/drivers/video/virtio/iommu/session.c
+c	arch/x86/kernel/drivers/video/virtio/iommu/present/lifecycle.c
+c	arch/x86/kernel/drivers/video/virtio/iommu/present/update.c
 c	kernel/mm/inventory.c
 c	kernel/mm/physical/allocator.c
 c	kernel/mm/physical/allocation/state.c
@@ -191,6 +209,9 @@ rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/drivers/video/framebuffer/rust/tables/contents.rs	-o	{out}/framebuffer-tables.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	{repo}/kernel/drivers/video/virtio/discovery/rust/ffi/gateway.rs	-o	{out}/vgpu-fields.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	{repo}/kernel/drivers/video/virtio/mapping/rust/ffi/pages.rs	-o	{out}/vgpu-pages.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	{repo}/kernel/drivers/video/virtio/initialization/rust/ffi/policy.rs	-o	{out}/vgpu-init.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	{repo}/kernel/drivers/video/virtio/queues/rust/ffi/validation.rs	-o	{out}/vgpu-queue.obj
+rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	-D	warnings	-C	panic=abort	-C	opt-level=2	-C	overflow-checks=yes	{repo}/kernel/drivers/video/virtio/resources/rust/ffi/geometry.rs	-o	{out}/vgpu-geom.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/kernel/drivers/video/framebuffer/rust/drawing/validation.rs	-o	{out}/framebuffer-drawing.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/arch/x86/mm/regions/rust/layout/validation.rs	-o	{out}/region-layout.obj
 rustc.exe	--edition=2024	--crate-type=lib	--emit=obj	--target	x86_64-pc-windows-msvc	-C	panic=abort	-C	opt-level=2	-D	warnings	{repo}/kernel/mm/physical/rust/alignment/placement.rs	-o	{out}/physical-alignment.obj

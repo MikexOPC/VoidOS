@@ -215,7 +215,7 @@ int x86_console_open(X86_PS2_SESSION *session, KERNEL_DISPLAY display)
     x86_profile_start(session->Clock.Port, session->Clock.Mask);
 #endif
     fb = &session->Env.Context->Info.Framebuffer;
-    if (!fb->Base) { self->Absent = 1; return kernel_log(1, "KERNEL_CONSOLE_SHELL_ABSENT"); }
+    if (!x86_fb_target() && !fb->Base) { self->Absent = 1; return kernel_log(1, "KERNEL_CONSOLE_SHELL_ABSENT"); }
 #ifdef KERNEL_PS2_MOUSE
     if (!kernel_lock_initialize(&self->PointerLock, X86_CONSOLE_POINTER_RANK)) return 0;
 #endif

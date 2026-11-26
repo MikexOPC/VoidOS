@@ -113,17 +113,29 @@ int x86_vgpu_present_open(X86_VGPU_PRESENT *self, X86_VGPU_MAPPING *gpu, const K
 
     if (!bytes || !x86_vgpu_transport_open(gpu, directory, &self->Transport, &self->Io)) return kernel_log(2, "KERNEL_VGPU_PRESENT_OPEN_FAILED");
 
-    self->Io.Platform = 1;
+    self->Io.Platform = self->DirectDma ? 0U : 1U;
     self->Clock = (KERNEL_CLOCK){self->Io.Clock, self->Io.Context, self->Io.Mask, KERNEL_PM_TIMER_HZ};
     buffers.Bits = gpu->Authority.PhysicalBits;
 
     for (uint32_t index = 0; index < 4; ++index) {
         buffers.Views[index] = bytes + 4096ULL * index;
         buffers.Physical[index] = arena->Authority.Data.Base + 4096ULL * index;
-        buffers.Device[index] = x86_vgpu_iommu_device(buffers.Physical[index], 4096, 3);
+#ifdef KERNEL_VGPU_IOMMU
+        buffers.Device[index] = self->DirectDma
+            ? buffers.Physical[index]
+            : x86_vgpu_iommu_device(buffers.Physical[index], 4096, 3);
+#else
+        buffers.Device[index] = buffers.Physical[index];
+#endif
     }
 
-    BOOT_U64 backing = x86_vgpu_iommu_device(surface->Authority.Data.Base, surface->Authority.Bytes, 1);
+#ifdef KERNEL_VGPU_IOMMU
+    BOOT_U64 backing = self->DirectDma
+        ? surface->Authority.Data.Base
+        : x86_vgpu_iommu_device(surface->Authority.Data.Base, surface->Authority.Bytes, 1);
+#else
+    BOOT_U64 backing = surface->Authority.Data.Base;
+#endif
 
     if (!x86_vgpu_queue_open(&self->Transport, &self->Native, &access) ||
         !buffers.Device[0] || !buffers.Device[1] || !buffers.Device[2] || !buffers.Device[3] || !backing

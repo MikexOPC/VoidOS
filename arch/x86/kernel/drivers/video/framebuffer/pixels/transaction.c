@@ -8,13 +8,15 @@ int x86_fb_transaction_begin(X86_FB_MAPPING *owner, const X86_FB_PIXEL_RECT *rec
 {
     X86_FB_PIXEL_RECT captured[3];
     BOOT_U64 area = 0;
+    const X86_FB_TARGET *target = x86_fb_target();
+    int redirect_only = (target != 0 && owner && !owner->Published);
     if (!transaction || ((BOOT_U64)transaction & 7) || !rects || ((BOOT_U64)rects & 3) || !count || count > 3 ||
-        !owner || ((BOOT_U64)owner & 7) || owner->Self != (BOOT_U64)owner || !owner->Context) return 0;
+        !owner || ((BOOT_U64)owner & 7) ||
+        (!redirect_only && (owner->Self != (BOOT_U64)owner || !owner->Context))) return 0;
     if (os_address_ranges_overlap((BOOT_U64)transaction,sizeof(*transaction),(BOOT_U64)owner,sizeof(*owner)) ||
-        os_address_ranges_overlap((BOOT_U64)transaction,sizeof(*transaction),(BOOT_U64)owner->Context,sizeof(*owner->Context))) return 0;
+        (!redirect_only && os_address_ranges_overlap((BOOT_U64)transaction,sizeof(*transaction),(BOOT_U64)owner->Context,sizeof(*owner->Context)))) return 0;
     OS_FRAMEBUFFER geometry;
     const OS_FRAMEBUFFER *fb = x86_fb_surface_geometry(owner, &geometry);
-    const X86_FB_TARGET *target = x86_fb_target();
     if (!fb) return 0;
     for (BOOT_U32 index = 0; index < count; ++index) {
         // GOP: the mapped aperture pages; redirected target: its own byte span (offset 0).
@@ -53,8 +55,10 @@ int x86_fb_transaction_pixel(X86_FB_PIXEL_TRANSACTION *transaction,
     volatile BOOT_U32 *pixel;
     if (!transaction || transaction->Self != (BOOT_U64)transaction || transaction->Failed ||
         !word || ((BOOT_U64)word & 3) || (write != 0 && write != 1) || !transaction->Count || transaction->Count > 3) return 0;
-    if (!transaction->Pixel.Owner || transaction->Pixel.Owner->Self != (BOOT_U64)transaction->Pixel.Owner ||
-        transaction->Pixel.Owner->Ready != X86_FB_RENDERING || transaction->Pixel.Owner->Published != 1 ||
+    if (!transaction->Pixel.Owner ||
+        (!x86_fb_target() && (transaction->Pixel.Owner->Self != (BOOT_U64)transaction->Pixel.Owner ||
+        transaction->Pixel.Owner->Published != 1)) ||
+        transaction->Pixel.Owner->Ready != X86_FB_RENDERING ||
         transaction->Root != transaction->Pixel.Owner->Authority.Root) goto failed;
     for (BOOT_U32 index = 0; index < transaction->Count; ++index) {
         const X86_FB_PIXEL_RECT *rect = &transaction->Rects[index];
@@ -94,12 +98,14 @@ int x86_fb_transaction_span(X86_FB_PIXEL_TRANSACTION *tx, BOOT_U32 rect,
     bytes = (BOOT_U64)region.Width * 4;
     address = (BOOT_U64)words;
     if (!region.Width || region.Width > 72 || row >= region.Height || capacity < region.Width ||
-        address > ~0ULL - bytes || !tx->Pixel.Owner || tx->Pixel.Owner->Self != (BOOT_U64)tx->Pixel.Owner ||
-        tx->Pixel.Owner->Ready != X86_FB_RENDERING || tx->Pixel.Owner->Published != 1 ||
+        address > ~0ULL - bytes || !tx->Pixel.Owner ||
+        (!x86_fb_target() && (tx->Pixel.Owner->Self != (BOOT_U64)tx->Pixel.Owner ||
+        tx->Pixel.Owner->Published != 1)) ||
+        tx->Pixel.Owner->Ready != X86_FB_RENDERING ||
         tx->Root != tx->Pixel.Owner->Authority.Root || tx->Accesses > 2268 - region.Width ||
         os_address_ranges_overlap(address,bytes,(BOOT_U64)tx,sizeof(*tx)) ||
         os_address_ranges_overlap(address,bytes,(BOOT_U64)tx->Pixel.Owner,sizeof(*tx->Pixel.Owner)) ||
-        os_address_ranges_overlap(address,bytes,(BOOT_U64)tx->Pixel.Owner->Context,sizeof(*tx->Pixel.Owner->Context)) ||
+        (tx->Pixel.Owner->Context && os_address_ranges_overlap(address,bytes,(BOOT_U64)tx->Pixel.Owner->Context,sizeof(*tx->Pixel.Owner->Context))) ||
         os_address_ranges_overlap(address,bytes,X86_FB_VIRTUAL,4321ULL*4096) ||
         (x86_fb_target() && os_address_ranges_overlap(address,bytes,x86_fb_target()->Base,x86_fb_target()->Bytes))) goto failed;
     for (BOOT_U32 x = 0; x < region.Width; ++x) {
@@ -136,7 +142,7 @@ int x86_fb_transaction_end(X86_FB_PIXEL_TRANSACTION *transaction)
         !transaction->Pixel.Owner || transaction->Pixel.Owner->Ready != X86_FB_RENDERING ||
         !transaction->Accesses || transaction->Root != transaction->Pixel.Owner->Authority.Root ||
         !x86_fb_pixels_end(&transaction->Pixel)) return 0;
-    transaction->Pixel.Owner->Ready = 2;
+    transaction->Pixel.Owner->Ready = transaction->Pixel.Owner->Published ? 2 : 0;
     transaction->Self = 0;
     return 1;
 }
@@ -149,7 +155,7 @@ int x86_fb_transaction_abort(X86_FB_PIXEL_TRANSACTION *transaction)
         !transaction->Pixel.Owner || transaction->Pixel.Owner->Ready != X86_FB_RENDERING ||
         transaction->Root != transaction->Pixel.Owner->Authority.Root ||
         !x86_fb_pixels_end(&transaction->Pixel)) return 0;
-    transaction->Pixel.Owner->Ready = 2;
+    transaction->Pixel.Owner->Ready = transaction->Pixel.Owner->Published ? 2 : 0;
     transaction->Self = 0;
     return 1;
 }

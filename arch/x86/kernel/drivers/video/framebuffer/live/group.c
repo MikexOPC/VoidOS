@@ -29,6 +29,10 @@ static int budget_matches(const X86_FB_MAPPING *owner, const X86_PAGING_INVENTOR
 static int prepare(X86_FB_MAPPING *owner, X86_PAGING_INVENTORY *expected, BOOT_U64 *pages)
 {
     const X86_PAGING_INVENTORY *original;
+    if (x86_fb_target() && owner && !owner->Published) {
+        *pages = 0;
+        return x86_fb_target()->Valid(x86_fb_target());
+    }
     if (!owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 || owner->Published != 1 ||
         !owner->Context || !owner->Window || !owner->Window->Pool || !(original = owner->Inventory) ||
         owner->Allocated < 3 || owner->Allocated > X86_PAGING_VIDEO_TABLES) return 0;
@@ -62,13 +66,16 @@ static __declspec(noinline) int group_private(X86_FB_MAPPING *owner, BOOT_U32 co
         kernel_preempt_section_leave(saved_if);
         return 0;
     }
+    int redirect_only = (x86_fb_target() != 0 && !owner->Published);
     original = owner->Inventory;
-    owner->Inventory = &expected;
+    if (!redirect_only)
+        owner->Inventory = &expected;
     result = pointer ? x86_fb_group_pointer(owner, column, row, scalars, count, foreground, background, ticks, caret, pointer) :
         x86_fb_group_caret(owner, column, row, scalars, count, foreground, background, ticks, caret);
     owner->Inventory = original;
-    result = result && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
-        budget_matches(owner, original, pages);
+    if (!redirect_only)
+        result = result && pages == x86_scheduler_live_stack_pages_for(owner->Window->Pool, owner->Authority.Root) &&
+            budget_matches(owner, original, pages);
     kernel_preempt_section_leave(saved_if);
     return result;
 }
@@ -142,6 +149,10 @@ static __declspec(noinline) int audit_private(X86_FB_MAPPING *owner, X86_PAGING_
     section.Clock = clock;
     section.SavedIf = kernel_preempt_section_enter();
     section.Start = x86_pm_read((unsigned short)clock->Port);
+    if (x86_fb_target() && owner && !owner->Published) {
+        *max_masked = 0;
+        return x86_fb_target()->Valid(x86_fb_target()) ? X86_FB_AUDIT_OK : X86_FB_AUDIT_FAILED;
+    }
     if (prepare(owner, expected, &pages)) {
         section.Pool = owner->Window->Pool;
         section.PagingGeneration = x86_paging_generation();

@@ -9,7 +9,12 @@
 
 static BOOT_U64 ticks_private(const X86_VGPU_SESSION *self)
 {
+#ifdef KERNEL_VGPU_IOMMU
     return self->ClockPort ? x86_pm_read((unsigned short)self->ClockPort) & self->ClockMask : ~0ULL;
+#else
+    (void)self;
+    return ~0ULL;
+#endif
 }
 
 // ====== elapsed_private ======
@@ -71,30 +76,50 @@ int x86_vgpu_session_start(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu, const 
 
     const OS_FRAMEBUFFER *fb = &gpu->Context->Info.Framebuffer;
     BOOT_U64 since = 0, flags = quiet_begin(self, &since);
+    self->DirectDma = 0U;
+#ifdef KERNEL_VGPU_IOMMU
     int route = x86_vgpu_iommu_route(gpu, directory);
 
-    if (route != X86_VGPU_IOMMU_READY) {
+    if (route == X86_VGPU_IOMMU_ABSENT) {
+        self->DirectDma = 1U;
+    } else if (route != X86_VGPU_IOMMU_READY) {
         quiet_end(self, flags, since);
-        return kernel_log(route == X86_VGPU_IOMMU_ABSENT ? 1 : 2,
-            route == X86_VGPU_IOMMU_ABSENT ? "KERNEL_VGPU_SESSION_UNTRANSLATED" : "KERNEL_VGPU_SESSION_ROUTE_FAILED");
+        return kernel_log(2, "KERNEL_VGPU_SESSION_ROUTE_FAILED");
     }
+#else
+    self->DirectDma = 1U;
+#endif
 
     if (!kernel_physical_budget_read(gpu->Window->Pool, &self->Budget)) {
         quiet_end(self, flags, since);
         return 0;
     }
 
-    // V2c draws the console into this surface; until then it only sizes the GPU domain.
+    BOOT_U32 cap_w = self->DirectDma ? 1280U : X86_VGPU_SURFACE_WIDTH;
+    BOOT_U32 cap_h = self->DirectDma ? 800U : X86_VGPU_SURFACE_HEIGHT;
+    BOOT_U32 surf_w = fb->Width > cap_w ? fb->Width : cap_w;
+    BOOT_U32 surf_h = fb->Height > cap_h ? fb->Height : cap_h;
     BOOT_U32 step = 1;
 
-    if (!fb->Width || !fb->Height ||
-        !x86_dma_arena_bind(gpu->Context, gpu->Window, gpu->Lapic, gpu->Inventory, gpu->Capture, 4, &self->Arena) ||
-        (step = 2, !x86_vgpu_surface_bind(gpu, fb->Width > X86_VGPU_SURFACE_WIDTH ? fb->Width : X86_VGPU_SURFACE_WIDTH,
-            fb->Height > X86_VGPU_SURFACE_HEIGHT ? fb->Height : X86_VGPU_SURFACE_HEIGHT, &self->Surface)) ||
-        (step = 3, !x86_vgpu_iommu_enable(&self->Arena.Authority.Data, &self->Surface.Authority.Data))
-    ) {
+    int iommu_ok = 1;
+    if (!x86_dma_arena_bind(gpu->Context, gpu->Window, gpu->Lapic, gpu->Inventory, gpu->Capture, 4, &self->Arena) ||
+        (step = 2, !x86_vgpu_surface_bind(gpu, surf_w, surf_h, &self->Surface))) {
+        iommu_ok = 0;
+    }
+#ifdef KERNEL_VGPU_IOMMU
+    if (iommu_ok && !self->DirectDma) {
+        step = 3;
+        iommu_ok = x86_vgpu_iommu_enable(&self->Arena.Authority.Data, &self->Surface.Authority.Data);
+    }
+#endif
+    if (!iommu_ok) {
         (void)number_private("KERNEL_VGPU_SESSION_FAILED_STEP: ", step);
-        int released = x86_vgpu_iommu_disable() && release_private(self, gpu);
+        int disabled = 1;
+#ifdef KERNEL_VGPU_IOMMU
+        if (!self->DirectDma)
+            disabled = x86_vgpu_iommu_disable();
+#endif
+        int released = disabled && release_private(self, gpu);
 
         self->State = released ? X86_VGPU_SESSION_OFF : X86_VGPU_SESSION_RETAINED;
         quiet_end(self, flags, since);
@@ -102,11 +127,14 @@ int x86_vgpu_session_start(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu, const 
     }
 
     self->State = X86_VGPU_SESSION_TRANSLATING;
-
-    if (!x86_vgpu_iommu_clock(&self->ClockPort, &self->ClockMask)) self->ClockPort = 0;
+    self->ClockPort = 0;
+#ifdef KERNEL_VGPU_IOMMU
+    if (!self->DirectDma && !x86_vgpu_iommu_clock(&self->ClockPort, &self->ClockMask)) self->ClockPort = 0;
+#endif
 
     // V2c: the console moves to the GPU; a refused bring-up keeps GOP, an unconfirmed reset retains.
 #ifndef KERNEL_PROFILE_VGPU_NO_PRESENT
+    self->Present.DirectDma = self->DirectDma;
     if (!x86_vgpu_present_open(&self->Present, gpu, directory, &self->Arena, &self->Surface)) self->State = X86_VGPU_SESSION_RETAINED;
 #else
     // Profile image B: translation, arena and surface as in V2c, but the console stays on GOP.
@@ -137,6 +165,9 @@ int x86_vgpu_session_poll(X86_VGPU_SESSION *self)
 
     ++self->Polls;
 
+    if (self->DirectDma) return 1;
+
+#ifdef KERNEL_VGPU_IOMMU
     BOOT_U64 since = ticks_private(self);
     int quiet = x86_vgpu_iommu_quiet();
     BOOT_U64 elapsed = elapsed_private(self, since);
@@ -148,6 +179,9 @@ int x86_vgpu_session_poll(X86_VGPU_SESSION *self)
     // X5-A: a GPU fault (or unreadable fault registers) withdraws the GPU; the console returns to GOP.
     self->State = X86_VGPU_SESSION_COMPROMISED;
     return kernel_log(2, "KERNEL_VGPU_SESSION_GPU_FAULT") && x86_vgpu_present_abandon(&self->Present);
+#else
+    return 1;
+#endif
 }
 
 // ====== x86_vgpu_session_stop ======
@@ -174,11 +208,13 @@ int x86_vgpu_session_stop(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu)
 
     BOOT_U64 since = 0, flags = quiet_begin(self, &since);
 
-    if (!x86_vgpu_iommu_disable()) {
+#ifdef KERNEL_VGPU_IOMMU
+    if (!self->DirectDma && !x86_vgpu_iommu_disable()) {
         self->State = X86_VGPU_SESSION_RETAINED;
         quiet_end(self, flags, since);
         return 0;
     }
+#endif
 
     int released = release_private(self, gpu);
 

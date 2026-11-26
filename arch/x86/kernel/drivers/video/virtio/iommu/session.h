@@ -25,6 +25,8 @@
 typedef struct {
     BOOT_U32                    Lock;
     BOOT_U32                    State;
+    BOOT_U32                    DirectDma;
+    BOOT_U32                    Reserved;
     X86_DMA_ARENA               Arena;
     X86_SURFACE_MAPPING         Surface;
     BOOT_U64                    Budget, Polls, Held;

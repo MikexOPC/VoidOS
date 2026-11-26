@@ -64,7 +64,7 @@ int x86_fb_cursor_text(X86_FB_MAPPING *owner, const X86_FB_TEXT *text,
     // V2c: the background under the cursor belongs to the target it was read from; after a target
     // change (GPU bring-up or GOP fallback) it is dropped and the full redraw repaints the old box.
     if (backup.Valid && backup.Target != x86_fb_target()) backup.Valid = 0;
-    if (backup.Failed || !owner || !owner->Context || !text || !font || !glyphs || !pointer || pointer->Visible > 1 ||
+    if (backup.Failed || !owner || (!x86_fb_target() && !owner->Context) || !text || !font || !glyphs || !pointer || pointer->Visible > 1 ||
         !count || count > 8 || (backup.Valid && (backup.Self != (BOOT_U64)&backup ||
         backup.Owner != owner || backup.Root != owner->Authority.Root ||
         !same_surface(&backup.Surface, x86_fb_surface_geometry(owner, &geometry))))) return 0;

@@ -1,4 +1,5 @@
 #include "mapping.h"
+#include <intrin.h>
 #ifdef KERNEL_AP_RUNTIME
 #include "arch/x86/kernel/cpu/percpu/service/native/native.h"
 #endif
@@ -10,8 +11,12 @@ int x86_vgpu_surface_check(const X86_SURFACE_AUTH *auth)
 {
     X86_FB_CPU cpu;
     volatile BOOT_U64 *root=x86_fb_root();
-    return auth && auth->Self==(BOOT_U64)auth && auth->Ready==1 &&
-        x86_fb_cpu(&cpu) && cpu.Root==auth->Root && cpu.Pat==auth->Pat &&
+    if (!auth || auth->Self!=(BOOT_U64)auth || auth->Ready!=1) return 0;
+    BOOT_U64 flags = __readeflags();
+    _disable();
+    int cpu_ok = x86_fb_cpu(&cpu);
+    if (flags & 512ULL) _enable();
+    return cpu_ok && cpu.Root==auth->Root && cpu.Pat==auth->Pat &&
         cpu.PhysicalBits==auth->PhysicalBits && root &&
         (root[X86_SURFACE_SLOT]&~0x60ULL)==(auth->Tables[0].Base|3);
 }

@@ -37,8 +37,9 @@ int x86_fb_cell(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row, BOOT_U32 s
     int drawn, restored;
     OS_FRAMEBUFFER geometry;
     const OS_FRAMEBUFFER *surface = owner ? x86_fb_surface_geometry(owner, &geometry) : 0;
-    if (!ticks || !owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 ||
-        !owner->Context || !owner->Context->Info.Framebuffer.Base || !surface ||
+    int redirect_only = (x86_fb_target() != 0 && owner && !owner->Published);
+    if (!ticks || !owner || (!redirect_only && (owner->Self != (BOOT_U64)owner || owner->Ready != 2 ||
+        !owner->Context || !owner->Context->Info.Framebuffer.Base)) || !surface ||
         column >= 240 || row >= 67 || column >= surface->Width / font->Width ||
         row >= surface->Height / font->Height ||
         (foreground | background) & 0xff000000U || !x86_fb_font_scalar(scalar) ||
@@ -72,10 +73,11 @@ int x86_fb_group_pointer(X86_FB_MAPPING *owner, BOOT_U32 column, BOOT_U32 row,
     int drawn, restored;
     OS_FRAMEBUFFER geometry;
     const OS_FRAMEBUFFER *surface = owner ? x86_fb_surface_geometry(owner, &geometry) : 0;
+    int redirect_only = (x86_fb_target() != 0 && owner && !owner->Published);
     if (!ticks || !scalars || ((BOOT_U64)scalars & 3) || !count || count > 8 || (caret != ~0U && caret >= count) ||
         (BOOT_U64)scalars > ~0ULL - count * sizeof(*scalars) ||
-        !owner || owner->Self != (BOOT_U64)owner || owner->Ready != 2 || !owner->Context ||
-        !owner->Context->Info.Framebuffer.Base || !surface || row >= 67 ||
+        !owner || (!redirect_only && (owner->Self != (BOOT_U64)owner || owner->Ready != 2 || !owner->Context ||
+        !owner->Context->Info.Framebuffer.Base)) || !surface || row >= 67 ||
         row >= surface->Height / font->Height ||
         (foreground | background) & 0xff000000U || !x86_fb_cell_clock_available()) return 0;
     columns = surface->Width / font->Width;

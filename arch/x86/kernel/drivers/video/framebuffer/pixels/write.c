@@ -34,6 +34,8 @@ void x86_fb_verify_counts(BOOT_U64 *full, BOOT_U64 *skipped, BOOT_U64 *accepted)
 // session after a reset, or an owner/CPU change).
 int x86_fb_audit(X86_FB_MAPPING *owner)
 {
+    if (redirect && owner && !owner->Published)
+        return redirect->Valid(redirect);
     return owner && owner->Context && owner->Window && owner->Window->Pool && owner->Lapic && owner->Inventory &&
         x86_paging_inventory_verify_video(owner->Context, owner->Window->Pool, owner->Lapic, &owner->Authority,
             x86_fb_authority, owner->Inventory);
@@ -97,11 +99,11 @@ const X86_FB_TARGET *x86_fb_target(void) { return redirect; }
 
 const OS_FRAMEBUFFER *x86_fb_surface_geometry(const X86_FB_MAPPING *owner, OS_FRAMEBUFFER *scratch)
 {
-    if (!owner || !owner->Context || !scratch) return 0;
+    if (!scratch) return 0;
 
-    if (!redirect) return &owner->Context->Info.Framebuffer;
+    if (!redirect) return (owner && owner->Context) ? &owner->Context->Info.Framebuffer : 0;
 
-    *scratch = owner->Context->Info.Framebuffer;
+    *scratch = (OS_FRAMEBUFFER){0};
     scratch->Base = redirect->Base;
     scratch->Width = redirect->Width;
     scratch->Height = redirect->Height;
@@ -120,21 +122,23 @@ int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
     const OS_FRAMEBUFFER *fb;
     OS_FRAMEBUFFER geometry;
     BOOT_U64 first, last, mapped, start, base;
-    if (!session || !owner || ((BOOT_U64)owner & 7) || owner->Self != (BOOT_U64)owner ||
-        owner->Ready != 2 || owner->Published != 1 || !owner->Context || !owner->Window ||
+    int redirect_only = (redirect != 0 && owner && !owner->Published);
+    if (!session || !owner || ((BOOT_U64)owner & 7) || !x86_exception_environment()) return 0;
+    if (!redirect_only && (owner->Self != (BOOT_U64)owner || !owner->Context ||
+        owner->Ready != 2 || owner->Published != 1 || !owner->Window ||
         !owner->Window->Pool || !owner->Lapic || !owner->Inventory ||
         owner->Allocated < 3 || owner->Allocated > X86_PAGING_VIDEO_TABLES ||
         owner->Allocated != owner->Authority.Region.TableCount ||
-        owner->Pinned != (1U << owner->Allocated) - 1 || !x86_exception_environment() ||
-        !x86_page_window_idle_valid(owner->Window)) return 0;
+        owner->Pinned != (1U << owner->Allocated) - 1 ||
+        !x86_page_window_idle_valid(owner->Window))) return 0;
     fb = x86_fb_surface_geometry(owner, &geometry);
     if (!fb || !x86_fb_rect_valid(((BOOT_U64)fb->Height << 32) | fb->Width,
         ((BOOT_U64)y << 32) | x, ((BOOT_U64)height << 32) | width)) return 0;
     first = fb_pixel_offset(fb->Width, fb->Height, fb->Stride, fb->Format, fb->Used, x, y);
     last = fb_pixel_offset(fb->Width, fb->Height, fb->Stride, fb->Format, fb->Used,
         x + width - 1, y + height - 1);
-    if (first == ~0ULL || last == ~0ULL || !owner->Authority.Region.Pages ||
-        owner->Authority.Region.Pages > 4321) return 0;
+    if (first == ~0ULL || last == ~0ULL || (!redirect_only && (!owner->Authority.Region.Pages ||
+        owner->Authority.Region.Pages > 4321))) return 0;
     if (redirect) {
         // Redirected target: its own geometry; every addressed byte lies inside its mapping.
         X86_PROFILE_BEGIN(target_start);
@@ -155,11 +159,13 @@ int x86_fb_pixels_begin(X86_FB_MAPPING *owner, BOOT_U32 x, BOOT_U32 y,
 
     if (base & 3) return 0;
 
-    X86_PROFILE_BEGIN(verify_start);
-    int checked = verify_private(owner);
-    X86_PROFILE_END(X86_PROFILE_VERIFY, verify_start);
+    if (!redirect_only) {
+        X86_PROFILE_BEGIN(verify_start);
+        int checked = verify_private(owner);
+        X86_PROFILE_END(X86_PROFILE_VERIFY, verify_start);
 
-    if (!checked) return 0;
+        if (!checked) return 0;
+    }
     session->Owner = owner; session->Surface = *fb; session->Base = base;
     session->X = x; session->Y = y; session->Width = width; session->Height = height;
     return 1;
@@ -188,7 +194,7 @@ int x86_fb_pixels_store(const X86_FB_PIXEL_SESSION *session,
 
 int x86_fb_pixels_end(const X86_FB_PIXEL_SESSION *session)
 {
-    if (!session || !x86_fb_authority(&session->Owner->Authority)) return 0;
+    if (!session || (!(redirect && !session->Owner->Published) && !x86_fb_authority(&session->Owner->Authority))) return 0;
 
     if (!redirect) return 1;
 
