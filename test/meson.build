@@ -354,6 +354,7 @@ test('ahci_protocol_rust', ahci_protocol_rust)
 xhci_host = executable(
     'xhci_host',
     repo / 'kernel/drivers/usb/xhci/xhci.c',
+    repo / 'kernel/drivers/usb/xhci/msc.c',
     'kernel/drivers/usb/xhci/xhci_test.c',
     include_directories: inc,
 )

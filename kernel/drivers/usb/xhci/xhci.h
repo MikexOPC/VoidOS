@@ -96,6 +96,9 @@
 #define USB_SUBCLASS_BOOT       1U
 #define USB_PROTO_KEYBOARD      1U
 #define USB_PROTO_MOUSE         2U
+#define USB_CLASS_MSC           8U
+#define USB_SUBCLASS_SCSI       6U
+#define USB_PROTO_BOT           0x50U
 
 #define XHCI_RING_TRBS          64U
 #define XHCI_MAX_HID_DEVICES    16U
@@ -150,6 +153,45 @@ typedef struct {
     uint8_t   PrevReport[8];
 } XHCI_HID_SLOT;
 
+typedef struct {
+    uint8_t   ConfigValue;
+    uint8_t   InterfaceNumber;
+    uint8_t   BulkInAddr;
+    uint8_t   BulkOutAddr;
+    uint16_t  BulkInMps;
+    uint16_t  BulkOutMps;
+} XHCI_MSC_INFO;
+
+typedef struct {
+    uint8_t   Active;
+    uint8_t   SlotId;
+    uint8_t   PortId;
+    uint8_t   InDci;
+    uint8_t   OutDci;
+    uint8_t   InCycle;
+    uint8_t   OutCycle;
+    uint8_t   Reserved;
+    uint32_t  InEnqueue;
+    uint32_t  OutEnqueue;
+    uint32_t  BlockSize;
+    uint32_t  Tag;
+    uint64_t  TotalSectors;
+    uint8_t  *DevCtx;
+    uint64_t  DevCtxPhys;
+    XHCI_TRB *Ep0Ring;
+    uint64_t  Ep0RingPhys;
+    XHCI_TRB *InRing;
+    uint64_t  InRingPhys;
+    XHCI_TRB *OutRing;
+    uint64_t  OutRingPhys;
+    uint8_t  *CbwBuf;
+    uint64_t  CbwBufPhys;
+    uint8_t  *CswBuf;
+    uint64_t  CswBufPhys;
+    uint8_t  *DataBuf;
+    uint64_t  DataBufPhys;
+} XHCI_MSC_SLOT;
+
 typedef void (*XHCI_KEY_CALLBACK)(void *ctx, uint32_t code, uint32_t scalar, uint32_t flags);
 typedef void (*XHCI_MOUSE_CALLBACK)(void *ctx, int32_t dx, int32_t dy, uint32_t buttons);
 
@@ -194,12 +236,14 @@ typedef struct {
     uint64_t               ScratchBufPhys;
     XHCI_HID_SLOT          HidDevices[XHCI_MAX_HID_DEVICES];
     uint32_t               HidCount;
+    XHCI_MSC_SLOT          Msc;
     uint32_t               HotplugConnects;
     uint32_t               HotplugDisconnects;
     uint32_t               Ready;
 } KERNEL_XHCI_DEVICE;
 
 int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INFO *out);
+int kernel_xhci_parse_msc_config(const uint8_t *desc, uint32_t len, XHCI_MSC_INFO *out);
 void kernel_xhci_decode_hid_kbd(uint8_t prev_report[8], const uint8_t report[8],
     XHCI_KEY_CALLBACK on_key, void *ctx);
 void kernel_xhci_decode_hid_mouse(const uint8_t *report, uint32_t len,
@@ -208,5 +252,21 @@ void kernel_xhci_decode_hid_mouse(const uint8_t *report, uint32_t len,
 int kernel_xhci_init(KERNEL_XHCI_DEVICE *dev, const KERNEL_XHCI_TRANSPORT *transport);
 uint32_t kernel_xhci_poll_events(KERNEL_XHCI_DEVICE *dev);
 void kernel_xhci_stop(KERNEL_XHCI_DEVICE *dev);
+
+// Shared internal primitives used by msc.c
+void kernel_xhci_ring_doorbell(KERNEL_XHCI_DEVICE *dev, uint32_t slot, uint32_t target);
+int kernel_xhci_submit_cmd(KERNEL_XHCI_DEVICE *dev, uint64_t param, uint32_t status,
+    uint32_t control, XHCI_TRB *event_out);
+int kernel_xhci_ep0_transfer(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id,
+    XHCI_TRB *ep0_ring, uint64_t ep0_phys, uint32_t *ep0_enq, uint8_t *ep0_cycle,
+    uint64_t setup_pkt, uint64_t data_phys, uint32_t data_len, int dir_in);
+int kernel_xhci_wait_transfer(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t ep_dci, uint32_t timeout_ms);
+
+// USB Mass Storage (Bulk-Only Transport + SCSI)
+int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t port_idx,
+    uint32_t speed, XHCI_TRB *ep0_ring, uint64_t ep0_phys, uint32_t *ep0_enq,
+    uint8_t *ep0_cycle, const XHCI_MSC_INFO *info, uint8_t *dev_ctx, uint64_t dev_ctx_phys);
+int kernel_xhci_msc_read_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, void *buffer);
+int kernel_xhci_msc_write_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, const void *buffer);
 
 #endif

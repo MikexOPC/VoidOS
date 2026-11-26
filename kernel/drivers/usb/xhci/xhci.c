@@ -217,12 +217,17 @@ void kernel_xhci_decode_hid_mouse(const uint8_t *report, uint32_t len,
     on_mouse(ctx, dx, dy, buttons);
 }
 
-// ====== ring_doorbell_private ======
+// ====== kernel_xhci_ring_doorbell ======
 
-static void ring_doorbell_private(KERNEL_XHCI_DEVICE *dev, uint32_t slot, uint32_t target)
+void kernel_xhci_ring_doorbell(KERNEL_XHCI_DEVICE *dev, uint32_t slot, uint32_t target)
 {
     dev->Transport.Barrier(dev->Transport.Context);
     (void)dev->Transport.Write32(dev->Transport.Context, dev->DbOff + slot * 4U, target);
+}
+
+static void ring_doorbell_private(KERNEL_XHCI_DEVICE *dev, uint32_t slot, uint32_t target)
+{
+    kernel_xhci_ring_doorbell(dev, slot, target);
 }
 
 // ====== evt_ack_private ======
@@ -304,6 +309,14 @@ static int cmd_submit_private(KERNEL_XHCI_DEVICE *dev, uint64_t param, uint32_t 
     return 0;
 }
 
+// ====== kernel_xhci_submit_cmd ======
+
+int kernel_xhci_submit_cmd(KERNEL_XHCI_DEVICE *dev, uint64_t param, uint32_t status,
+    uint32_t control, XHCI_TRB *event_out)
+{
+    return cmd_submit_private(dev, param, status, control, event_out);
+}
+
 // ====== ep0_transfer_private ======
 
 static int ep0_transfer_private(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id,
@@ -377,6 +390,16 @@ static int ep0_transfer_private(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id,
             return 0;
     }
     return 0;
+}
+
+// ====== kernel_xhci_ep0_transfer ======
+
+int kernel_xhci_ep0_transfer(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id,
+    XHCI_TRB *ep0_ring, uint64_t ep0_phys, uint32_t *ep0_enq, uint8_t *ep0_cycle,
+    uint64_t setup_pkt, uint64_t data_phys, uint32_t data_len, int dir_in)
+{
+    return ep0_transfer_private(dev, slot_id, ep0_ring, ep0_phys, ep0_enq, ep0_cycle,
+        setup_pkt, data_phys, data_len, dir_in);
 }
 
 // ====== queue_hid_trb_private ======
@@ -464,6 +487,8 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
 {
     if (find_hid_by_port_private(dev, port_idx + 1U))
         return 0;
+    if (dev->Msc.Active && dev->Msc.PortId == (uint8_t)(port_idx + 1U))
+        return 0;
     const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
     uint32_t portsc_off = dev->CapLength + XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE;
     uint32_t portsc = 0;
@@ -541,6 +566,18 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
 
     XHCI_HID_INFO hid_info = {0};
     if (!kernel_xhci_parse_hid_config(scratch, 255U, &hid_info)) {
+        XHCI_MSC_INFO msc_info = {0};
+        if (!dev->Msc.Active && kernel_xhci_parse_msc_config(scratch, 255U, &msc_info)) {
+            if (kernel_xhci_msc_setup(dev, slot_id, port_idx, speed,
+                hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
+                &msc_info, hid->DevCtx, hid->DevCtxPhys)) {
+                hid->DevCtx = NULL;
+                hid->DevCtxPhys = 0ULL;
+                hid->Ep0Ring = NULL;
+                hid->Ep0RingPhys = 0ULL;
+                return 1;
+            }
+        }
         disable_slot_cmd_private(dev, slot_id);
         return 0;
     }
@@ -628,8 +665,16 @@ static void handle_port_change_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_id
                 --dev->HidCount;
             disable_slot_cmd_private(dev, old_slot);
             ++dev->HotplugDisconnects;
+        } else if (dev->Msc.Active && dev->Msc.PortId == (uint8_t)port_id) {
+            uint32_t old_slot = dev->Msc.SlotId;
+            dev->Msc.Active = 0U;
+            dev->Msc.SlotId = 0U;
+            dev->Msc.PortId = 0U;
+            disable_slot_cmd_private(dev, old_slot);
+            ++dev->HotplugDisconnects;
         }
-    } else if (!find_hid_by_port_private(dev, port_id)) {
+    } else if (!find_hid_by_port_private(dev, port_id) &&
+               !(dev->Msc.Active && dev->Msc.PortId == (uint8_t)port_id)) {
         if (probe_port_private(dev, port_idx))
             ++dev->HotplugConnects;
     }
@@ -850,4 +895,60 @@ void kernel_xhci_stop(KERNEL_XHCI_DEVICE *dev)
     (void)t->Write32(t->Context, dev->CapLength + XHCI_OP_USBCMD, 0U);
     (void)t->Write32(t->Context, dev->RtsOff + XHCI_RT_IR0_BASE + XHCI_IR_IMAN, XHCI_IMAN_IP);
     (void)wait_op_bits_private(dev, XHCI_OP_USBSTS, XHCI_STS_HCH, XHCI_STS_HCH, 200U);
+}
+
+// ====== kernel_xhci_wait_transfer ======
+
+int kernel_xhci_wait_transfer(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t ep_dci, uint32_t timeout_ms)
+{
+    if (!dev || !slot_id)
+        return 0;
+    const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
+    uint32_t start = 0, now = 0;
+    if (!t->ClockRead(t->Context, &start))
+        return 0;
+    uint64_t limit = ((uint64_t)timeout_ms * (uint64_t)t->ClockHz + 999ULL) / 1000ULL;
+    if (limit >= ((uint64_t)t->ClockMask >> 1))
+        limit = (uint64_t)t->ClockMask >> 2;
+    for (uint32_t spin = 0; spin < 50000000U; ++spin) {
+        t->Barrier(t->Context);
+        XHCI_TRB ev = dev->EvtRing[dev->EvtDequeue];
+        if ((ev.Control & 1U) == (uint32_t)dev->EvtCycle) {
+            ++dev->EvtDequeue;
+            if (dev->EvtDequeue >= XHCI_RING_TRBS) {
+                dev->EvtDequeue = 0U;
+                dev->EvtCycle ^= 1U;
+            }
+            evt_ack_private(dev);
+            uint32_t type = (ev.Control >> 10) & 0x3FU;
+            if (type == XHCI_TRB_TRANSFER_EVT) {
+                uint32_t ev_slot = (ev.Control >> 24) & 0xFFU;
+                uint32_t ev_ep = (ev.Control >> 16) & 0x1FU;
+                uint32_t cc = (ev.Status >> 24) & 0xFFU;
+                if (ev_slot == slot_id && (ep_dci == 0U || ev_ep == ep_dci))
+                    return cc == XHCI_CC_SUCCESS || cc == XHCI_CC_SHORT_PACKET;
+                for (uint32_t i = 0; i < XHCI_MAX_HID_DEVICES; ++i) {
+                    XHCI_HID_SLOT *hid = &dev->HidDevices[i];
+                    if (hid->Active && hid->SlotId == ev_slot) {
+                        if (cc == XHCI_CC_SUCCESS || cc == XHCI_CC_SHORT_PACKET) {
+                            if (hid->Protocol == USB_PROTO_KEYBOARD) {
+                                kernel_xhci_decode_hid_kbd(hid->PrevReport, hid->ReportBuf,
+                                    t->OnKey, t->Context);
+                            } else if (hid->Protocol == USB_PROTO_MOUSE) {
+                                kernel_xhci_decode_hid_mouse(hid->ReportBuf, hid->MaxPacketSize,
+                                    t->OnMouse, t->Context);
+                            }
+                            queue_hid_trb_private(dev, hid);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        if (!t->ClockRead(t->Context, &now))
+            return 0;
+        if (((now - start) & t->ClockMask) >= (uint32_t)limit)
+            return 0;
+    }
+    return 0;
 }

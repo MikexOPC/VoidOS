@@ -348,6 +348,168 @@ static void test_hotplug_lifecycle(void)
     assert(dev.Ready == 0U);
 }
 
+// ====== test_parse_msc_descriptor ======
+
+static void test_parse_msc_descriptor(void)
+{
+    // Standard USB Mass Storage (Class 0x08, SubClass 0x06 SCSI, Proto 0x50 BOT) + Bulk IN 0x81 + Bulk OUT 0x02.
+    static const uint8_t msc_cfg[] = {
+        9, 2, 32, 0, 1, 1, 0, 0x80, 50,
+        9, 4, 0, 0, 2, 0x08, 0x06, 0x50, 0,
+        7, 5, 0x81, 0x02, 0x00, 0x02, 0, // Bulk IN 512
+        7, 5, 0x02, 0x02, 0x00, 0x02, 0  // Bulk OUT 512
+    };
+    XHCI_MSC_INFO info = {0};
+    assert(kernel_xhci_parse_msc_config(msc_cfg, sizeof(msc_cfg), &info) == 1);
+    assert(info.ConfigValue == 1U);
+    assert(info.BulkInAddr == 0x81U);
+    assert(info.BulkOutAddr == 0x02U);
+    assert(info.BulkInMps == 512U);
+    assert(info.BulkOutMps == 512U);
+
+    // Reject HID descriptor or missing Bulk OUT endpoint.
+    assert(kernel_xhci_parse_msc_config(fake_kbd_cfg, sizeof(fake_kbd_cfg), &info) == 0);
+    assert(kernel_xhci_parse_msc_config(msc_cfg, 25U, &info) == 0);
+}
+
+// ====== Fake xHCI MSC Controller for BOT + SCSI Read/Write Test ======
+
+typedef struct {
+    FAKE_XHCI  Base;
+    uint8_t    Disk[16 * 512];
+    uint32_t   LastTag;
+    uint8_t    LastOp;
+    uint32_t   LastLba;
+    uint32_t   LastBlocks;
+    int        CorruptNextCswTag;
+    int        PendingDataOut;
+    uint8_t   *CbwPtr;
+    uint8_t   *CswPtr;
+    uint8_t   *DataPtr;
+} FAKE_MSC_XHCI;
+
+static const uint8_t fake_msc_cfg[] = {
+    9, 2, 32, 0, 1, 1, 0, 0x80, 50,
+    9, 4, 0, 0, 2, 0x08, 0x06, 0x50, 0,
+    7, 5, 0x81, 0x02, 0x00, 0x02, 0,
+    7, 5, 0x02, 0x02, 0x00, 0x02, 0
+};
+
+static int msc_fake_write32(void *ctx, uint32_t offset, uint32_t val)
+{
+    FAKE_MSC_XHCI *m = (FAKE_MSC_XHCI *)ctx;
+    FAKE_XHCI *f = &m->Base;
+    if (offset > 0x2000U && offset < 0x2100U) {
+        uint32_t slot = (offset - 0x2000U) / 4U;
+        if (val == 1U) {
+            memcpy(f->Pages[5], fake_msc_cfg, sizeof(fake_msc_cfg));
+            fake_push_evt(f, 0ULL, XHCI_CC_SUCCESS << 24,
+                (XHCI_TRB_TRANSFER_EVT << 10) | (1U << 16) | (slot << 24));
+            return 1;
+        }
+        // Bulk OUT (DCI 4 = EP 2 OUT)
+        if (val == 4U) {
+            if (!m->PendingDataOut) {
+                // CBW received
+                assert(m->CbwPtr[0] == 'U' && m->CbwPtr[1] == 'S' && m->CbwPtr[2] == 'B' && m->CbwPtr[3] == 'C');
+                m->LastTag = (uint32_t)m->CbwPtr[4] | ((uint32_t)m->CbwPtr[5] << 8) |
+                             ((uint32_t)m->CbwPtr[6] << 16) | ((uint32_t)m->CbwPtr[7] << 24);
+                m->LastOp = m->CbwPtr[15];
+                m->LastLba = ((uint32_t)m->CbwPtr[17] << 24) | ((uint32_t)m->CbwPtr[18] << 16) |
+                             ((uint32_t)m->CbwPtr[19] << 8) | (uint32_t)m->CbwPtr[20];
+                m->LastBlocks = ((uint32_t)m->CbwPtr[22] << 8) | (uint32_t)m->CbwPtr[23];
+                if (m->LastOp == 0x2AU)
+                    m->PendingDataOut = 1;
+            } else {
+                // WRITE(10) Data OUT stage
+                memcpy(&m->Disk[m->LastLba * 512U], m->DataPtr, m->LastBlocks * 512U);
+                m->PendingDataOut = 0;
+            }
+            fake_push_evt(f, 0ULL, XHCI_CC_SUCCESS << 24,
+                (XHCI_TRB_TRANSFER_EVT << 10) | (4U << 16) | (slot << 24));
+            return 1;
+        }
+        // Bulk IN (DCI 3 = EP 1 IN)
+        if (val == 3U) {
+            if (m->LastOp == 0x25U) {
+                // READ CAPACITY(10): 16 sectors -> last_lba = 15, block_size = 512
+                memset(m->DataPtr, 0, 8U);
+                m->DataPtr[3] = 15U;
+                m->DataPtr[6] = 0x02U;
+                m->LastOp = 0xFFU;
+            } else if (m->LastOp == 0x28U) {
+                // READ(10) Data IN stage
+                memcpy(m->DataPtr, &m->Disk[m->LastLba * 512U], m->LastBlocks * 512U);
+                m->LastOp = 0xFFU;
+            } else {
+                // CSW stage
+                uint32_t tag = m->CorruptNextCswTag ? (m->LastTag ^ 0xDEADU) : m->LastTag;
+                m->CorruptNextCswTag = 0;
+                m->CswPtr[0] = 'U'; m->CswPtr[1] = 'S'; m->CswPtr[2] = 'B'; m->CswPtr[3] = 'S';
+                m->CswPtr[4] = (uint8_t)(tag & 0xFFU);
+                m->CswPtr[5] = (uint8_t)((tag >> 8) & 0xFFU);
+                m->CswPtr[6] = (uint8_t)((tag >> 16) & 0xFFU);
+                m->CswPtr[7] = (uint8_t)((tag >> 24) & 0xFFU);
+                m->CswPtr[12] = 0U;
+            }
+            fake_push_evt(f, 0ULL, XHCI_CC_SUCCESS << 24,
+                (XHCI_TRB_TRANSFER_EVT << 10) | (3U << 16) | (slot << 24));
+            return 1;
+        }
+    }
+    return fake_write32(f, offset, val);
+}
+
+static void test_msc_bot_read_write(void)
+{
+    static FAKE_MSC_XHCI m;
+    memset(&m, 0, sizeof(m));
+    m.Base.UsbSts = XHCI_STS_HCH;
+    m.Base.PortSc = XHCI_PORTSC_PP | XHCI_PORTSC_CCS | (3U << XHCI_PORTSC_SPEED_SHIFT);
+    m.Base.EvtCycle = 1U;
+    for (uint32_t i = 0; i < 512U; ++i)
+        m.Disk[i] = (uint8_t)(i ^ 0xA5U);
+
+    KERNEL_XHCI_TRANSPORT transport = {
+        &m, 3579545U, 0xFFFFFFFFU,
+        fake_read32, msc_fake_write32, fake_write64,
+        fake_barrier, fake_alloc_page, fake_clock,
+        NULL, NULL
+    };
+
+    // Pre-wire buffer pointers after alloc_page assigns indices 12(Cbw), 13(Csw), 14(Data).
+    // Indices: 0=Dcbaa, 1=Cmd, 2=Evt, 3=Erst, 4=InCtx, 5=Scratch,
+    // 6=DevCtx, 7=Ep0, 8=HidTr, 9=HidRep, 10=InRing, 11=OutRing, 12=Cbw, 13=Csw, 14=Data.
+    m.CbwPtr = m.Base.Pages[12];
+    m.CswPtr = m.Base.Pages[13];
+    m.DataPtr = m.Base.Pages[14];
+
+    KERNEL_XHCI_DEVICE dev;
+    assert(kernel_xhci_init(&dev, &transport) == 1);
+    assert(dev.Msc.Active == 1U);
+    assert(dev.Msc.BlockSize == 512U);
+    assert(dev.Msc.TotalSectors == 16ULL);
+
+    uint8_t buf[512] = {0};
+    assert(kernel_xhci_msc_read_sectors(&dev, 0ULL, 1U, buf) == 1);
+    assert(memcmp(buf, m.Disk, 512U) == 0);
+
+    uint8_t pattern[512];
+    for (uint32_t i = 0; i < 512U; ++i)
+        pattern[i] = (uint8_t)(0x33U + i);
+    assert(kernel_xhci_msc_write_sectors(&dev, 3ULL, 1U, pattern) == 1);
+    assert(memcmp(&m.Disk[3U * 512U], pattern, 512U) == 0);
+
+    // CSW tag mismatch must be rejected (prevents stale CSW spoofing).
+    m.CorruptNextCswTag = 1;
+    assert(kernel_xhci_msc_read_sectors(&dev, 3ULL, 1U, buf) == 0);
+
+    // Out-of-range LBA must be rejected.
+    assert(kernel_xhci_msc_read_sectors(&dev, 16ULL, 1U, buf) == 0);
+
+    kernel_xhci_stop(&dev);
+}
+
 // ====== main ======
 
 int main(void)
@@ -356,6 +518,8 @@ int main(void)
     test_hid_keyboard_decode();
     test_hid_mouse_decode();
     test_hotplug_lifecycle();
+    test_parse_msc_descriptor();
+    test_msc_bot_read_write();
     puts("xhci_host: PASS");
     return 0;
 }
