@@ -351,6 +351,14 @@ ahci_protocol_rust = executable(
 )
 test('ahci_protocol_rust', ahci_protocol_rust)
 
+xhci_host = executable(
+    'xhci_host',
+    repo / 'kernel/drivers/usb/xhci/xhci.c',
+    'kernel/drivers/usb/xhci/xhci_test.c',
+    include_directories: inc,
+)
+test('xhci_host', xhci_host, env: runtime)
+
 # ====== VFS & FAT filesystem ======
 
 vfs_fat_rust = executable(

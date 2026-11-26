@@ -1,0 +1,201 @@
+#ifndef OS_KERNEL_DRIVERS_USB_XHCI_H
+#define OS_KERNEL_DRIVERS_USB_XHCI_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+// xHCI Specification Rev. 1.2 (May 2019) register offsets and bit definitions.
+
+// §5.3 Host Controller Capability Registers
+#define XHCI_CAP_CAPLENGTH      0x00U
+#define XHCI_CAP_HCSPARAMS1     0x04U
+#define XHCI_CAP_HCSPARAMS2     0x08U
+#define XHCI_CAP_HCCPARAMS1     0x10U
+#define XHCI_CAP_DBOFF          0x14U
+#define XHCI_CAP_RTSOFF         0x18U
+
+// §5.4 Host Controller Operational Registers (relative to CapLength)
+#define XHCI_OP_USBCMD          0x00U
+#define XHCI_OP_USBSTS          0x04U
+#define XHCI_OP_PAGESIZE        0x08U
+#define XHCI_OP_DNCTRL          0x14U
+#define XHCI_OP_CRCR            0x18U
+#define XHCI_OP_DCBAAP          0x30U
+#define XHCI_OP_CONFIG          0x38U
+#define XHCI_OP_PORTSC_BASE     0x400U
+#define XHCI_OP_PORT_STRIDE     0x10U
+
+#define XHCI_CMD_RS             (1U << 0)
+#define XHCI_CMD_HCRST          (1U << 1)
+#define XHCI_CMD_INTE           (1U << 2)
+#define XHCI_CMD_HSEE           (1U << 3)
+
+#define XHCI_STS_HCH            (1U << 0)
+#define XHCI_STS_HSE            (1U << 2)
+#define XHCI_STS_EINT           (1U << 3)
+#define XHCI_STS_PCD            (1U << 4)
+#define XHCI_STS_CNR            (1U << 11)
+
+// §5.4.8 Port Status and Control Register (PORTSC)
+#define XHCI_PORTSC_CCS         (1U << 0)
+#define XHCI_PORTSC_PED         (1U << 1)
+#define XHCI_PORTSC_PR          (1U << 4)
+#define XHCI_PORTSC_PP          (1U << 9)
+#define XHCI_PORTSC_SPEED_SHIFT 10U
+#define XHCI_PORTSC_SPEED_MASK  (0xFU << 10)
+#define XHCI_PORTSC_CSC         (1U << 17)
+#define XHCI_PORTSC_PEC         (1U << 18)
+#define XHCI_PORTSC_WRC         (1U << 19)
+#define XHCI_PORTSC_OCC         (1U << 20)
+#define XHCI_PORTSC_PRC         (1U << 21)
+#define XHCI_PORTSC_PLC         (1U << 22)
+#define XHCI_PORTSC_CEC         (1U << 23)
+#define XHCI_PORTSC_W1C_MASK    (XHCI_PORTSC_CSC | XHCI_PORTSC_PEC | XHCI_PORTSC_WRC | \
+                                 XHCI_PORTSC_OCC | XHCI_PORTSC_PRC | XHCI_PORTSC_PLC | XHCI_PORTSC_CEC)
+
+// §5.5.2 Interrupter Register Set 0 (relative to RTSOFF + 0x20)
+#define XHCI_RT_IR0_BASE        0x20U
+#define XHCI_IR_IMAN            0x00U
+#define XHCI_IR_IMOD            0x04U
+#define XHCI_IR_ERSTSZ          0x08U
+#define XHCI_IR_ERSTBA          0x10U
+#define XHCI_IR_ERDP            0x18U
+#define XHCI_IMAN_IP            (1U << 0)
+#define XHCI_IMAN_IE            (1U << 1)
+#define XHCI_ERDP_EHB           (1ULL << 3)
+
+// §7.1 Extended Capabilities (USB Legacy Support)
+#define XHCI_EXT_CAP_LEGACY     1U
+#define XHCI_LEGSUP_BIOS_OWNED  (1U << 16)
+#define XHCI_LEGSUP_OS_OWNED    (1U << 24)
+
+// §6.4.6 TRB Types
+#define XHCI_TRB_NORMAL         1U
+#define XHCI_TRB_SETUP          2U
+#define XHCI_TRB_DATA           3U
+#define XHCI_TRB_STATUS         4U
+#define XHCI_TRB_LINK           6U
+#define XHCI_TRB_ENABLE_SLOT    9U
+#define XHCI_TRB_ADDRESS_DEVICE 11U
+#define XHCI_TRB_CONFIGURE_EP   12U
+#define XHCI_TRB_TRANSFER_EVT   32U
+#define XHCI_TRB_CMD_COMPLETE   33U
+#define XHCI_TRB_PORT_CHANGE    34U
+
+// §6.4.5 TRB Completion Codes
+#define XHCI_CC_SUCCESS         1U
+#define XHCI_CC_SHORT_PACKET    13U
+
+// USB 2.0 / HID 1.11 Constants
+#define USB_DESC_DEVICE         1U
+#define USB_DESC_CONFIG         2U
+#define USB_DESC_INTERFACE      4U
+#define USB_DESC_ENDPOINT       5U
+#define USB_CLASS_HID           3U
+#define USB_SUBCLASS_BOOT       1U
+#define USB_PROTO_KEYBOARD      1U
+#define USB_PROTO_MOUSE         2U
+
+#define XHCI_RING_TRBS          64U
+#define XHCI_MAX_HID_DEVICES    16U
+
+#define XHCI_KEY_MOD_SHIFT      (1U << 0)
+#define XHCI_KEY_MOD_CTRL       (1U << 1)
+#define XHCI_KEY_MOD_ALT        (1U << 2)
+#define XHCI_KEY_EVENT_RELEASE  0x00020000U
+
+typedef struct {
+    uint64_t  Parameter;
+    uint32_t  Status;
+    uint32_t  Control;
+} XHCI_TRB;
+
+typedef struct {
+    uint64_t  RingBase;
+    uint32_t  RingSize;
+    uint32_t  Reserved;
+} XHCI_ERST_ENTRY;
+
+_Static_assert(sizeof(XHCI_TRB) == 16U, "xHCI TRB ABI must be 16 bytes");
+_Static_assert(sizeof(XHCI_ERST_ENTRY) == 16U, "xHCI ERST entry ABI must be 16 bytes");
+
+typedef struct {
+    uint8_t   ConfigValue;
+    uint8_t   InterfaceNumber;
+    uint8_t   Protocol;
+    uint8_t   EndpointAddr;
+    uint16_t  MaxPacketSize;
+    uint8_t   Interval;
+    uint8_t   Reserved;
+} XHCI_HID_INFO;
+
+typedef struct {
+    uint8_t   Active;
+    uint8_t   SlotId;
+    uint8_t   PortId;
+    uint8_t   Protocol;
+    uint8_t   EpDci;
+    uint8_t   Cycle;
+    uint16_t  MaxPacketSize;
+    uint32_t  Enqueue;
+    XHCI_TRB *TransferRing;
+    uint64_t  TransferRingPhys;
+    uint8_t  *ReportBuf;
+    uint64_t  ReportBufPhys;
+    uint8_t   PrevReport[8];
+} XHCI_HID_SLOT;
+
+typedef void (*XHCI_KEY_CALLBACK)(void *ctx, uint32_t code, uint32_t scalar, uint32_t flags);
+typedef void (*XHCI_MOUSE_CALLBACK)(void *ctx, int32_t dx, int32_t dy, uint32_t buttons);
+
+typedef struct {
+    void     *Context;
+    uint32_t  ClockHz;
+    uint32_t  ClockMask;
+    int     (*Read32)(void *ctx, uint32_t offset, uint32_t *val);
+    int     (*Write32)(void *ctx, uint32_t offset, uint32_t val);
+    int     (*Write64)(void *ctx, uint32_t offset, uint64_t val);
+    void    (*Barrier)(void *ctx);
+    void   *(*AllocDmaPage)(void *ctx, uint64_t *phys_out);
+    int     (*ClockRead)(void *ctx, uint32_t *ticks_out);
+    XHCI_KEY_CALLBACK   OnKey;
+    XHCI_MOUSE_CALLBACK OnMouse;
+} KERNEL_XHCI_TRANSPORT;
+
+typedef struct {
+    KERNEL_XHCI_TRANSPORT  Transport;
+    uint32_t               CapLength;
+    uint32_t               DbOff;
+    uint32_t               RtsOff;
+    uint32_t               MaxSlots;
+    uint32_t               MaxPorts;
+    uint32_t               ContextSize;
+    uint32_t               ScratchpadCount;
+    uint32_t               CmdEnqueue;
+    uint8_t                CmdCycle;
+    uint32_t               EvtDequeue;
+    uint8_t                EvtCycle;
+    uint64_t              *Dcbaa;
+    uint64_t               DcbaaPhys;
+    XHCI_TRB              *CmdRing;
+    uint64_t               CmdRingPhys;
+    XHCI_TRB              *EvtRing;
+    uint64_t               EvtRingPhys;
+    XHCI_ERST_ENTRY       *Erst;
+    uint64_t               ErstPhys;
+    XHCI_HID_SLOT          HidDevices[XHCI_MAX_HID_DEVICES];
+    uint32_t               HidCount;
+    uint32_t               Ready;
+} KERNEL_XHCI_DEVICE;
+
+int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INFO *out);
+void kernel_xhci_decode_hid_kbd(uint8_t prev_report[8], const uint8_t report[8],
+    XHCI_KEY_CALLBACK on_key, void *ctx);
+void kernel_xhci_decode_hid_mouse(const uint8_t *report, uint32_t len,
+    XHCI_MOUSE_CALLBACK on_mouse, void *ctx);
+
+int kernel_xhci_init(KERNEL_XHCI_DEVICE *dev, const KERNEL_XHCI_TRANSPORT *transport);
+uint32_t kernel_xhci_poll_events(KERNEL_XHCI_DEVICE *dev);
+void kernel_xhci_stop(KERNEL_XHCI_DEVICE *dev);
+
+#endif
