@@ -5,6 +5,7 @@
 #include "arch/x86/kernel/timer/hpet/watchdog/watchdog.h"
 #include "arch/x86/kernel/timer/lapic/timer.h"
 #include "kernel/drivers/usb/xhci/xhci.h"
+#include "kernel/storage/cache.h"
 
 int x86_xhci_start(
     const X86_WATCHDOG_ENV *env,
@@ -16,5 +17,6 @@ int x86_xhci_has_shell_scalar(void);
 int x86_xhci_pop_shell_scalar(uint32_t *scalar_out);
 void x86_xhci_stop(void);
 int x86_xhci_ready(void);
+KERNEL_BLOCK_CACHE *x86_xhci_msc_cache(void);
 
 #endif

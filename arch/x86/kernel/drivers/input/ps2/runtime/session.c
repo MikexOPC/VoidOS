@@ -208,6 +208,13 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;
     }
+    if (x86_xhci_msc_cache()) {
+        KERNEL_VFS *vfs = kernel_vfs();
+        const char *usb_prefix = (vfs && vfs->MountCount > 0U) ? "/usb" : "/";
+        if (vfs && kernel_vfs_mount_fat(vfs, usb_prefix, x86_xhci_msc_cache()) == KERNEL_STORAGE_OK) {
+            (void)kernel_log(0, "KERNEL_VFS_USB_MOUNTED");
+        }
+    }
 #ifdef KERNEL_USER_PROCESS
     if (!kernel_security_audit_wx_and_guards(x86_user_mode_allowed()) ||
         !kernel_security_audit_speculative()) {
