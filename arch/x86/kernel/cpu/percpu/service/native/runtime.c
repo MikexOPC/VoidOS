@@ -66,6 +66,8 @@ static int empty_private(void) {
 
 uint32_t xis_native_enter(void *private_frame) {
     if (ks_irq_state()) xis_native_abort(0x4b34495049494600ULL);
+    if (x86_lapic_x2apic_active() && !x86_lapic_x2apic_enable())
+        xis_native_abort(0x4b34583241504943ULL);
     uint32_t index = xis_native_index();
     const XS_PRIVATE_FRAME *frame = private_frame;
     uint64_t rsp = x86_kernel_stack_pointer();

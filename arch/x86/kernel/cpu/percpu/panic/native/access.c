@@ -6,8 +6,7 @@
 int xp_panic_hw_read(void *context, uint32_t offset, uint32_t *value) {
     (void)context;
     if (!value || offset != 0x300) return 0;
-    *value = *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + offset);
-    return 1;
+    return x86_lapic_native_read(offset, value);
 }
 
 // ====== xp_panic_hw_write ======
@@ -17,8 +16,7 @@ int xp_panic_hw_write(void *context, uint32_t offset, uint32_t value) {
     (void)context;
     if ((offset != 0x310 || (value & 0xffffffU) || (value >> 24) >= 255) &&
         (offset != 0x300 || value != 0x4400)) return 0;
-    *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + offset) = value;
-    return 1;
+    return x86_lapic_native_write(offset, value);
 }
 
 // ====== xp_panic_hw_now ======

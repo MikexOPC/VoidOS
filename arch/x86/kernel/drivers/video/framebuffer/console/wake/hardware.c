@@ -10,6 +10,5 @@
 int xcn_icr_low(uint32_t command) {
     if (ks_irq_state() || xis_native_index() != 1 || command != (0x4000U | XCN_VECTOR) ||
         !ks_atomic_load_acquire(&xcn_record.Active)) return 0;
-    *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + X86_ICR_LOW) = command;
-    return 1;
+    return x86_lapic_native_write(X86_ICR_LOW, command);
 }

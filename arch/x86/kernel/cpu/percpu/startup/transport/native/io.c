@@ -21,8 +21,7 @@ int xn_private_parked(XN_LAUNCH *m) {
 // Intel SDM 253668-078US 11.5.3/11.6.1: ESR +280h and ICR_LOW +300h, 32-bit UC.
 int xn_read(void *context, uint32_t offset, uint32_t *value) {
     if (!value || (offset != 0x280 && offset != 0x300) || !xn_safe(context)) return 0;
-    *value = *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + offset);
-    return 1;
+    return x86_lapic_native_read(offset, value);
 }
 
 // ====== xn_write ======
@@ -45,8 +44,7 @@ int xn_write(void *context, uint32_t offset, uint32_t value) {
             else return 0;
         }
     } else return 0;
-    *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + offset) = value;
-    return 1;
+    return x86_lapic_native_write(offset, value);
 }
 
 // ====== gate_private ======

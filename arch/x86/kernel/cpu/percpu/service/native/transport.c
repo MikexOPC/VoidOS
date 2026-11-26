@@ -14,7 +14,9 @@ uint32_t xis_mmio_read(uint32_t offset) {
 #endif
         ))
         xis_native_abort(0x4b34495049524400ULL);
-    return *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + offset);
+    BOOT_U32 value = 0;
+    (void)x86_lapic_native_read(offset, &value);
+    return value;
 }
 
 // ====== xis_mmio_write ======
@@ -37,7 +39,7 @@ void xis_mmio_write(uint32_t offset, uint32_t value) {
 #endif
         ))
         xis_native_abort(0x4b34495049575200ULL);
-    *(volatile uint32_t *)(X86_LAPIC_VIRTUAL + offset) = value;
+    (void)x86_lapic_native_write(offset, value);
 }
 
 // ====== xis_native_now ======
