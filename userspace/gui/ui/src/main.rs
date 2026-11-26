@@ -394,6 +394,8 @@ extern "C" fn program_main(mode: u64) -> ! {
                         ui.set_terminal_open(false);
                     } else if kind == 1 {
                         ui.set_sysmon_open(false);
+                    } else if kind == 2 {
+                        ui.set_files_open(false);
                     }
                     need_refresh = false;
                     true

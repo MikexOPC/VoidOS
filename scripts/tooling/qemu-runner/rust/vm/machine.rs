@@ -166,7 +166,7 @@ fn build_vblk_fat32(image_dir: Option<&Path>) -> Result<Vec<u8>, String> {
 
     let mut next_cluster: u32 = 8;
     let mut next_bin_slot: usize = 2;
-    let binaries: [(&[u8; 11], &str); 7] = [
+    let binaries: [(&[u8; 11], &str); 8] = [
         (b"INIT    ELF", "user-init.elf"),
         (b"BRIDGE  ELF", "user-bridge.elf"),
         (b"WORKER  ELF", "user-worker.elf"),
@@ -174,6 +174,7 @@ fn build_vblk_fat32(image_dir: Option<&Path>) -> Result<Vec<u8>, String> {
         (b"UI      ELF", "user-ui.elf"),
         (b"TERMINALELF", "user-terminal.elf"),
         (b"SYSMON  ELF", "user-sysmon.elf"),
+        (b"FILES   ELF", "user-files.elf"),
     ];
     if let Some(dir) = image_dir {
         for (name_83, file_name) in binaries {

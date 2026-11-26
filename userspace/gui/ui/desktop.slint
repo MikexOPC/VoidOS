@@ -21,6 +21,7 @@ export component VoidDesktop inherits Window {
     in-out property <int> dock-mode: 0;
     in-out property <bool> terminal-open: true;
     in-out property <bool> sysmon-open: false;
+    in-out property <bool> files-open: false;
     in-out property <int> focused-window: 0;
     in-out property <string> overlay-text: "";
     in-out property <string> status: "";
@@ -68,6 +69,9 @@ export component VoidDesktop inherits Window {
             }
             if (surface.kind == 1) {
                 root.sysmon-open = false;
+            }
+            if (surface.kind == 2) {
+                root.files-open = false;
             }
             root.close-app(surface.kind);
         }
@@ -117,6 +121,7 @@ export component VoidDesktop inherits Window {
         dock-mode: root.dock-mode;
         terminal-open: root.terminal-open;
         sysmon-open: root.sysmon-open;
+        files-open: root.files-open;
         clock-text: root.display-label;
         sub-clock-text: root.uptime-label;
         toggle-terminal => {
@@ -135,6 +140,15 @@ export component VoidDesktop inherits Window {
             } else {
                 root.sysmon-open = true;
                 root.launch-app(1);
+            }
+        }
+        toggle-files => {
+            if (root.files-open) {
+                root.files-open = false;
+                root.close-app(2);
+            } else {
+                root.files-open = true;
+                root.launch-app(2);
             }
         }
         shutdown-clicked => {

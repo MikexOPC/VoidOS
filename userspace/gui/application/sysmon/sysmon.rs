@@ -16,7 +16,7 @@ global_asm!(
 );
 
 const WIN_W: u32 = 400;
-const WIN_H: u32 = 240;
+const WIN_H: u32 = 264;
 const SHM_PAGES: u64 = ((WIN_W as u64 * WIN_H as u64 * 4) + 4095) / 4096;
 const REFRESH_INTERVAL_MS: u64 = 250;
 
@@ -80,6 +80,7 @@ fn render_sysmon(
     theme: &Theme,
     sinfo: &libvoid::SysInfo,
     dinfo: &libvoid::DisplayInfo,
+    ginfo: &libvoid::GpuInfo,
 ) {
     let phys_used = sinfo.total_phys_pages.saturating_sub(sinfo.free_phys_pages);
     let phys_pct = pct_u64(phys_used, sinfo.total_phys_pages);
@@ -126,6 +127,17 @@ fn render_sysmon(
     canvas.draw_text(180, 206, b"TICKS:", theme.text_muted);
     let tick_txt = libvoid::format_u64(sinfo.preempt_ticks, &mut num);
     canvas.draw_text(236, 206, tick_txt, theme.text_primary);
+
+    canvas.draw_text(16, 230, b"GPU:", theme.text_muted);
+    let gpu_color = if ginfo.backend != libvoid::GPU_BACKEND_GOP_SW {
+        rgb(0x22, 0xC5, 0x5E)
+    } else {
+        theme.text_primary
+    };
+    canvas.draw_text(56, 230, ginfo.name_str().as_bytes(), gpu_color);
+    canvas.draw_text(210, 230, b"PRES:", theme.text_muted);
+    let pres_txt = libvoid::format_u64(ginfo.present_calls, &mut num);
+    canvas.draw_text(258, 230, pres_txt, theme.text_primary);
 }
 
 // ====== send_message ======
@@ -177,11 +189,15 @@ extern "C" fn program_main(arg: u64) -> ! {
     {
         libvoid::exit(106);
     }
+    let mut ginfo = libvoid::GpuInfo::default();
+    if libvoid::gpu_info(&mut ginfo) != 0 {
+        libvoid::exit(108);
+    }
 
     // Mode 1: self-verification pass (real kernel metrics + SHM rendering + clean unmap).
     if arg == 1 {
         let px_before = canvas.pixels[(60 * WIN_W as usize) + 24];
-        render_sysmon(&mut canvas, &theme, &sinfo, &dinfo);
+        render_sysmon(&mut canvas, &theme, &sinfo, &dinfo, &ginfo);
         let px_after = canvas.pixels[(60 * WIN_W as usize) + 24];
         if px_before == px_after {
             libvoid::exit(104);
@@ -200,7 +216,7 @@ extern "C" fn program_main(arg: u64) -> ! {
     }
     let create = GuiMessage::create_window(WIN_W, WIN_H, shm_id as u64, b"System Monitor");
     send_message(ipc_handle, &create.encode());
-    render_sysmon(&mut canvas, &theme, &sinfo, &dinfo);
+    render_sysmon(&mut canvas, &theme, &sinfo, &dinfo, &ginfo);
     let commit = GuiMessage::commit_rect(1, 0, 0, WIN_W, WIN_H).encode();
     send_message(ipc_handle, &commit);
 
@@ -217,7 +233,8 @@ extern "C" fn program_main(arg: u64) -> ! {
         {
             last_refresh_ms = sinfo.uptime_ms;
             let _ = libvoid::display_info(&mut dinfo);
-            render_sysmon(&mut canvas, &theme, &sinfo, &dinfo);
+            let _ = libvoid::gpu_info(&mut ginfo);
+            render_sysmon(&mut canvas, &theme, &sinfo, &dinfo, &ginfo);
             send_message(ipc_handle, &commit);
         }
         libvoid::yield_now();

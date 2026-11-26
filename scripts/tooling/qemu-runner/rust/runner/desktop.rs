@@ -40,7 +40,7 @@ pub fn run(tcg: bool) -> Result<bool, String> {
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let root = cli::find_root(&executable).ok_or("Repository non trovato")?;
     let build = root.join("kernel/build/meson-kernel");
-    for name in ["kernel.elf", "user-ui.elf", "user-init.elf", "user-terminal.elf", "user-sh.elf", "user-worker.elf", "user-bridge.elf", "user-sysmon.elf"] {
+    for name in ["kernel.elf", "user-ui.elf", "user-init.elf", "user-terminal.elf", "user-sh.elf", "user-worker.elf", "user-bridge.elf", "user-sysmon.elf", "user-files.elf"] {
         if !build.join(name).is_file() {
             return Err(format!("Build incompleta: manca {name}"));
         }

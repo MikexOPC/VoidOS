@@ -11,11 +11,13 @@ export component DefaultDock inherits Rectangle {
     in property <int> dock-mode: 0;
     in property <bool> terminal-open: true;
     in property <bool> sysmon-open: false;
+    in property <bool> files-open: false;
     in property <string> clock-text: "15:44";
     in property <string> sub-clock-text: "24 Nov 2026";
 
     callback toggle-terminal();
     callback toggle-sysmon();
+    callback toggle-files();
     callback shutdown-clicked();
 
     x: 44px;
@@ -76,10 +78,10 @@ export component DefaultDock inherits Rectangle {
             shutdown-button := Rectangle {
                 width: 38px;
                 height: 38px;
-                border-radius: 11px;
+                border-radius: 15px;
                 border-width: 1px;
-                border-color: shut-ta.has-hover ? #E06060CC : #8896B278;
-                background: shut-ta.has-hover ? #FEE2E2CC : #FFFFFF58;
+                border-color: #8896B278;
+                background: #FFFFFF58;
 
                 shut-ta := TouchArea {
                     mouse-cursor: pointer;
@@ -92,7 +94,6 @@ export component DefaultDock inherits Rectangle {
                     width: 18px;
                     height: 18px;
                     source: @image-url("../../../../libui/icons/on-off-button.png");
-                    colorize: shut-ta.has-hover ? #DC2626 : #1E2436;
                 }
             }
 
@@ -239,6 +240,59 @@ export component DefaultDock inherits Rectangle {
                         x: root.sysmon-open ? 12px : 19px;
                         y: 34px;
                         width: root.sysmon-open ? 14px : 0px;
+                        height: 2px;
+                        border-radius: 1px;
+                        background: #1E2436;
+                        animate width { duration: 180ms; easing: ease-out; }
+                        animate x { duration: 180ms; easing: ease-out; }
+                    }
+                }
+
+                app3 := Rectangle {
+                    width: 38px;
+                    height: 38px;
+                    border-radius: 11px;
+                    border-width: 1px;
+                    border-color: files-ta.has-hover ? #4A5E90CC : (root.files-open ? #52648E99 : #8896B278);
+                    background: files-ta.has-hover ? #FFFFFFA4 : (root.files-open ? #FFFFFF72 : #FFFFFF48);
+                    animate background { duration: 160ms; easing: ease-out; }
+                    animate border-color { duration: 160ms; easing: ease-out; }
+
+                    files-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.toggle-files(); }
+                    }
+
+                    // Minimal folder icon
+                    Rectangle {
+                        x: 8px;
+                        y: 11px;
+                        width: 10px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: #D97706;
+                    }
+                    Rectangle {
+                        x: 8px;
+                        y: 13px;
+                        width: 22px;
+                        height: 15px;
+                        border-radius: 3px;
+                        background: #F59E0B;
+                    }
+                    Rectangle {
+                        x: 10px;
+                        y: 16px;
+                        width: 18px;
+                        height: 2px;
+                        border-radius: 1px;
+                        background: #FDE68A;
+                    }
+
+                    Rectangle {
+                        x: root.files-open ? 12px : 19px;
+                        y: 34px;
+                        width: root.files-open ? 14px : 0px;
                         height: 2px;
                         border-radius: 1px;
                         background: #1E2436;

@@ -55,6 +55,7 @@ impl Applications {
         let path: &[u8] = match kind {
             0 => b"/bin/terminal.elf",
             1 => b"/bin/sysmon.elf",
+            2 => b"/bin/files.elf",
             _ => return false,
         };
         self.focused = kind;
@@ -346,7 +347,11 @@ impl Applications {
             }
             surfaces.push(AppSurface {
                 kind: app.kind,
-                title: if app.kind == 1 { "System Monitor" } else { "Terminale" }.into(),
+                title: match app.kind {
+                    1 => "System Monitor",
+                    2 => "Files",
+                    _ => "Terminale",
+                }.into(),
                 pixels: app.image.clone(),
                 client_width: app.width as f32,
                 client_height: app.height as f32,
@@ -358,6 +363,7 @@ impl Applications {
         self.model.set_vec(surfaces);
         ui.set_terminal_open(self.windows.iter().any(|app| app.kind == 0 && !app.minimized));
         ui.set_sysmon_open(self.windows.iter().any(|app| app.kind == 1 && !app.minimized));
+        ui.set_files_open(self.windows.iter().any(|app| app.kind == 2 && !app.minimized));
         ui.set_focused_window(self.focused);
     }
 

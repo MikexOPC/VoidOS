@@ -205,11 +205,13 @@ fn run_vfs_supervisor() -> ! {
     };
     let term_pid = libvoid::spawn(b"/bin/terminal.elf", Some(&app_args));
     let sysmon_pid = libvoid::spawn(b"/bin/sysmon.elf", Some(&app_args));
-    if term_pid <= 0 || sysmon_pid <= 0 {
+    let files_pid = libvoid::spawn(b"/bin/files.elf", Some(&app_args));
+    if term_pid <= 0 || sysmon_pid <= 0 || files_pid <= 0 {
         libvoid::exit(78);
     }
     let mut term_status = libvoid::WaitStatus::default();
     let mut sysmon_status = libvoid::WaitStatus::default();
+    let mut files_status = libvoid::WaitStatus::default();
     if libvoid::wait_pid(term_pid as u64, Some(&mut term_status)) != 0
         || term_status.exit_kind != libvoid::EXIT_KIND_NORMAL
         || term_status.exit_code != 0
@@ -221,6 +223,12 @@ fn run_vfs_supervisor() -> ! {
         || sysmon_status.exit_code != 0
     {
         libvoid::exit(80);
+    }
+    if libvoid::wait_pid(files_pid as u64, Some(&mut files_status)) != 0
+        || files_status.exit_kind != libvoid::EXIT_KIND_NORMAL
+        || files_status.exit_code != 0
+    {
+        libvoid::exit(81);
     }
 
     let written = libvoid::write_console(&SUPERVISOR_OK);
