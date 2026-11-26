@@ -212,6 +212,8 @@ typedef struct {
     BOOT_U64                   *YieldFrame;
     BOOT_U32                    Yielded;
     BOOT_U32                    Waiting;
+    BOOT_U32                    RenewBudget;
+    BOOT_U32                    BudgetReserved;
     IPC_CHANNEL                *IpcChannel;
     BOOT_U64                    IpcEndpoint;
     KERNEL_PROCESS_TABLE       *Table;

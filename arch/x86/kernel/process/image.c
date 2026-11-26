@@ -111,6 +111,7 @@ static void turn_finish(X86_PROCESS_CPU *cpu, X86_PROCESS_RESULT *result)
     __writemsr(MSR_KERNEL_GS, 0);
     cpu->Active = 0;
     cpu->LeaveRequested = 0;
+    cpu->RenewBudget = 0;
     cpu->Current = 0;
 }
 
@@ -140,6 +141,7 @@ int x86_process_run(const X86_PROCESS_IMAGE *image, X86_PROCESS_RESULT *result)
     cpu->WrittenBytes = 0;
     cpu->ExitKind = 0;
     cpu->LeaveRequested = 0;
+    cpu->RenewBudget = 0;
     cpu->Active = 1;
     advance(3);
     process_timer_start();
@@ -226,6 +228,7 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     cpu->ExitKind = 0;
     cpu->Yielded = 0;
     cpu->Waiting = 0;
+    cpu->RenewBudget = renew_budget ? 1U : 0U;
     cpu->LeaveRequested = 0;
     cpu->Active = 1;
     cpu->KernelStackBase = 0;
@@ -252,8 +255,10 @@ int x86_process_slot_step(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *result,
     if (cpu->Yielded) {
         ++slot->Yields;
         slot->Waiting = cpu->Waiting;
-        if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
-        else slot->RemainingTicks -= elapsed;
+        if (!renew_budget) {
+            if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
+            else slot->RemainingTicks -= elapsed;
+        }
     }
     return 1;
 }
@@ -308,6 +313,7 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
     cpu->Yielded = 0;
     cpu->Waiting = 0;
     cpu->WaitHandle = 0;
+    cpu->RenewBudget = renew_budget ? 1U : 0U;
     cpu->LeaveRequested = 0;
     cpu->Active = 1;
     cpu->KernelStackBase = slot->KernelStackBase;
@@ -355,8 +361,10 @@ int x86_process_slot_step_managed(X86_PROCESS_SLOT *slot, X86_PROCESS_RESULT *re
             slot->SyscallResumeRsp = cpu->SyscallResumeRsp;
             ++slot->SyscallPreempts;
         }
-        if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
-        else slot->RemainingTicks -= elapsed;
+        if (!renew_budget) {
+            if (elapsed >= slot->RemainingTicks) result->Kind = X86_PROCESS_BUDGET;
+            else slot->RemainingTicks -= elapsed;
+        }
     }
     ks_irq_restore(saved_if);
     return 1;

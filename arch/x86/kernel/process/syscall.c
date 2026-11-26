@@ -434,6 +434,7 @@ int process_budget_expired(BOOT_U64 rip)
 {
     X86_PROCESS_CPU *cpu = x86_process_cpu_current();
     if (!cpu || !cpu->Current) return 1;
+    if (cpu->RenewBudget) return 0;
     if (cpu->BudgetLeft && !kernel_deadline_expired(cpu->BudgetClock, &cpu->BudgetDeadline)) return 0;
     cpu->Current->Kind = X86_PROCESS_BUDGET;
     cpu->Current->Rip = rip;
