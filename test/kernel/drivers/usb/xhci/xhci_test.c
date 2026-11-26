@@ -143,6 +143,211 @@ static void test_hid_mouse_decode(void)
     assert(log.Count == 1U);
 }
 
+// ====== Fake xHCI Controller for Hotplug Lifecycle Test ======
+
+typedef struct {
+    uint32_t  UsbCmd;
+    uint32_t  UsbSts;
+    uint32_t  PortSc;
+    uint32_t  Clock;
+    uint32_t  PagesAllocated;
+    uint32_t  DisableSlotCalls;
+    uint32_t  NextSlotId;
+    uint32_t  EvtWriteIdx;
+    uint8_t   EvtCycle;
+    uint8_t   Pages[32][4096];
+    XHCI_TRB *CmdRing;
+    XHCI_TRB *EvtRing;
+    uint32_t  CmdReadIdx;
+    uint8_t   Ep0ReadIdx;
+    KEY_LOG   Keys;
+} FAKE_XHCI;
+
+static const uint8_t fake_kbd_cfg[] = {
+    9, 2, 34, 0, 1, 1, 0, 0xA0, 50,
+    9, 4, 0, 0, 1, 3, 1, 1, 0,
+    9, 0x21, 0x11, 0x01, 0, 1, 0x22, 63, 0,
+    7, 5, 0x81, 0x03, 8, 0, 10
+};
+
+static void fake_push_evt(FAKE_XHCI *f, uint64_t param, uint32_t status, uint32_t ctrl_no_cycle)
+{
+    XHCI_TRB *e = &f->EvtRing[f->EvtWriteIdx];
+    e->Parameter = param;
+    e->Status = status;
+    e->Control = ctrl_no_cycle | (uint32_t)f->EvtCycle;
+    ++f->EvtWriteIdx;
+    if (f->EvtWriteIdx >= XHCI_RING_TRBS) {
+        f->EvtWriteIdx = 0U;
+        f->EvtCycle ^= 1U;
+    }
+}
+
+static int fake_read32(void *ctx, uint32_t offset, uint32_t *val)
+{
+    FAKE_XHCI *f = (FAKE_XHCI *)ctx;
+    if (offset == XHCI_CAP_CAPLENGTH) { *val = 0x01200020U; return 1; }
+    if (offset == XHCI_CAP_HCSPARAMS1) { *val = (1U << 24) | 8U; return 1; } // 1 port, 8 slots
+    if (offset == XHCI_CAP_HCSPARAMS2) { *val = 0U; return 1; }
+    if (offset == XHCI_CAP_HCCPARAMS1) { *val = 0U; return 1; }
+    if (offset == XHCI_CAP_DBOFF) { *val = 0x2000U; return 1; }
+    if (offset == XHCI_CAP_RTSOFF) { *val = 0x1000U; return 1; }
+    if (offset == 0x20U + XHCI_OP_USBCMD) { *val = f->UsbCmd; return 1; }
+    if (offset == 0x20U + XHCI_OP_USBSTS) { *val = f->UsbSts; return 1; }
+    if (offset == 0x20U + XHCI_OP_PORTSC_BASE) { *val = f->PortSc; return 1; }
+    *val = 0U;
+    return 1;
+}
+
+static int fake_write32(void *ctx, uint32_t offset, uint32_t val)
+{
+    FAKE_XHCI *f = (FAKE_XHCI *)ctx;
+    if (offset == 0x20U + XHCI_OP_USBCMD) {
+        if (val & XHCI_CMD_HCRST) {
+            f->UsbCmd = 0U;
+            f->UsbSts = XHCI_STS_HCH;
+            return 1;
+        }
+        f->UsbCmd = val;
+        f->UsbSts = (val & XHCI_CMD_RS) ? 0U : XHCI_STS_HCH;
+        return 1;
+    }
+    if (offset == 0x20U + XHCI_OP_PORTSC_BASE) {
+        if (val & XHCI_PORTSC_PR) {
+            if (f->PortSc & XHCI_PORTSC_CCS)
+                f->PortSc = XHCI_PORTSC_PP | XHCI_PORTSC_CCS | XHCI_PORTSC_PED | (1U << XHCI_PORTSC_SPEED_SHIFT);
+        } else {
+            f->PortSc &= ~(val & XHCI_PORTSC_W1C_MASK);
+        }
+        return 1;
+    }
+    if (offset == 0x2000U) {
+        // Command Doorbell (DB0)
+        XHCI_TRB cmd = f->CmdRing[f->CmdReadIdx++];
+        if (f->CmdReadIdx >= XHCI_RING_TRBS - 1U)
+            f->CmdReadIdx = 0U;
+        uint32_t type = (cmd.Control >> 10) & 0x3FU;
+        uint32_t slot = (cmd.Control >> 24) & 0xFFU;
+        if (type == XHCI_TRB_ENABLE_SLOT) {
+            uint32_t new_slot = ++f->NextSlotId;
+            fake_push_evt(f, 0ULL, XHCI_CC_SUCCESS << 24, (XHCI_TRB_CMD_COMPLETE << 10) | (new_slot << 24));
+        } else if (type == XHCI_TRB_DISABLE_SLOT) {
+            ++f->DisableSlotCalls;
+            fake_push_evt(f, 0ULL, XHCI_CC_SUCCESS << 24, (XHCI_TRB_CMD_COMPLETE << 10) | (slot << 24));
+        } else {
+            fake_push_evt(f, 0ULL, XHCI_CC_SUCCESS << 24, (XHCI_TRB_CMD_COMPLETE << 10) | (slot << 24));
+        }
+        return 1;
+    }
+    if (offset > 0x2000U && offset < 0x2100U) {
+        uint32_t slot = (offset - 0x2000U) / 4U;
+        if (val == 1U) {
+            // EP0 Doorbell: copy fake kbd config into ScratchBuf (page index 5).
+            memcpy(f->Pages[5], fake_kbd_cfg, sizeof(fake_kbd_cfg));
+            fake_push_evt(f, 0ULL, XHCI_CC_SUCCESS << 24, (XHCI_TRB_TRANSFER_EVT << 10) | (slot << 24));
+        }
+        return 1;
+    }
+    return 1;
+}
+
+static int fake_write64(void *ctx, uint32_t offset, uint64_t val)
+{
+    (void)ctx;
+    (void)offset;
+    (void)val;
+    return 1;
+}
+
+static void fake_barrier(void *ctx)
+{
+    (void)ctx;
+}
+
+static void *fake_alloc_page(void *ctx, uint64_t *phys_out)
+{
+    FAKE_XHCI *f = (FAKE_XHCI *)ctx;
+    if (f->PagesAllocated >= 32U)
+        return NULL;
+    uint32_t idx = f->PagesAllocated++;
+    memset(f->Pages[idx], 0, 4096U);
+    *phys_out = 0x100000ULL + (uint64_t)idx * 4096ULL;
+    if (idx == 1U)
+        f->CmdRing = (XHCI_TRB *)f->Pages[idx];
+    if (idx == 2U)
+        f->EvtRing = (XHCI_TRB *)f->Pages[idx];
+    return f->Pages[idx];
+}
+
+static int fake_clock(void *ctx, uint32_t *ticks_out)
+{
+    FAKE_XHCI *f = (FAKE_XHCI *)ctx;
+    f->Clock += 4000U;
+    *ticks_out = f->Clock;
+    return 1;
+}
+
+static void fake_on_key(void *ctx, uint32_t code, uint32_t scalar, uint32_t flags)
+{
+    FAKE_XHCI *f = (FAKE_XHCI *)ctx;
+    on_key_cb(&f->Keys, code, scalar, flags);
+}
+
+// ====== test_hotplug_lifecycle ======
+
+static void test_hotplug_lifecycle(void)
+{
+    static FAKE_XHCI fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.UsbSts = XHCI_STS_HCH;
+    fake.PortSc = XHCI_PORTSC_PP | XHCI_PORTSC_CCS | (1U << XHCI_PORTSC_SPEED_SHIFT);
+    fake.EvtCycle = 1U;
+
+    KERNEL_XHCI_TRANSPORT transport = {
+        &fake, 3579545U, 0xFFFFFFFFU,
+        fake_read32, fake_write32, fake_write64,
+        fake_barrier, fake_alloc_page, fake_clock,
+        fake_on_key, NULL
+    };
+
+    KERNEL_XHCI_DEVICE dev;
+    assert(kernel_xhci_init(&dev, &transport) == 1);
+    assert(dev.HidCount == 1U);
+    assert(dev.HidDevices[0].Active == 1U);
+    assert(dev.HidDevices[0].Protocol == USB_PROTO_KEYBOARD);
+    uint32_t pages_after_init = fake.PagesAllocated;
+
+    // 1) Simulate disconnect on port 1 (CCS=0 + Port Status Change Event).
+    fake.PortSc = XHCI_PORTSC_PP | XHCI_PORTSC_CSC;
+    fake_push_evt(&fake, (1ULL << 24), XHCI_CC_SUCCESS << 24, XHCI_TRB_PORT_CHANGE << 10);
+    assert(kernel_xhci_poll_events(&dev) == 1U);
+    assert(dev.HidCount == 0U);
+    assert(dev.HotplugDisconnects == 1U);
+    assert(fake.DisableSlotCalls == 1U);
+
+    // 2) Simulate reconnect on port 1 (CCS=1 + Port Status Change Event).
+    fake.PortSc = XHCI_PORTSC_PP | XHCI_PORTSC_CCS | XHCI_PORTSC_CSC | (1U << XHCI_PORTSC_SPEED_SHIFT);
+    fake_push_evt(&fake, (1ULL << 24), XHCI_CC_SUCCESS << 24, XHCI_TRB_PORT_CHANGE << 10);
+    assert(kernel_xhci_poll_events(&dev) == 1U);
+    assert(dev.HidCount == 1U);
+    assert(dev.HotplugConnects == 1U);
+    assert(dev.HidDevices[0].Active == 1U);
+    // Must reuse existing slot DMA pages with zero heap growth.
+    assert(fake.PagesAllocated == pages_after_init);
+
+    // 3) Deliver a key ('z' = usage 0x1D) on the reconnected slot.
+    uint8_t z_rep[8] = {0, 0, 0x1D, 0, 0, 0, 0, 0};
+    memcpy(dev.HidDevices[0].ReportBuf, z_rep, 8U);
+    fake_push_evt(&fake, 0ULL, XHCI_CC_SUCCESS << 24,
+        (XHCI_TRB_TRANSFER_EVT << 10) | ((uint32_t)dev.HidDevices[0].SlotId << 24));
+    assert(kernel_xhci_poll_events(&dev) == 1U);
+    assert(fake.Keys.Count == 1U);
+    assert(fake.Keys.Scalars[0] == 'z');
+
+    kernel_xhci_stop(&dev);
+    assert(dev.Ready == 0U);
+}
+
 // ====== main ======
 
 int main(void)
@@ -150,6 +355,7 @@ int main(void)
     test_parse_hid_descriptors();
     test_hid_keyboard_decode();
     test_hid_mouse_decode();
+    test_hotplug_lifecycle();
     puts("xhci_host: PASS");
     return 0;
 }

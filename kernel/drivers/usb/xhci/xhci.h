@@ -76,6 +76,7 @@
 #define XHCI_TRB_STATUS         4U
 #define XHCI_TRB_LINK           6U
 #define XHCI_TRB_ENABLE_SLOT    9U
+#define XHCI_TRB_DISABLE_SLOT   10U
 #define XHCI_TRB_ADDRESS_DEVICE 11U
 #define XHCI_TRB_CONFIGURE_EP   12U
 #define XHCI_TRB_TRANSFER_EVT   32U
@@ -138,6 +139,10 @@ typedef struct {
     uint8_t   Cycle;
     uint16_t  MaxPacketSize;
     uint32_t  Enqueue;
+    uint8_t  *DevCtx;
+    uint64_t  DevCtxPhys;
+    XHCI_TRB *Ep0Ring;
+    uint64_t  Ep0RingPhys;
     XHCI_TRB *TransferRing;
     uint64_t  TransferRingPhys;
     uint8_t  *ReportBuf;
@@ -183,8 +188,14 @@ typedef struct {
     uint64_t               EvtRingPhys;
     XHCI_ERST_ENTRY       *Erst;
     uint64_t               ErstPhys;
+    uint8_t               *InCtx;
+    uint64_t               InCtxPhys;
+    uint8_t               *ScratchBuf;
+    uint64_t               ScratchBufPhys;
     XHCI_HID_SLOT          HidDevices[XHCI_MAX_HID_DEVICES];
     uint32_t               HidCount;
+    uint32_t               HotplugConnects;
+    uint32_t               HotplugDisconnects;
     uint32_t               Ready;
 } KERNEL_XHCI_DEVICE;
 

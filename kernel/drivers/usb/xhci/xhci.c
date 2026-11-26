@@ -405,30 +405,87 @@ static void queue_hid_trb_private(KERNEL_XHCI_DEVICE *dev, XHCI_HID_SLOT *hid)
     ring_doorbell_private(dev, hid->SlotId, hid->EpDci);
 }
 
+// ====== disable_slot_cmd_private ======
+
+static void disable_slot_cmd_private(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id)
+{
+    if (!slot_id || slot_id > dev->MaxSlots)
+        return;
+    XHCI_TRB ev = {0};
+    // xHCI Spec Rev. 1.2 §4.6.4 & §6.4.3.3: Disable Slot Command (TRB Type 10).
+    (void)cmd_submit_private(dev, 0ULL, 0U, (XHCI_TRB_DISABLE_SLOT << 10) | (slot_id << 24), &ev);
+    dev->Dcbaa[slot_id] = 0ULL;
+    dev->Transport.Barrier(dev->Transport.Context);
+}
+
+// ====== find_hid_by_port_private ======
+
+static XHCI_HID_SLOT *find_hid_by_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_id)
+{
+    for (uint32_t i = 0; i < XHCI_MAX_HID_DEVICES; ++i) {
+        if (dev->HidDevices[i].Active && dev->HidDevices[i].PortId == (uint8_t)port_id)
+            return &dev->HidDevices[i];
+    }
+    return NULL;
+}
+
+// ====== alloc_hid_slot_private ======
+
+static XHCI_HID_SLOT *alloc_hid_slot_private(KERNEL_XHCI_DEVICE *dev)
+{
+    const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
+    for (uint32_t i = 0; i < XHCI_MAX_HID_DEVICES; ++i) {
+        XHCI_HID_SLOT *hid = &dev->HidDevices[i];
+        if (hid->Active)
+            continue;
+        if (!hid->DevCtx)
+            hid->DevCtx = (uint8_t *)t->AllocDmaPage(t->Context, &hid->DevCtxPhys);
+        if (!hid->Ep0Ring)
+            hid->Ep0Ring = (XHCI_TRB *)t->AllocDmaPage(t->Context, &hid->Ep0RingPhys);
+        if (!hid->TransferRing)
+            hid->TransferRing = (XHCI_TRB *)t->AllocDmaPage(t->Context, &hid->TransferRingPhys);
+        if (!hid->ReportBuf)
+            hid->ReportBuf = (uint8_t *)t->AllocDmaPage(t->Context, &hid->ReportBufPhys);
+        if (!hid->DevCtx || !hid->Ep0Ring || !hid->TransferRing || !hid->ReportBuf)
+            return NULL;
+        zero_mem_private(hid->DevCtx, 4096U);
+        zero_mem_private(hid->Ep0Ring, 4096U);
+        zero_mem_private(hid->TransferRing, 4096U);
+        zero_mem_private(hid->ReportBuf, 4096U);
+        zero_mem_private(hid->PrevReport, sizeof(hid->PrevReport));
+        return hid;
+    }
+    return NULL;
+}
+
 // ====== probe_port_private ======
 
-static void probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
+static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
 {
-    if (dev->HidCount >= XHCI_MAX_HID_DEVICES)
-        return;
+    if (find_hid_by_port_private(dev, port_idx + 1U))
+        return 0;
     const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
     uint32_t portsc_off = dev->CapLength + XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE;
     uint32_t portsc = 0;
     if (!t->Read32(t->Context, portsc_off, &portsc) || !(portsc & XHCI_PORTSC_CCS))
-        return;
+        return 0;
 
     // Reset port (preserve PP, clear W1C change bits, set PR bit 4).
     uint32_t reset_val = (portsc & XHCI_PORTSC_PP) | XHCI_PORTSC_PR;
     if (!t->Write32(t->Context, portsc_off, reset_val))
-        return;
+        return 0;
     if (!wait_op_bits_private(dev, XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE,
         XHCI_PORTSC_PR, 0U, 200U))
-        return;
+        return 0;
     delay_ms_private(t, 10U);
     if (!t->Read32(t->Context, portsc_off, &portsc) || !(portsc & XHCI_PORTSC_PED))
-        return;
+        return 0;
     // Clear PRC/CSC W1C bits without touching PED.
     (void)t->Write32(t->Context, portsc_off, (portsc & XHCI_PORTSC_PP) | XHCI_PORTSC_W1C_MASK);
+
+    XHCI_HID_SLOT *hid = alloc_hid_slot_private(dev);
+    if (!hid)
+        return 0;
 
     uint32_t speed = (portsc & XHCI_PORTSC_SPEED_MASK) >> XHCI_PORTSC_SPEED_SHIFT;
     // Default EP0 MaxPacketSize by xHCI §4.3: Low=8, Full=8 (or 64), High=64, Super=512.
@@ -437,25 +494,19 @@ static void probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
     // 1) Enable Slot Command (§4.6.3)
     XHCI_TRB ev = {0};
     if (!cmd_submit_private(dev, 0ULL, 0U, XHCI_TRB_ENABLE_SLOT << 10, &ev))
-        return;
+        return 0;
     uint32_t slot_id = (ev.Control >> 24) & 0xFFU;
     if (!slot_id || slot_id > dev->MaxSlots)
-        return;
+        return 0;
 
-    // Allocate Output Device Context, Input Context, EP0 Transfer Ring, and Descriptor Scratch Page.
-    uint64_t dev_ctx_phys = 0, in_ctx_phys = 0, ep0_phys = 0, scratch_phys = 0;
-    uint8_t *dev_ctx = (uint8_t *)t->AllocDmaPage(t->Context, &dev_ctx_phys);
-    uint8_t *in_ctx = (uint8_t *)t->AllocDmaPage(t->Context, &in_ctx_phys);
-    XHCI_TRB *ep0_ring = (XHCI_TRB *)t->AllocDmaPage(t->Context, &ep0_phys);
-    uint8_t *scratch = (uint8_t *)t->AllocDmaPage(t->Context, &scratch_phys);
-    if (!dev_ctx || !in_ctx || !ep0_ring || !scratch)
-        return;
-    zero_mem_private(dev_ctx, 4096U);
+    uint8_t *in_ctx = dev->InCtx;
+    uint64_t in_ctx_phys = dev->InCtxPhys;
+    uint8_t *scratch = dev->ScratchBuf;
+    uint64_t scratch_phys = dev->ScratchBufPhys;
     zero_mem_private(in_ctx, 4096U);
-    zero_mem_private(ep0_ring, 4096U);
     zero_mem_private(scratch, 4096U);
 
-    dev->Dcbaa[slot_id] = dev_ctx_phys;
+    dev->Dcbaa[slot_id] = hid->DevCtxPhys;
     t->Barrier(t->Context);
 
     // 2) Address Device Command (§4.3.4 & §6.2.5): Add Flags = Slot (bit 0) | EP0 (bit 1).
@@ -468,50 +519,52 @@ static void probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
 
     uint32_t *ep0_ctx = (uint32_t *)(in_ctx + 2U * csz);
     ep0_ctx[1] = (3U << 1) | (4U << 3) | (ep0_mps << 16); // CErr=3, EP Type=Control(4), MPS
-    ep0_ctx[2] = (uint32_t)(ep0_phys | 1ULL);             // DCS = 1
-    ep0_ctx[3] = (uint32_t)(ep0_phys >> 32);
+    ep0_ctx[2] = (uint32_t)(hid->Ep0RingPhys | 1ULL);     // DCS = 1
+    ep0_ctx[3] = (uint32_t)(hid->Ep0RingPhys >> 32);
     ep0_ctx[4] = 8U;                                      // Average TRB Length = 8
 
-    if (!cmd_submit_private(dev, in_ctx_phys, 0U, (XHCI_TRB_ADDRESS_DEVICE << 10) | (slot_id << 24), &ev))
-        return;
+    if (!cmd_submit_private(dev, in_ctx_phys, 0U, (XHCI_TRB_ADDRESS_DEVICE << 10) | (slot_id << 24), &ev)) {
+        disable_slot_cmd_private(dev, slot_id);
+        return 0;
+    }
 
     uint32_t ep0_enq = 0U;
     uint8_t ep0_cycle = 1U;
 
     // 3) GET_DESCRIPTOR (Configuration, index 0, 255 bytes): bmReq=0x80, bReq=6, wVal=0x0200, wIdx=0, wLen=255.
     uint64_t get_cfg = 0x80ULL | (6ULL << 8) | (0x0200ULL << 16) | (255ULL << 48);
-    if (!ep0_transfer_private(dev, slot_id, ep0_ring, ep0_phys, &ep0_enq, &ep0_cycle,
-        get_cfg, scratch_phys, 255U, 1))
-        return;
+    if (!ep0_transfer_private(dev, slot_id, hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
+        get_cfg, scratch_phys, 255U, 1)) {
+        disable_slot_cmd_private(dev, slot_id);
+        return 0;
+    }
 
     XHCI_HID_INFO hid_info = {0};
-    if (!kernel_xhci_parse_hid_config(scratch, 255U, &hid_info))
-        return;
+    if (!kernel_xhci_parse_hid_config(scratch, 255U, &hid_info)) {
+        disable_slot_cmd_private(dev, slot_id);
+        return 0;
+    }
 
     // 4) SET_CONFIGURATION (bmReq=0x00, bReq=9, wVal=ConfigValue).
     uint64_t set_cfg = 0x00ULL | (9ULL << 8) | ((uint64_t)hid_info.ConfigValue << 16);
-    if (!ep0_transfer_private(dev, slot_id, ep0_ring, ep0_phys, &ep0_enq, &ep0_cycle,
-        set_cfg, 0ULL, 0U, 0))
-        return;
+    if (!ep0_transfer_private(dev, slot_id, hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
+        set_cfg, 0ULL, 0U, 0)) {
+        disable_slot_cmd_private(dev, slot_id);
+        return 0;
+    }
 
     // 5) HID SET_PROTOCOL (Boot Protocol = 0): bmReq=0x21, bReq=0x0B, wVal=0, wIdx=InterfaceNumber.
     uint64_t set_boot = 0x21ULL | (0x0BULL << 8) | ((uint64_t)hid_info.InterfaceNumber << 32);
-    (void)ep0_transfer_private(dev, slot_id, ep0_ring, ep0_phys, &ep0_enq, &ep0_cycle,
+    (void)ep0_transfer_private(dev, slot_id, hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
         set_boot, 0ULL, 0U, 0);
 
     // 6) Configure Interrupt IN Endpoint (§4.6.6).
     uint32_t ep_num = (uint32_t)(hid_info.EndpointAddr & 0x0FU);
     uint32_t ep_dci = ep_num * 2U + 1U; // IN endpoint DCI = ep_num * 2 + 1
-    if (ep_dci < 2U || ep_dci > 31U)
-        return;
-
-    uint64_t tr_phys = 0, rep_phys = 0;
-    XHCI_TRB *tr_ring = (XHCI_TRB *)t->AllocDmaPage(t->Context, &tr_phys);
-    uint8_t *rep_buf = (uint8_t *)t->AllocDmaPage(t->Context, &rep_phys);
-    if (!tr_ring || !rep_buf)
-        return;
-    zero_mem_private(tr_ring, 4096U);
-    zero_mem_private(rep_buf, 4096U);
+    if (ep_dci < 2U || ep_dci > 31U) {
+        disable_slot_cmd_private(dev, slot_id);
+        return 0;
+    }
 
     zero_mem_private(in_ctx, 4096U);
     icc[1] = (1U << 0) | (1U << ep_dci);
@@ -523,29 +576,63 @@ static void probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
     uint32_t *ep_ctx = (uint32_t *)(in_ctx + (ep_dci + 1U) * csz);
     ep_ctx[0] = interval_exp << 16;
     ep_ctx[1] = (3U << 1) | (7U << 3) | ((uint32_t)hid_info.MaxPacketSize << 16); // CErr=3, Interrupt IN(7)
-    ep_ctx[2] = (uint32_t)(tr_phys | 1ULL); // DCS = 1
-    ep_ctx[3] = (uint32_t)(tr_phys >> 32);
+    ep_ctx[2] = (uint32_t)(hid->TransferRingPhys | 1ULL); // DCS = 1
+    ep_ctx[3] = (uint32_t)(hid->TransferRingPhys >> 32);
     ep_ctx[4] = (uint32_t)hid_info.MaxPacketSize | ((uint32_t)hid_info.MaxPacketSize << 16);
 
-    if (!cmd_submit_private(dev, in_ctx_phys, 0U, (XHCI_TRB_CONFIGURE_EP << 10) | (slot_id << 24), &ev))
-        return;
+    if (!cmd_submit_private(dev, in_ctx_phys, 0U, (XHCI_TRB_CONFIGURE_EP << 10) | (slot_id << 24), &ev)) {
+        disable_slot_cmd_private(dev, slot_id);
+        return 0;
+    }
 
-    XHCI_HID_SLOT *hid = &dev->HidDevices[dev->HidCount++];
-    zero_mem_private(hid, sizeof(*hid));
     hid->Active = 1U;
     hid->SlotId = (uint8_t)slot_id;
     hid->PortId = (uint8_t)(port_idx + 1U);
     hid->Protocol = hid_info.Protocol;
     hid->EpDci = (uint8_t)ep_dci;
     hid->Cycle = 1U;
+    hid->Enqueue = 0U;
     hid->MaxPacketSize = hid_info.MaxPacketSize > 64U ? 64U : hid_info.MaxPacketSize;
-    hid->TransferRing = tr_ring;
-    hid->TransferRingPhys = tr_phys;
-    hid->ReportBuf = rep_buf;
-    hid->ReportBufPhys = rep_phys;
+    ++dev->HidCount;
 
     // Prime initial Interrupt IN transfer.
     queue_hid_trb_private(dev, hid);
+    return 1;
+}
+
+// ====== handle_port_change_private ======
+
+static void handle_port_change_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_id)
+{
+    if (!port_id || port_id > dev->MaxPorts)
+        return;
+    const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
+    uint32_t port_idx = port_id - 1U;
+    uint32_t portsc_off = dev->CapLength + XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE;
+    uint32_t portsc = 0;
+    if (!t->Read32(t->Context, portsc_off, &portsc))
+        return;
+
+    // Clear W1C change bits while preserving PP and avoiding PED write-1-to-clear.
+    (void)t->Write32(t->Context, portsc_off, (portsc & XHCI_PORTSC_PP) | XHCI_PORTSC_W1C_MASK);
+
+    if ((portsc & XHCI_PORTSC_CCS) == 0U) {
+        XHCI_HID_SLOT *hid = find_hid_by_port_private(dev, port_id);
+        if (hid) {
+            uint32_t old_slot = hid->SlotId;
+            hid->Active = 0U;
+            hid->SlotId = 0U;
+            hid->PortId = 0U;
+            zero_mem_private(hid->PrevReport, sizeof(hid->PrevReport));
+            if (dev->HidCount > 0U)
+                --dev->HidCount;
+            disable_slot_cmd_private(dev, old_slot);
+            ++dev->HotplugDisconnects;
+        }
+    } else if (!find_hid_by_port_private(dev, port_id)) {
+        if (probe_port_private(dev, port_idx))
+            ++dev->HotplugConnects;
+    }
 }
 
 // ====== kernel_xhci_init ======
@@ -620,17 +707,21 @@ int kernel_xhci_init(KERNEL_XHCI_DEVICE *dev, const KERNEL_XHCI_TRANSPORT *trans
     if (!wait_op_bits_private(dev, XHCI_OP_USBSTS, XHCI_STS_CNR, 0U, 500U))
         return 0;
 
-    // Allocate DCBAA, Command Ring, Event Ring, ERST.
+    // Allocate DCBAA, Command Ring, Event Ring, ERST, reusable Input Context and Scratch Page.
     dev->Dcbaa = (uint64_t *)t->AllocDmaPage(t->Context, &dev->DcbaaPhys);
     dev->CmdRing = (XHCI_TRB *)t->AllocDmaPage(t->Context, &dev->CmdRingPhys);
     dev->EvtRing = (XHCI_TRB *)t->AllocDmaPage(t->Context, &dev->EvtRingPhys);
     dev->Erst = (XHCI_ERST_ENTRY *)t->AllocDmaPage(t->Context, &dev->ErstPhys);
-    if (!dev->Dcbaa || !dev->CmdRing || !dev->EvtRing || !dev->Erst)
+    dev->InCtx = (uint8_t *)t->AllocDmaPage(t->Context, &dev->InCtxPhys);
+    dev->ScratchBuf = (uint8_t *)t->AllocDmaPage(t->Context, &dev->ScratchBufPhys);
+    if (!dev->Dcbaa || !dev->CmdRing || !dev->EvtRing || !dev->Erst || !dev->InCtx || !dev->ScratchBuf)
         return 0;
     zero_mem_private(dev->Dcbaa, 4096U);
     zero_mem_private(dev->CmdRing, 4096U);
     zero_mem_private(dev->EvtRing, 4096U);
     zero_mem_private(dev->Erst, 4096U);
+    zero_mem_private(dev->InCtx, 4096U);
+    zero_mem_private(dev->ScratchBuf, 4096U);
 
     // §4.20 Scratchpad Buffers (if requested by HCSPARAMS2).
     if (dev->ScratchpadCount > 0U && dev->ScratchpadCount <= 64U) {
@@ -684,7 +775,7 @@ int kernel_xhci_init(KERNEL_XHCI_DEVICE *dev, const KERNEL_XHCI_TRANSPORT *trans
 
     // Enumerate connected root-hub ports for Boot HID keyboards & mice.
     for (uint32_t p = 0; p < dev->MaxPorts; ++p)
-        probe_port_private(dev, p);
+        (void)probe_port_private(dev, p);
 
     dev->Ready = 1U;
     return 1;
@@ -698,6 +789,7 @@ uint32_t kernel_xhci_poll_events(KERNEL_XHCI_DEVICE *dev)
         return 0U;
     const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
     uint32_t processed = 0U;
+    uint64_t changed_ports = 0ULL;
     for (uint32_t budget = 0; budget < XHCI_RING_TRBS; ++budget) {
         t->Barrier(t->Context);
         XHCI_TRB ev = dev->EvtRing[dev->EvtDequeue];
@@ -713,7 +805,7 @@ uint32_t kernel_xhci_poll_events(KERNEL_XHCI_DEVICE *dev)
         if (type == XHCI_TRB_TRANSFER_EVT) {
             uint32_t slot_id = (ev.Control >> 24) & 0xFFU;
             uint32_t cc = (ev.Status >> 24) & 0xFFU;
-            for (uint32_t i = 0; i < dev->HidCount; ++i) {
+            for (uint32_t i = 0; i < XHCI_MAX_HID_DEVICES; ++i) {
                 XHCI_HID_SLOT *hid = &dev->HidDevices[i];
                 if (hid->Active && hid->SlotId == slot_id) {
                     if (cc == XHCI_CC_SUCCESS || cc == XHCI_CC_SHORT_PACKET) {
@@ -724,15 +816,26 @@ uint32_t kernel_xhci_poll_events(KERNEL_XHCI_DEVICE *dev)
                             kernel_xhci_decode_hid_mouse(hid->ReportBuf, hid->MaxPacketSize,
                                 t->OnMouse, t->Context);
                         }
+                        queue_hid_trb_private(dev, hid);
                     }
-                    queue_hid_trb_private(dev, hid);
                     break;
                 }
             }
+        } else if (type == XHCI_TRB_PORT_CHANGE) {
+            // xHCI Spec Rev. 1.2 §6.4.2.3: Parameter bits 31:24 hold 1-based Port ID.
+            uint32_t port_id = (uint32_t)((ev.Parameter >> 24) & 0xFFU);
+            if (port_id >= 1U && port_id <= 64U && port_id <= dev->MaxPorts)
+                changed_ports |= (1ULL << (port_id - 1U));
         }
     }
     if (processed)
         evt_ack_private(dev);
+    if (changed_ports) {
+        for (uint32_t p = 0; p < dev->MaxPorts && p < 64U; ++p) {
+            if (changed_ports & (1ULL << p))
+                handle_port_change_private(dev, p + 1U);
+        }
+    }
     return processed;
 }
 
