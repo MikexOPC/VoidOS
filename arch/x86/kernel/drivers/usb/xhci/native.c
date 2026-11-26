@@ -7,7 +7,9 @@
 #include "arch/x86/mm/heap/binding.h"
 #include "arch/x86/mm/paging/heap/authority.h"
 #include "arch/x86/mm/window/access.h"
+#include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/scheduler/scheduler.h"
 #include "kernel/sync/internal.h"
 #ifdef KERNEL_USER_PROCESS
 #include "kernel/gui/gui.h"
@@ -27,8 +29,9 @@ typedef struct {
     uint32_t  Value;
 } MMIO_BORROW_REQ;
 
-#define X86_XHCI_VECTOR     0x46U
-#define X86_XHCI_MMIO_LIMIT 0x10000U
+#define X86_XHCI_VECTOR         0x46U
+#define X86_XHCI_MMIO_LIMIT     0x10000U
+#define X86_XHCI_SHELL_Q_CAP    64U
 
 typedef struct {
     uintptr_t                 Self;
@@ -56,6 +59,11 @@ typedef struct {
     int32_t                   ScaleRemainderY;
     uint64_t                  KeyEvents;
     uint64_t                  MouseEvents;
+    uint32_t                  LastConnects;
+    uint32_t                  LastDisconnects;
+    uint32_t                  ShellScalars[X86_XHCI_SHELL_Q_CAP];
+    uint32_t                  ShellHead;
+    uint32_t                  ShellTail;
     KERNEL_XHCI_DEVICE        Driver;
 } X86_XHCI_RUNTIME;
 
@@ -196,6 +204,19 @@ static int transport_clock_private(void *context, uint32_t *ticks_out)
     return 1;
 }
 
+// ====== push_shell_scalar_private ======
+
+static void push_shell_scalar_private(X86_XHCI_RUNTIME *rt, uint32_t scalar)
+{
+    uint64_t saved_if = ks_irq_save();
+    uint32_t next_tail = (rt->ShellTail + 1U) % X86_XHCI_SHELL_Q_CAP;
+    if (next_tail != rt->ShellHead) {
+        rt->ShellScalars[rt->ShellTail] = scalar;
+        rt->ShellTail = next_tail;
+    }
+    ks_irq_restore(saved_if);
+}
+
 // ====== on_usb_key_private ======
 
 static void on_usb_key_private(void *context, uint32_t code, uint32_t scalar, uint32_t flags)
@@ -206,13 +227,19 @@ static void on_usb_key_private(void *context, uint32_t code, uint32_t scalar, ui
     ++rt->KeyEvents;
 #ifdef KERNEL_USER_PROCESS
     KERNEL_GUI *gui = kernel_gui_global();
-    if (gui && kernel_gui_display_owner(gui) != 0)
+    if (gui && kernel_gui_display_owner(gui) != 0) {
         (void)kernel_gui_input_push_key(gui, code, scalar, flags);
+        return;
+    }
 #else
-    (void)code;
-    (void)scalar;
     (void)flags;
 #endif
+    if ((code & XHCI_KEY_EVENT_RELEASE) == 0U) {
+        if (scalar != 0U)
+            push_shell_scalar_private(rt, scalar);
+        else if ((code & 0xFFFFU) == 0x29U)
+            push_shell_scalar_private(rt, 0x1BU);
+    }
 }
 
 // ====== on_usb_mouse_private ======
@@ -247,6 +274,11 @@ static int xhci_irq_handle_private(void)
     if (!xhci_rt.LapicMapping || !x86_lapic_eoi_vector(xhci_rt.LapicMapping, X86_XHCI_VECTOR))
         return 0;
     ks_atomic_store_release(&xhci_rt.IrqSeq, ks_atomic_load_relaxed(&xhci_rt.IrqSeq) + 1ULL);
+    X86_PS2_SESSION *owner = x86_ps2_session();
+    if (owner && owner->Active && !owner->Quiet && owner->Binding) {
+        owner->Ready = 1;
+        (void)kernel_scheduler_irq_post_bound(4U, (BOOT_U64)owner, owner->Binding);
+    }
     return 1;
 }
 
@@ -676,8 +708,49 @@ uint32_t x86_xhci_poll(void)
     if (_InterlockedCompareExchange(&xhci_rt.PollBusy, 1L, 0L) != 0L)
         return 0U;
     uint32_t events = kernel_xhci_poll_events(&xhci_rt.Driver);
+    if (xhci_rt.Driver.HotplugDisconnects != xhci_rt.LastDisconnects) {
+        xhci_rt.LastDisconnects = xhci_rt.Driver.HotplugDisconnects;
+        (void)kernel_text("KERNEL_XHCI_HOTPLUG_DISCONNECT: ");
+        (void)kernel_number(xhci_rt.Driver.HidCount);
+        (void)kernel_text("\n");
+    }
+    if (xhci_rt.Driver.HotplugConnects != xhci_rt.LastConnects) {
+        xhci_rt.LastConnects = xhci_rt.Driver.HotplugConnects;
+        (void)kernel_text("KERNEL_XHCI_HOTPLUG_CONNECT: ");
+        (void)kernel_number(xhci_rt.Driver.HidCount);
+        (void)kernel_text("\n");
+    }
     _InterlockedExchange(&xhci_rt.PollBusy, 0L);
     return events;
+}
+
+// ====== x86_xhci_has_shell_scalar ======
+
+int x86_xhci_has_shell_scalar(void)
+{
+    if (xhci_rt.Self != (uintptr_t)&xhci_rt || !xhci_rt.Ready)
+        return 0;
+    uint64_t saved_if = ks_irq_save();
+    int pending = (xhci_rt.ShellHead != xhci_rt.ShellTail);
+    ks_irq_restore(saved_if);
+    return pending;
+}
+
+// ====== x86_xhci_pop_shell_scalar ======
+
+int x86_xhci_pop_shell_scalar(uint32_t *scalar_out)
+{
+    if (!scalar_out || xhci_rt.Self != (uintptr_t)&xhci_rt || !xhci_rt.Ready)
+        return 0;
+    int got = 0;
+    uint64_t saved_if = ks_irq_save();
+    if (xhci_rt.ShellHead != xhci_rt.ShellTail) {
+        *scalar_out = xhci_rt.ShellScalars[xhci_rt.ShellHead];
+        xhci_rt.ShellHead = (xhci_rt.ShellHead + 1U) % X86_XHCI_SHELL_Q_CAP;
+        got = 1;
+    }
+    ks_irq_restore(saved_if);
+    return got;
 }
 
 // ====== x86_xhci_stop ======
@@ -685,6 +758,13 @@ uint32_t x86_xhci_poll(void)
 void x86_xhci_stop(void)
 {
     if (xhci_rt.Self == (uintptr_t)&xhci_rt && xhci_rt.Ready) {
+        (void)kernel_text("KERNEL_XHCI_STATS_IRQS: ");
+        (void)kernel_number(ks_atomic_load_acquire(&xhci_rt.IrqSeq));
+        (void)kernel_text("\nKERNEL_XHCI_STATS_KEYS: ");
+        (void)kernel_number(xhci_rt.KeyEvents);
+        (void)kernel_text("\nKERNEL_XHCI_STATS_MOUSE: ");
+        (void)kernel_number(xhci_rt.MouseEvents);
+        (void)kernel_text("\n");
         kernel_xhci_stop(&xhci_rt.Driver);
         xhci_rt.Ready = 0U;
     }

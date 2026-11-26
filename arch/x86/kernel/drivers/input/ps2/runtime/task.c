@@ -7,6 +7,7 @@
 #include "arch/x86/kernel/scheduler/remote/remote.h"
 #endif
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
+#include "arch/x86/kernel/drivers/usb/xhci/native.h"
 #include "kernel/diagnostics/log.h"
 #include "../shell/task.h"
 #ifdef KERNEL_CONSOLE_SHELL
@@ -87,6 +88,12 @@ static void worker_private(void)
             worker_failure_private(3, owner);
         if (owner->Error) worker_failure_private(4, owner);
         if (!x86_scheduler_driver_task_valid()) worker_failure_private(5, owner);
+        (void)x86_xhci_poll();
+        if (x86_xhci_has_shell_scalar()) {
+            (void)x86_scheduler_event_request(X86_TASK_SIGNAL, 4, 0);
+            x86_scheduler_yield();
+            continue;
+        }
 #ifdef KERNEL_CONSOLE_SHELL
         if (x86_console_pending(owner)) { x86_scheduler_yield(); continue; }
 #endif

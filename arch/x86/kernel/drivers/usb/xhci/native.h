@@ -12,6 +12,8 @@ int x86_xhci_start(
     const X86_PM_CLOCK *clock
 );
 uint32_t x86_xhci_poll(void);
+int x86_xhci_has_shell_scalar(void);
+int x86_xhci_pop_shell_scalar(uint32_t *scalar_out);
 void x86_xhci_stop(void);
 int x86_xhci_ready(void);
 

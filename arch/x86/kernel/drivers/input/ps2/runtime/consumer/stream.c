@@ -4,6 +4,7 @@
 #include "kernel/scheduler/payload.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "arch/x86/kernel/scheduler/irq/bridge.h"
+#include "arch/x86/kernel/drivers/usb/xhci/native.h"
 #include "kernel/diagnostics/log.h"
 #include "../../shell/task.h"
 #ifdef KERNEL_CONSOLE_SHELL
@@ -138,6 +139,25 @@ static int cancel_private(X86_PS2_SESSION *owner)
     return kernel_log(1,"PS2_EDIT_CANCEL");
 }
 
+// ====== drain_usb_shell_private ======
+
+static int drain_usb_shell_private(X86_PS2_SESSION *owner)
+{
+    (void)x86_xhci_poll();
+    uint32_t scalar = 0U;
+    int drained = 0;
+    while (!owner->Stop && x86_xhci_pop_shell_scalar(&scalar)) {
+        drained = 1;
+        if (scalar == 0x1BU) {
+            if (!cancel_private(owner))
+                kernel_scheduler_fail_stop();
+        } else if (!line_private(scalar)) {
+            kernel_scheduler_fail_stop();
+        }
+    }
+    return drained;
+}
+
 // ====== x86_ps2_consume ======
 
 void x86_ps2_consume(void)
@@ -145,6 +165,10 @@ void x86_ps2_consume(void)
     X86_PS2_SESSION *owner = x86_ps2_session();
     owner->ConsumerGeneration = x86_scheduler_generation();
     for (;;) {
+        if (drain_usb_shell_private(owner)) {
+            x86_scheduler_yield();
+            continue;
+        }
         uint64_t saved_if = kernel_preempt_section_enter();
         BOOT_U64 value = pop_private(), decoded;
         int verdict = x86_ps2_fault_poll(owner);
@@ -156,9 +180,17 @@ void x86_ps2_consume(void)
             continue;
         }
         if (value == KERNEL_PAYLOAD_EMPTY) {
+            if (drain_usb_shell_private(owner)) {
+                x86_scheduler_yield();
+                continue;
+            }
             KERNEL_EVENT_REPLY observed;
             if (owner->Stop && owner->Quiet) break;
             observed = x86_scheduler_event_request(X86_TASK_OBSERVE,4,0);
+            if (drain_usb_shell_private(owner)) {
+                x86_scheduler_yield();
+                continue;
+            }
             saved_if = kernel_preempt_section_enter();
             value = pop_private();
             kernel_preempt_section_leave(saved_if);
