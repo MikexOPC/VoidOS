@@ -79,6 +79,7 @@
 #define XHCI_TRB_DISABLE_SLOT   10U
 #define XHCI_TRB_ADDRESS_DEVICE 11U
 #define XHCI_TRB_CONFIGURE_EP   12U
+#define XHCI_TRB_EVALUATE_CTX   13U
 #define XHCI_TRB_TRANSFER_EVT   32U
 #define XHCI_TRB_CMD_COMPLETE   33U
 #define XHCI_TRB_PORT_CHANGE    34U
@@ -99,6 +100,7 @@
 #define USB_CLASS_MSC           8U
 #define USB_SUBCLASS_SCSI       6U
 #define USB_PROTO_BOT           0x50U
+#define USB_CLASS_HUB           9U
 
 #define XHCI_RING_TRBS          64U
 #define XHCI_MAX_HID_DEVICES    16U
@@ -244,6 +246,7 @@ typedef struct {
 
 int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INFO *out);
 int kernel_xhci_parse_msc_config(const uint8_t *desc, uint32_t len, XHCI_MSC_INFO *out);
+int kernel_xhci_parse_hub_config(const uint8_t *desc, uint32_t len, uint8_t *config_val_out);
 void kernel_xhci_decode_hid_kbd(uint8_t prev_report[8], const uint8_t report[8],
     XHCI_KEY_CALLBACK on_key, void *ctx);
 void kernel_xhci_decode_hid_mouse(const uint8_t *report, uint32_t len,
@@ -253,7 +256,8 @@ int kernel_xhci_init(KERNEL_XHCI_DEVICE *dev, const KERNEL_XHCI_TRANSPORT *trans
 uint32_t kernel_xhci_poll_events(KERNEL_XHCI_DEVICE *dev);
 void kernel_xhci_stop(KERNEL_XHCI_DEVICE *dev);
 
-// Shared internal primitives used by msc.c
+// Shared internal primitives used by msc.c and hub.c
+void kernel_xhci_delay_ms(KERNEL_XHCI_DEVICE *dev, uint32_t ms);
 void kernel_xhci_ring_doorbell(KERNEL_XHCI_DEVICE *dev, uint32_t slot, uint32_t target);
 int kernel_xhci_submit_cmd(KERNEL_XHCI_DEVICE *dev, uint64_t param, uint32_t status,
     uint32_t control, XHCI_TRB *event_out);
@@ -261,11 +265,18 @@ int kernel_xhci_ep0_transfer(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id,
     XHCI_TRB *ep0_ring, uint64_t ep0_phys, uint32_t *ep0_enq, uint8_t *ep0_cycle,
     uint64_t setup_pkt, uint64_t data_phys, uint32_t data_len, int dir_in);
 int kernel_xhci_wait_transfer(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t ep_dci, uint32_t timeout_ms);
+int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx,
+    uint32_t speed, uint32_t route_string, uint32_t tt_info, int allow_hub);
+
+// USB 2.0 External Hub (Class 0x09)
+int kernel_xhci_hub_probe(KERNEL_XHCI_DEVICE *dev, uint32_t hub_slot_id, uint32_t root_port_idx,
+    uint32_t hub_speed, uint8_t config_val, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
+    uint32_t *ep0_enq, uint8_t *ep0_cycle);
 
 // USB Mass Storage (Bulk-Only Transport + SCSI)
 int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t port_idx,
-    uint32_t speed, XHCI_TRB *ep0_ring, uint64_t ep0_phys, uint32_t *ep0_enq,
-    uint8_t *ep0_cycle, const XHCI_MSC_INFO *info, uint8_t *dev_ctx, uint64_t dev_ctx_phys);
+    uint32_t speed, uint32_t route_string, uint32_t tt_info, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
+    uint32_t *ep0_enq, uint8_t *ep0_cycle, const XHCI_MSC_INFO *info, uint8_t *dev_ctx, uint64_t dev_ctx_phys);
 int kernel_xhci_msc_read_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, void *buffer);
 int kernel_xhci_msc_write_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, const void *buffer);
 

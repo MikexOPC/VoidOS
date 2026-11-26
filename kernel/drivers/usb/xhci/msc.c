@@ -203,8 +203,8 @@ static int bot_transfer_private(KERNEL_XHCI_DEVICE *dev, const uint8_t *cdb, uin
 // ====== kernel_xhci_msc_setup ======
 
 int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t port_idx,
-    uint32_t speed, XHCI_TRB *ep0_ring, uint64_t ep0_phys, uint32_t *ep0_enq,
-    uint8_t *ep0_cycle, const XHCI_MSC_INFO *info, uint8_t *dev_ctx, uint64_t dev_ctx_phys)
+    uint32_t speed, uint32_t route_string, uint32_t tt_info, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
+    uint32_t *ep0_enq, uint8_t *ep0_cycle, const XHCI_MSC_INFO *info, uint8_t *dev_ctx, uint64_t dev_ctx_phys)
 {
     if (!dev || !info || !slot_id || dev->Msc.Active)
         return 0;
@@ -253,8 +253,9 @@ int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t po
     icc[1] = (1U << 0) | (1U << in_dci) | (1U << out_dci);
 
     uint32_t *slot_ctx = (uint32_t *)(in_ctx + csz);
-    slot_ctx[0] = (max_dci << 27) | (speed << 20);
+    slot_ctx[0] = (max_dci << 27) | (speed << 20) | (route_string & 0xFFFFFU);
     slot_ctx[1] = (port_idx + 1U) << 16;
+    slot_ctx[2] = tt_info;
 
     uint32_t *out_ctx = (uint32_t *)(in_ctx + (out_dci + 1U) * csz);
     out_ctx[1] = (3U << 1) | (2U << 3) | ((uint32_t)info->BulkOutMps << 16); // CErr=3, Bulk OUT(2)

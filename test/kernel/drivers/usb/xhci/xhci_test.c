@@ -510,6 +510,22 @@ static void test_msc_bot_read_write(void)
     kernel_xhci_stop(&dev);
 }
 
+// ====== test_parse_hub_descriptor ======
+
+static void test_parse_hub_descriptor(void)
+{
+    static const uint8_t hub_cfg[] = {
+        9, 2, 25, 0, 1, 1, 0, 0xE0, 0,
+        9, 4, 0, 0, 1, 0x09, 0x00, 0x00, 0, // Class 0x09 = Hub
+        7, 5, 0x81, 0x03, 1, 0, 12
+    };
+    uint8_t cfg_val = 0U;
+    assert(kernel_xhci_parse_hub_config(hub_cfg, sizeof(hub_cfg), &cfg_val) == 1);
+    assert(cfg_val == 1U);
+    assert(kernel_xhci_parse_hub_config(fake_kbd_cfg, sizeof(fake_kbd_cfg), &cfg_val) == 0);
+    assert(kernel_xhci_parse_hub_config(fake_msc_cfg, sizeof(fake_msc_cfg), &cfg_val) == 0);
+}
+
 // ====== main ======
 
 int main(void)
@@ -520,6 +536,7 @@ int main(void)
     test_hotplug_lifecycle();
     test_parse_msc_descriptor();
     test_msc_bot_read_write();
+    test_parse_hub_descriptor();
     puts("xhci_host: PASS");
     return 0;
 }

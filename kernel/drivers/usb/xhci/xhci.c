@@ -58,6 +58,14 @@ static void delay_ms_private(const KERNEL_XHCI_TRANSPORT *t, uint32_t ms)
     }
 }
 
+// ====== kernel_xhci_delay_ms ======
+
+void kernel_xhci_delay_ms(KERNEL_XHCI_DEVICE *dev, uint32_t ms)
+{
+    if (dev)
+        delay_ms_private(&dev->Transport, ms);
+}
+
 // ====== wait_op_bits_private ======
 
 static int wait_op_bits_private(KERNEL_XHCI_DEVICE *dev, uint32_t op_off,
@@ -481,38 +489,16 @@ static XHCI_HID_SLOT *alloc_hid_slot_private(KERNEL_XHCI_DEVICE *dev)
     return NULL;
 }
 
-// ====== probe_port_private ======
+// ====== kernel_xhci_enumerate_device ======
 
-static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
+int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx,
+    uint32_t speed, uint32_t route_string, uint32_t tt_info, int allow_hub)
 {
-    if (find_hid_by_port_private(dev, port_idx + 1U))
-        return 0;
-    if (dev->Msc.Active && dev->Msc.PortId == (uint8_t)(port_idx + 1U))
-        return 0;
     const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
-    uint32_t portsc_off = dev->CapLength + XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE;
-    uint32_t portsc = 0;
-    if (!t->Read32(t->Context, portsc_off, &portsc) || !(portsc & XHCI_PORTSC_CCS))
-        return 0;
-
-    // Reset port (preserve PP, clear W1C change bits, set PR bit 4).
-    uint32_t reset_val = (portsc & XHCI_PORTSC_PP) | XHCI_PORTSC_PR;
-    if (!t->Write32(t->Context, portsc_off, reset_val))
-        return 0;
-    if (!wait_op_bits_private(dev, XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE,
-        XHCI_PORTSC_PR, 0U, 200U))
-        return 0;
-    delay_ms_private(t, 10U);
-    if (!t->Read32(t->Context, portsc_off, &portsc) || !(portsc & XHCI_PORTSC_PED))
-        return 0;
-    // Clear PRC/CSC W1C bits without touching PED.
-    (void)t->Write32(t->Context, portsc_off, (portsc & XHCI_PORTSC_PP) | XHCI_PORTSC_W1C_MASK);
-
     XHCI_HID_SLOT *hid = alloc_hid_slot_private(dev);
     if (!hid)
         return 0;
 
-    uint32_t speed = (portsc & XHCI_PORTSC_SPEED_MASK) >> XHCI_PORTSC_SPEED_SHIFT;
     // Default EP0 MaxPacketSize by xHCI §4.3: Low=8, Full=8 (or 64), High=64, Super=512.
     uint32_t ep0_mps = (speed == 4U) ? 512U : (speed == 3U ? 64U : 8U);
 
@@ -539,8 +525,9 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
     uint32_t *icc = (uint32_t *)in_ctx;
     icc[1] = (1U << 0) | (1U << 1);
     uint32_t *slot_ctx = (uint32_t *)(in_ctx + csz);
-    slot_ctx[0] = (1U << 27) | (speed << 20); // Context Entries = 1, Speed
-    slot_ctx[1] = (port_idx + 1U) << 16;      // Root Hub Port Number (1-based)
+    slot_ctx[0] = (1U << 27) | (speed << 20) | (route_string & 0xFFFFFU);
+    slot_ctx[1] = (root_port_idx + 1U) << 16;
+    slot_ctx[2] = tt_info;
 
     uint32_t *ep0_ctx = (uint32_t *)(in_ctx + 2U * csz);
     ep0_ctx[1] = (3U << 1) | (4U << 3) | (ep0_mps << 16); // CErr=3, EP Type=Control(4), MPS
@@ -568,7 +555,7 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
     if (!kernel_xhci_parse_hid_config(scratch, 255U, &hid_info)) {
         XHCI_MSC_INFO msc_info = {0};
         if (!dev->Msc.Active && kernel_xhci_parse_msc_config(scratch, 255U, &msc_info)) {
-            if (kernel_xhci_msc_setup(dev, slot_id, port_idx, speed,
+            if (kernel_xhci_msc_setup(dev, slot_id, root_port_idx, speed, route_string, tt_info,
                 hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
                 &msc_info, hid->DevCtx, hid->DevCtxPhys)) {
                 hid->DevCtx = NULL;
@@ -577,6 +564,18 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
                 hid->Ep0RingPhys = 0ULL;
                 return 1;
             }
+        }
+        uint8_t hub_cfg = 0U;
+        if (allow_hub && kernel_xhci_parse_hub_config(scratch, 255U, &hub_cfg)) {
+            // Detach DevCtx & Ep0Ring from temporary HID slot before probing downstream devices.
+            XHCI_TRB *hub_ep0 = hid->Ep0Ring;
+            uint64_t hub_ep0_phys = hid->Ep0RingPhys;
+            hid->DevCtx = NULL;
+            hid->DevCtxPhys = 0ULL;
+            hid->Ep0Ring = NULL;
+            hid->Ep0RingPhys = 0ULL;
+            return kernel_xhci_hub_probe(dev, slot_id, root_port_idx, speed, hub_cfg,
+                hub_ep0, hub_ep0_phys, &ep0_enq, &ep0_cycle);
         }
         disable_slot_cmd_private(dev, slot_id);
         return 0;
@@ -605,8 +604,9 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
 
     zero_mem_private(in_ctx, 4096U);
     icc[1] = (1U << 0) | (1U << ep_dci);
-    slot_ctx[0] = (ep_dci << 27) | (speed << 20);
-    slot_ctx[1] = (port_idx + 1U) << 16;
+    slot_ctx[0] = (ep_dci << 27) | (speed << 20) | (route_string & 0xFFFFFU);
+    slot_ctx[1] = (root_port_idx + 1U) << 16;
+    slot_ctx[2] = tt_info;
 
     // Interval encoding (§6.2.3.6): for FS/LS, exponent = log2(ms) + 3 (clamped 3..10).
     uint32_t interval_exp = 6U; // ~8 ms polling interval
@@ -624,7 +624,7 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
 
     hid->Active = 1U;
     hid->SlotId = (uint8_t)slot_id;
-    hid->PortId = (uint8_t)(port_idx + 1U);
+    hid->PortId = (uint8_t)(root_port_idx + 1U);
     hid->Protocol = hid_info.Protocol;
     hid->EpDci = (uint8_t)ep_dci;
     hid->Cycle = 1U;
@@ -635,6 +635,37 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
     // Prime initial Interrupt IN transfer.
     queue_hid_trb_private(dev, hid);
     return 1;
+}
+
+// ====== probe_port_private ======
+
+static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
+{
+    if (find_hid_by_port_private(dev, port_idx + 1U))
+        return 0;
+    if (dev->Msc.Active && dev->Msc.PortId == (uint8_t)(port_idx + 1U))
+        return 0;
+    const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
+    uint32_t portsc_off = dev->CapLength + XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE;
+    uint32_t portsc = 0;
+    if (!t->Read32(t->Context, portsc_off, &portsc) || !(portsc & XHCI_PORTSC_CCS))
+        return 0;
+
+    // Reset port (preserve PP, clear W1C change bits, set PR bit 4).
+    uint32_t reset_val = (portsc & XHCI_PORTSC_PP) | XHCI_PORTSC_PR;
+    if (!t->Write32(t->Context, portsc_off, reset_val))
+        return 0;
+    if (!wait_op_bits_private(dev, XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE,
+        XHCI_PORTSC_PR, 0U, 200U))
+        return 0;
+    delay_ms_private(t, 10U);
+    if (!t->Read32(t->Context, portsc_off, &portsc) || !(portsc & XHCI_PORTSC_PED))
+        return 0;
+    // Clear PRC/CSC W1C bits without touching PED.
+    (void)t->Write32(t->Context, portsc_off, (portsc & XHCI_PORTSC_PP) | XHCI_PORTSC_W1C_MASK);
+
+    uint32_t speed = (portsc & XHCI_PORTSC_SPEED_MASK) >> XHCI_PORTSC_SPEED_SHIFT;
+    return kernel_xhci_enumerate_device(dev, port_idx, speed, 0U, 0U, 1);
 }
 
 // ====== handle_port_change_private ======

@@ -355,6 +355,7 @@ xhci_host = executable(
     'xhci_host',
     repo / 'kernel/drivers/usb/xhci/xhci.c',
     repo / 'kernel/drivers/usb/xhci/msc.c',
+    repo / 'kernel/drivers/usb/xhci/hub.c',
     'kernel/drivers/usb/xhci/xhci_test.c',
     include_directories: inc,
 )
