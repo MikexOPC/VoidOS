@@ -6,6 +6,23 @@
 #include "arch/x86/kernel/drivers/input/ps2/runtime/session.h"
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "kernel/scheduler/payload.h"
+#ifdef KERNEL_USER_PROCESS
+#include "kernel/gui/gui.h"
+static KERNEL_GUI gui;
+static KERNEL_INPUT_EVENT gui_events[32];
+static uint32_t gui_count, serial_calls;
+
+// ====== gui_output_boundary ======
+
+KERNEL_GUI *kernel_gui_global(void) { return &gui; }
+uint64_t kernel_gui_display_owner(KERNEL_GUI *value) { assert(value == &gui); return 20; }
+int kernel_gui_input_push_key(KERNEL_GUI *value, uint32_t code, uint32_t scalar, uint32_t flags)
+{
+    assert(value == &gui && gui_count < 32);
+    gui_events[gui_count++] = (KERNEL_INPUT_EVENT){KERNEL_INPUT_KEY, flags, code, scalar, 0, 0};
+    return 1;
+}
+#endif
 
 static X86_PS2_SESSION owner;
 static uint64_t queue[259];
@@ -53,7 +70,13 @@ __declspec(noreturn) void kernel_scheduler_fail_stop(void)
     if (expect_failure) longjmp(failure,1);
     abort();
 }
-int kernel_text(const char *text) { assert(text); return 1; }
+int kernel_text(const char *text) {
+    assert(text);
+#ifdef KERNEL_USER_PROCESS
+    ++serial_calls;
+#endif
+    return 1;
+}
 int kernel_number(BOOT_U64 value) { (void)value; return 1; }
 int kernel_log(unsigned level, const char *text)
 {
@@ -125,6 +148,29 @@ static void reset_private(void)
 
 int main(void)
 {
+#ifdef KERNEL_USER_PROCESS
+    reset_private();
+    owner.DeviceErrors = owner.Decoder = owner.TextState = 0;
+    owner.Line.Length = 0;
+    const unsigned char bytes[] = {0x12, 0x1c, 0xf0, 0x1c, 0xf0, 0x12, 0x1c, 0x1c, 0xf0, 0x1c, 0x76};
+    for (uint32_t index = 0; index < sizeof(bytes); ++index)
+        queue[count++] = KERNEL_PAYLOAD_DATA | bytes[index];
+    x86_ps2_consume();
+    assert(gui_count == 8 && !submitted && !cancelled && !serial_calls);
+    assert(gui_events[0].Code == 0x10012 && gui_events[0].Value == 0);
+    assert(gui_events[1].Value == 'A');
+    assert(gui_events[2].Code == 0x2001c && gui_events[2].Value == 0);
+    assert(gui_events[3].Code == 0x20012 && gui_events[3].Value == 0);
+    assert(gui_events[4].Value == 'a' && gui_events[5].Value == 'a');
+    assert(gui_events[6].Code == 0x2001c && gui_events[6].Value == 0);
+    assert(gui_events[7].Code == 0x10076 && gui_events[7].Value == 0);
+    reset_private();
+    gui_count = 0;
+    x86_ps2_consume();
+    assert(gui_count == 1 && gui_events[0].Flags == KERNEL_INPUT_FLAG_RESYNC);
+    puts("PASS GUI keyboard: real decoder/text/consumer; GUI queue and scheduler mocked");
+    return 0;
+#else
     for (uint32_t bytes = 0; bytes <= 256; ++bytes) {
         reset_private();
         for (uint32_t index = 0; index < bytes; ++index)
@@ -170,4 +216,5 @@ int main(void)
     }
     puts("PASS: PS2 consumer 277 scenarios; fault recovery, Esc cancellation/repeat/release, real C/Rust; queue/scheduler MOCK");
     return 0;
+#endif
 }

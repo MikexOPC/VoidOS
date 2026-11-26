@@ -357,9 +357,6 @@ extern "C" fn program_main(mode: u64) -> ! {
                     prev_buttons = buttons;
                 }
             } else if ev.kind == libvoid::INPUT_KEY {
-                if (ev.flags & libvoid::INPUT_FLAG_RESYNC) != 0 && ev.code == 0 && ev.value == 0 {
-                    continue;
-                }
                 let scalar = match ev.value {
                     0x110001 => 8,
                     0x110002 => 9,
@@ -433,7 +430,7 @@ extern "C" fn program_main(mode: u64) -> ! {
             let _ = applications.shutdown();
             libvoid::exit(95);
         }
-        if had_work {
+        if had_work || applications.has_pending() {
             libvoid::yield_now();
         } else {
             let wait_ms = slint::platform::duration_until_next_timer_update()

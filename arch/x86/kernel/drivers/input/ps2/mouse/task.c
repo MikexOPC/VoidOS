@@ -7,8 +7,8 @@
 #endif
 #ifdef KERNEL_USER_PROCESS
 #include "kernel/gui/gui.h"
+#include "kernel/console/video/pointer/state.h"
 #include "arch/x86/kernel/process/gui.h"
-#define GUI_MOUSE_GAIN 2
 #endif
 
 // ====== pop_private ======
@@ -56,8 +56,8 @@ static void flush_gui_mouse_private(X86_PS2_MOUSE *mouse, int32_t *dx, int32_t *
         return;
     KERNEL_GUI *gui = kernel_gui_global();
     if (gui && kernel_gui_display_owner(gui) != 0) {
-        int32_t screen_dx = *dx * GUI_MOUSE_GAIN;
-        int32_t screen_dy = *dy * GUI_MOUSE_GAIN;
+        int32_t screen_dx = kernel_pointer_scale_delta(*dx, &mouse->ScaleRemainderX);
+        int32_t screen_dy = kernel_pointer_scale_delta(*dy, &mouse->ScaleRemainderY);
         if (!kernel_gui_input_push_mouse(gui, screen_dx, screen_dy, buttons)) {
             if (mouse->GuiDrops != UINT32_MAX)
                 ++mouse->GuiDrops;
@@ -83,6 +83,7 @@ void x86_ps2_mouse_task(void)
     int32_t gui_dx = 0, gui_dy = 0;
     uint32_t gui_buttons = 0, gui_last_flushed_buttons = 0;
     int gui_pending = 0;
+    mouse->ScaleRemainderX = mouse->ScaleRemainderY = 0;
 #endif
     mouse->Generation = x86_scheduler_generation();
     for (;;) {

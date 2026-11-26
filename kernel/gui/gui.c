@@ -379,6 +379,11 @@ int kernel_gui_input_push_key(KERNEL_GUI *gui, uint32_t code, uint32_t scalar, u
     int ok = 0;
     if (gui->DisplayOwnerPid) {
         gui->LastKeyFlags = flags & ~KERNEL_INPUT_FLAG_RESYNC;
+        if (!code && !scalar && (flags & KERNEL_INPUT_FLAG_RESYNC)) {
+            gui->PendingKeyResync = 1U;
+            leave_private(&access);
+            return 1;
+        }
         KERNEL_INPUT_EVENT event = {0};
         event.Kind = KERNEL_INPUT_KEY;
         event.Flags = flags & ~KERNEL_INPUT_FLAG_RESYNC;

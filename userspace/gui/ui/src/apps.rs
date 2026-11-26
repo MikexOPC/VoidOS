@@ -287,6 +287,12 @@ impl Applications {
             .find(|app| app.kind == kind)
             .map_or(0, |app| app.commits)
     }
+
+    // ====== has_pending ======
+
+    pub fn has_pending(&self) -> bool {
+        self.windows.iter().any(|app| !app.pending.is_empty())
+    }
 }
 
 impl Application {

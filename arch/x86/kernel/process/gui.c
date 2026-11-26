@@ -50,7 +50,6 @@ static uint64_t x86_gui_rtc_last_sec = ~0ULL;
 static uint64_t x86_gui_rtc_base_epoch;
 static uint64_t x86_gui_rtc_base_uptime_sec;
 static uint32_t x86_gui_rtc_base_valid;
-static uint64_t x86_gui_present_gen;
 static KERNEL_PHYSICAL_LEASE x86_gui_kmap_tables;
 static uint32_t x86_gui_kmap_pages;
 static uint32_t x86_gui_kmap_active;
@@ -66,6 +65,10 @@ static struct {
     uint32_t  H;
     uint32_t  Active;
     uint32_t  Drawn;
+    int32_t   RequestedX;
+    int32_t   RequestedY;
+    uint32_t  Presenting;
+    uint32_t  SurfaceReady;
     uint64_t  BackbufferShmId;
     uint32_t  Saved[18U * 18U];
     uint32_t  Sprite[18U * 18U];
@@ -265,45 +268,42 @@ static void gui_cursor_commit_private(volatile uint32_t *fb_pixels, uint32_t fb_
 
 void x86_gui_cursor_position(int32_t x, int32_t y)
 {
-    if (!x86_gui_ready || !x86_gui_cursor.Active ||
-        (x == x86_gui_cursor.X && y == x86_gui_cursor.Y))
+    if (!x86_gui_ready)
         return;
     BOOT_U64 fb_base = 0;
     BOOT_U32 fb_w = 0, fb_h = 0, fb_stride = 0, fb_fmt = 0;
     if (!x86_fb_kernel_surface_info(&fb_base, &fb_w, &fb_h, &fb_stride, &fb_fmt) || !fb_base)
         return;
     volatile uint32_t *fb_pixels = (volatile uint32_t *)(uintptr_t)fb_base;
-    X86_GUI_CURSOR_FRAME frame;
-    for (uint32_t attempt = 0; attempt < 2U; ++attempt) {
-        uint64_t gen_before = ks_atomic_load_acquire(&x86_gui_present_gen);
-        int32_t target_x = x;
-        int32_t target_y = y;
-        if (!gui_cursor_prepare_private(target_x, target_y, fb_w, fb_h, fb_stride, &frame))
-            return;
-        uint32_t t0 = 0, t1 = 0;
-        int timed = x86_gui_clock && kernel_clock_now(x86_gui_clock, &t0);
-        uint64_t saved_if = ks_irq_save();
-        if (!x86_gui_cursor.Active) {
-            ks_irq_restore(saved_if);
-            return;
-        }
-        if (ks_atomic_load_acquire(&x86_gui_present_gen) != gen_before && attempt == 0U) {
-            ++x86_gui_cursor.Retries;
-            ks_irq_restore(saved_if);
-            continue;
-        }
-        gui_cursor_restore_private(fb_pixels, fb_stride);
-        gui_cursor_commit_private(fb_pixels, fb_stride, &frame);
+    uint64_t saved_if = ks_irq_save();
+    if (!x86_gui_cursor.Active) {
         ks_irq_restore(saved_if);
-        if (timed && kernel_clock_now(x86_gui_clock, &t1)) {
-            uint32_t delta = kernel_clock_delta(x86_gui_clock, t0, t1);
-            x86_gui_cursor.IrqOffTicksTotal += delta;
-            if (delta > x86_gui_cursor.IrqOffTicksMax)
-                x86_gui_cursor.IrqOffTicksMax = delta;
-        }
-        ++x86_gui_cursor.Moves;
         return;
     }
+    x86_gui_cursor.RequestedX = x;
+    x86_gui_cursor.RequestedY = y;
+    if (x86_gui_cursor.Presenting || !x86_gui_cursor.SurfaceReady ||
+        (x86_gui_cursor.Drawn && x == x86_gui_cursor.X && y == x86_gui_cursor.Y)) {
+        ks_irq_restore(saved_if);
+        return;
+    }
+    X86_GUI_CURSOR_FRAME frame;
+    uint32_t t0 = 0, t1 = 0;
+    int timed = x86_gui_clock && kernel_clock_now(x86_gui_clock, &t0);
+    if (!gui_cursor_prepare_private(x, y, fb_w, fb_h, fb_stride, &frame)) {
+        ks_irq_restore(saved_if);
+        return;
+    }
+    gui_cursor_restore_private(fb_pixels, fb_stride);
+    gui_cursor_commit_private(fb_pixels, fb_stride, &frame);
+    if (timed && kernel_clock_now(x86_gui_clock, &t1)) {
+        uint32_t delta = kernel_clock_delta(x86_gui_clock, t0, t1);
+        x86_gui_cursor.IrqOffTicksTotal += delta;
+        if (delta > x86_gui_cursor.IrqOffTicksMax)
+            x86_gui_cursor.IrqOffTicksMax = delta;
+    }
+    ++x86_gui_cursor.Moves;
+    ks_irq_restore(saved_if);
 }
 
 // ====== x86_gui_clock_tick ======
@@ -777,6 +777,8 @@ void x86_gui_release_owned(uint64_t pid, X86_PROCESS_SLOT *slot)
         uint64_t saved_if = ks_irq_save();
         x86_gui_cursor.Active = 0U;
         x86_gui_cursor.Drawn = 0U;
+        x86_gui_cursor.Presenting = 0U;
+        x86_gui_cursor.SurfaceReady = 0U;
         x86_gui_cursor.BackbufferShmId = 0ULL;
         ks_irq_restore(saved_if);
         gui_kunmap_backbuffer_private();
@@ -1018,6 +1020,10 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
     x86_gui_cursor.X = (int32_t)(w / 2U);
     x86_gui_cursor.Y = (int32_t)(h / 2U);
     x86_gui_cursor.Drawn = 0U;
+    x86_gui_cursor.RequestedX = x86_gui_cursor.X;
+    x86_gui_cursor.RequestedY = x86_gui_cursor.Y;
+    x86_gui_cursor.Presenting = 0U;
+    x86_gui_cursor.SurfaceReady = 0U;
     x86_gui_cursor.BackbufferShmId = shm_id;
     x86_gui_cursor.Moves = 0ULL;
     x86_gui_cursor.IrqOffTicksTotal = 0ULL;
@@ -1067,9 +1073,12 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
     uint64_t needed_bytes = (uint64_t)fb_stride * (uint64_t)fb_h * 4ULL;
     if (needed_bytes > mapped_bytes)
         return RESULT_UNKNOWN;
+    int complete_frame = 0;
     for (BOOT_U64 idx = 0; idx < count; ++idx) {
         if (!kernel_gui_rect_valid(fb_w, fb_h, &rects[idx]))
             return RESULT_RANGE;
+        if (!rects[idx].X && !rects[idx].Y && rects[idx].Width == fb_w && rects[idx].Height == fb_h)
+            complete_frame = 1;
     }
     uint32_t t0 = 0, t1 = 0;
     int timed = x86_gui_clock && kernel_clock_now(x86_gui_clock, &t0);
@@ -1077,8 +1086,14 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
     const uint32_t *bb_pixels = (const uint32_t *)(uintptr_t)X86_LAYOUT_GUI_BACKBUFFER_VIRTUAL;
     volatile uint32_t *fb_pixels = (volatile uint32_t *)(uintptr_t)fb_base;
     uint64_t cur_if = ks_irq_save();
+    if (x86_gui_cursor.Presenting) {
+        ks_irq_restore(cur_if);
+        return RESULT_UNKNOWN;
+    }
+    x86_gui_cursor.Presenting = 1U;
     gui_cursor_restore_private(fb_pixels, fb_stride);
     ks_irq_restore(cur_if);
+    BOOT_U64 present_result = 0;
     for (BOOT_U64 idx = 0; idx < count; ++idx) {
         const KERNEL_DISPLAY_RECT *r = &rects[idx];
         for (uint32_t row = 0; row < r->Height; ++row) {
@@ -1103,20 +1118,21 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
                 dst32[p] = src32[p];
         }
         if (x86_gui_display.Ops && x86_gui_display.Ops->Rect) {
-            if (!x86_gui_display.Ops->Rect(x86_gui_display.Self, r->X, r->Y, r->Width, r->Height))
-                return RESULT_UNKNOWN;
+            if (!x86_gui_display.Ops->Rect(x86_gui_display.Self, r->X, r->Y, r->Width, r->Height)) {
+                present_result = RESULT_UNKNOWN;
+                goto finish_present;
+            }
         }
     }
-    ks_atomic_store_release(&x86_gui_present_gen, ks_atomic_load_relaxed(&x86_gui_present_gen) + 1ULL);
-    X86_GUI_CURSOR_FRAME cursor_frame;
-    int cursor_prepared = x86_gui_cursor.Active
-        && gui_cursor_prepare_private(x86_gui_cursor.X, x86_gui_cursor.Y, fb_w, fb_h, fb_stride, &cursor_frame);
-    if (cursor_prepared) {
-        cur_if = ks_irq_save();
-        if (x86_gui_cursor.Active)
-            gui_cursor_commit_private(fb_pixels, fb_stride, &cursor_frame);
-        ks_irq_restore(cur_if);
-    }
+finish_present:
+    cur_if = ks_irq_save();
+    x86_gui_cursor.Presenting = 0U;
+    if (!present_result && complete_frame)
+        x86_gui_cursor.SurfaceReady = 1U;
+    x86_gui_cursor_position(x86_gui_cursor.RequestedX, x86_gui_cursor.RequestedY);
+    ks_irq_restore(cur_if);
+    if (present_result)
+        return present_result;
     if (timed && kernel_clock_now(x86_gui_clock, &t1)) {
         uint32_t delta = kernel_clock_delta(x86_gui_clock, t0, t1);
         x86_gui_present_ticks_total += delta;

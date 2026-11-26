@@ -2,6 +2,18 @@
 #define KERNEL_CONSOLE_POINTER_STATE_H
 #include "../console.h"
 #include "shape.h"
+
+// ====== kernel_pointer_scale_delta ======
+
+static inline int32_t kernel_pointer_scale_delta(int32_t delta, int32_t *remainder)
+{
+    int64_t scaled = (int64_t)delta * 3 + *remainder;
+    *remainder = (int32_t)(scaled % 2);
+    scaled /= 2;
+    if (scaled > INT32_MAX) return INT32_MAX;
+    if (scaled < INT32_MIN) return INT32_MIN;
+    return (int32_t)scaled;
+}
 typedef struct {
     uintptr_t               Self;
     KERNEL_VIDEO_CONSOLE     *View;

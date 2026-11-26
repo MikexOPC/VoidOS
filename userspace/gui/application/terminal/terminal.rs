@@ -323,6 +323,12 @@ extern "C" fn program_main(arg: u64) -> ! {
         if n == PROTO_WIRE_BYTES as i64 {
             if let Some(msg) = GuiMessage::decode(&rx) {
                 if msg.kind == MSG_INPUT_KEY {
+                    if msg.e & 0xffff_0000 == 0x0002_0000
+                        || msg.f == 0
+                        || msg.flags & libvoid::INPUT_FLAG_RESYNC != 0
+                    {
+                        continue;
+                    }
                     let ch = (msg.f & 0xFF) as u8;
                     if ch == b'\n' || ch == b'\r' {
                         term.newline();

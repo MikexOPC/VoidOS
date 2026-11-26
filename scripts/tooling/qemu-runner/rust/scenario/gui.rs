@@ -19,6 +19,7 @@ fn wait_text(vm: &mut Vm, marker: &str, count: usize) -> Result<(), String> {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+    let _ = screenshot(vm, "gui-timeout");
     Err(format!("Missing GUI evidence {marker} ({count})"))
 }
 
@@ -29,7 +30,7 @@ fn click(vm: &mut Vm, x: i32, y: i32) {
         vm.command("mouse_move -100 -100");
         std::thread::sleep(Duration::from_millis(20));
     }
-    let (mut remaining_x, mut remaining_y) = (x / 2, y / 2);
+    let (mut remaining_x, mut remaining_y) = (x * 2 / 3, y * 2 / 3);
     while remaining_x != 0 || remaining_y != 0 {
         let dx = remaining_x.clamp(-100, 100);
         let dy = remaining_y.clamp(-100, 100);
@@ -82,6 +83,56 @@ fn screenshot(vm: &mut Vm, name: &str) -> Result<(i32, i32), String> {
     Err(format!("Incomplete screenshot {}", path.display()))
 }
 
+// ====== cursor_trails ======
+
+fn cursor_trails(vm: &mut Vm, width: i32, height: i32) -> Result<(), String> {
+    screenshot(vm, "cursor-before")?;
+    for _ in 0..20 {
+        vm.command("mouse_move -100 -100");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    for (dx, dy) in [(100, 100), (100, 100), (28, 100), (0, 100), (0, 56)] {
+        vm.command(&format!("mouse_move {dx} {dy}"));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    for _ in 0..3 {
+        for (dx, dy, count) in [(0, -60, 5), (60, 0, 6), (0, 60, 5), (-60, 0, 6)] {
+            for _ in 0..count {
+                vm.command(&format!("mouse_move {dx} {dy}"));
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+    for _ in 0..20 {
+        vm.command("mouse_move -100 -100");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_secs(1));
+    screenshot(vm, "cursor-after")?;
+    let before = std::fs::read(vm.directory.join("cursor-before.ppm")).map_err(|error| error.to_string())?;
+    let after = std::fs::read(vm.directory.join("cursor-after.ppm")).map_err(|error| error.to_string())?;
+    let pixels = width as usize * height as usize * 3;
+    let before = &before[before.len() - pixels..];
+    let after = &after[after.len() - pixels..];
+    let mut changed = 0;
+    for y in 0..height - 100 {
+        for x in 0..width {
+            if (x < 18 && y < 18) ||
+                (x >= width / 2 && x < width / 2 + 18 && y >= height / 2 && y < height / 2 + 18) {
+                continue;
+            }
+            let offset = (y as usize * width as usize + x as usize) * 3;
+            if before[offset..offset + 3] != after[offset..offset + 3] {
+                changed += 1;
+            }
+        }
+    }
+    if changed != 0 {
+        return Err(format!("Cursor trails: {changed} changed pixels outside cursor and dock"));
+    }
+    Ok(())
+}
+
 // ====== run ======
 
 pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
@@ -99,10 +150,13 @@ pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
         wait_text(vm, "VoidOS desktop ready", ready + 1)?;
         std::thread::sleep(Duration::from_millis(500));
         let (width, height) = screenshot(vm, "desktop")?;
+        if cycles == 0 {
+            cursor_trails(vm, width, height)?;
+        }
         click(vm, 341, height - 37);
         screenshot(vm, "terminal-click")?;
         wait_text(vm, "VoidOS desktop terminal ready", terminal + 1)?;
-        for key in ["r", "p", "spc", "shift-7", "h", "e", "l", "l", "o", "dot", "t", "x", "t", "ret"] {
+        for key in ["r", "p", "spc", "shift-7", "h", "e", "l", "l", "o", "x", "backspace", "dot", "t", "x", "t", "ret"] {
             vm.command(&format!("sendkey {key} 20"));
             std::thread::sleep(Duration::from_millis(100));
         }

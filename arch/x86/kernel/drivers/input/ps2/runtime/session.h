@@ -22,6 +22,7 @@ typedef struct {
     BOOT_U32 SavedLow, SavedHigh, RouteOwned, Done;
     BOOT_U32 Bytes, Irqs, Events, Buttons, Losses, TaskIrqs;
     BOOT_U32 Rejected, Saturated, Streak, GuiDrops;
+    int32_t ScaleRemainderX, ScaleRemainderY;
     KERNEL_PS2_MOUSE_DECODER Decoder;
 } X86_PS2_MOUSE;
 /* Recoverable keyboard faults (B2): LOSS markers, decoder INVALID, i8042 parity/timeout,

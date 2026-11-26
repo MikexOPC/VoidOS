@@ -83,7 +83,6 @@ static int text_private(uint32_t event)
     if (owner->Stop) return 1;
     owner->TextState = (uint32_t)(result >> 32);
     if (scalar == KERNEL_PS2_TEXT_INVALID) return 0;
-    if (!scalar) return 1;
 #ifdef KERNEL_USER_PROCESS
     if (kernel_gui_global() && kernel_gui_display_owner(kernel_gui_global()) != 0) {
         if (!kernel_gui_input_push_key(kernel_gui_global(), event, scalar, owner->TextState)) {
@@ -93,6 +92,7 @@ static int text_private(uint32_t event)
         return 1;
     }
 #endif
+    if (!scalar) return 1;
     if (!line_private(scalar)) return 0;
     if (scalar == KERNEL_PS2_TEXT_BACKSPACE) return kernel_log(1,"PS2_EDIT_BACKSPACE");
     if (scalar == KERNEL_PS2_TEXT_TAB) return kernel_log(1,"PS2_EDIT_TAB");
@@ -113,6 +113,13 @@ static int text_private(uint32_t event)
 static int resync_private(X86_PS2_SESSION *owner, int verdict)
 {
     int proceed = x86_ps2_fault_resync(owner, verdict);
+#ifdef KERNEL_USER_PROCESS
+    KERNEL_GUI *gui = kernel_gui_global();
+    if (gui && kernel_gui_display_owner(gui) != 0) {
+        (void)kernel_gui_input_push_key(gui, 0, 0, KERNEL_INPUT_FLAG_RESYNC);
+        return proceed;
+    }
+#endif
 #ifdef KERNEL_CONSOLE_SHELL
     if (!x86_console_edit(owner)) { owner->Failed = 1; owner->Stop = 1; return 0; }
 #endif
@@ -178,10 +185,16 @@ void x86_ps2_consume(void)
         if (((uint32_t)decoded & 0xffff0000U) == KERNEL_PS2_RELEASE) ++owner->Releases;
         else {
             ++owner->Keys;
+#ifdef KERNEL_USER_PROCESS
+            if (!kernel_gui_global() || kernel_gui_display_owner(kernel_gui_global()) == 0) {
+#endif
             if (!kernel_text("PS2_KEY: ") || !kernel_number((uint32_t)decoded & 65535) || !kernel_text("\n"))
                 kernel_scheduler_fail_stop();
             if (((uint32_t)decoded & 65535) == 0x76 && !owner->Stop && !cancel_private(owner))
                 kernel_scheduler_fail_stop();
+#ifdef KERNEL_USER_PROCESS
+            }
+#endif
         }
         // Bound each consumer burst; allow companion and pending IRQ progress.
         x86_scheduler_yield();

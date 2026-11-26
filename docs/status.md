@@ -1,4 +1,4 @@
-# Stato di VoidOS — 25 novembre 2026
+# Stato di VoidOS — 26 novembre 2026
 
 ## Immagine di produzione
 
@@ -31,15 +31,22 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
   nel compositor, merge rettangoli basato sul costo, mapping kernel RO
   persistente del backbuffer senza `invlpg` né buffer intermedio (`IF=1`),
   attese su eventi (`SYS_GUI_WAIT` / `ipc_wait_readable`), drenaggio equo
-  round-robin, coalescing mouse con resync su overflow, cursore fuori sezione
-  critica (`avg ~20-27 µs` in TCG) e RTC letto una volta sola all'init.
+  round-robin, coalescing mouse con resync su overflow e RTC letto una volta
+  sola all'init. Il cursore serializza ripristino e composizione dell'area
+  18×18 con il present; la copia dei rettangoli conserva `IF=1`.
 
 ## Lavoro corrente
 
-**Riduzione latenza GUI, storage, syscall e logging — fatta (verificata su
-QEMU TCG).** **Desktop con app reali — parziale.** Restano System Monitor con
-dati reali, prova con due app e stress da 30 minuti. L'ingresso interattivo è
-`gui`.
+**Input GUI, cursore e budget rinnovabile WHPX — fatta.** Puntatore con
+posizione unica e guadagno 3/2 con resto frazionario, disegno cursore 18×18
+serializzato con il present senza residui, tastiera con rilasci/modificatori/
+resync e compositor che cede subito il turno (`yield_now`) quando `pending`
+non è vuoto. I processi eseguiti con `renew_budget = 1` (supervisor `init` e
+sessione GUI) non vengono terminati con `ExitKind=4` al superamento di un
+singolo turno/syscall lunga (rimane invariato il limite fisso per i processi
+con `renew_budget = 0`).
+**Desktop con app reali — parziale.** Restano System Monitor con dati reali,
+prova con due app e stress da 30 minuti. L'ingresso interattivo è `gui`.
 
 ## Limiti noti
 
@@ -67,12 +74,14 @@ dati reali, prova con due app e stress da 30 minuti. L'ingresso interattivo è
 
 ## Prove e prossimo passo
 
-Verifiche correnti su immagine di produzione (`41ccce6`): 31/31 test host
-(`meson test`), 10/10 boot `--ordinary-shell --smp 4`, 1/1 `--ordinary-gui 1
---smp 4` (`GUI_PRESENT_STATS avg 227-385 µs`, `GUI_CURSOR_STATS avg 19.5-26.8 µs`,
-`retries 0`). Validazioni precedenti in [gui.md](validation/gui.md),
+Verifiche correnti sull'immagine di produzione (`8C00E117...`): 32/32 test
+host (`meson test`), 10/10 boot `--ordinary-shell --smp 4`
+(`qemu-runner-18eba16bd80fadb8-d3c`), 3/3 boot `--ordinary-gui 1 --smp 4`
+(`qemu-runner-18eba12ebc2681e0-2c48`, 21 cicli, 42 avvii Terminale, 21 comandi
+VFS, 0 pixel residui cursore), 5/5 boot WHPX headless fino a `SHELL_TASK2_READY`
+(~5 s/boot). Validazioni in [gui.md](validation/gui.md),
 [consolidamento.md](validation/consolidamento.md),
 [processi.md](validation/processi.md), [storage.md](validation/storage.md),
 [exec.md](validation/exec.md) e [sicurezza.md](validation/sicurezza.md).
-Prossimo passo: completare System Monitor con dati reali, prova multi-app e
-stress da 30 minuti prima dell'hardware fisico.
+Prossimo passo: System Monitor con dati reali, prova multi-app e stress da 30
+minuti prima dell'hardware fisico.

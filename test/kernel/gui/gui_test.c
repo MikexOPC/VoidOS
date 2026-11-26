@@ -214,6 +214,11 @@ static void test_input_ring(KERNEL_HEAP *heap)
     int32_t x = 0, y = 0;
     assert(kernel_gui_pointer_position(&gui, &x, &y));
     assert(x == 799 && y == 599);
+    assert(kernel_gui_input_push_key(&gui, 0, 0, KERNEL_INPUT_FLAG_RESYNC));
+    assert(kernel_gui_has_input(&gui, 20));
+    assert(kernel_gui_input_poll(&gui, 20, &ev) == 1);
+    assert(ev.Kind == KERNEL_INPUT_KEY && ev.Code == 0 && ev.Value == 0);
+    assert(ev.Flags == KERNEL_INPUT_FLAG_RESYNC);
 
     assert(kernel_gui_destroy(&gui));
 }

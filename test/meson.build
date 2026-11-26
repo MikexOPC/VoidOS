@@ -483,6 +483,13 @@ gui_host = executable(
 )
 test('gui_host', gui_host, env: runtime)
 
+pointer_sensitivity = executable(
+    'pointer_sensitivity',
+    'kernel/console/video/pointer/sensitivity_test.c',
+    include_directories: inc,
+)
+test('pointer_sensitivity', pointer_sensitivity, env: runtime)
+
 libui_rust = executable(
     'libui_rust',
     repo / 'userspace/gui/libui/lib.rs',
