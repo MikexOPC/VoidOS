@@ -27,6 +27,9 @@ int x86_lapic_idle(const X86_LAPIC_MAPPING *owner);
 /* ISR empty; IRR may hold only the bank2 bits in pending (vectors 40h..43h). */
 int x86_lapic_idle_except(const X86_LAPIC_MAPPING *owner, BOOT_U32 pending);
 int x86_lapic_report(const X86_LAPIC_MAPPING *owner);
+int x86_lapic_x2apic_active(void);
+int x86_lapic_x2apic_enable(void);
 int x86_lapic_native_read(BOOT_U32 offset, BOOT_U32 *value);
+int x86_lapic_native_write(BOOT_U32 offset, BOOT_U32 value);
 int x86_lapic_native_eoi(void);
 #endif

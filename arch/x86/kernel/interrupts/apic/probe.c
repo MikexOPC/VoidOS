@@ -1,3 +1,4 @@
+#include <intrin.h>
 #include "probe.h"
 #include "arch/x86/configs/layout.h"
 #include "arch/x86/mm/window/access.h"
@@ -112,7 +113,14 @@ static int read_registers(void *state)
             result = result && valid;
         }
     } else {
-        result = x86_apic_mmio_read(0x20, request->Id) && x86_apic_mmio_read(0x30, request->Version);
+        // Intel SDM Vol. 3A §11.12.1: if IA32_APIC_BASE.EXTD (bit 10) is set, read ID/VER via MSR 802h/803h.
+        if ((__readmsr(0x1BU) & (1ULL << 10)) != 0ULL) {
+            *request->Id = (BOOT_U32)__readmsr(0x802U) << 24;
+            *request->Version = (BOOT_U32)__readmsr(0x803U);
+            result = 1;
+        } else {
+            result = x86_apic_mmio_read(0x20, request->Id) && x86_apic_mmio_read(0x30, request->Version);
+        }
     }
     return result;
 }

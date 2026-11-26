@@ -74,8 +74,9 @@ int x86_lapic_authority(const X86_LAPIC_MAPPING *owner)
     if (!x86_lapic_validate(owner) || !x86_apic_cache_state() || !x86_apic_read_profile(&raw) ||
         raw.MaxLeaf < 1 || raw.Reserved || raw.PhysicalBits != owner->PhysicalBits ||
         (raw.Rflags & 0x202) != 2 ||
-        x86_apic_mode(raw.ApicBase,raw.Leaf1Ecx,raw.Leaf1Edx,owner->PhysicalBits) != 1 ||
         (raw.ApicBase & ADDRESS) != owner->Physical || !x86_apic_uc_slot(raw.Pat)) return 0;
+    BOOT_U32 mode = x86_apic_mode(raw.ApicBase,raw.Leaf1Ecx,raw.Leaf1Edx,owner->PhysicalBits);
+    if (mode != 1 && mode != 2) return 0;
     slot = (BOOT_U32)((owner->Cache & 8) >> 3) +
         (BOOT_U32)((owner->Cache & 16) >> 3) + (BOOT_U32)((owner->Cache & 128) >> 5);
     return ((raw.Pat >> (slot*8)) & 255) == 0;
@@ -242,5 +243,7 @@ int x86_lapic_report(const X86_LAPIC_MAPPING *owner) {
         kernel_text("\nKERNEL_LAPIC_VIRTUAL: ") && kernel_number(X86_LAPIC_VIRTUAL) &&
         kernel_text("\nKERNEL_LAPIC_PTE: ") &&
         kernel_number(x86_window_entries(3)[X86_LAPIC_LEAF] & ~AD) &&
-        kernel_text("\n") && kernel_log(0,"KERNEL_LAPIC_MAPPING_OK");
+        kernel_text("\nKERNEL_LAPIC_MODE: ") &&
+        kernel_text(x86_lapic_x2apic_active() ? "X2APIC\n" : "XAPIC\n") &&
+        kernel_log(0,"KERNEL_LAPIC_MAPPING_OK");
 }

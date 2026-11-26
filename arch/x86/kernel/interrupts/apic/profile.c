@@ -33,8 +33,8 @@ static int raw_valid(const X86_APIC_RAW *raw, BOOT_U32 bits)
         !(raw->Rflags & 2) || (raw->Rflags & (1ULL << 9))) {
         return 0;
     }
-    // Il profilo operativo corrente supporta xAPIC; x2APIC viene rilevato ma respinto.
-    return x86_apic_mode(raw->ApicBase, raw->Leaf1Ecx, raw->Leaf1Edx, bits) == 1;
+    BOOT_U32 mode = x86_apic_mode(raw->ApicBase, raw->Leaf1Ecx, raw->Leaf1Edx, bits);
+    return mode == 1 || mode == 2;
 }
 
 // ====== matching del solo Initial APIC ID senza assumere CPU zero ===== //
