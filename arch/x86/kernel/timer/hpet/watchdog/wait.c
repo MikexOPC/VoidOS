@@ -45,9 +45,10 @@ static int wake_lapic_valid(const X86_HPET_WATCHDOG *owner)
                 if (item->Vector != vector || !x86_irq_registry_token_live(registry, &token)) return 0;
                 allowed |= 1U << index;
             } else {
-                // Device MSI/MSI-X vectors (0x44..0x4F) bound by storage drivers.
+                // Device MSI/MSI-X vectors (0x44..0x4F) bound by storage/USB drivers.
                 if (item->Vector < 0x44U || item->Vector > 0x4FU ||
                     !x86_irq_registry_token_live(registry, &token)) return 0;
+                allowed |= 1U << (5U + (item->Vector - 0x44U));
             }
         }
     }

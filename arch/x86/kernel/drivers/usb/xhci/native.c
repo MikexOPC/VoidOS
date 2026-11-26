@@ -278,9 +278,9 @@ static int xhci_irq_handle_private(void)
         return 0;
     ks_atomic_store_release(&xhci_rt.IrqSeq, ks_atomic_load_relaxed(&xhci_rt.IrqSeq) + 1ULL);
     X86_PS2_SESSION *owner = x86_ps2_session();
-    if (owner && owner->Active && !owner->Quiet && owner->Binding) {
+    if (owner && owner->Active && !owner->Quiet && owner->XhciBinding) {
         owner->Ready = 1;
-        (void)kernel_scheduler_irq_post_bound(4U, (BOOT_U64)owner, owner->Binding);
+        (void)kernel_scheduler_irq_post_bound(3U, (BOOT_U64)&owner->XhciBinding, owner->XhciBinding);
     }
     return 1;
 }

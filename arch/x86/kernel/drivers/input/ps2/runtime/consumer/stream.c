@@ -173,7 +173,8 @@ void x86_ps2_consume(void)
         BOOT_U64 value = pop_private(), decoded;
         int verdict = x86_ps2_fault_poll(owner);
         if (verdict && !x86_ps2_fault_discard(owner)) kernel_scheduler_fail_stop();
-        if (!verdict && value == KERNEL_PAYLOAD_EMPTY && !(owner->Stop && owner->Quiet)) owner->Ready = 0;
+        if (!verdict && value == KERNEL_PAYLOAD_EMPTY && !x86_xhci_has_shell_scalar() &&
+            !(owner->Stop && owner->Quiet)) owner->Ready = 0;
         kernel_preempt_section_leave(saved_if);
         if (verdict) {
             if (!resync_private(owner, verdict)) x86_scheduler_yield();

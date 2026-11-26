@@ -225,12 +225,13 @@ int x86_lapic_idle(const X86_LAPIC_MAPPING *owner) {
 // ====== ISR vuoto e IRR limitato ai vettori autorizzati ancora pendenti ===== //
 
 // Intel SDM 078US Vol3A, 11.8.4/Fig11-20: ISR100h..170h, IRR200h..270h.
-// IRR bank2 (220h) bits0..3 = vettori40h..43h; pending bit4 = vettore D1h, IRR bank6 bit17.
+// IRR bank2 (220h) bits0..3 = vettori 40h..43h, bits4..15 = device MSI/MSI-X 44h..4Fh (pending bits5..16);
+// pending bit4 = vettore D1h, IRR bank6 bit17.
 int x86_lapic_idle_except(const X86_LAPIC_MAPPING *owner, BOOT_U32 pending) {
     BOOT_U32 index, value, allowed;
-    if ((pending & ~31U) || !isr(owner,0)) return 0;
+    if ((pending & ~0x1FFFFU) || !isr(owner,0)) return 0;
     for (index = 0; index < 8; ++index) {
-        allowed = index == 2 ? pending & 15U : 0U;
+        allowed = index == 2 ? ((pending & 15U) | (((pending >> 5) & 0xFFFU) << 4)) : 0U;
         if (index == X86_PREEMPT_VECTOR / 32 && (pending & 16U)) allowed |= 1U << (X86_PREEMPT_VECTOR % 32);
         if (!x86_lapic_read(owner,0x200+index*16,&value) || (value & ~allowed)) return 0;
     }

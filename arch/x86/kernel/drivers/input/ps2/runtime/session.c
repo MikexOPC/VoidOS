@@ -314,6 +314,12 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         !x86_irq_registry_bind(x86_irq_registry(),0x41,x86_ps2_handle,x86_ps2_quiet,&session.Token)) {
         kernel_log(3,"PS2_BINDING_FAILED"); return 0;
     }
+    if (x86_xhci_ready()) {
+        session.XhciBinding = kernel_scheduler_irq_bind(3, (BOOT_U64)&session.XhciBinding);
+        if (!session.XhciBinding) {
+            kernel_log(3, "XHCI_BINDING_FAILED"); return 0;
+        }
+    }
 #ifdef KERNEL_PS2_MOUSE
     if (!x86_ps2_mouse_open(&session)) { kernel_log(3,"PS2_MOUSE_OPEN_FAILED"); return 0; }
 #endif
@@ -350,6 +356,10 @@ int x86_ps2_session_finish(void)
     if (!x86_ps2_complete() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
         !kernel_scheduler_irq_unbind(4,(BOOT_U64)&session,session.Binding) || !x86_watchdog_valid()) return 0;
     session.Binding = 0;
+    if (session.XhciBinding) {
+        if (!kernel_scheduler_irq_unbind(3, (BOOT_U64)&session.XhciBinding, session.XhciBinding)) return 0;
+        session.XhciBinding = 0;
+    }
 #ifdef KERNEL_PS2_MOUSE
     if (!x86_ps2_mouse_close(&session) || !x86_ps2_mouse_report(&session)) return 0;
     session.Mouse.Binding = 0;

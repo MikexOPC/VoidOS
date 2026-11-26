@@ -51,9 +51,9 @@ static void worker_private(void)
     X86_PS2_SESSION *owner = x86_ps2_session();
     owner->WorkerGeneration = x86_scheduler_generation();
 #ifdef KERNEL_PS2_MOUSE
-    const uint32_t worker_event = 6;
+    const uint32_t worker_event = x86_xhci_ready() ? 3U : 6U;
 #else
-    const uint32_t worker_event = 4;
+    const uint32_t worker_event = x86_xhci_ready() ? 3U : 4U;
 #endif
     if (!kernel_log(1,"KERNEL_PS2_TASK_POLL_READY")) kernel_scheduler_fail_stop();
     for (;;) {
@@ -148,6 +148,7 @@ int x86_ps2_idle(void)
     if (!owner->Active || owner->Quiet || owner->Idle == ~0U || !x86_scheduler_retained_valid()) return idle_failure(1);
     if (!x86_watchdog_idle(&owner->Ready)) return idle_failure(2);
     ++owner->Idle;
+    (void)x86_xhci_poll();
 #ifdef KERNEL_AP_TASKS
     x86_remote_service();
 #endif
