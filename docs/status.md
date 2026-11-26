@@ -23,9 +23,10 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
   cleanup pulito allo shutdown. FAT legge directory e LFN; scrittura e unlink
   operano sui nomi 8.3 nella root del mount.
 - Controller USB **xHCI 1.2** (PCI `0C:03:30`, MSI-X/MSI vettore `0x46`,
-  fallback silenzioso `KERNEL_XHCI_ABSENT` se assente) con enumerazione root
-  hub e supporto **HID Boot** (tastiera e mouse USB) collegati agli eventi
-  input della GUI.
+  fallback silenzioso `KERNEL_XHCI_ABSENT` se assente) con enumerazione e
+  **hotplug runtime** sul root hub (`Disable Slot` + riutilizzo pagine DMA) e
+  supporto **HID Boot** (tastiera USB in shell testuale e GUI, mouse USB in
+  GUI).
 - NX, WP, SMEP, SMAP, UMIP, guard page, canary, entropia hardware e CSPRNG
   hanno verifiche nell'immagine ordinaria. KPTI esclude heap kernel, vista
   ricorsiva, backbuffer GUI e slot device dalla vista utente.
@@ -44,8 +45,8 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
 
 ## Lavoro corrente
 
-**Milestone 7 — USB xHCI + HID (Boot Keyboard & Mouse) — fatta (su QEMU TCG).**
-Implementato driver xHCI 1.2 (BIOS handoff, `HCRST`, DCBAA/Scratchpad, Command/Event/Transfer Ring, enumerazione porte root hub, Control Transfer e endpoint Interrupt IN) con backend x86 PCI ECAM/DMA/MSI-X (`0x46`) e inoltro eventi tastiera/mouse USB alla GUI.
+**Milestone 7 — USB xHCI + HID (Boot Keyboard & Mouse + Hotplug) — fatta (su QEMU TCG).**
+Implementato driver xHCI 1.2 (BIOS handoff, `HCRST`, DCBAA/Scratchpad, Command/Event/Transfer Ring, enumerazione e hotplug runtime sul root hub con `Disable Slot` e riutilizzo pagine DMA senza leak, Control Transfer e endpoint Interrupt IN) con backend x86 PCI ECAM/DMA/MSI-X (`0x46`), tastiera USB collegata sia alla shell testuale sia alla GUI, e mouse USB alla GUI.
 **Milestone 7 — x2APIC — fatta (su QEMU TCG e WHPX).** Abilitato x2APIC su BSP
 e tutti gli AP con fallback automatico su xAPIC; verificati timer LAPIC, IPI
 INIT/SIPI, IPI di servizio/TLB shootdown, console wake AP1→BSP, NMI panic SMP e
@@ -66,10 +67,9 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 ## Limiti noti
 
 - Hardware fisico e rete non sono ancora stati provati o implementati.
-- USB xHCI supporta solo porte dirette sul root hub (niente hub USB esterni né
-  hotplug runtime) e solo dispositivi HID Boot Keyboard/Mouse verso la GUI
-  (la shell testuale usa ancora PS/2); l'invio di tasti/mouse fisici USB non è
-  stato ancora provato su PC reale.
+- USB xHCI supporta porte dirette sul root hub (niente hub USB esterni
+  multi-livello con split transaction) e solo dispositivi HID Boot
+  Keyboard/Mouse (no mass storage USB né tablet HID report protocol).
 - Lo scheduler usa ancora un ticket lock condiviso (rank 900). La contesa
   misurata su 4 CPU è 0,45% in boot ordinario e 0,63% (`172.650 / 27.271.834`)
   su 60 minuti di soak (30 min attivi + 30 min idle, picco 25.856 poll); la
@@ -92,17 +92,19 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Prove e prossimo passo
 
-Verifiche correnti sull'immagine di produzione (x2APIC + xHCI integrati):
-33/33 test host (`meson test`, ASan incluso `xhci_host`), 1/1 boot QEMU
-`-device qemu-xhci -device usb-kbd -device usb-mouse` (`KERNEL_XHCI_IRQ: 0x46`,
-`KERNEL_XHCI_PORTS: 8`, `KERNEL_XHCI_HID_DEVICES: 2`, `KERNEL_XHCI_READY`,
-`KERNEL_PS2_INPUT_READY`), 10/10 boot `--ordinary-shell --smp 4`
-(`qemu-runner-18ebac376efbaf80-7b8c`, `KERNEL_XHCI_ABSENT`, `X2APIC`),
-1/1 boot multi-app `--ordinary-gui 1 --smp 4`
-(`qemu-runner-18ebac74e4687b58-c9fc`), 3/3 boot fallback xAPIC
-(`-cpu max,-x2apic`), 3/3 boot WHPX headless in x2APIC, e 1/1 soak continuo
-`--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min,
-248 round, 0 overruns, 0 perdite di memoria).
+Verifiche correnti sull'immagine di produzione (x2APIC + xHCI + hotplug):
+33/33 test host (`meson test`, ASan incluso `xhci_host` con hotplug e zero
+leak DMA), 1/1 prova live QEMU `-device qemu-xhci -device usb-kbd -device
+usb-mouse` con `help` da tastiera USB in shell, movimento/click mouse USB,
+hotplug `device_del`/`device_add` (`KERNEL_XHCI_HOTPLUG_DISCONNECT: 1`,
+`KERNEL_XHCI_HOTPLUG_CONNECT: 2`), `exit` dopo riconnessione e chiusura pulita
+(`KERNEL_XHCI_STATS_IRQS: 25`, `KEYS: 20/20`, `MOUSE: 3/3`), 10/10 boot
+`--ordinary-shell --smp 4` (`qemu-runner-18ebae1159a249b0-d70c`), 1/1 boot
+multi-app `--ordinary-gui 1 --smp 4` (`qemu-runner-18ebae4dce34357c-a2c8`),
+3/3 boot fallback xAPIC (`-cpu max,-x2apic`), 3/3 boot WHPX headless in
+x2APIC, e 1/1 soak continuo `--ordinary-soak 30 --smp 4`
+(`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min, 248 round, 0 overruns, 0
+perdite di memoria).
 Validazioni in [gui.md](validation/gui.md),
 [consolidamento.md](validation/consolidamento.md),
 [processi.md](validation/processi.md), [storage.md](validation/storage.md),
