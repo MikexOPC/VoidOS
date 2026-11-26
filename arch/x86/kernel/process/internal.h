@@ -23,16 +23,16 @@
 #define PTE_NX (1ULL << 63)
 #define PTE_ADDRESS 0x000ffffffffff000ULL
 #define PAGE_BYTES 4096ULL
-#define TABLE_PAGES 7U
-#define USER_PT_COUNT 4U
+#define TABLE_PAGES 11U
+#define USER_PT_COUNT 8U
 #define STACK_PAGES 16U
-#define STACK_BASE 0xbf0000ULL
-#define STACK_TOP 0xc00000ULL
+#define STACK_BASE 0x13f0000ULL
+#define STACK_TOP 0x1400000ULL
 #define IMAGE_BASE 0x400000ULL
 #define PT_OFFSET(address) (1536U + (BOOT_U32)(((address) - IMAGE_BASE) >> 12))
 #define SLOT_IMAGE 511U
-// 1536 pages = 6 MiB image ceiling, matching KERNEL_PROCESS_MAX_IMAGE_PAGES and Rust MAX_IMAGE_PAGES.
-#define MAX_IMAGE_PAGES 1536U
+// 3584 pages = 14 MiB image ceiling, matching KERNEL_PROCESS_MAX_IMAGE_PAGES and Rust MAX_IMAGE_PAGES.
+#define MAX_IMAGE_PAGES 3584U
 #define MAX_COPY 256U
 #define TEXT_BLOCK 128U
 // Intel SDM 325462-089, vol. 3A, Fig. 12-8: LVT Timer +320h, vector bits 7:0.

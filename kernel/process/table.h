@@ -42,9 +42,9 @@
 
 #define KERNEL_PROC_FLAG_RESIDENT     1U
 
-// Per-process resource budget defaults and hard ceilings (1536 pages = 6 MiB across 4 user PTs).
-#define KERNEL_PROCESS_MAX_IMAGE_PAGES        1536U
-#define KERNEL_PROCESS_DEFAULT_IMAGE_PAGES    1536U
+// Per-process resource budget defaults and hard ceilings (3584 pages = 14 MiB across 8 user PTs).
+#define KERNEL_PROCESS_MAX_IMAGE_PAGES        3584U
+#define KERNEL_PROCESS_DEFAULT_IMAGE_PAGES    3584U
 #define KERNEL_PROCESS_DEFAULT_OPEN_FILES     32U
 #define KERNEL_PROCESS_DEFAULT_CPU_BUDGET_MS  2000U
 #define KERNEL_PROCESS_MAX_CPU_BUDGET_MS      60000U
