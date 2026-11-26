@@ -22,8 +22,6 @@ export component VoidDesktop inherits Window {
     in-out property <string> overlay-text: "";
     in-out property <string> status: "";
     in-out property <[AppSurface]> surfaces: [];
-    in-out property <float> cpu-load: 0.12;
-    in-out property <float> mem-load: 0.47;
     in-out property <string> display-label: "15:44";
     in-out property <string> uptime-label: "24 Nov 2026";
     in-out property <length> cursor-x: 540px;
@@ -40,9 +38,9 @@ export component VoidDesktop inherits Window {
         height: root.height;
     }
 
-    // Layer 1: Live application surfaces from /bin/terminal.elf when running in QEMU
+    // Layer 1: Live application surfaces from real Ring 3 processes
     for surface in root.surfaces: VoidWindow {
-        x: (root.width - self.width) / 2;
+        x: surface.kind == 0 ? 96px : 640px;
         y: 84px;
         width: surface.client-width + 2px;
         height: surface.client-height + 34px;
@@ -100,6 +98,7 @@ export component VoidDesktop inherits Window {
         screen-height: root.height;
         dock-mode: root.dock-mode;
         terminal-open: root.terminal-open;
+        sysmon-open: root.sysmon-open;
         clock-text: root.display-label;
         sub-clock-text: root.uptime-label;
         toggle-terminal => {
@@ -109,6 +108,15 @@ export component VoidDesktop inherits Window {
             } else {
                 root.terminal-open = true;
                 root.launch-app(0);
+            }
+        }
+        toggle-sysmon => {
+            if (root.sysmon-open) {
+                root.sysmon-open = false;
+                root.close-app(1);
+            } else {
+                root.sysmon-open = true;
+                root.launch-app(1);
             }
         }
         shutdown-clicked => {

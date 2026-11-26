@@ -49,9 +49,11 @@ impl Applications {
     // ====== launch ======
 
     pub fn launch(&mut self, kind: i32) -> bool {
-        if kind != 0 {
-            return false;
-        }
+        let path: &[u8] = match kind {
+            0 => b"/bin/terminal.elf",
+            1 => b"/bin/sysmon.elf",
+            _ => return false,
+        };
         self.focused = kind;
         if self.windows.iter().any(|app| app.kind == kind) {
             return true;
@@ -63,7 +65,7 @@ impl Applications {
             flags: 0,
         };
         let mut child = libvoid::ConnectedChild::default();
-        if libvoid::spawn_connected(b"/bin/terminal.elf", budget, &mut child) <= 0 {
+        if libvoid::spawn_connected(path, budget, &mut child) <= 0 {
             return false;
         }
         self.windows.push(Application {
@@ -267,7 +269,7 @@ impl Applications {
             }
             surfaces.push(AppSurface {
                 kind: app.kind,
-                title: "Terminale".into(),
+                title: if app.kind == 1 { "System Monitor" } else { "Terminale" }.into(),
                 pixels: app.image.clone(),
                 client_width: app.width as f32,
                 client_height: app.height as f32,
@@ -275,7 +277,7 @@ impl Applications {
         }
         self.model.set_vec(surfaces);
         ui.set_terminal_open(self.windows.iter().any(|app| app.kind == 0));
-        ui.set_sysmon_open(false);
+        ui.set_sysmon_open(self.windows.iter().any(|app| app.kind == 1));
         ui.set_focused_window(self.focused);
     }
 

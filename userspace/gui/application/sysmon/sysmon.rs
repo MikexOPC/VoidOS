@@ -3,7 +3,6 @@
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
-use libui::anim::{Easing, Tween};
 use libui::draw::{Canvas, Rect};
 use libui::proto::{GuiMessage, PROTO_WIRE_BYTES};
 use libui::style::{Theme, rgb};
@@ -19,6 +18,7 @@ global_asm!(
 const WIN_W: u32 = 400;
 const WIN_H: u32 = 240;
 const SHM_PAGES: u64 = ((WIN_W as u64 * WIN_H as u64 * 4) + 4095) / 4096;
+const REFRESH_INTERVAL_MS: u64 = 250;
 
 // ====== load_theme ======
 
@@ -37,11 +37,33 @@ fn load_theme() -> Theme {
     }
 }
 
+// ====== pct_u64 ======
+
+fn pct_u64(used: u64, total: u64) -> i32 {
+    if total == 0 {
+        return 0;
+    }
+    ((used.saturating_mul(100)) / total).min(100) as i32
+}
+
 // ====== draw_meter ======
 
-fn draw_meter(canvas: &mut Canvas<'_>, y: i32, label: &[u8], pct: i32, bar_color: u32, theme: &Theme) {
+fn draw_meter(
+    canvas: &mut Canvas<'_>,
+    y: i32,
+    label: &[u8],
+    pct: i32,
+    bar_color: u32,
+    theme: &Theme,
+) {
+    let mut num = [0u8; 20];
     canvas.draw_text(16, y, label, theme.text_primary);
-    let track = Rect::new(16, y + 20, (WIN_W as i32) - 32, 18);
+    let pct_txt = libvoid::format_u64(pct.clamp(0, 100) as u64, &mut num);
+    let right_x = (WIN_W as i32) - 16 - ((pct_txt.len() as i32 + 1) * 8);
+    canvas.draw_text(right_x, y, pct_txt, theme.text_primary);
+    canvas.draw_text(right_x + (pct_txt.len() as i32 * 8), y, b"%", theme.text_muted);
+
+    let track = Rect::new(16, y + 18, (WIN_W as i32) - 32, 16);
     canvas.fill_rounded_rect(track, 6, rgb(0x1E, 0x26, 0x36));
     let clamped = pct.clamp(0, 100);
     let fill_w = (track.w * clamped) / 100;
@@ -56,26 +78,70 @@ fn draw_meter(canvas: &mut Canvas<'_>, y: i32, label: &[u8], pct: i32, bar_color
 fn render_sysmon(
     canvas: &mut Canvas<'_>,
     theme: &Theme,
-    cpu_pct: i32,
-    mem_pct: i32,
+    sinfo: &libvoid::SysInfo,
     dinfo: &libvoid::DisplayInfo,
 ) {
+    let phys_used = sinfo.total_phys_pages.saturating_sub(sinfo.free_phys_pages);
+    let phys_pct = pct_u64(phys_used, sinfo.total_phys_pages);
+    let heap_used = sinfo.heap_total_pages.saturating_sub(sinfo.heap_free_pages);
+    let heap_pct = pct_u64(heap_used, sinfo.heap_total_pages);
+
     canvas.fill_rect(Rect::new(0, 0, WIN_W as i32, WIN_H as i32), theme.window_bg);
     canvas.draw_text(16, 12, b"VoidOS System Monitor", theme.text_primary);
-    draw_meter(canvas, 44, b"CPU LOAD", cpu_pct, theme.accent, theme);
-    draw_meter(canvas, 96, b"MEMORY", mem_pct, rgb(0x22, 0xC5, 0x5E), theme);
+
+    draw_meter(canvas, 38, b"PHYS RAM", phys_pct, rgb(0x22, 0xC5, 0x5E), theme);
+    draw_meter(canvas, 84, b"KERNEL HEAP", heap_pct, theme.accent, theme);
 
     let mut num = [0u8; 20];
-    canvas.draw_text(16, 156, b"DISPLAY:", theme.text_muted);
-    let w_txt = libvoid::format_u64(dinfo.width as u64, &mut num);
-    canvas.draw_text(96, 156, w_txt, theme.text_primary);
-    canvas.draw_text(140, 156, b"X", theme.text_muted);
-    let h_txt = libvoid::format_u64(dinfo.height as u64, &mut num);
-    canvas.draw_text(156, 156, h_txt, theme.text_primary);
+    canvas.draw_text(16, 134, b"RAM KIB:", theme.text_muted);
+    let used_kib = phys_used.saturating_mul(4);
+    let total_kib = sinfo.total_phys_pages.saturating_mul(4);
+    let u_txt = libvoid::format_u64(used_kib, &mut num);
+    canvas.draw_text(92, 134, u_txt, theme.text_primary);
+    let sep_x = 92 + (u_txt.len() as i32 * 8) + 4;
+    canvas.draw_text(sep_x, 134, b"/", theme.text_muted);
+    let t_txt = libvoid::format_u64(total_kib, &mut num);
+    canvas.draw_text(sep_x + 12, 134, t_txt, theme.text_primary);
 
-    canvas.draw_text(16, 184, b"UPTIME MS:", theme.text_muted);
-    let up_txt = libvoid::format_u64(dinfo.uptime_ms, &mut num);
-    canvas.draw_text(108, 184, up_txt, theme.text_primary);
+    canvas.draw_text(16, 158, b"CPUS:", theme.text_muted);
+    let cpu_txt = libvoid::format_u64(sinfo.online_cpus as u64, &mut num);
+    canvas.draw_text(64, 158, cpu_txt, theme.text_primary);
+    canvas.draw_text(112, 158, b"PROCS:", theme.text_muted);
+    let proc_txt = libvoid::format_u64(sinfo.active_processes as u64, &mut num);
+    canvas.draw_text(168, 158, proc_txt, theme.text_primary);
+    canvas.draw_text(224, 158, b"IPC:", theme.text_muted);
+    let ipc_txt = libvoid::format_u64(sinfo.channel_count as u64, &mut num);
+    canvas.draw_text(264, 158, ipc_txt, theme.text_primary);
+
+    canvas.draw_text(16, 182, b"DISPLAY:", theme.text_muted);
+    let w_txt = libvoid::format_u64(dinfo.width as u64, &mut num);
+    canvas.draw_text(92, 182, w_txt, theme.text_primary);
+    canvas.draw_text(132, 182, b"x", theme.text_muted);
+    let h_txt = libvoid::format_u64(dinfo.height as u64, &mut num);
+    canvas.draw_text(146, 182, h_txt, theme.text_primary);
+
+    canvas.draw_text(16, 206, b"UPTIME S:", theme.text_muted);
+    let up_txt = libvoid::format_u64(sinfo.uptime_ms / 1000, &mut num);
+    canvas.draw_text(96, 206, up_txt, theme.text_primary);
+    canvas.draw_text(180, 206, b"TICKS:", theme.text_muted);
+    let tick_txt = libvoid::format_u64(sinfo.preempt_ticks, &mut num);
+    canvas.draw_text(236, 206, tick_txt, theme.text_primary);
+}
+
+// ====== send_message ======
+
+fn send_message(ipc_handle: u64, wire: &[u8; PROTO_WIRE_BYTES]) {
+    loop {
+        let sent = libvoid::ipc_send(ipc_handle, wire);
+        if sent == PROTO_WIRE_BYTES as i64 {
+            return;
+        }
+        if sent == libvoid::ERR_WOULD_BLOCK {
+            libvoid::yield_now();
+            continue;
+        }
+        libvoid::exit(0);
+    }
 }
 
 // ====== program_main ======
@@ -103,19 +169,20 @@ extern "C" fn program_main(arg: u64) -> ! {
     if libvoid::display_info(&mut dinfo) != 0 {
         libvoid::exit(103);
     }
+    let mut sinfo = libvoid::SysInfo::default();
+    if libvoid::sys_info(&mut sinfo) != 0
+        || sinfo.total_phys_pages == 0
+        || sinfo.online_cpus == 0
+        || sinfo.active_processes == 0
+    {
+        libvoid::exit(106);
+    }
 
-    let mut cpu_bar = Tween::settled(10);
-    let mut mem_bar = Tween::settled(20);
-
-    // Mode 1: self-verification pass (animated resource bars + SHM rendering + clean unmap).
+    // Mode 1: self-verification pass (real kernel metrics + SHM rendering + clean unmap).
     if arg == 1 {
-        cpu_bar.retarget(0, 68, theme.anim_ms, Easing::EaseOutCubic);
-        mem_bar.retarget(0, 42, theme.anim_ms, Easing::EaseOutCubic);
-        render_sysmon(&mut canvas, &theme, cpu_bar.sample(0), mem_bar.sample(0), &dinfo);
-        let px_before = canvas.pixels[(72 * WIN_W as usize) + 180];
-        let end_ms = theme.anim_ms as u64;
-        render_sysmon(&mut canvas, &theme, cpu_bar.sample(end_ms), mem_bar.sample(end_ms), &dinfo);
-        let px_after = canvas.pixels[(72 * WIN_W as usize) + 180];
+        let px_before = canvas.pixels[(60 * WIN_W as usize) + 24];
+        render_sysmon(&mut canvas, &theme, &sinfo, &dinfo);
+        let px_after = canvas.pixels[(60 * WIN_W as usize) + 24];
         if px_before == px_after {
             libvoid::exit(104);
         }
@@ -127,27 +194,33 @@ extern "C" fn program_main(arg: u64) -> ! {
     }
 
     // Live IPC window mode: arg carries the IPC channel handle to the compositor.
-    let ipc_handle = arg;
+    let ipc_handle = arg & !(1u64 << 63);
+    if libvoid::shm_publish(shm_id as u64) != 0 {
+        libvoid::exit(107);
+    }
     let create = GuiMessage::create_window(WIN_W, WIN_H, shm_id as u64, b"System Monitor");
-    let _ = libvoid::ipc_send(ipc_handle, &create.encode());
+    send_message(ipc_handle, &create.encode());
+    render_sysmon(&mut canvas, &theme, &sinfo, &dinfo);
     let commit = GuiMessage::commit_rect(2, 0, 0, WIN_W, WIN_H).encode();
+    send_message(ipc_handle, &commit);
+    let _ = libvoid::write_console(b"VoidOS desktop sysmon ready\n");
+
+    let mut last_refresh_ms = sinfo.uptime_ms;
     let mut rx = [0u8; PROTO_WIRE_BYTES];
     loop {
-        let _ = libvoid::display_info(&mut dinfo);
-        let target_cpu = 20 + ((dinfo.uptime_ms / 100) % 60) as i32;
-        if cpu_bar.is_done(dinfo.uptime_ms) {
-            cpu_bar.retarget(dinfo.uptime_ms, target_cpu, theme.anim_ms, Easing::EaseOutCubic);
-            mem_bar.retarget(dinfo.uptime_ms, 38, theme.anim_ms, Easing::EaseOutCubic);
+        let n = libvoid::ipc_recv(ipc_handle, &mut rx);
+        if n == libvoid::ERR_PEER_CLOSED {
+            let _ = libvoid::shm_unmap(shm_id as u64);
+            libvoid::exit(0);
         }
-        render_sysmon(
-            &mut canvas,
-            &theme,
-            cpu_bar.sample(dinfo.uptime_ms),
-            mem_bar.sample(dinfo.uptime_ms),
-            &dinfo,
-        );
-        let _ = libvoid::ipc_send(ipc_handle, &commit);
-        let _ = libvoid::ipc_recv(ipc_handle, &mut rx);
+        if libvoid::sys_info(&mut sinfo) == 0
+            && sinfo.uptime_ms.saturating_sub(last_refresh_ms) >= REFRESH_INTERVAL_MS
+        {
+            last_refresh_ms = sinfo.uptime_ms;
+            let _ = libvoid::display_info(&mut dinfo);
+            render_sysmon(&mut canvas, &theme, &sinfo, &dinfo);
+            send_message(ipc_handle, &commit);
+        }
         libvoid::yield_now();
     }
 }

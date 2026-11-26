@@ -10,10 +10,12 @@ export component DefaultDock inherits Rectangle {
     in property <length> screen-height: 720px;
     in property <int> dock-mode: 0;
     in property <bool> terminal-open: true;
+    in property <bool> sysmon-open: false;
     in property <string> clock-text: "15:44";
     in property <string> sub-clock-text: "24 Nov 2026";
 
     callback toggle-terminal();
+    callback toggle-sysmon();
     callback shutdown-clicked();
 
     x: 44px;
@@ -184,6 +186,59 @@ export component DefaultDock inherits Rectangle {
                         x: root.terminal-open ? 12px : 19px;
                         y: 34px;
                         width: root.terminal-open ? 14px : 0px;
+                        height: 2px;
+                        border-radius: 1px;
+                        background: #1E2436;
+                        animate width { duration: 180ms; easing: ease-out; }
+                        animate x { duration: 180ms; easing: ease-out; }
+                    }
+                }
+
+                app2 := Rectangle {
+                    width: 38px;
+                    height: 38px;
+                    border-radius: 11px;
+                    border-width: 1px;
+                    border-color: sysmon-ta.has-hover ? #4A5E90CC : (root.sysmon-open ? #52648E99 : #8896B278);
+                    background: sysmon-ta.has-hover ? #FFFFFFA4 : (root.sysmon-open ? #FFFFFF72 : #FFFFFF48);
+                    animate background { duration: 160ms; easing: ease-out; }
+                    animate border-color { duration: 160ms; easing: ease-out; }
+
+                    sysmon-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.toggle-sysmon(); }
+                    }
+
+                    // Minimal 3-bar System Monitor icon
+                    Rectangle {
+                        x: 9px;
+                        y: 19px;
+                        width: 5px;
+                        height: 10px;
+                        border-radius: 2px;
+                        background: #22C55E;
+                    }
+                    Rectangle {
+                        x: 16px;
+                        y: 13px;
+                        width: 5px;
+                        height: 16px;
+                        border-radius: 2px;
+                        background: #3B82F6;
+                    }
+                    Rectangle {
+                        x: 23px;
+                        y: 16px;
+                        width: 5px;
+                        height: 13px;
+                        border-radius: 2px;
+                        background: #6366F1;
+                    }
+
+                    Rectangle {
+                        x: root.sysmon-open ? 12px : 19px;
+                        y: 34px;
+                        width: root.sysmon-open ? 14px : 0px;
                         height: 2px;
                         border-radius: 1px;
                         background: #1E2436;
