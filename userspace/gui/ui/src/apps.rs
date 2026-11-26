@@ -142,7 +142,7 @@ impl Applications {
         display_height: u32,
     ) -> (bool, bool) {
         const MAX_MSGS_PER_APP: usize = 16;
-        let mut changed = false;
+        let mut structure_changed = false;
         let mut activity = false;
         let mut healthy = true;
         let mut dead = Vec::new();
@@ -174,6 +174,8 @@ impl Applications {
                     }
                 }
                 let mut app_dead = false;
+                let mut pixels_updated = false;
+                let prev_commits = app.commits;
                 if !skip_recv {
                     for _ in 0..MAX_MSGS_PER_APP {
                         let mut wire = [0; PROTO_WIRE_BYTES];
@@ -192,6 +194,7 @@ impl Applications {
                                             }
                                         }
                                     }
+                                    pixels_updated = true;
                                 }
                                 app.receive(message, display_width, display_height)
                             });
@@ -201,7 +204,6 @@ impl Applications {
                                 app_dead = true;
                                 break;
                             }
-                            changed = true;
                             activity = true;
                             if app.probe_read_only && app.shm != 0 {
                                 break;
@@ -222,6 +224,28 @@ impl Applications {
                 }
                 if app_dead {
                     continue;
+                }
+                if pixels_updated {
+                    if prev_commits == 0 {
+                        structure_changed = true;
+                    } else {
+                        let mut found = false;
+                        for row in 0..self.model.row_count() {
+                            if let Some(mut surface) = self.model.row_data(row) {
+                                if surface.kind == app.kind {
+                                    surface.pixels = app.image.clone();
+                                    surface.client_width = app.width as f32;
+                                    surface.client_height = app.height as f32;
+                                    self.model.set_row_data(row, surface);
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if !found {
+                            structure_changed = true;
+                        }
+                    }
                 }
                 for _ in 0..MAX_MSGS_PER_APP {
                     let Some(wire) = app.pending.front() else {
@@ -245,10 +269,10 @@ impl Applications {
             if !self.close(kind) {
                 return (false, true);
             }
-            changed = true;
+            structure_changed = true;
             activity = true;
         }
-        if changed {
+        if structure_changed {
             self.refresh(ui);
         }
         (healthy, activity)
@@ -367,7 +391,11 @@ impl Application {
         }
         self.image = Image::from_rgb8(self.buffer.clone());
         if self.commits == 0 {
-            let _ = libvoid::write_console(b"VoidOS desktop terminal ready\n");
+            if self.kind == 1 {
+                let _ = libvoid::write_console(b"VoidOS desktop sysmon ready\n");
+            } else {
+                let _ = libvoid::write_console(b"VoidOS desktop terminal ready\n");
+            }
         }
         self.commits += 1;
         true

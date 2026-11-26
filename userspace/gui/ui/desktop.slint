@@ -51,6 +51,12 @@ export component VoidDesktop inherits Window {
             root.focus-app(surface.kind);
         }
         close-clicked => {
+            if (surface.kind == 0) {
+                root.terminal-open = false;
+            }
+            if (surface.kind == 1) {
+                root.sysmon-open = false;
+            }
             root.close-app(surface.kind);
         }
 

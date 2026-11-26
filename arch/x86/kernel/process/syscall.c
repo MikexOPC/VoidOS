@@ -47,16 +47,17 @@ static BOOT_U64 copy_checked(X86_PROCESS_CPU *cpu, void *target, const void *sou
     unsigned char *dst_bytes = (unsigned char *)target;
     const unsigned char *src_bytes = (const unsigned char *)source;
     BOOT_U64 offset = 0;
+    ++cpu->SyscallNoSuspend;
     while (offset < length) {
         BOOT_U64 chunk = length - offset;
         if (chunk > sizeof(cpu->CopyScratch))
             chunk = sizeof(cpu->CopyScratch);
+        // Critical section: UserRoot CR3, STAC/CLAC, and per-CPU CopyScratch must stay atomic.
+        uint64_t saved_if = ks_irq_save();
         if (write) {
             for (BOOT_U64 i = 0; i < chunk; ++i)
                 cpu->CopyScratch[i] = src_bytes[offset + i];
         }
-        // Critical section: UserRoot CR3 and STAC/CLAC must never be interrupted by an IRQ.
-        uint64_t saved_if = ks_irq_save();
         cpu->CopyPointer = pointer + offset;
         cpu->CopyLength = chunk;
         cpu->CopyWrite = write;
@@ -66,15 +67,18 @@ static BOOT_U64 copy_checked(X86_PROCESS_CPU *cpu, void *target, const void *sou
         cpu->CopyPointer = 0;
         cpu->CopyLength = 0;
         if (__readeflags() & FLAG_AC) process_die("PROCESS_AC_RETAINED");
-        ks_irq_restore(saved_if);
-        if (failed)
-            return failed;
-        if (!write) {
+        if (!failed && !write) {
             for (BOOT_U64 i = 0; i < chunk; ++i)
                 dst_bytes[offset + i] = cpu->CopyScratch[i];
         }
+        ks_irq_restore(saved_if);
+        if (failed) {
+            --cpu->SyscallNoSuspend;
+            return failed;
+        }
         offset += chunk;
     }
+    --cpu->SyscallNoSuspend;
     return 0;
 }
 
@@ -466,13 +470,7 @@ static BOOT_U64 sys_sys_info(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
             info.ChannelCount = proc_stats.ChannelCount;
         }
     }
-    BOOT_U32 online = 1U;
-    for (uint32_t idx = 1U; idx < X86_PERCPU_CAPACITY; ++idx) {
-        const X86_CPU_LOCAL *ap = x86_percpu_ap(idx);
-        if (ap && ap->State == X86_PERCPU_ACTIVE)
-            ++online;
-    }
-    info.OnlineCpus = online;
+    info.OnlineCpus = x86_percpu_online_count();
     if (copy_checked(cpu, (void *)out_ptr, &info, out_ptr, sizeof(info), 1))
         return RESULT_RANGE;
     return 0ULL;

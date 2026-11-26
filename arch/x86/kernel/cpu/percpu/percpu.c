@@ -259,3 +259,15 @@ const X86_CPU_LOCAL *x86_percpu_current_local(void) {
     ks_irq_restore(saved);
     return owner;
 }
+
+// ====== x86_percpu_online_count ======
+
+uint32_t x86_percpu_online_count(void) {
+    uint32_t count = 0U;
+    for (uint32_t index = 0U; index < X86_PERCPU_CAPACITY; ++index) {
+        if (areas[index].Self == (uintptr_t)&areas[index] &&
+            areas[index].State == X86_PERCPU_ACTIVE)
+            ++count;
+    }
+    return count ? count : 1U;
+}

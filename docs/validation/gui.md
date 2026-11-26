@@ -8,6 +8,34 @@ delle due app insieme. Hardware fisico non provato.
 
 ## Candidato della prima task
 
+### System Monitor reale e desktop multi-app — 26 novembre 2026
+
+**Fatta (su QEMU TCG).** Introdotta `SYS_SYS_INFO` (`28`) con dati reali del
+kernel (`TotalPhysPages`, `FreePhysPages`, `HeapTotalPages`, `HeapFreePages`,
+`UptimeMs`, `PreemptTicks`, `ActiveProcesses`, `OnlineCpus` via
+`x86_percpu_online_count()`, `ChannelCount`). `sysmon.elf` rimuove le vecchie
+percentuali dimostrative, usa `shm_publish` + `commit_rect(1, ...)` e gira dal
+dock fianco a fianco col Terminale. Risolti durante la prova multi-app:
+- race su `cpu->CopyScratch` sotto preemption syscall in `copy_checked`
+  (protetto con `IF=0` + `SyscallNoSuspend`);
+- perdita di click su `×` del Terminale durante i commit periodici di System
+  Monitor (`apps.rs` aggiorna i pixel in-place con `set_row_data` senza
+  ricreare le `VoidWindow` via `set_vec`);
+- sincronizzazione immediata di `terminal-open`/`sysmon-open` in `close-clicked`
+  e homing PS/2 pulito (12 passi + 100 ms drain) nel runner.
+
+- **Test host (`meson test -C kernel/build/meson-host-tests`):** 32/32 PASS.
+- **Campagna GUI multi-app TCG (`qemu-runner-18eba439b540567c-5464`):** q35 TCG
+  4 vCPU, Kernel SHA-256 `3622E9520F5D303E10E23615C6E7AA52E368FA2BD121FAA94649A562DBECB96B`,
+  3/3 boot PASS (70 s / 66 s / 67 s, 21 cicli totali, 63 avvii app — 42
+  Terminale + 21 System Monitor — 21 comandi VFS, 0 pixel residui cursore).
+  Screenshot ispezionato visivamente: entrambe le finestre affiancate,
+  `CPUS: 4`, RAM/Heap/Procs/IPC/Uptime/Ticks reali.
+- **Regressione `ordinary-shell` TCG (`qemu-runner-18eba47a1f1e0cfc-59f8`):**
+  stesso kernel, 4 vCPU, 10/10 boot PASS.
+- **Non provato:** stress continuo da 30 minuti, sessione interattiva WHPX/SDL
+  e hardware fisico.
+
 ### Chiusura input GUI, cursore e budget WHPX — 26 novembre 2026
 
 **Fatta.** Chiuse le modifiche su cursore (guadagno 3/2 con resto per asse,

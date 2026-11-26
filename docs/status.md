@@ -37,16 +37,17 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
 
 ## Lavoro corrente
 
-**Input GUI, cursore e budget rinnovabile WHPX — fatta.** Puntatore con
-posizione unica e guadagno 3/2 con resto frazionario, disegno cursore 18×18
-serializzato con il present senza residui, tastiera con rilasci/modificatori/
-resync e compositor che cede subito il turno (`yield_now`) quando `pending`
-non è vuoto. I processi eseguiti con `renew_budget = 1` (supervisor `init` e
-sessione GUI) non vengono terminati con `ExitKind=4` al superamento di un
-singolo turno/syscall lunga (rimane invariato il limite fisso per i processi
-con `renew_budget = 0`).
-**Desktop con app reali — parziale.** Restano System Monitor con dati reali,
-prova con due app e stress da 30 minuti. L'ingresso interattivo è `gui`.
+**Desktop con app reali (Terminale + System Monitor) — fatta (su QEMU TCG).**
+System Monitor gira come processo Ring 3 reale dal dock (`kind == 1`), legge
+metriche vere del kernel tramite `SYS_SYS_INFO` (`28`: RAM fisica, heap kernel,
+CPU online via `x86_percpu_online_count()`, processi attivi, canali IPC, uptime,
+preempt ticks) e gira affiancato al Terminale senza sovrapposizione. Risolti
+durante la verifica multi-app: isolamento atomico di `cpu->CopyScratch` in
+`copy_checked` sotto preemption syscall, aggiornamento in-place dei pixel in
+Slint (`set_row_data` senza distruggere i `TouchArea` delle altre finestre) e
+sincronizzazione immediata di `close-clicked`.
+Restano: test di stress continuo da 30 minuti, prova interattiva WHPX/SDL e
+hardware fisico. L'ingresso interattivo è `gui`.
 
 ## Limiti noti
 
@@ -74,14 +75,15 @@ prova con due app e stress da 30 minuti. L'ingresso interattivo è `gui`.
 
 ## Prove e prossimo passo
 
-Verifiche correnti sull'immagine di produzione (`8C00E117...`): 32/32 test
+Verifiche correnti sull'immagine di produzione (`3622E952...`): 32/32 test
 host (`meson test`), 10/10 boot `--ordinary-shell --smp 4`
-(`qemu-runner-18eba16bd80fadb8-d3c`), 3/3 boot `--ordinary-gui 1 --smp 4`
-(`qemu-runner-18eba12ebc2681e0-2c48`, 21 cicli, 42 avvii Terminale, 21 comandi
-VFS, 0 pixel residui cursore), 5/5 boot WHPX headless fino a `SHELL_TASK2_READY`
-(~5 s/boot). Validazioni in [gui.md](validation/gui.md),
+(`qemu-runner-18eba47a1f1e0cfc-59f8`), 3/3 boot multi-app `--ordinary-gui 1
+--smp 4` (`qemu-runner-18eba439b540567c-5464`, 21 cicli, 63 avvii app — 42
+Terminale + 21 System Monitor — 21 comandi VFS, 0 pixel residui cursore,
+screenshot ispezionato visivamente con entrambe le app e `CPUS: 4`).
+Validazioni in [gui.md](validation/gui.md),
 [consolidamento.md](validation/consolidamento.md),
 [processi.md](validation/processi.md), [storage.md](validation/storage.md),
 [exec.md](validation/exec.md) e [sicurezza.md](validation/sicurezza.md).
-Prossimo passo: System Monitor con dati reali, prova multi-app e stress da 30
-minuti prima dell'hardware fisico.
+Prossimo passo: stress da 30 minuti (`--ordinary-soak 30`) e prova su hardware
+fisico / periferiche (xHCI USB, x2APIC).

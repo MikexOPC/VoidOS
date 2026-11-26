@@ -385,6 +385,11 @@ extern "C" fn program_main(mode: u64) -> ! {
             };
             if !ok {
                 ui.set_status("Applicazione non disponibile".into());
+                let _ = libvoid::write_console(if operation == 0 {
+                    b"VoidOS ui launch failed\n"
+                } else {
+                    b"VoidOS ui close failed\n"
+                });
             }
             applications.refresh(&ui);
         }

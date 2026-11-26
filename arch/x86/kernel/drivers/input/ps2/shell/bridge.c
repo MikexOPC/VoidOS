@@ -331,6 +331,17 @@ static void gui_dispatch_private(void)
                 (void)x86_process_kill(gui_pid);
             gui_ready = x86_process_reap(gui_pid, &info)
                 && info.ExitKind == KERNEL_PROC_EXIT_NORMAL && info.ExitCode == 0;
+            if (!gui_ready) {
+                kernel_text("GUI_EXIT_KIND: ");
+                kernel_number(info.ExitKind);
+                kernel_text(" CODE: ");
+                kernel_number(info.ExitCode);
+                kernel_text(" VEC: ");
+                kernel_number(info.FaultVector);
+                kernel_text(" RIP: ");
+                kernel_number(info.FaultRip);
+                kernel_text("\n");
+            }
         }
         gui_pid = 0;
         gui_ready = gui_ready && kernel_physical_budget_matches(owner->Pool, gui_free_before);

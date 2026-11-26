@@ -201,9 +201,8 @@ extern "C" fn program_main(arg: u64) -> ! {
     let create = GuiMessage::create_window(WIN_W, WIN_H, shm_id as u64, b"System Monitor");
     send_message(ipc_handle, &create.encode());
     render_sysmon(&mut canvas, &theme, &sinfo, &dinfo);
-    let commit = GuiMessage::commit_rect(2, 0, 0, WIN_W, WIN_H).encode();
+    let commit = GuiMessage::commit_rect(1, 0, 0, WIN_W, WIN_H).encode();
     send_message(ipc_handle, &commit);
-    let _ = libvoid::write_console(b"VoidOS desktop sysmon ready\n");
 
     let mut last_refresh_ms = sinfo.uptime_ms;
     let mut rx = [0u8; PROTO_WIRE_BYTES];

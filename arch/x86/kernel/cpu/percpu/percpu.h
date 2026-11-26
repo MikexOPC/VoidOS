@@ -30,5 +30,6 @@ const X86_CPU_LOCAL *x86_percpu_bsp(void);
 const X86_CPU_LOCAL *x86_percpu_current_local(void);
 KERNEL_LOCK_CONTEXT *x86_percpu_current_context(void);
 int x86_percpu_bind_process_cpu(uint64_t syscall_top, uint64_t process_cpu);
+uint32_t x86_percpu_online_count(void);
 int x86_percpu_bsp_report(void);
 #endif

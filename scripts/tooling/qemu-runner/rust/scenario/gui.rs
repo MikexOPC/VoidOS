@@ -26,10 +26,11 @@ fn wait_text(vm: &mut Vm, marker: &str, count: usize) -> Result<(), String> {
 // ====== click ======
 
 fn click(vm: &mut Vm, x: i32, y: i32) {
-    for _ in 0..40 {
+    for _ in 0..12 {
         vm.command("mouse_move -100 -100");
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(25));
     }
+    std::thread::sleep(Duration::from_millis(100));
     let (mut remaining_x, mut remaining_y) = (x * 2 / 3, y * 2 / 3);
     while remaining_x != 0 || remaining_y != 0 {
         let dx = remaining_x.clamp(-100, 100);
@@ -144,6 +145,7 @@ pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
     loop {
         let ready = vm.log().text.matches("VoidOS desktop ready").count();
         let terminal = vm.log().text.matches("VoidOS desktop terminal ready").count();
+        let sysmon = vm.log().text.matches("VoidOS desktop sysmon ready").count();
         let commands = vm.log().text.matches("VoidOS terminal command processed").count();
         let reads = vm.log().text.matches("VoidOS terminal VFS read ok").count();
         super::ordinary::shell_type(vm, "gui")?;
@@ -153,6 +155,8 @@ pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
         if cycles == 0 {
             cursor_trails(vm, width, height)?;
         }
+        click(vm, 387, height - 37);
+        wait_text(vm, "VoidOS desktop sysmon ready", sysmon + 1)?;
         click(vm, 341, height - 37);
         screenshot(vm, "terminal-click")?;
         wait_text(vm, "VoidOS desktop terminal ready", terminal + 1)?;
@@ -166,7 +170,7 @@ pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
         if cycles == 0 {
             screenshot(vm, "terminal-command")?;
         }
-        click(vm, width / 2 + 223, 100);
+        click(vm, 560, 100);
         std::thread::sleep(Duration::from_millis(400));
         click(vm, 341, height - 37);
         wait_text(vm, "VoidOS desktop terminal ready", terminal + 2)?;
@@ -182,7 +186,7 @@ pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
     Ok(object(vec![
         ("GuiCycles", Value::Number(cycles as u64)),
         ("ElapsedSeconds", Value::Number(started.elapsed().as_secs())),
-        ("ChildLaunches", Value::Number((cycles * 2) as u64)),
+        ("ChildLaunches", Value::Number((cycles * 3) as u64)),
         ("Commands", Value::Number(cycles as u64)),
     ]))
 }
