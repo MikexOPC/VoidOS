@@ -46,17 +46,18 @@ durante la verifica multi-app: isolamento atomico di `cpu->CopyScratch` in
 `copy_checked` sotto preemption syscall, aggiornamento in-place dei pixel in
 Slint (`set_row_data` senza distruggere i `TouchArea` delle altre finestre) e
 sincronizzazione immediata di `close-clicked`.
-Restano: test di stress continuo da 30 minuti, prova interattiva WHPX/SDL e
-hardware fisico. L'ingresso interattivo è `gui`.
+Restano: prova interattiva WHPX/SDL e hardware fisico (xHCI USB, x2APIC).
+Il cancello "base solida" (10/10 boot + soak da 30+30 minuti senza errori né
+perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Limiti noti
 
 - Hardware fisico, USB xHCI, x2APIC e rete non sono ancora stati provati o
-  implementati. Il test di stress continuo da 30 minuti non è stato eseguito
-  su questa revisione.
+  implementati.
 - Lo scheduler usa ancora un ticket lock condiviso (rank 900). La contesa
-  misurata su 4 CPU in boot ordinario è 0,45% (`2.138 / 471.736`), media 83
-  poll, picco 8.625 poll; la migrazione a runqueue per-CPU resta lavoro futuro.
+  misurata su 4 CPU è 0,45% in boot ordinario e 0,63% (`172.650 / 27.271.834`)
+  su 60 minuti di soak (30 min attivi + 30 min idle, picco 25.856 poll); la
+  migrazione a runqueue per-CPU resta lavoro futuro.
 - Le syscall transazionali su lease fisiche (`SYS_SPAWN`, `SYS_DISPLAY_ACQUIRE`,
   `SYS_SHM_*`, `SYS_PROCESS_STOP`) disabilitano la sospensione syscall per
   mantenere coerente il budget fisico.
@@ -80,10 +81,13 @@ host (`meson test`), 10/10 boot `--ordinary-shell --smp 4`
 (`qemu-runner-18eba47a1f1e0cfc-59f8`), 3/3 boot multi-app `--ordinary-gui 1
 --smp 4` (`qemu-runner-18eba439b540567c-5464`, 21 cicli, 63 avvii app — 42
 Terminale + 21 System Monitor — 21 comandi VFS, 0 pixel residui cursore,
-screenshot ispezionato visivamente con entrambe le app e `CPUS: 4`).
+screenshot ispezionato visivamente con entrambe le app e `CPUS: 4`), e 1/1
+soak continuo `--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`,
+30 min attivi + 30 min idle, 248 round, 66 migrazioni cross-CPU, 0 overruns,
+22.329/22.329 byte PS/2, 0 perdite di memoria).
 Validazioni in [gui.md](validation/gui.md),
 [consolidamento.md](validation/consolidamento.md),
 [processi.md](validation/processi.md), [storage.md](validation/storage.md),
 [exec.md](validation/exec.md) e [sicurezza.md](validation/sicurezza.md).
-Prossimo passo: stress da 30 minuti (`--ordinary-soak 30`) e prova su hardware
-fisico / periferiche (xHCI USB, x2APIC).
+Prossimo passo: Milestone 7 — hardware reale e periferiche (x2APIC, USB xHCI +
+HID, avvio su PC fisico).
