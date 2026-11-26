@@ -80,7 +80,23 @@
 #define SYS_PROCESS_STOP 25ULL
 #define SYS_IPC_CLOSE 26ULL
 #define SYS_GUI_WAIT 27ULL
+#define SYS_SYS_INFO 28ULL
 #define WAIT_HANDLE_GUI_MASK (1ULL << 63)
+
+typedef struct {
+    BOOT_U64  TotalPhysPages;
+    BOOT_U64  FreePhysPages;
+    BOOT_U64  HeapTotalPages;
+    BOOT_U64  HeapFreePages;
+    BOOT_U64  UptimeMs;
+    BOOT_U64  PreemptTicks;
+    BOOT_U32  ActiveProcesses;
+    BOOT_U32  OnlineCpus;
+    BOOT_U32  ChannelCount;
+    BOOT_U32  Reserved;
+} X86_SYS_INFO;
+
+_Static_assert(sizeof(X86_SYS_INFO) == 64U, "X86_SYS_INFO ABI size");
 
 typedef struct {
     BOOT_U64               InitialArg;

@@ -1,7 +1,14 @@
 #include "internal.h"
 #include "gui.h"
 #include "manager.h"
+#include "kernel/mm/heap/heap.h"
 #include "kernel/vfs/vfs.h"
+#include "arch/x86/kernel/cpu/percpu/internal.h"
+#ifdef KERNEL_PS2_INPUT
+#include "arch/x86/kernel/scheduler/irq/preempt.h"
+#endif
+
+extern KERNEL_HEAP *kernel_heap(void);
 
 #define CONSOLE_RING_CAPACITY 512U
 
@@ -428,6 +435,49 @@ static BOOT_U64 sys_console_read(X86_PROCESS_CPU *cpu, BOOT_U64 buf_ptr, BOOT_U6
     return (BOOT_U64)taken;
 }
 
+// ====== sys_sys_info ======
+
+static BOOT_U64 sys_sys_info(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
+{
+    if (!out_ptr || x86_process_copy_range(out_ptr, sizeof(X86_SYS_INFO)) != 1)
+        return RESULT_RANGE;
+    X86_SYS_INFO info = {0};
+    if (process_rt.Window && process_rt.Window->Pool) {
+        KERNEL_PHYSICAL_STATUS pstat = {0};
+        if (kernel_physical_status(process_rt.Window->Pool, &pstat)) {
+            info.TotalPhysPages = pstat.TotalPages;
+            info.FreePhysPages = pstat.FreePages;
+        }
+    }
+    KERNEL_HEAP *heap = kernel_heap();
+    if (heap) {
+        KERNEL_HEAP_STATS hstat = kernel_heap_stats(heap);
+        info.HeapTotalPages = (BOOT_U64)heap->Pages;
+        info.HeapFreePages = hstat.FreePages;
+    }
+    info.UptimeMs = x86_gui_uptime_now_ms();
+#ifdef KERNEL_PS2_INPUT
+    info.PreemptTicks = x86_preempt_ticks();
+#endif
+    if (cpu->Table) {
+        KERNEL_PROCESS_STATS proc_stats = {0};
+        if (kernel_process_table_stats(cpu->Table, &proc_stats)) {
+            info.ActiveProcesses = proc_stats.ActiveProcesses;
+            info.ChannelCount = proc_stats.ChannelCount;
+        }
+    }
+    BOOT_U32 online = 1U;
+    for (uint32_t idx = 1U; idx < X86_PERCPU_CAPACITY; ++idx) {
+        const X86_CPU_LOCAL *ap = x86_percpu_ap(idx);
+        if (ap && ap->State == X86_PERCPU_ACTIVE)
+            ++online;
+    }
+    info.OnlineCpus = online;
+    if (copy_checked(cpu, (void *)out_ptr, &info, out_ptr, sizeof(info), 1))
+        return RESULT_RANGE;
+    return 0ULL;
+}
+
 // ====== process_budget_expired ======
 
 int process_budget_expired(BOOT_U64 rip)
@@ -590,6 +640,9 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         ++cpu->SyscallNoSuspend;
         GPR(frame, GPR_RAX) = x86_gui_sys_shm_unmap(cpu, GPR(frame, GPR_RDI));
         --cpu->SyscallNoSuspend;
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_SYS_INFO) {
+        GPR(frame, GPR_RAX) = sys_sys_info(cpu, GPR(frame, GPR_RDI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else {
         GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;

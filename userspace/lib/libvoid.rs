@@ -35,6 +35,7 @@ pub const SYS_SHM_VIEW: u64 = 24;
 pub const SYS_PROCESS_STOP: u64 = 25;
 pub const SYS_IPC_CLOSE: u64 = 26;
 pub const SYS_GUI_WAIT: u64 = 27;
+pub const SYS_SYS_INFO: u64 = 28;
 
 // ====== flags and errors ======
 
@@ -480,6 +481,7 @@ mod tests {
         assert_eq!(size_of::<DisplayAcquireOut>(), 32);
         assert_eq!(size_of::<DisplayRect>(), 16);
         assert_eq!(size_of::<InputEvent>(), 24);
+        assert_eq!(size_of::<SysInfo>(), 64);
     }
 
     #[test]
@@ -552,4 +554,27 @@ pub fn process_stop(pid: u64) -> i64 {
 #[cfg(not(test))]
 pub fn ipc_close(handle: u64) -> i64 {
     raw_syscall(SYS_IPC_CLOSE, handle, 0, 0)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SysInfo {
+    pub total_phys_pages: u64,
+    pub free_phys_pages: u64,
+    pub heap_total_pages: u64,
+    pub heap_free_pages: u64,
+    pub uptime_ms: u64,
+    pub preempt_ticks: u64,
+    pub active_processes: u32,
+    pub online_cpus: u32,
+    pub channel_count: u32,
+    pub reserved: u32,
+}
+
+// ====== sys_info ======
+
+#[cfg(not(test))]
+#[inline]
+pub fn sys_info(out: &mut SysInfo) -> i64 {
+    raw_syscall(SYS_SYS_INFO, out as *mut SysInfo as u64, 0, 0)
 }
