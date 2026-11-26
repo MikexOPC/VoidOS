@@ -30,7 +30,7 @@ global_asm!(
 );
 
 #[global_allocator]
-static ALLOCATOR: libvoid::heap::ShmAllocator = libvoid::heap::ShmAllocator::new(2048); // 8 MiB SHM heap
+static ALLOCATOR: libvoid::heap::ShmAllocator = libvoid::heap::ShmAllocator::new(4096); // 16 MiB SHM heap
 
 // ====== BgrxPixel (UEFI GOP / VirtIO-GPU native 32-bit pixel) ======
 

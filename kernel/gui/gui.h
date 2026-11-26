@@ -14,7 +14,7 @@
 #define KERNEL_GUI_SHM_INIT_MAPPINGS  32U
 #define KERNEL_GUI_SHM_MAX_MAPPINGS   1024U
 // Up to 8 MiB per SHM object (2048 * 4 KiB), sufficient for a 1920x1080x32 framebuffer.
-#define KERNEL_GUI_SHM_MAX_PAGES      2048U
+#define KERNEL_GUI_SHM_MAX_PAGES      8192U
 // Bounded input event ring (power-of-two capacity for hardware PS/2 bursts).
 #define KERNEL_GUI_INPUT_CAPACITY     256U
 // Maximum dirty rectangles accepted per SYS_DISPLAY_PRESENT call.
