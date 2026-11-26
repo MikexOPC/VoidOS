@@ -143,6 +143,7 @@ uint32_t kfat_encode_83_name(const uint8_t *name, uint32_t name_len, uint8_t *ou
 int  kernel_vfs_init(KERNEL_VFS *vfs, KERNEL_HEAP *heap);
 void kernel_vfs_destroy(KERNEL_VFS *vfs);
 int  kernel_vfs_mount_fat(KERNEL_VFS *vfs, const char *prefix, KERNEL_BLOCK_CACHE *cache);
+int  kernel_vfs_unmount(KERNEL_VFS *vfs, const char *prefix);
 int  kernel_vfs_stat(KERNEL_VFS *vfs, const char *path, KERNEL_VFS_STAT *out);
 int  kernel_vfs_readdir(KERNEL_VFS *vfs, const char *dir_path, uint32_t index, KERNEL_VFS_STAT *out);
 int  kernel_vfs_read_file(

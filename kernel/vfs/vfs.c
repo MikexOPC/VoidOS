@@ -156,7 +156,14 @@ int kernel_vfs_mount_fat(KERNEL_VFS *vfs, const char *prefix, KERNEL_BLOCK_CACHE
     if (!enter_private(vfs, &access))
         return KERNEL_STORAGE_ERR_ARG;
 
-    if (vfs->MountCount >= KERNEL_VFS_MAX_MOUNTS) {
+    uint32_t slot = KERNEL_VFS_MAX_MOUNTS;
+    for (uint32_t i = 0; i < KERNEL_VFS_MAX_MOUNTS; ++i) {
+        if (!vfs->Mounts[i].Active) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot >= KERNEL_VFS_MAX_MOUNTS) {
         leave_private(&access);
         return KERNEL_STORAGE_ERR_NOSPC;
     }
@@ -189,7 +196,7 @@ int kernel_vfs_mount_fat(KERNEL_VFS *vfs, const char *prefix, KERNEL_BLOCK_CACHE
         return KERNEL_STORAGE_ERR_CORRUPT;
     }
 
-    KERNEL_VFS_MOUNT *mnt = &vfs->Mounts[vfs->MountCount];
+    KERNEL_VFS_MOUNT *mnt = &vfs->Mounts[slot];
     zero_bytes(mnt, sizeof(*mnt));
     copy_bytes(mnt->Prefix, prefix, plen);
     mnt->Prefix[plen] = '\0';
@@ -197,7 +204,63 @@ int kernel_vfs_mount_fat(KERNEL_VFS *vfs, const char *prefix, KERNEL_BLOCK_CACHE
     mnt->Cache = cache;
     mnt->Geometry = geom;
     mnt->Active = 1U;
-    ++vfs->MountCount;
+    if (slot >= vfs->MountCount)
+        vfs->MountCount = slot + 1U;
+
+    leave_private(&access);
+    return KERNEL_STORAGE_OK;
+}
+
+// ====== kernel_vfs_unmount ======
+
+int kernel_vfs_unmount(KERNEL_VFS *vfs, const char *prefix)
+{
+    if (!vfs || !prefix || prefix[0] != '/')
+        return KERNEL_STORAGE_ERR_ARG;
+
+    uint32_t plen = string_len(prefix, 32U);
+    if (!plen || plen >= 32U)
+        return KERNEL_STORAGE_ERR_ARG;
+
+    VFS_ACCESS access;
+    if (!enter_private(vfs, &access))
+        return KERNEL_STORAGE_ERR_ARG;
+
+    uint32_t found = KERNEL_VFS_MAX_MOUNTS;
+    for (uint32_t i = 0; i < vfs->MountCount; ++i) {
+        const KERNEL_VFS_MOUNT *m = &vfs->Mounts[i];
+        if (!m->Active || m->PrefixLen != plen)
+            continue;
+        int match = 1;
+        for (uint32_t k = 0; k < plen; ++k) {
+            if (m->Prefix[k] != prefix[k]) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            found = i;
+            break;
+        }
+    }
+    if (found >= KERNEL_VFS_MAX_MOUNTS) {
+        leave_private(&access);
+        return KERNEL_STORAGE_ERR_NOT_FOUND;
+    }
+
+    if (vfs->OpenFiles) {
+        for (uint32_t f = 0; f < vfs->OpenCapacity; ++f) {
+            if (vfs->OpenFiles[f].InUse && vfs->OpenFiles[f].MountIndex == found) {
+                zero_bytes(&vfs->OpenFiles[f], sizeof(vfs->OpenFiles[f]));
+                if (vfs->OpenCount > 0U)
+                    --vfs->OpenCount;
+            }
+        }
+    }
+
+    zero_bytes(&vfs->Mounts[found], sizeof(vfs->Mounts[found]));
+    while (vfs->MountCount > 0U && !vfs->Mounts[vfs->MountCount - 1U].Active)
+        --vfs->MountCount;
 
     leave_private(&access);
     return KERNEL_STORAGE_OK;

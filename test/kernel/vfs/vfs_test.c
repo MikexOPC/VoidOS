@@ -302,6 +302,15 @@ int main(void)
     CHECK((fat_word & 0x0FFFFFFFU) == 0U);
     CHECK(fat32_disk.IoWithIrqEnabled > 0U);
 
+    // 4) Unmount + remount slot reuse (simulates USB stick hotplug on /usb).
+    for (uint32_t cycle = 0; cycle < 10U; ++cycle) {
+        CHECK(kernel_vfs_mount_fat(&vfs, "/usb", &fat32_cache) == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_stat(&vfs, "/usb/HELLO.TXT", &st) == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_unmount(&vfs, "/usb") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_unmount(&vfs, "/usb") == KERNEL_STORAGE_ERR_NOT_FOUND);
+        CHECK(kernel_vfs_stat(&vfs, "/usb/HELLO.TXT", &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+    }
+
     kernel_vfs_destroy(&vfs);
     kernel_block_cache_destroy(&fat32_cache);
 

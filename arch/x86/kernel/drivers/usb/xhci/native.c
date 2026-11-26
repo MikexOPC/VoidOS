@@ -11,6 +11,7 @@
 #include "kernel/diagnostics/log.h"
 #include "kernel/scheduler/scheduler.h"
 #include "kernel/sync/internal.h"
+#include "kernel/vfs/vfs.h"
 #ifdef KERNEL_USER_PROCESS
 #include "kernel/gui/gui.h"
 #include "kernel/console/video/pointer/state.h"
@@ -782,6 +783,8 @@ uint32_t x86_xhci_poll(void)
     if (_InterlockedCompareExchange(&xhci_rt.PollBusy, 1L, 0L) != 0L)
         return 0U;
     uint32_t events = kernel_xhci_poll_events(&xhci_rt.Driver);
+    int msc_unmount = 0;
+    int msc_remount = 0;
     if (xhci_rt.Driver.HotplugDisconnects != xhci_rt.LastDisconnects) {
         xhci_rt.LastDisconnects = xhci_rt.Driver.HotplugDisconnects;
         (void)kernel_text("KERNEL_XHCI_HOTPLUG_DISCONNECT: ");
@@ -794,7 +797,49 @@ uint32_t x86_xhci_poll(void)
         (void)kernel_number(xhci_rt.Driver.HidCount);
         (void)kernel_text("\n");
     }
+    if (xhci_rt.MscReady && !xhci_rt.Driver.Msc.Active) {
+        xhci_rt.MscReady = 0U;
+        xhci_rt.MscDevice.Ready = 0U;
+        msc_unmount = 1;
+    } else if (!xhci_rt.MscReady && xhci_rt.Driver.Msc.Active && xhci_rt.Driver.Msc.TotalSectors > 0ULL) {
+        xhci_rt.MscDevice.Self = (uintptr_t)&xhci_rt.MscDevice;
+        xhci_rt.MscDevice.Name = "usb-msc0";
+        xhci_rt.MscDevice.Context = &xhci_rt;
+        xhci_rt.MscDevice.TotalSectors = xhci_rt.Driver.Msc.TotalSectors;
+        xhci_rt.MscDevice.SectorBytes = 512U;
+        xhci_rt.MscDevice.MaxTransferSectors = 8U;
+        xhci_rt.MscDevice.Kind = KERNEL_BLOCK_KIND_USB_MSC;
+        xhci_rt.MscDevice.ReadOnly = 0U;
+        xhci_rt.MscDevice.Ready = 1U;
+        xhci_rt.MscDevice.Read = msc_block_read_private;
+        xhci_rt.MscDevice.Write = msc_block_write_private;
+        xhci_rt.MscDevice.Flush = msc_block_flush_private;
+        if (!xhci_rt.MscCache.Ready) {
+            if (kernel_block_cache_init(&xhci_rt.MscCache, xhci_rt.Heap, &xhci_rt.MscDevice, 64U) == KERNEL_STORAGE_OK)
+                xhci_rt.MscReady = 1U;
+        } else {
+            (void)kernel_block_cache_invalidate(&xhci_rt.MscCache);
+            xhci_rt.MscReady = 1U;
+        }
+        msc_remount = xhci_rt.MscReady != 0U;
+    }
     _InterlockedExchange(&xhci_rt.PollBusy, 0L);
+
+    if (msc_unmount) {
+        if (xhci_rt.MscCache.Ready)
+            (void)kernel_block_cache_invalidate(&xhci_rt.MscCache);
+        KERNEL_VFS *vfs = kernel_vfs();
+        if (vfs && kernel_vfs_unmount(vfs, "/usb") == KERNEL_STORAGE_OK)
+            (void)kernel_log(1, "KERNEL_VFS_USB_UNMOUNTED");
+    } else if (msc_remount) {
+        (void)kernel_text("KERNEL_XHCI_MSC_SECTORS: ");
+        (void)kernel_number(xhci_rt.MscDevice.TotalSectors);
+        (void)kernel_text("\n");
+        (void)kernel_log(0, "KERNEL_XHCI_MSC_READY");
+        KERNEL_VFS *vfs = kernel_vfs();
+        if (vfs && kernel_vfs_mount_fat(vfs, "/usb", &xhci_rt.MscCache) == KERNEL_STORAGE_OK)
+            (void)kernel_log(0, "KERNEL_VFS_USB_MOUNTED");
+    }
     return events;
 }
 
