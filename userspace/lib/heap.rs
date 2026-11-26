@@ -270,7 +270,12 @@ impl ShmAllocator {
         if heap.initialized {
             return true;
         }
-        let shm_id = crate::shm_create(self.pages);
+        let mut req_pages = self.pages;
+        let mut shm_id = crate::shm_create(req_pages);
+        while shm_id <= 0 && req_pages > 512 {
+            req_pages /= 2;
+            shm_id = crate::shm_create(req_pages);
+        }
         if shm_id <= 0 {
             return false;
         }
@@ -278,7 +283,7 @@ impl ShmAllocator {
         if virt < 0x1000_0000 {
             return false;
         }
-        unsafe { heap.init(virt as usize, (self.pages as usize) * 4096) }
+        unsafe { heap.init(virt as usize, (req_pages as usize) * 4096) }
     }
 
     #[cfg(test)]

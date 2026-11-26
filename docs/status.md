@@ -17,7 +17,7 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
   delle syscall lunghe via timer quando `IF=1`, `lock_depth == 0` e fuori da
   copia/sezioni transazionali. Il VFS carica ELF dal disco FAT32. `proc`
   verifica IPC BSP/AP, VFS, fault isolato e cleanup. L'immagine utente arriva
-  a 6 MiB, con stack da 64 KiB e guard page.
+  a 14 MiB (3584 pagine su 8 PT), con stack da 64 KiB e guard page.
 - VirtIO-blk (MSI-X, vettore `0x44`) e AHCI (MSI, vettore `0x45`) completano
   l'I/O via interrupt con attesa `sti; hlt` (fallback `pause` se `IF=0`) e
   cleanup pulito allo shutdown. FAT legge directory e LFN; scrittura e unlink
@@ -79,12 +79,13 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 - Le syscall transazionali su lease fisiche (`SYS_SPAWN`, `SYS_DISPLAY_ACQUIRE`,
   `SYS_SHM_*`, `SYS_PROCESS_STOP`) disabilitano la sospensione syscall per
   mantenere coerente il budget fisico.
-- GUI e creazione dei suoi processi operano sul BSP; input PS/2 e rendering
-  software (heap Slint 4 MiB). Gli AP mantengono i percorsi IPC supportati.
+- GUI e creazione dei suoi processi operano sul BSP; input PS/2 e USB HID,
+  rendering software (heap compositor Slint adattivo fino a 16 MiB, SHM fino a
+  32 MiB). Gli AP mantengono i percorsi IPC supportati.
 - L'uptime parte dalla prima richiesta display del kernel e accumula i wrap
   ACPI PM. Ogni turno utente ha un budget massimo compatibile con mezzo
   periodo del contatore PM a 24 bit.
-- Heap kernel 32 MiB, 256 lease fisiche e 512 extent. Il primo init resta
+- Heap kernel 32 MiB, 1024 lease fisiche e 2048 extent. Il primo init resta
   incorporato; i programmi successivi vengono caricati dal VFS.
 - La vista utente conserva le mapping supervisor minime per le transizioni.
   Le mitigazioni speculative dipendono dalle capability esposte dalla CPU.
@@ -102,8 +103,8 @@ live hotplug VFS chiavetta 1 -> `KERNEL_VFS_USB_UNMOUNTED` -> chiavetta 2 ->
 `KERNEL_VFS_USB_MOUNTED` (`STICK2 FAT32 usb  ok`), 1/1 prova live `-device
 usb-hub` con `usb-kbd` (porta `1.1`) e `usb-storage` (porta `1.2`) dietro
 l'hub, 10/10 boot `--ordinary-shell --smp 4`
-(`qemu-runner-18ebb10f620a617c-c6c8`), 1/1 boot multi-app `--ordinary-gui 1
---smp 4` (`qemu-runner-18ebb14a3c62cf28-2e10`), 3/3 boot fallback xAPIC
+(`qemu-runner-18ebb269842cb3f8-d71c`), 1/1 boot multi-app `--ordinary-gui 1
+--smp 4` (`qemu-runner-18ebb254eb9d69c0-1a1c`), 3/3 boot fallback xAPIC
 (`-cpu max,-x2apic`), 3/3 boot WHPX headless in x2APIC, e 1/1 soak continuo
 `--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min,
 248 round, 0 overruns, 0 perdite di memoria).
