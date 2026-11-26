@@ -11,6 +11,7 @@ typedef struct {
     int  (*Busy)(void *self);
     int  (*Redraw)(void *self);
     int  (*Rect)(void *self, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
+    int  (*Cursor)(void *self, uint32_t x, uint32_t y, uint32_t visible);
 } KERNEL_DISPLAY_OPS;
 
 typedef struct {

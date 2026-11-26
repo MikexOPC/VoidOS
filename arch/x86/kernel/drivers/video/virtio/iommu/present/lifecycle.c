@@ -1,4 +1,77 @@
 #include "state.h"
+#include "kernel/console/video/pointer/shape.h"
+
+// ====== cursor_word_private ======
+
+static void cursor_word_private(unsigned char *body, uint32_t at, uint32_t value)
+{
+    for (uint32_t i = 0U; i < 4U; ++i)
+        body[at + i] = (unsigned char)(value >> (i * 8U));
+}
+
+// ====== cursor_init_private ======
+
+// VirtIO 1.2 Section 5.7.6.10: 64x64 B8G8R8A8_UNORM (format=1) cursor resource id=2.
+static void cursor_init_private(X86_VGPU_PRESENT *self)
+{
+    self->CursorReady = 0U;
+    self->CursorVisible = 0U;
+    if (!self->CursorPixels || !self->CursorDevice)
+        return;
+    for (uint32_t i = 0U; i < 64U * 64U; ++i)
+        self->CursorPixels[i] = 0U;
+    for (uint32_t row = 0U; row < KERNEL_POINTER_SIZE; ++row) {
+        for (uint32_t col = 0U; col < KERNEL_POINTER_SIZE; ++col) {
+            uint32_t sample = kernel_pointer_sample(col, row);
+            if (sample)
+                self->CursorPixels[row * 64U + col] = (kernel_pointer_blend(sample, 0U) & 0x00FFFFFFU) | 0xFF000000U;
+        }
+    }
+    unsigned char create_body[16] = {0};
+    cursor_word_private(create_body, 0U, 2U);
+    cursor_word_private(create_body, 4U, 1U);
+    cursor_word_private(create_body, 8U, 64U);
+    cursor_word_private(create_body, 12U, 64U);
+    if (!kernel_vgpu_queue_control(&self->Queue, 0x0101U, create_body, 16U))
+        return;
+
+    unsigned char attach_body[24] = {0};
+    cursor_word_private(attach_body, 0U, 2U);
+    cursor_word_private(attach_body, 4U, 1U);
+    cursor_word_private(attach_body, 8U, (uint32_t)self->CursorDevice);
+    cursor_word_private(attach_body, 12U, (uint32_t)(self->CursorDevice >> 32));
+    cursor_word_private(attach_body, 16U, 64U * 64U * 4U);
+    if (!kernel_vgpu_queue_control(&self->Queue, 0x0106U, attach_body, 24U))
+        return;
+
+    unsigned char xfer_body[32] = {0};
+    cursor_word_private(xfer_body, 8U, 64U);
+    cursor_word_private(xfer_body, 12U, 64U);
+    cursor_word_private(xfer_body, 24U, 2U);
+    if (!kernel_vgpu_queue_control(&self->Queue, 0x0105U, xfer_body, 32U))
+        return;
+
+    (void)kernel_vgpu_cursor_post(&self->Queue, 0x0300U, 0U, 0U, 0U,
+        KERNEL_POINTER_HOTSPOT_X, KERNEL_POINTER_HOTSPOT_Y);
+    self->CursorReady = 1U;
+    (void)kernel_log(0, "KERNEL_VGPU_CURSOR_READY");
+}
+
+// ====== x86_vgpu_present_cursor ======
+
+int x86_vgpu_present_cursor(X86_VGPU_PRESENT *self, BOOT_U32 x, BOOT_U32 y, BOOT_U32 visible)
+{
+    if (!self || !self->Presenting || !self->CursorReady)
+        return 0;
+    uint32_t vis = visible ? 1U : 0U;
+    uint32_t cmd = (vis != self->CursorVisible) ? 0x0300U : 0x0301U;
+    uint32_t res_id = vis ? 2U : 0U;
+    if (!kernel_vgpu_cursor_post(&self->Queue, cmd, x, y, res_id,
+        KERNEL_POINTER_HOTSPOT_X, KERNEL_POINTER_HOTSPOT_Y))
+        return 0;
+    self->CursorVisible = vis;
+    return 1;
+}
 
 // ====== target_private ======
 
@@ -94,6 +167,7 @@ const char *x86_vgpu_present_bringup(X86_VGPU_PRESENT *self)
     self->Presenting = 1;
     self->Redraw = 1;
     self->Phase = 0;
+    cursor_init_private(self);
     return 0;
 }
 
@@ -148,6 +222,13 @@ int x86_vgpu_present_open(X86_VGPU_PRESENT *self, X86_VGPU_MAPPING *gpu, const K
     self->BackingSaved = backing;
     self->SurfaceSaved = surface;
     self->Pixels = (volatile uint32_t *)X86_SURFACE_VIRTUAL;
+    if (self->DirectDma && arena->Authority.Data.Pages >= 8U) {
+        self->CursorPixels = (volatile uint32_t *)(bytes + 4ULL * 4096ULL);
+        self->CursorDevice = arena->Authority.Data.Base + 4ULL * 4096ULL;
+    } else {
+        self->CursorPixels = 0;
+        self->CursorDevice = 0;
+    }
 
     const char *failure = x86_vgpu_present_bringup(self);
 
@@ -208,6 +289,15 @@ int x86_vgpu_present_close(X86_VGPU_PRESENT *self)
     if (self->Presenting) {
         if (x86_fb_target() == &self->Target) (void)x86_fb_target_redirect(&self->Target, 0);
 
+        if (self->CursorReady) {
+            unsigned char cur_id[8] = {0};
+            cursor_word_private(cur_id, 0U, 2U);
+            (void)kernel_vgpu_cursor_post(&self->Queue, 0x0300U, 0U, 0U, 0U, 0U, 0U);
+            (void)kernel_vgpu_queue_control(&self->Queue, 0x0107U, cur_id, 8U);
+            (void)kernel_vgpu_queue_control(&self->Queue, 0x0102U, cur_id, 8U);
+            self->CursorReady = 0U;
+            self->CursorVisible = 0U;
+        }
         closed = kernel_vgpu_scanout_unbind(&self->Queue, &self->Resource) && kernel_vgpu_resource_close(&self->Queue, &self->Resource);
         self->Presenting = 0;
     }

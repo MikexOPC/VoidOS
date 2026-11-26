@@ -53,12 +53,17 @@ typedef struct {
     BOOT_U32                    StallHold;
     // Direct physical DMA when VT-d IOMMU is absent (VIRTIO_F_ACCESS_PLATFORM = 0).
     BOOT_U32                    DirectDma;
+    // Hardware cursorq (VirtIO 1.2 Section 5.7.6.10): 64x64 B8G8R8A8 resource (id=2).
+    volatile uint32_t           *CursorPixels;
+    BOOT_U64                    CursorDevice;
+    BOOT_U32                    CursorReady, CursorVisible;
 } X86_VGPU_PRESENT;
 
 // Z5-A: inside the V2b start, after TE=1. Returns 0 only when the GPU reset could not be confirmed.
 int x86_vgpu_present_open(X86_VGPU_PRESENT *self, X86_VGPU_MAPPING *gpu, const KERNEL_ACPI_DIRECTORY *directory,
     X86_DMA_ARENA *arena, X86_SURFACE_MAPPING *surface);
 int x86_vgpu_present_rect(X86_VGPU_PRESENT *self, BOOT_U32 x, BOOT_U32 y, BOOT_U32 width, BOOT_U32 height);
+int x86_vgpu_present_cursor(X86_VGPU_PRESENT *self, BOOT_U32 x, BOOT_U32 y, BOOT_U32 visible);
 // R1-A/R3-A: progress of the update in flight or the recovery; busy keeps the console flushing.
 int x86_vgpu_present_poll(X86_VGPU_PRESENT *self);
 int x86_vgpu_present_busy(X86_VGPU_PRESENT *self);

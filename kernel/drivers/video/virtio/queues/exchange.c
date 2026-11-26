@@ -135,3 +135,37 @@ int kernel_vgpu_queue_control(VGPU_QUEUE *queue,uint32_t command,const unsigned 
     if (command==0x100) return 0;
     return exchange_private(queue,command,body,bytes);
 }
+
+// ====== kernel_vgpu_cursor_post ======
+
+// VirtIO 1.2 Section 5.7.6.10: VIRTIO_GPU_CMD_UPDATE_CURSOR (0x0300) / MOVE_CURSOR (0x0301) on cursorq (queue 1).
+// Request layout (56 bytes): ctrl_hdr (24B) + cursor_pos {scanout_id, x, y, pad} (16B) + resource_id, hot_x, hot_y, pad (16B).
+int kernel_vgpu_cursor_post(VGPU_QUEUE *queue,uint32_t command,uint32_t x,uint32_t y,uint32_t resource_id,uint32_t hot_x,uint32_t hot_y)
+{
+    if (!queue || queue->Self!=(uintptr_t)queue || (queue->State!=1 && queue->State!=2) || queue->Fault ||
+        (command!=0x0300U && command!=0x0301U)) return 0;
+    volatile uint32_t *req=(volatile uint32_t *)(queue->Buffers.Views[1] + 2048U);
+    req[0]=command;
+    req[1]=0;
+    req[2]=0;
+    req[3]=0;
+    req[4]=0;
+    req[5]=0;
+    req[6]=queue->Scanout;
+    req[7]=x;
+    req[8]=y;
+    req[9]=0;
+    req[10]=resource_id;
+    req[11]=hot_x;
+    req[12]=hot_y;
+    req[13]=0;
+    volatile VGPU_RING *ring=(volatile VGPU_RING *)queue->Buffers.Views[1];
+    ring->Descriptors[0]=(VGPU_DESCRIPTOR){queue->Buffers.Device[1] + 2048ULL, 56U, 0U, 0U};
+    ring->Heads[queue->CursorAvailable % 8U]=0U;
+    if (!barrier_private(queue)) return 0;
+    queue->CursorAvailable=(uint16_t)(queue->CursorAvailable + 1U);
+    ring->Available=queue->CursorAvailable;
+    if (!barrier_private(queue)) return 0;
+    uint32_t value=1U;
+    return kernel_vgpu_queue_access(queue,1,queue->Notify[1],2,1,&value);
+}

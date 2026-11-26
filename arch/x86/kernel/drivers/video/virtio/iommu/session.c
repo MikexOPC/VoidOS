@@ -102,7 +102,8 @@ int x86_vgpu_session_start(X86_VGPU_SESSION *self, X86_VGPU_MAPPING *gpu, const 
     BOOT_U32 step = 1;
 
     int iommu_ok = 1;
-    if (!x86_dma_arena_bind(gpu->Context, gpu->Window, gpu->Lapic, gpu->Inventory, gpu->Capture, 4, &self->Arena) ||
+    BOOT_U32 arena_pages = self->DirectDma ? 8U : 4U;
+    if (!x86_dma_arena_bind(gpu->Context, gpu->Window, gpu->Lapic, gpu->Inventory, gpu->Capture, arena_pages, &self->Arena) ||
         (step = 2, !x86_vgpu_surface_bind(gpu, surf_w, surf_h, &self->Surface))) {
         iommu_ok = 0;
     }
@@ -258,7 +259,12 @@ static int display_rect(void *self, uint32_t x, uint32_t y, uint32_t width, uint
     return x86_vgpu_present_rect(&((X86_VGPU_SESSION *)self)->Present, x, y, width, height);
 }
 
-static const KERNEL_DISPLAY_OPS display_ops = {display_check, display_poll, display_busy, display_redraw, display_rect};
+static int display_cursor(void *self, uint32_t x, uint32_t y, uint32_t visible)
+{
+    return x86_vgpu_present_cursor(&((X86_VGPU_SESSION *)self)->Present, x, y, visible);
+}
+
+static const KERNEL_DISPLAY_OPS display_ops = {display_check, display_poll, display_busy, display_redraw, display_rect, display_cursor};
 
 // ====== x86_vgpu_session_display ======
 

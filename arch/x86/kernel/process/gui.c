@@ -283,6 +283,23 @@ void x86_gui_cursor_position(int32_t x, int32_t y)
     }
     x86_gui_cursor.RequestedX = x;
     x86_gui_cursor.RequestedY = y;
+    if (x86_gui_display.Ops && x86_gui_display.Ops->Cursor) {
+        if (!x86_gui_cursor.SurfaceReady ||
+            (x86_gui_cursor.Drawn && x == x86_gui_cursor.X && y == x86_gui_cursor.Y)) {
+            ks_irq_restore(saved_if);
+            return;
+        }
+        uint32_t cx = x < 0 ? 0U : (uint32_t)x;
+        uint32_t cy = y < 0 ? 0U : (uint32_t)y;
+        if (x86_gui_display.Ops->Cursor(x86_gui_display.Self, cx, cy, 1U)) {
+            x86_gui_cursor.X = x;
+            x86_gui_cursor.Y = y;
+            x86_gui_cursor.Drawn = 1U;
+            ++x86_gui_cursor.Moves;
+            ks_irq_restore(saved_if);
+            return;
+        }
+    }
     if (x86_gui_cursor.Presenting || !x86_gui_cursor.SurfaceReady ||
         (x86_gui_cursor.Drawn && x == x86_gui_cursor.X && y == x86_gui_cursor.Y)) {
         ks_irq_restore(saved_if);
@@ -1093,7 +1110,8 @@ BOOT_U64 x86_gui_sys_display_present(X86_PROCESS_CPU *cpu, BOOT_U64 rects_ptr, B
         return RESULT_UNKNOWN;
     }
     x86_gui_cursor.Presenting = 1U;
-    gui_cursor_restore_private(fb_pixels, fb_stride);
+    if (!(x86_gui_display.Ops && x86_gui_display.Ops->Cursor))
+        gui_cursor_restore_private(fb_pixels, fb_stride);
     ks_irq_restore(cur_if);
     BOOT_U64 present_result = 0;
     for (BOOT_U64 idx = 0; idx < count; ++idx) {
@@ -1303,8 +1321,9 @@ BOOT_U64 x86_gui_sys_gpu_info(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
     (void)refresh_display_geometry_private(&fb_base, &fb_w, &fb_h, &fb_stride, &fb_fmt);
 
     int has_virtio_2d = (x86_gui_display.Ops != NULL && x86_gui_display.Ops->Rect != NULL);
+    int has_hw_cursor = (x86_gui_display.Ops != NULL && x86_gui_display.Ops->Cursor != NULL);
     info.Backend = has_virtio_2d ? X86_GPU_BACKEND_VIRTIO_2D : X86_GPU_BACKEND_GOP_SW;
-    info.Caps = has_virtio_2d ? X86_GPU_CAP_2D_FLUSH : 0U;
+    info.Caps = (has_virtio_2d ? X86_GPU_CAP_2D_FLUSH : 0U) | (has_hw_cursor ? X86_GPU_CAP_HW_CURSOR : 0U);
     info.Width = fb_w;
     info.Height = fb_h;
     info.Stride = fb_stride;
