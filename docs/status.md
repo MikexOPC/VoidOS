@@ -5,9 +5,12 @@
 `ordinary`, compilata con Meson e Ninja, avvia il loader UEFI, il kernel,
 init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
 
-- BSP e AP hanno dispatcher permanenti, IRQ comuni e preemption. La sessione
-  PS/2 possiede e rilascia task, stack, IRQ e binding. Il BSP resta attivo
-  dopo `exit` e senza PS/2. Task e affinità usano tabelle dinamiche, con
+- BSP e AP hanno dispatcher permanenti, IRQ comuni, preemption e supporto
+  **x2APIC** (abilitazione automatica via `CPUID.01H:ECX[21]` e `IA32_APIC_BASE`
+  bit 10 `EXTD` su BSP e AP con accessi MSR `0x800..0x83F`, ICR 64-bit `0x830`,
+  EOI `0x80B` e fallback automatico su xAPIC MMIO quando non disponibile). La
+  sessione PS/2 possiede e rilascia task, stack, IRQ e binding. Il BSP resta
+  attivo dopo `exit` e senza PS/2. Task e affinità usano tabelle dinamiche, con
   capacità x86 fino a 64 task e 222 vettori sottoscrivibili per CPU.
 - Processi Ring 3 isolati, canali IPC e syscall protette con stack syscall
   per processo (16 KiB, mappato solo in `KernelRoot`) e sospensione sicura
@@ -37,6 +40,10 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
 
 ## Lavoro corrente
 
+**Milestone 7 — x2APIC — fatta (su QEMU TCG e WHPX).** Abilitato x2APIC su BSP
+e tutti gli AP con fallback automatico su xAPIC; verificati timer LAPIC, IPI
+INIT/SIPI, IPI di servizio/TLB shootdown, console wake AP1→BSP, NMI panic SMP e
+multi-app GUI.
 **Desktop con app reali (Terminale + System Monitor) — fatta (su QEMU TCG).**
 System Monitor gira come processo Ring 3 reale dal dock (`kind == 1`), legge
 metriche vere del kernel tramite `SYS_SYS_INFO` (`28`: RAM fisica, heap kernel,
@@ -52,7 +59,7 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Limiti noti
 
-- Hardware fisico, USB xHCI, x2APIC e rete non sono ancora stati provati o
+- Hardware fisico, USB xHCI e rete non sono ancora stati provati o
   implementati.
 - Lo scheduler usa ancora un ticket lock condiviso (rank 900). La contesa
   misurata su 4 CPU è 0,45% in boot ordinario e 0,63% (`172.650 / 27.271.834`)
@@ -76,18 +83,18 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Prove e prossimo passo
 
-Verifiche correnti sull'immagine di produzione (`3622E952...`): 32/32 test
-host (`meson test`), 10/10 boot `--ordinary-shell --smp 4`
-(`qemu-runner-18eba47a1f1e0cfc-59f8`), 3/3 boot multi-app `--ordinary-gui 1
---smp 4` (`qemu-runner-18eba439b540567c-5464`, 21 cicli, 63 avvii app — 42
-Terminale + 21 System Monitor — 21 comandi VFS, 0 pixel residui cursore,
-screenshot ispezionato visivamente con entrambe le app e `CPUS: 4`), e 1/1
-soak continuo `--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`,
-30 min attivi + 30 min idle, 248 round, 66 migrazioni cross-CPU, 0 overruns,
-22.329/22.329 byte PS/2, 0 perdite di memoria).
+Verifiche correnti sull'immagine di produzione (`540cc38`, x2APIC attivo):
+32/32 test host (`meson test`), 10/10 boot `--ordinary-shell --smp 4` in
+x2APIC (`qemu-runner-18ebaa942622ceb4-b9a4`, `KERNEL_LAPIC_MODE: X2APIC`),
+1/1 boot multi-app `--ordinary-gui 1 --smp 4` in x2APIC
+(`qemu-runner-18ebaad61d1e2a74-9408`), 3/3 boot fallback xAPIC
+(`-cpu max,-x2apic`, `KERNEL_LAPIC_MODE: XAPIC`), 3/3 boot WHPX headless in
+x2APIC (`KERNEL_LAPIC_MODE: X2APIC`), e 1/1 soak continuo `--ordinary-soak 30
+--smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min, 248 round, 0 overruns,
+0 perdite di memoria).
 Validazioni in [gui.md](validation/gui.md),
 [consolidamento.md](validation/consolidamento.md),
 [processi.md](validation/processi.md), [storage.md](validation/storage.md),
 [exec.md](validation/exec.md) e [sicurezza.md](validation/sicurezza.md).
-Prossimo passo: Milestone 7 — hardware reale e periferiche (x2APIC, USB xHCI +
-HID, avvio su PC fisico).
+Prossimo passo: Milestone 7 — USB xHCI + HID (tastiera/mouse USB) e avvio su
+PC fisico.
