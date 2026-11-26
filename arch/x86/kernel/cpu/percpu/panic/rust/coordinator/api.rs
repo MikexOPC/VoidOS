@@ -77,8 +77,9 @@ pub extern "C" fn xp_panic_profile_valid(base: u64, physical: u64, pat: u64, exp
     bits: u32, expected_bits: u32, bsp: u32) -> u32 {
     if !(32..=52).contains(&bits) || bits != expected_bits || bsp > 1 || pat != expected_pat { return 0; }
     let mask = ((1u64 << bits.min(36)) - 1) & !4095;
+    let mode = base & 0xc00;
     u32::from(physical != 0 && physical & !mask == 0 && base & !(mask | 0xd00) == 0 &&
-        base & mask == physical && base & 0xc00 == 0x800 && (base >> 8) & 1 == u64::from(bsp))
+        base & mask == physical && (mode == 0x800 || mode == 0xc00) && (base >> 8) & 1 == u64::from(bsp))
 }
 
 // ====== xp_panic_state_address ======

@@ -144,7 +144,10 @@ int x86_lapic_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
     owner->Self = (BOOT_U64)owner; owner->Root = window->Root;
     owner->Physical = profile->Lapic; owner->Cache = profile->CacheBits;
     owner->PhysicalBits = window->Pool->PhysicalBits; owner->Ready = 1;
-    if (x86_lapic_validate(owner)) return 1;
+    if (x86_lapic_validate(owner)) {
+        (void)x86_lapic_x2apic_enable();
+        return 1;
+    }
     entries[X86_LAPIC_LEAF] = 0;
     x86_invalidate_page(X86_LAPIC_VIRTUAL);
     clear_owner(owner);

@@ -103,7 +103,8 @@ int x86_watchdog_valid(void)
         x86_irq_ready() && x86_lapic_validate(watchdog.Env.Mapping) &&
         x86_apic_cache_state() && x86_apic_read_profile(&cpu) && !cpu.Reserved &&
         (cpu.Rflags & 0x202) == 2 && cpu.Pat == watchdog.Env.Profile->Raw.Pat &&
-        cpu.ApicBase == watchdog.Env.Profile->Raw.ApicBase &&
+        (cpu.ApicBase & ~(1ULL << 10)) == (watchdog.Env.Profile->Raw.ApicBase & ~(1ULL << 10)) &&
+        (((cpu.ApicBase & (1ULL << 10)) == 0ULL) || x86_lapic_x2apic_active()) &&
         cpu.PhysicalBits == watchdog.Env.Window->Pool->PhysicalBits;
 }
 

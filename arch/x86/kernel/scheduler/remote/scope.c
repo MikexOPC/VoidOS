@@ -57,14 +57,17 @@ int x86_ap_actor(void)
 // ====== x86_ap_gate ======
 
 // Intel SDM 078US §§4.5/4.6: checked recursive parents, P0/RW1/US2/XD63.
-// §11.4.4: APIC_BASE.BSP8=0, global enable11=1, x2APIC10=0 in this profile.
+// §11.4.4 / §11.12.1: APIC_BASE.BSP8=0, global enable11=1, x2APIC10 matches BSP mode.
 int x86_ap_gate(const KERNEL_PHYSICAL_ALLOCATOR *pool, uint64_t root, const X86_TASK_CPU *cpu)
 {
     const X86_AP_SCOPE *scope = x86_ap_scope();
+    uint64_t expected_apic = xp_panic_native.Lapic
+        ? (xp_panic_native.Lapic->Physical | (x86_lapic_x2apic_active() ? 0xc00ULL : 0x800ULL))
+        : 0ULL;
     if (!x86_ap_actor() || !scope || !cpu || !xp_panic_native.Lapic || pool != scope->Pool || root != scope->Root ||
         !x86_scheduler_ap_cpu_valid(cpu,root,xp_panic_native.Ids[cpu_private()]) ||
         (cpu->cr4 & ((1ULL << 7) | (1ULL << 17))) ||
-        cpu->apic_base != (xp_panic_native.Lapic->Physical | 0x800ULL)) return 0;
+        cpu->apic_base != expected_apic) return 0;
     const X86_AP_SNAPSHOT *arena = &scope->Arena;
     const X86_AP_AUTH *auth = x86_ap_owner();
     if (!auth || auth->Self != arena->Owner || auth->Root != root || auth->Cpus != arena->Cpus ||
