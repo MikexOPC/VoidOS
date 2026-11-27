@@ -23,6 +23,7 @@ typedef struct {
     uint32_t                    Present;
     uint32_t                    Ready;
     uint32_t                    IrqEnabled;
+    uint32_t                    TargetApicId;
     X86_IRQ_TOKEN               IrqToken;
     uint64_t                    IrqSeq;
     KERNEL_NVME_DRIVER          Driver;
@@ -188,20 +189,26 @@ static uint64_t transport_irq_seq_private(void *ctx)
 static void transport_wait_private(void *ctx, uint64_t expected_seq)
 {
     const X86_NVME_RUNTIME *rt = (const X86_NVME_RUNTIME *)ctx;
-    if (!rt || rt->Self != (uintptr_t)rt)
+    if (!rt || rt->Self != (uintptr_t)rt || !rt->IrqEnabled || !ks_irq_state()) {
+        _mm_pause();
         return;
+    }
     if (ks_atomic_load_acquire(&rt->IrqSeq) >= expected_seq)
         return;
-    if (__readeflags() & 0x200ULL) {
-        _disable();
-        if (ks_atomic_load_acquire(&rt->IrqSeq) < expected_seq) {
-            _enable();
-            __halt();
-        } else {
-            _enable();
-        }
-    } else {
+    // Intel SDM Vol. 3A §11.4.6: LAPIC ID Register at 0x20 (bits 31:24 in xAPIC).
+    // Only halt on the CPU that receives the MSI-X vector; APs must spin with PAUSE.
+    BOOT_U32 cur_apic = 0U;
+    if (!rt->LapicMapping || !x86_lapic_read(rt->LapicMapping, 0x20U, &cur_apic) ||
+        (cur_apic >> 24) != rt->TargetApicId) {
         _mm_pause();
+        return;
+    }
+    uint64_t saved_if = ks_irq_save();
+    if (ks_atomic_load_acquire(&rt->IrqSeq) < expected_seq) {
+        _enable();
+        __halt();
+    } else {
+        ks_irq_restore(saved_if);
     }
 }
 
@@ -211,9 +218,9 @@ static int nvme_irq_handle(void)
 {
     if (nvme_rt.Self != (uintptr_t)&nvme_rt || !nvme_rt.Present)
         return 0;
+    if (!nvme_rt.LapicMapping || !x86_lapic_eoi_vector(nvme_rt.LapicMapping, X86_NVME_VECTOR))
+        return 0;
     ks_atomic_store_release(&nvme_rt.IrqSeq, ks_atomic_load_relaxed(&nvme_rt.IrqSeq) + 1ULL);
-    if (nvme_rt.LapicMapping)
-        (void)x86_lapic_eoi(nvme_rt.LapicMapping);
     return 1;
 }
 
@@ -356,6 +363,7 @@ static int enable_msix_private(uint64_t range_base, const uint8_t cfg[256], uint
             mc = (mc | 0x8000U) & ~0x4000U;
             if (!ecam_rw_private(nvme_rt.Window, nvme_rt.UcCacheBits, range_base, nvme_rt.Bus, nvme_rt.Device, nvme_rt.Function, cap + 2U, 2U, 1, &mc))
                 return 0;
+            nvme_rt.TargetApicId = apic_id;
             return 1;
         }
         cap = cfg[cap + 1U] & 0xFCU;

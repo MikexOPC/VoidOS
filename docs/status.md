@@ -18,12 +18,14 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
   copia/sezioni transazionali. Il VFS carica ELF dal disco FAT32. `proc`
   verifica IPC BSP/AP, VFS, fault isolato e cleanup. L'immagine utente arriva
   a 14 MiB (3584 pagine su 8 PT), con stack da 64 KiB e guard page.
-- VirtIO-blk (MSI-X, vettore `0x44`) e AHCI (MSI, vettore `0x45`) completano
-  l'I/O via interrupt con attesa `sti; hlt` (fallback `pause` se `IF=0`) e
-  cleanup pulito allo shutdown. FAT32 supporta lettura, scrittura, `unlink`,
-  `mkdir`, `rmdir`, sottodirectory annidate e nomi lunghi (LFN fino a 63
-  caratteri con alias 8.3 anti-collisione e pulizia completa delle entry LFN
-  su rimozione).
+- VirtIO-blk (MSI-X, vettore `0x44`), AHCI SATA (MSI, vettore `0x45`) e
+  **NVMe PCIe 2.0c** (`01:08:02`, MSI-X vettore `0x48`, fallback
+  `KERNEL_NVME_ABSENT` se assente, mount automatico su `/` in assenza di
+  VirtIO-blk oppure su `/nvme`) completano l'I/O via interrupt con attesa
+  `sti; hlt` sul BSP (`pause` su AP o se `IF=0`) e cleanup pulito allo
+  shutdown. FAT32 supporta lettura, scrittura, `unlink`, `mkdir`, `rmdir`,
+  sottodirectory annidate e nomi lunghi (LFN fino a 63 caratteri con alias
+  8.3 anti-collisione e pulizia completa delle entry LFN su rimozione).
 - Controller USB **xHCI 1.2** (PCI `0C:03:30`, MSI-X/MSI vettore `0x46`,
   fallback silenzioso `KERNEL_XHCI_ABSENT` se assente) con enumerazione e
   **hotplug runtime** sul root hub (`Disable Slot` + riutilizzo pagine DMA),
@@ -113,8 +115,8 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Prove e prossimo passo
 
-Verifiche correnti sull'immagine di produzione (x2APIC + xHCI HID/MSC/Hub + VirtIO-GPU 2D/cursorq + Window Manager animato + Rete VirtIO-net/DHCP/DNS/TCP):
-35/35 test host (`meson test`, ASan inclusi `virtio_net_host`, `net_protocol_rust`, `libvoid_rust`, `libui_rust`, `gui_host`, `xhci_host` e `vfs_fat_host`), 2/2 test `qemu-runner`, 3/3 boot `--ordinary-shell --smp 4` (`qemu-runner-18ebf17051385e84-8ff0`, fallback `-net none`), 1/1 boot multi-app `--ordinary-gui 1 --smp 4` (`qemu-runner-18ebf0ba7ff77a18-20b0`), prova live `-netdev user -device virtio-net-pci` con Terminale Ring 3 (`net`, `ping 10.0.2.2`, `http example.com` -> `HTTP/1.1 200 OK`), 10/10 boot `--ordinary-shell --smp 4` (`qemu-runner-18ebed8b9fd98e70-8198`), prove live VirtIO-GPU/USB/xAPIC/WHPX e 1/1 soak continuo `--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min, 248 round, 0 overruns, 0 perdite).
+Verifiche correnti sull'immagine di produzione (x2APIC + NVMe PCIe + AHCI SATA + xHCI HID/MSC/Hub + VirtIO-GPU 2D/cursorq + Window Manager animato + Rete VirtIO-net/DHCP/DNS/TCP):
+36/36 test host (`meson test`, ASan inclusi `nvme_host`, `virtio_net_host`, `net_protocol_rust`, `libvoid_rust`, `libui_rust`, `gui_host`, `xhci_host`, `heap_host`, `physical_allocator_host` e `vfs_fat_host`), 2/2 test `qemu-runner`, 3/3 boot `--ordinary-shell --smp 4` (fallback `KERNEL_NVME_ABSENT`), 3/3 boot live QEMU `-device nvme` senza `virtio-blk` (`KERNEL_NVME_READY`, `KERNEL_VFS_NVME_ROOT_MOUNTED`, `KERNEL_VFS_EXEC_OK`, `KERNEL_USER_SHELL_OK`, `KERNEL_CONSOLE_SHELL_OPEN`) + 1/1 boot dual VirtIO-blk + `/nvme`, 1/1 boot multi-app `--ordinary-gui 1 --smp 4` (`qemu-runner-18ebf0ba7ff77a18-20b0`), prova live `-netdev user -device virtio-net-pci` con Terminale Ring 3 (`net`, `ping 10.0.2.2`, `http example.com` -> `HTTP/1.1 200 OK`), 10/10 boot `--ordinary-shell --smp 4` (`qemu-runner-18ebed8b9fd98e70-8198`), prove live VirtIO-GPU/USB/xAPIC/WHPX e 1/1 soak continuo `--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min, 248 round, 0 overruns, 0 perdite).
 Validazioni in [gui.md](validation/gui.md),
 [consolidamento.md](validation/consolidamento.md),
 [processi.md](validation/processi.md), [storage.md](validation/storage.md),
