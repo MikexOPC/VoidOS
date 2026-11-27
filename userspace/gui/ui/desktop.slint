@@ -33,9 +33,7 @@ export component VoidDesktop inherits Window {
 
     callback launch-app(int);
     callback close-app(int);
-    callback focus-app(int);
     callback minimize-app(int);
-    callback move-app(int, length, length);
     callback quit-desktop();
 
     // Layer 0: Wallpaper background (no VoidOS text on top)
@@ -53,15 +51,8 @@ export component VoidDesktop inherits Window {
         height: surface.client-height + 34px;
         title: surface.title;
         focused: root.focused-window == surface.kind;
-        focus-clicked => {
-            root.focused-window = surface.kind;
-            root.focus-app(surface.kind);
-        }
         minimize-clicked => {
             root.minimize-app(surface.kind);
-        }
-        move-delta(dx, dy) => {
-            root.move-app(surface.kind, dx, dy);
         }
         close-clicked => {
             if (surface.kind == 0) {

@@ -97,23 +97,54 @@ impl Applications {
         true
     }
 
-    // ====== move_by ======
+    // ====== hit_test ======
 
-    pub fn move_by(&mut self, kind: i32, dx: f32, dy: f32, display_w: u32, display_h: u32) {
+    // Returns (kind, in_titlebar_drag_zone, win_x, win_y) for the topmost visible window under (x, y).
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<(i32, bool, f32, f32)> {
+        // Z-order matches refresh(): focused window is topmost, then others in reverse order.
+        let ordered = self
+            .windows
+            .iter()
+            .filter(|app| app.kind == self.focused)
+            .chain(self.windows.iter().rev().filter(|app| app.kind != self.focused));
+        for app in ordered {
+            if app.minimized || app.commits == 0 {
+                continue;
+            }
+            let total_w = app.width as f32 + 2.0;
+            let total_h = app.height as f32 + 34.0;
+            if x >= app.pos_x
+                && x < app.pos_x + total_w
+                && y >= app.pos_y
+                && y < app.pos_y + total_h
+            {
+                let in_titlebar = y < app.pos_y + 32.0 && x < app.pos_x + (total_w - 88.0).max(0.0);
+                return Some((app.kind, in_titlebar, app.pos_x, app.pos_y));
+            }
+        }
+        None
+    }
+
+    // ====== move_to ======
+
+    pub fn move_to(&mut self, kind: i32, nx: f32, ny: f32, display_w: u32, display_h: u32) {
         let Some(app) = self.windows.iter_mut().find(|a| a.kind == kind) else {
             return;
         };
         let max_x = (display_w as f32 - 80.0).max(0.0);
         let max_y = (display_h as f32 - 64.0).max(0.0);
-        app.pos_x = (app.pos_x + dx).clamp(0.0, max_x);
-        app.pos_y = (app.pos_y + dy).clamp(0.0, max_y);
-        let nx = app.pos_x;
-        let ny = app.pos_y;
+        let clamped_x = nx.clamp(0.0, max_x);
+        let clamped_y = ny.clamp(0.0, max_y);
+        if (app.pos_x - clamped_x).abs() < 0.5 && (app.pos_y - clamped_y).abs() < 0.5 {
+            return;
+        }
+        app.pos_x = clamped_x;
+        app.pos_y = clamped_y;
         for row in 0..self.model.row_count() {
             if let Some(mut surface) = self.model.row_data(row) {
                 if surface.kind == kind {
-                    surface.pos_x = nx;
-                    surface.pos_y = ny;
+                    surface.pos_x = clamped_x;
+                    surface.pos_y = clamped_y;
                     self.model.set_row_data(row, surface);
                     break;
                 }

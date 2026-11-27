@@ -191,17 +191,12 @@ extern "C" fn program_main(mode: u64) -> ! {
         Err(_) => libvoid::exit(82),
     };
     let requests = Rc::new(RefCell::new(VecDeque::new()));
-    let moves = Rc::new(RefCell::new(VecDeque::<(i32, f32, f32)>::new()));
     let launch = requests.clone();
     ui.on_launch_app(move |kind| launch.borrow_mut().push_back((0, kind)));
     let close = requests.clone();
     ui.on_close_app(move |kind| close.borrow_mut().push_back((1, kind)));
-    let focus = requests.clone();
-    ui.on_focus_app(move |kind| focus.borrow_mut().push_back((2, kind)));
     let minimize = requests.clone();
     ui.on_minimize_app(move |kind| minimize.borrow_mut().push_back((3, kind)));
-    let mv = moves.clone();
-    ui.on_move_app(move |kind, dx, dy| mv.borrow_mut().push_back((kind, dx, dy)));
     let quitting = Rc::new(Cell::new(false));
     let quit = quitting.clone();
     ui.on_quit_desktop(move || quit.set(true));
@@ -292,6 +287,7 @@ extern "C" fn program_main(mode: u64) -> ! {
     let mut cx = (acq.width as f32) * 0.5;
     let mut cy = (acq.height as f32) * 0.5;
     let mut prev_buttons = 0u32;
+    let mut dragging: Option<(i32, f32, f32)> = None;
     let mut last_uptime_second = dinfo.uptime_ms / 1000;
     let mut cursor = cursor::CursorOverlay::new();
 
@@ -344,16 +340,42 @@ extern "C" fn program_main(mode: u64) -> ! {
                 let left_prev = (prev_buttons & 1) != 0;
                 if left_now != left_prev {
                     let pos = LogicalPosition::new(cx, cy);
-                    if mouse_moved {
-                        window.dispatch_event(WindowEvent::PointerMoved { position: pos });
-                        mouse_moved = false;
-                    }
                     if left_now {
-                        window.dispatch_event(WindowEvent::PointerPressed {
-                            position: pos,
-                            button: PointerEventButton::Left,
-                        });
+                        if let Some((kind, is_titlebar, wx, wy)) = applications.hit_test(cx, cy) {
+                            if applications.focused != kind {
+                                applications.focused = kind;
+                                applications.refresh(&ui);
+                            }
+                            if is_titlebar {
+                                dragging = Some((kind, cx - wx, cy - wy));
+                                mouse_moved = false;
+                            } else {
+                                if mouse_moved {
+                                    window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+                                    mouse_moved = false;
+                                }
+                                window.dispatch_event(WindowEvent::PointerPressed {
+                                    position: pos,
+                                    button: PointerEventButton::Left,
+                                });
+                            }
+                        } else {
+                            if mouse_moved {
+                                window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+                                mouse_moved = false;
+                            }
+                            window.dispatch_event(WindowEvent::PointerPressed {
+                                position: pos,
+                                button: PointerEventButton::Left,
+                            });
+                        }
+                    } else if dragging.take().is_some() {
+                        mouse_moved = false;
                     } else {
+                        if mouse_moved {
+                            window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+                            mouse_moved = false;
+                        }
                         window.dispatch_event(WindowEvent::PointerReleased {
                             position: pos,
                             button: PointerEventButton::Left,
@@ -374,13 +396,14 @@ extern "C" fn program_main(mode: u64) -> ! {
             }
         }
         if mouse_moved {
-            window.dispatch_event(WindowEvent::PointerMoved {
-                position: LogicalPosition::new(cx, cy),
-            });
-        }
-        while let Some((kind, dx, dy)) = moves.borrow_mut().pop_front() {
-            had_work = true;
-            applications.move_by(kind, dx, dy, acq.width, acq.height);
+            if let Some((kind, off_x, off_y)) = dragging {
+                had_work = true;
+                applications.move_to(kind, cx - off_x, cy - off_y, acq.width, acq.height);
+            } else {
+                window.dispatch_event(WindowEvent::PointerMoved {
+                    position: LogicalPosition::new(cx, cy),
+                });
+            }
         }
         while let Some((operation, kind)) = requests.borrow_mut().pop_front() {
             had_work = true;

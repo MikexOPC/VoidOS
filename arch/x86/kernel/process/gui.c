@@ -152,11 +152,11 @@ static void gui_cursor_restore_private(volatile uint32_t *fb_pixels, uint32_t fb
 
 // ====== gui_cursor_prepare_private ======
 
-static int gui_cursor_prepare_private(int32_t target_x, int32_t target_y,
+static int gui_cursor_prepare_private(volatile uint32_t *fb_pixels, int32_t target_x, int32_t target_y,
     uint32_t fb_w, uint32_t fb_h, uint32_t fb_stride,
     X86_GUI_CURSOR_FRAME *frame)
 {
-    if (!fb_w || !fb_h || !frame)
+    if (!fb_pixels || !fb_w || !fb_h || !frame)
         return 0;
     if (target_x < 0) target_x = 0;
     if (target_y < 0) target_y = 0;
@@ -169,18 +169,8 @@ static int gui_cursor_prepare_private(int32_t target_x, int32_t target_y,
     if (cw > 18U) cw = 18U;
     if (ch > 18U) ch = 18U;
 
-    uint64_t saved_if = ks_irq_save();
-    if (!x86_gui_cursor.Active || !x86_gui_kmap_active) {
-        ks_irq_restore(saved_if);
-        return 0;
-    }
-    uint64_t mapped_bytes = (uint64_t)x86_gui_kmap_pages * PAGE_BYTES;
-    uint64_t max_row_end = ((uint64_t)(y0 + ch - 1U) * (uint64_t)fb_stride + (uint64_t)(x0 + cw)) * 4ULL;
-    if (max_row_end > mapped_bytes) {
-        ks_irq_restore(saved_if);
-        return 0;
-    }
-    const uint32_t *bb_pixels = (const uint32_t *)(uintptr_t)X86_LAYOUT_GUI_BACKBUFFER_VIRTUAL;
+    // Read background directly from the presented framebuffer (after restoring any old cursor)
+    // so an IRQ mouse move can never capture half-rendered Ring 3 Slint pixels from SHM.
     for (uint32_t row = 0; row < ch; ++row) {
         uint32_t start = x86_gui_cursor.RowStart[row];
         uint32_t end = x86_gui_cursor.RowEnd[row];
@@ -190,11 +180,10 @@ static int gui_cursor_prepare_private(int32_t target_x, int32_t target_y,
             end = cw;
         uint32_t span = end - start;
         uint32_t *sav = &frame->Saved[row * 18U + start];
-        const uint32_t *src = bb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)(x0 + start);
+        const volatile uint32_t *src = fb_pixels + (size_t)(y0 + row) * (size_t)fb_stride + (size_t)(x0 + start);
         for (uint32_t i = 0; i < span; ++i)
             sav[i] = src[i];
     }
-    ks_irq_restore(saved_if);
 
     for (uint32_t row = 0; row < ch; ++row) {
         uint32_t start = x86_gui_cursor.RowStart[row];
@@ -308,11 +297,11 @@ void x86_gui_cursor_position(int32_t x, int32_t y)
     X86_GUI_CURSOR_FRAME frame;
     uint32_t t0 = 0, t1 = 0;
     int timed = x86_gui_clock && kernel_clock_now(x86_gui_clock, &t0);
-    if (!gui_cursor_prepare_private(x, y, fb_w, fb_h, fb_stride, &frame)) {
+    gui_cursor_restore_private(fb_pixels, fb_stride);
+    if (!gui_cursor_prepare_private(fb_pixels, x, y, fb_w, fb_h, fb_stride, &frame)) {
         ks_irq_restore(saved_if);
         return;
     }
-    gui_cursor_restore_private(fb_pixels, fb_stride);
     gui_cursor_commit_private(fb_pixels, fb_stride, &frame);
     if (timed && kernel_clock_now(x86_gui_clock, &t1)) {
         uint32_t delta = kernel_clock_delta(x86_gui_clock, t0, t1);
