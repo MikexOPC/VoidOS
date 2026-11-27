@@ -17,7 +17,7 @@ use core::panic::PanicInfo;
 use core::time::Duration;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType, TargetPixel};
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
-use slint::{LogicalPosition, PhysicalSize};
+use slint::{Image, LogicalPosition, PhysicalSize, Rgb8Pixel, SharedPixelBuffer};
 
 slint::include_modules!();
 
@@ -156,6 +156,106 @@ fn format_rtc_labels(dinfo: &libvoid::DisplayInfo, width: u32, height: u32) -> (
     }
 }
 
+// ====== build_dock_blur ======
+
+// Generates a real 3-pass separable box blur (approx Gaussian radius ~14px) directly from the
+// rendered wallpaper strip behind the dock so changing wallpapers always keeps a native blur.
+fn build_dock_blur(
+    backbuffer: &[BgrxPixel],
+    stride: u32,
+    width: u32,
+    height: u32,
+) -> Image {
+    let dx = 44u32.min(width);
+    let dy = height.saturating_sub(62);
+    let dw = width.saturating_sub(88).max(1);
+    let dh = 50u32.min(height.saturating_sub(dy)).max(1);
+    let n = (dw as usize) * (dh as usize);
+    let mut cur = alloc::vec![[0u8; 3]; n];
+    let mut tmp = alloc::vec![[0u8; 3]; n];
+
+    for y in 0..dh {
+        let sy = (dy + y) as usize;
+        let row_off = sy * (stride as usize);
+        for x in 0..dw {
+            let sx = (dx + x) as usize;
+            let px = backbuffer[row_off + sx].0;
+            cur[(y as usize) * (dw as usize) + (x as usize)] = [
+                ((px >> 16) & 0xFF) as u8,
+                ((px >> 8) & 0xFF) as u8,
+                (px & 0xFF) as u8,
+            ];
+        }
+    }
+
+    let w = dw as usize;
+    let h = dh as usize;
+    let r = 10usize;
+    let diam = (2 * r + 1) as u32;
+
+    for _pass in 0..3 {
+        // Horizontal box pass
+        for y in 0..h {
+            let row = y * w;
+            let mut sr = 0u32;
+            let mut sg = 0u32;
+            let mut sb = 0u32;
+            for k in 0..=r {
+                let p = cur[row + k.min(w - 1)];
+                sr += p[0] as u32;
+                sg += p[1] as u32;
+                sb += p[2] as u32;
+            }
+            let left0 = cur[row];
+            sr += (left0[0] as u32) * (r as u32);
+            sg += (left0[1] as u32) * (r as u32);
+            sb += (left0[2] as u32) * (r as u32);
+            for x in 0..w {
+                tmp[row + x] = [(sr / diam) as u8, (sg / diam) as u8, (sb / diam) as u8];
+                let out_x = x.saturating_sub(r);
+                let in_x = (x + r + 1).min(w - 1);
+                let po = cur[row + out_x];
+                let pi = cur[row + in_x];
+                sr = sr + pi[0] as u32 - po[0] as u32;
+                sg = sg + pi[1] as u32 - po[1] as u32;
+                sb = sb + pi[2] as u32 - po[2] as u32;
+            }
+        }
+        // Vertical box pass
+        for x in 0..w {
+            let mut sr = 0u32;
+            let mut sg = 0u32;
+            let mut sb = 0u32;
+            for k in 0..=r {
+                let p = tmp[k.min(h - 1) * w + x];
+                sr += p[0] as u32;
+                sg += p[1] as u32;
+                sb += p[2] as u32;
+            }
+            let top0 = tmp[x];
+            sr += (top0[0] as u32) * (r as u32);
+            sg += (top0[1] as u32) * (r as u32);
+            sb += (top0[2] as u32) * (r as u32);
+            for y in 0..h {
+                cur[y * w + x] = [(sr / diam) as u8, (sg / diam) as u8, (sb / diam) as u8];
+                let out_y = y.saturating_sub(r);
+                let in_y = (y + r + 1).min(h - 1);
+                let po = tmp[out_y * w + x];
+                let pi = tmp[in_y * w + x];
+                sr = sr + pi[0] as u32 - po[0] as u32;
+                sg = sg + pi[1] as u32 - po[1] as u32;
+                sb = sb + pi[2] as u32 - po[2] as u32;
+            }
+        }
+    }
+
+    let mut buf = SharedPixelBuffer::<Rgb8Pixel>::new(dw, dh);
+    for (dst, src) in buf.make_mut_slice().iter_mut().zip(cur.iter()) {
+        *dst = Rgb8Pixel::new(src[0], src[1], src[2]);
+    }
+    Image::from_rgb8(buf)
+}
+
 // ====== program_main ======
 
 #[unsafe(no_mangle)]
@@ -215,7 +315,7 @@ extern "C" fn program_main(mode: u64) -> ! {
         unsafe { core::slice::from_raw_parts_mut(acq.user_virt as *mut BgrxPixel, total_pixels) };
 
     if mode == 1 || mode == 2 {
-        if !applications.launch(0) {
+        if !applications.launch(0, dinfo.uptime_ms) {
             let _ = libvoid::write_console(b"GUI self-check error 87\n");
             libvoid::exit(87);
         }
@@ -280,6 +380,22 @@ extern "C" fn program_main(mode: u64) -> ! {
         libvoid::exit(0);
     }
 
+    // Capture real native blurred wallpaper strip behind the dock before showing the dock,
+    // and present the full wallpaper once so the entire framebuffer is clean from frame 0.
+    ui.set_dock_visible(false);
+    window.draw_if_needed(|renderer| {
+        let _ = renderer.render(backbuffer, acq.stride as usize);
+    });
+    let _ = libvoid::display_present(&[libvoid::DisplayRect {
+        x: 0,
+        y: 0,
+        width: acq.width,
+        height: acq.height,
+    }]);
+    let dock_blur = build_dock_blur(backbuffer, acq.stride, acq.width, acq.height);
+    ui.set_dock_backdrop(dock_blur);
+    ui.set_dock_visible(true);
+
     let _ = libvoid::write_console(b"VoidOS desktop ready\n");
 
     // Mode 0: live interactive Slint event loop (hardware GPU cursor when bit 31 of format is set, else 20x20 overlay).
@@ -292,11 +408,11 @@ extern "C" fn program_main(mode: u64) -> ! {
     let mut cursor = cursor::CursorOverlay::new();
 
     loop {
-        if libvoid::display_info(&mut dinfo) != 0 {
-            let _ = applications.shutdown();
-            libvoid::exit(96);
-        }
-        {
+        if dragging.is_none() {
+            if libvoid::display_info(&mut dinfo) != 0 {
+                let _ = applications.shutdown();
+                libvoid::exit(96);
+            }
             let second = dinfo.uptime_ms / 1000;
             if second < last_uptime_second {
                 let _ = applications.shutdown();
@@ -409,8 +525,11 @@ extern "C" fn program_main(mode: u64) -> ! {
             had_work = true;
             let mut need_refresh = true;
             let ok = match operation {
-                0 => applications.launch(kind),
-                1 => applications.close(kind),
+                0 => applications.launch(kind, dinfo.uptime_ms),
+                1 => {
+                    need_refresh = false;
+                    applications.begin_close(kind, dinfo.uptime_ms)
+                }
                 3 => {
                     applications.minimize(kind);
                     if kind == 0 {
@@ -444,12 +563,17 @@ extern "C" fn program_main(mode: u64) -> ! {
                 applications.refresh(&ui);
             }
         }
-        let (apps_ok, apps_active) = applications.poll_with_activity(&ui, acq.width, acq.height);
-        if apps_active {
-            had_work = true;
+        if !(dragging.is_some() && mouse_moved) {
+            let (apps_ok, apps_active) = applications.poll_with_activity(&ui, acq.width, acq.height);
+            if apps_active {
+                had_work = true;
+            }
+            if !apps_ok {
+                ui.set_status("Errore nel canale dell'applicazione".into());
+            }
         }
-        if !apps_ok {
-            ui.set_status("Errore nel canale dell'applicazione".into());
+        if applications.tick_animations(&ui, dinfo.uptime_ms) {
+            had_work = true;
         }
         if quitting.get() {
             let ok = applications.shutdown();
@@ -486,7 +610,9 @@ extern "C" fn program_main(mode: u64) -> ! {
             let _ = applications.shutdown();
             libvoid::exit(95);
         }
-        if had_work || applications.has_pending() {
+        if dragging.is_some() && mouse_moved {
+            // Keep dragging loop hot without yielding a full scheduler tick while mouse events arrive.
+        } else if had_work || applications.has_pending() || applications.has_active_animations() {
             libvoid::yield_now();
         } else {
             let wait_ms = slint::platform::duration_until_next_timer_update()

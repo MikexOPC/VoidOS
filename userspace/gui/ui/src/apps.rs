@@ -15,6 +15,9 @@ pub struct Application {
     pos_x: f32,
     pos_y: f32,
     minimized: bool,
+    anim_mode: u8,
+    anim_start_ms: u64,
+    scale_progress: f32,
     buffer: SharedPixelBuffer<Rgb8Pixel>,
     image: Image,
     pending: VecDeque<[u8; PROTO_WIRE_BYTES]>,
@@ -51,7 +54,7 @@ impl Applications {
 
     // ====== launch ======
 
-    pub fn launch(&mut self, kind: i32) -> bool {
+    pub fn launch(&mut self, kind: i32, now_ms: u64) -> bool {
         let path: &[u8] = match kind {
             0 => b"/bin/terminal.elf",
             1 => b"/bin/sysmon.elf",
@@ -61,6 +64,9 @@ impl Applications {
         self.focused = kind;
         if let Some(app) = self.windows.iter_mut().find(|app| app.kind == kind) {
             app.minimized = false;
+            app.anim_mode = if self.verify { 0 } else { 1 };
+            app.anim_start_ms = now_ms;
+            app.scale_progress = if self.verify { 1.0 } else { 0.05 };
             return true;
         }
         let budget = libvoid::SpawnBudget {
@@ -88,6 +94,9 @@ impl Applications {
             pos_x: init_x,
             pos_y: init_y,
             minimized: false,
+            anim_mode: if self.verify { 0 } else { 1 },
+            anim_start_ms: now_ms,
+            scale_progress: if self.verify { 1.0 } else { 0.05 },
             buffer: SharedPixelBuffer::new(0, 0),
             image: Image::default(),
             pending: VecDeque::new(),
@@ -95,6 +104,83 @@ impl Applications {
             probe_read_only: self.verify,
         });
         true
+    }
+
+    // ====== begin_close ======
+
+    pub fn begin_close(&mut self, kind: i32, now_ms: u64) -> bool {
+        if self.verify {
+            return self.close(kind);
+        }
+        if let Some(app) = self.windows.iter_mut().find(|a| a.kind == kind) {
+            if app.commits == 0 || app.minimized {
+                return self.close(kind);
+            }
+            app.anim_mode = 2;
+            app.anim_start_ms = now_ms;
+            return true;
+        }
+        true
+    }
+
+    // ====== has_active_animations ======
+
+    pub fn has_active_animations(&self) -> bool {
+        self.windows.iter().any(|app| app.anim_mode != 0 && app.commits > 0 && !app.minimized)
+    }
+
+    // ====== tick_animations ======
+
+    pub fn tick_animations(&mut self, ui: &VoidDesktop, now_ms: u64) -> bool {
+        const OPEN_MS: f32 = 160.0;
+        const CLOSE_MS: f32 = 135.0;
+        let mut to_close = Vec::new();
+        let mut any_updated = false;
+        for app in &mut self.windows {
+            if app.anim_mode == 0 || app.commits == 0 || app.minimized {
+                continue;
+            }
+            let elapsed = now_ms.saturating_sub(app.anim_start_ms) as f32;
+            if app.anim_mode == 1 {
+                let t = (elapsed / OPEN_MS).clamp(0.0, 1.0);
+                // Ease-out cubic for snappy iOS-like zoom-in
+                let inv = 1.0 - t;
+                app.scale_progress = 1.0 - inv * inv * inv;
+                if t >= 1.0 {
+                    app.scale_progress = 1.0;
+                    app.anim_mode = 0;
+                }
+                any_updated = true;
+            } else if app.anim_mode == 2 {
+                let t = (elapsed / CLOSE_MS).clamp(0.0, 1.0);
+                // Ease-in quadratic for smooth shrink-out
+                app.scale_progress = (1.0 - t * t).max(0.0);
+                if t >= 1.0 {
+                    app.scale_progress = 0.0;
+                    app.anim_mode = 0;
+                    to_close.push(app.kind);
+                }
+                any_updated = true;
+            }
+            let kind = app.kind;
+            let progress = app.scale_progress;
+            for row in 0..self.model.row_count() {
+                if let Some(mut surface) = self.model.row_data(row) {
+                    if surface.kind == kind {
+                        surface.scale_progress = progress;
+                        self.model.set_row_data(row, surface);
+                        break;
+                    }
+                }
+            }
+        }
+        if !to_close.is_empty() {
+            for kind in to_close {
+                let _ = self.close(kind);
+            }
+            self.refresh(ui);
+        }
+        any_updated
     }
 
     // ====== hit_test ======
@@ -389,6 +475,7 @@ impl Applications {
                 pos_x: app.pos_x,
                 pos_y: app.pos_y,
                 minimized: app.minimized,
+                scale_progress: app.scale_progress,
             });
         }
         self.model.set_vec(surfaces);

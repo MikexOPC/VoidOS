@@ -12,6 +12,7 @@ export component DefaultDock inherits Rectangle {
     in property <bool> terminal-open: true;
     in property <bool> sysmon-open: false;
     in property <bool> files-open: false;
+    in property <image> backdrop-image;
     in property <string> clock-text: "15:44";
     in property <string> sub-clock-text: "24 Nov 2026";
 
@@ -25,54 +26,61 @@ export component DefaultDock inherits Rectangle {
     width: root.screen-width - 88px;
     height: 50px;
 
-    border-radius: 14px;
+    border-radius: 16px;
     background: transparent;
-    drop-shadow-blur: 20px;
-    drop-shadow-offset-y: 6px;
-    drop-shadow-color: #080E1E44;
 
-    // Clipped frosted-glass blur layer + translucent tint
+    // Clipped native blurred wallpaper backdrop + iOS Liquid Glass tint
     Rectangle {
         width: 100%;
         height: 100%;
-        border-radius: 14px;
+        border-radius: 16px;
         clip: true;
 
         Image {
             width: 100%;
             height: 100%;
-            source: @image-url("../../background/wallpaper/dock_blur.jpg");
-            image-fit: cover;
+            source: root.backdrop-image;
+            image-fit: fill;
         }
 
-        // Translucent light frosted glass overlay
+        // Translucent iOS Liquid Glass gradient overlay
         Rectangle {
             width: 100%;
             height: 100%;
-            background: #F4F7FF52;
-            border-radius: 14px;
+            background: @linear-gradient(180deg, #FFFFFFA4 0%, #EEF3FC62 48%, #DCE5F852 100%);
+            border-radius: 16px;
             border-width: 1px;
-            border-color: #FFFFFF98;
+            border-color: #FFFFFFCC;
+        }
+
+        // Top Liquid Glass specular highlight rim
+        Rectangle {
+            x: 10px;
+            y: 1px;
+            width: parent.width - 20px;
+            height: 1px;
+            background: #FFFFFFF0;
         }
 
         // Subtle outer rim for contrast on any wallpaper
         Rectangle {
             width: 100%;
             height: 100%;
-            border-radius: 14px;
+            border-radius: 16px;
             border-width: 1px;
-            border-color: #7E8BA85A;
+            border-color: #4F649048;
             background: transparent;
         }
+    }
 
-        dock-content := HorizontalLayout {
-            width: 100%;
-            height: 100%;
-            padding-left: 8px;
-            padding-right: 10px;
-            padding-top: 6px;
-            padding-bottom: 6px;
-            spacing: 8px;
+    dock-content := HorizontalLayout {
+        width: 100%;
+        height: 100%;
+        padding-left: 8px;
+        padding-right: 10px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 8px;
 
             // 1) Shutdown button (38x38, no animation)
             shutdown-button := Rectangle {
@@ -152,152 +160,190 @@ export component DefaultDock inherits Rectangle {
                 }
             }
 
-            // 3) app-content: ONLY Terminal icon, centered in 38x38 tile
+            // 3) app-content: fluid hover lift animation + Liquid Glass tiles
             app-content := HorizontalLayout {
                 horizontal-stretch: 1;
                 height: 100%;
                 spacing: 8px;
                 alignment: start;
 
-                app1 := Rectangle {
+                // App 1: Terminal
+                Rectangle {
                     width: 38px;
                     height: 38px;
-                    border-radius: 11px;
-                    border-width: 1px;
-                    border-color: term-ta.has-hover ? #4A5E90CC : (root.terminal-open ? #52648E99 : #8896B278);
-                    background: term-ta.has-hover ? #FFFFFFA4 : (root.terminal-open ? #FFFFFF72 : #FFFFFF48);
-                    animate background { duration: 160ms; easing: ease-out; }
-                    animate border-color { duration: 160ms; easing: ease-out; }
+                    background: transparent;
 
-                    term-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.toggle-terminal(); }
-                    }
+                    app1 := Rectangle {
+                        x: 0px;
+                        y: term-ta.has-hover ? -6px : 0px;
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 11px;
+                        border-width: 1px;
+                        border-color: term-ta.has-hover ? #FFFFFFEE : (root.terminal-open ? #FFFFFFBB : #FFFFFF80);
+                        background: term-ta.has-hover
+                            ? @linear-gradient(180deg, #FFFFFFDC 0%, #EBF1FCC4 100%)
+                            : (root.terminal-open
+                                ? @linear-gradient(180deg, #FFFFFFA6 0%, #E6EEFB84 100%)
+                                : @linear-gradient(180deg, #FFFFFF78 0%, #E6EEFB52 100%));
+                        animate y { duration: 170ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate border-color { duration: 150ms; easing: ease-out; }
 
-                    Image {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        width: 24px;
-                        height: 24px;
-                        source: @image-url("../../../../application/terminal/icon/terminal.png");
-                    }
+                        term-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-terminal(); }
+                        }
 
-                    // Animated active running pill at bottom of the tile
-                    Rectangle {
-                        x: root.terminal-open ? 12px : 19px;
-                        y: 34px;
-                        width: root.terminal-open ? 14px : 0px;
-                        height: 2px;
-                        border-radius: 1px;
-                        background: #1E2436;
-                        animate width { duration: 180ms; easing: ease-out; }
-                        animate x { duration: 180ms; easing: ease-out; }
+                        Image {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            width: 24px;
+                            height: 24px;
+                            source: @image-url("../../../../application/terminal/icon/terminal.png");
+                        }
+
+                        Rectangle {
+                            x: root.terminal-open ? 12px : 19px;
+                            y: 34px;
+                            width: root.terminal-open ? 14px : 0px;
+                            height: 2px;
+                            border-radius: 1px;
+                            background: #1E2436;
+                            animate width { duration: 180ms; easing: ease-out; }
+                            animate x { duration: 180ms; easing: ease-out; }
+                        }
                     }
                 }
 
-                app2 := Rectangle {
+                // App 2: System Monitor
+                Rectangle {
                     width: 38px;
                     height: 38px;
-                    border-radius: 11px;
-                    border-width: 1px;
-                    border-color: sysmon-ta.has-hover ? #4A5E90CC : (root.sysmon-open ? #52648E99 : #8896B278);
-                    background: sysmon-ta.has-hover ? #FFFFFFA4 : (root.sysmon-open ? #FFFFFF72 : #FFFFFF48);
-                    animate background { duration: 160ms; easing: ease-out; }
-                    animate border-color { duration: 160ms; easing: ease-out; }
+                    background: transparent;
 
-                    sysmon-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.toggle-sysmon(); }
-                    }
+                    app2 := Rectangle {
+                        x: 0px;
+                        y: sysmon-ta.has-hover ? -6px : 0px;
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 11px;
+                        border-width: 1px;
+                        border-color: sysmon-ta.has-hover ? #FFFFFFEE : (root.sysmon-open ? #FFFFFFBB : #FFFFFF80);
+                        background: sysmon-ta.has-hover
+                            ? @linear-gradient(180deg, #FFFFFFDC 0%, #EBF1FCC4 100%)
+                            : (root.sysmon-open
+                                ? @linear-gradient(180deg, #FFFFFFA6 0%, #E6EEFB84 100%)
+                                : @linear-gradient(180deg, #FFFFFF78 0%, #E6EEFB52 100%));
+                        animate y { duration: 170ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate border-color { duration: 150ms; easing: ease-out; }
 
-                    // Minimal 3-bar System Monitor icon
-                    Rectangle {
-                        x: 9px;
-                        y: 19px;
-                        width: 5px;
-                        height: 10px;
-                        border-radius: 2px;
-                        background: #22C55E;
-                    }
-                    Rectangle {
-                        x: 16px;
-                        y: 13px;
-                        width: 5px;
-                        height: 16px;
-                        border-radius: 2px;
-                        background: #3B82F6;
-                    }
-                    Rectangle {
-                        x: 23px;
-                        y: 16px;
-                        width: 5px;
-                        height: 13px;
-                        border-radius: 2px;
-                        background: #6366F1;
-                    }
+                        sysmon-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-sysmon(); }
+                        }
 
-                    Rectangle {
-                        x: root.sysmon-open ? 12px : 19px;
-                        y: 34px;
-                        width: root.sysmon-open ? 14px : 0px;
-                        height: 2px;
-                        border-radius: 1px;
-                        background: #1E2436;
-                        animate width { duration: 180ms; easing: ease-out; }
-                        animate x { duration: 180ms; easing: ease-out; }
+                        // Minimal 3-bar System Monitor icon
+                        Rectangle {
+                            x: 9px;
+                            y: 19px;
+                            width: 5px;
+                            height: 10px;
+                            border-radius: 2px;
+                            background: #22C55E;
+                        }
+                        Rectangle {
+                            x: 16px;
+                            y: 13px;
+                            width: 5px;
+                            height: 16px;
+                            border-radius: 2px;
+                            background: #3B82F6;
+                        }
+                        Rectangle {
+                            x: 23px;
+                            y: 16px;
+                            width: 5px;
+                            height: 13px;
+                            border-radius: 2px;
+                            background: #6366F1;
+                        }
+
+                        Rectangle {
+                            x: root.sysmon-open ? 12px : 19px;
+                            y: 34px;
+                            width: root.sysmon-open ? 14px : 0px;
+                            height: 2px;
+                            border-radius: 1px;
+                            background: #1E2436;
+                            animate width { duration: 180ms; easing: ease-out; }
+                            animate x { duration: 180ms; easing: ease-out; }
+                        }
                     }
                 }
 
-                app3 := Rectangle {
+                // App 3: Files
+                Rectangle {
                     width: 38px;
                     height: 38px;
-                    border-radius: 11px;
-                    border-width: 1px;
-                    border-color: files-ta.has-hover ? #4A5E90CC : (root.files-open ? #52648E99 : #8896B278);
-                    background: files-ta.has-hover ? #FFFFFFA4 : (root.files-open ? #FFFFFF72 : #FFFFFF48);
-                    animate background { duration: 160ms; easing: ease-out; }
-                    animate border-color { duration: 160ms; easing: ease-out; }
+                    background: transparent;
 
-                    files-ta := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => { root.toggle-files(); }
-                    }
+                    app3 := Rectangle {
+                        x: 0px;
+                        y: files-ta.has-hover ? -6px : 0px;
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 11px;
+                        border-width: 1px;
+                        border-color: files-ta.has-hover ? #FFFFFFEE : (root.files-open ? #FFFFFFBB : #FFFFFF80);
+                        background: files-ta.has-hover
+                            ? @linear-gradient(180deg, #FFFFFFDC 0%, #EBF1FCC4 100%)
+                            : (root.files-open
+                                ? @linear-gradient(180deg, #FFFFFFA6 0%, #E6EEFB84 100%)
+                                : @linear-gradient(180deg, #FFFFFF78 0%, #E6EEFB52 100%));
+                        animate y { duration: 170ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate border-color { duration: 150ms; easing: ease-out; }
 
-                    // Minimal folder icon
-                    Rectangle {
-                        x: 8px;
-                        y: 11px;
-                        width: 10px;
-                        height: 4px;
-                        border-radius: 2px;
-                        background: #D97706;
-                    }
-                    Rectangle {
-                        x: 8px;
-                        y: 13px;
-                        width: 22px;
-                        height: 15px;
-                        border-radius: 3px;
-                        background: #F59E0B;
-                    }
-                    Rectangle {
-                        x: 10px;
-                        y: 16px;
-                        width: 18px;
-                        height: 2px;
-                        border-radius: 1px;
-                        background: #FDE68A;
-                    }
+                        files-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.toggle-files(); }
+                        }
 
-                    Rectangle {
-                        x: root.files-open ? 12px : 19px;
-                        y: 34px;
-                        width: root.files-open ? 14px : 0px;
-                        height: 2px;
-                        border-radius: 1px;
-                        background: #1E2436;
-                        animate width { duration: 180ms; easing: ease-out; }
-                        animate x { duration: 180ms; easing: ease-out; }
+                        // Minimal folder icon
+                        Rectangle {
+                            x: 8px;
+                            y: 11px;
+                            width: 10px;
+                            height: 4px;
+                            border-radius: 2px;
+                            background: #D97706;
+                        }
+                        Rectangle {
+                            x: 8px;
+                            y: 13px;
+                            width: 22px;
+                            height: 15px;
+                            border-radius: 3px;
+                            background: #F59E0B;
+                        }
+                        Rectangle {
+                            x: 10px;
+                            y: 16px;
+                            width: 18px;
+                            height: 2px;
+                            border-radius: 1px;
+                            background: #FDE68A;
+                        }
+
+                        Rectangle {
+                            x: root.files-open ? 12px : 19px;
+                            y: 34px;
+                            width: root.files-open ? 14px : 0px;
+                            height: 2px;
+                            border-radius: 1px;
+                            background: #1E2436;
+                            animate width { duration: 180ms; easing: ease-out; }
+                            animate x { duration: 180ms; easing: ease-out; }
+                        }
                     }
                 }
             }
@@ -307,58 +353,28 @@ export component DefaultDock inherits Rectangle {
                 width: 1px;
                 height: 24px;
                 y: 7px;
-                background: #7E8BA850;
+                background: #FFFFFF88;
             }
 
-            // 4) utility-content: live status indicator + real RTC clock & date from kernel
+            // 4) utility-content: real RTC clock & date from kernel (Liquid Glass pill)
             utility-content := HorizontalLayout {
-                width: 158px;
+                width: 118px;
                 height: 100%;
                 spacing: 6px;
                 alignment: end;
-
-                // Live system indicator pill
-                Rectangle {
-                    width: 34px;
-                    height: 34px;
-                    y: 2px;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: #8896B270;
-                    background: #FFFFFF52;
-
-                    Rectangle {
-                        x: 11px;
-                        y: 11px;
-                        width: 12px;
-                        height: 12px;
-                        border-radius: 6px;
-                        border-width: 1px;
-                        border-color: #16A34A66;
-                        background: #22C55E28;
-
-                        Rectangle {
-                            x: 3px;
-                            y: 3px;
-                            width: 6px;
-                            height: 6px;
-                            border-radius: 3px;
-                            background: #16A34A;
-                        }
-                    }
-                }
 
                 // Real RTC Clock & Date box (bridged from kernel CMOS RTC)
                 Rectangle {
                     width: 114px;
                     height: 34px;
                     y: 2px;
-                    border-radius: 10px;
+                    border-radius: 11px;
                     border-width: 1px;
-                    border-color: clock-ta.has-hover ? #5E6E94AA : #8896B278;
-                    background: clock-ta.has-hover ? #FFFFFF84 : #FFFFFF58;
-                    animate background { duration: 160ms; easing: ease-out; }
-                    animate border-color { duration: 160ms; easing: ease-out; }
+                    border-color: clock-ta.has-hover ? #FFFFFFEE : #FFFFFF99;
+                    background: clock-ta.has-hover
+                        ? @linear-gradient(180deg, #FFFFFFCC 0%, #EBF1FBB4 100%)
+                        : @linear-gradient(180deg, #FFFFFF8C 0%, #E6EEFB68 100%);
+                    animate border-color { duration: 150ms; easing: ease-out; }
 
                     clock-ta := TouchArea {
                         mouse-cursor: pointer;
@@ -385,5 +401,4 @@ export component DefaultDock inherits Rectangle {
                 }
             }
         }
-    }
 }
