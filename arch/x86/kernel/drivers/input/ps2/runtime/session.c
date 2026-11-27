@@ -20,6 +20,7 @@
 #include "arch/x86/kernel/scheduler/integration/control.h"
 #include "arch/x86/kernel/scheduler/irq/preempt.h"
 #include "arch/x86/kernel/drivers/storage/virtio_blk/native.h"
+#include "arch/x86/kernel/drivers/net/virtio_net/native.h"
 #include "arch/x86/kernel/drivers/storage/ahci/native.h"
 #include "arch/x86/kernel/drivers/usb/xhci/native.h"
 #include "arch/x86/mm/heap/binding.h"
@@ -130,6 +131,7 @@ int x86_ps2_after_dispatch(void)
     x86_virtio_blk_stop();
     x86_ahci_stop();
     x86_xhci_stop();
+    x86_virtio_net_stop();
 #ifdef KERNEL_AP_TASKS
     // The dispatcher must still own the scheduler while xcn_close drains event 7.
     if (xis_native.Count >= 2 && (!kernel_text("KERNEL_AP_TASK_JOBS: ") ||
@@ -204,6 +206,9 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     }
     if (!x86_xhci_start(env, directory, clock)) {
         kernel_log(3, "XHCI_START_FAILED"); return 0;
+    }
+    if (!x86_virtio_net_start(env, directory, clock)) {
+        kernel_log(3, "VIRTIO_NET_START_FAILED"); return 0;
     }
     if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;

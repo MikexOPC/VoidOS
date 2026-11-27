@@ -507,3 +507,13 @@ libui_rust = executable(
     override_options: ['b_sanitize=none'],
 )
 test('libui_rust', libui_rust)
+
+# ====== networking drivers ======
+
+virtio_net_host = executable(
+    'virtio_net_host',
+    repo / 'kernel/drivers/net/virtio_net/virtio_net.c',
+    'kernel/drivers/net/virtio_net_test.c',
+    include_directories: inc,
+)
+test('virtio_net_host', virtio_net_host, env: runtime)
