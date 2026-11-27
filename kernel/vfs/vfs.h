@@ -139,6 +139,22 @@ uint32_t kfat_entry_matches_name(
     uint32_t target_len
 );
 uint32_t kfat_encode_83_name(const uint8_t *name, uint32_t name_len, uint8_t *out_11);
+uint32_t kfat_validate_name(const uint8_t *name, uint32_t name_len);
+uint32_t kfat_needs_lfn(const uint8_t *name, uint32_t name_len);
+uint8_t  kfat_lfn_checksum(const uint8_t *short_11);
+uint32_t kfat_build_short_alias(
+    const uint8_t *name,
+    uint32_t name_len,
+    uint32_t tail_num,
+    uint8_t *out_11
+);
+uint32_t kfat_build_lfn_entries(
+    const uint8_t *name,
+    uint32_t name_len,
+    const uint8_t *short_11,
+    uint8_t *out_entries,
+    uint32_t max_entries
+);
 
 int  kernel_vfs_init(KERNEL_VFS *vfs, KERNEL_HEAP *heap);
 void kernel_vfs_destroy(KERNEL_VFS *vfs);

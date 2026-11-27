@@ -463,7 +463,7 @@ fn format_short_name(entry32: &[u8], out: &mut [u8; 64]) -> usize {
 fn feed_lfn_entry(entry32: &[u8], lfn: &mut FatLfnState) {
     let ord = byte_at(entry32, 0);
     let seq = (ord & 0x1F) as usize;
-    if seq == 0 || seq > 4 {
+    if seq == 0 || seq > 5 {
         lfn.active = 0;
         return;
     }
@@ -693,6 +693,310 @@ pub unsafe extern "C" fn kfat_encode_83_name(
     1
 }
 
+// ====== is_valid_83_char ======
+
+fn is_valid_83_char(ch: u8) -> bool {
+    if ch <= 0x20 || ch >= 0x7F {
+        return false;
+    }
+    !matches!(
+        ch,
+        b'"' | b'*' | b'+' | b',' | b'.' | b'/' | b':' | b';' | b'<' | b'=' | b'>' | b'?'
+            | b'[' | b'\\' | b']' | b'|'
+    )
+}
+
+// ====== write_le16 ======
+
+fn write_le16(buf: &mut [u8], off: usize, val: u16) {
+    if let Some(slot) = buf.get_mut(off) {
+        *slot = (val & 0xFF) as u8;
+    }
+    if let Some(slot) = buf.get_mut(off + 1) {
+        *slot = (val >> 8) as u8;
+    }
+}
+
+// ====== kfat_validate_name ======
+
+// Microsoft FAT32 File System Specification v1.03, §7: valid LFN/8.3 component name.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kfat_validate_name(name: *const u8, name_len: u32) -> u32 {
+    if name.is_null() || name_len == 0 || name_len > 63 {
+        return 0;
+    }
+    let src = unsafe { core::slice::from_raw_parts(name, name_len as usize) };
+    if (name_len == 1 && byte_at(src, 0) == b'.')
+        || (name_len == 2 && byte_at(src, 0) == b'.' && byte_at(src, 1) == b'.')
+    {
+        return 0;
+    }
+    let last = byte_at(src, (name_len - 1) as usize);
+    if last == b' ' || last == b'.' {
+        return 0;
+    }
+    let mut i = 0usize;
+    while i < name_len as usize {
+        let ch = byte_at(src, i);
+        if ch < 0x20 || ch >= 0x7F {
+            return 0;
+        }
+        if matches!(ch, b'/' | b'\\' | b':' | b'*' | b'?' | b'"' | b'<' | b'>' | b'|') {
+            return 0;
+        }
+        i += 1;
+    }
+    1
+}
+
+// ====== kfat_needs_lfn ======
+
+// Returns 0 only if `name` is strictly uppercase 8.3 with no spaces or extra dots.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kfat_needs_lfn(name: *const u8, name_len: u32) -> u32 {
+    if unsafe { kfat_validate_name(name, name_len) } == 0 {
+        return 1;
+    }
+    if name_len > 12 {
+        return 1;
+    }
+    let src = unsafe { core::slice::from_raw_parts(name, name_len as usize) };
+    let mut dot_pos = None;
+    let mut i = 0usize;
+    while i < name_len as usize {
+        let ch = byte_at(src, i);
+        if ch == b'.' {
+            if dot_pos.is_some() || i == 0 || i > 8 {
+                return 1;
+            }
+            dot_pos = Some(i);
+        } else if (b'a'..=b'z').contains(&ch) || !is_valid_83_char(ch) {
+            return 1;
+        }
+        i += 1;
+    }
+    match dot_pos {
+        Some(pos) => {
+            let ext_len = (name_len as usize) - pos - 1;
+            if ext_len == 0 || ext_len > 3 {
+                1
+            } else {
+                0
+            }
+        }
+        None => {
+            if name_len > 8 {
+                1
+            } else {
+                0
+            }
+        }
+    }
+}
+
+// ====== kfat_lfn_checksum ======
+
+// Microsoft FAT32 File System Specification v1.03, §7.2: 8-bit rotate-right checksum over 11-byte 8.3 name.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kfat_lfn_checksum(short_11: *const u8) -> u8 {
+    if short_11.is_null() {
+        return 0;
+    }
+    let s = unsafe { core::slice::from_raw_parts(short_11, 11) };
+    let mut sum: u8 = 0;
+    let mut i = 0usize;
+    while i < 11 {
+        sum = sum.rotate_right(1).wrapping_add(byte_at(s, i));
+        i += 1;
+    }
+    sum
+}
+
+// ====== kfat_build_short_alias ======
+
+// Microsoft FAT32 File System Specification v1.03, §7.3: Basis-Name + Numeric-Tail (~1..~999999) 8.3 alias.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kfat_build_short_alias(
+    name: *const u8,
+    name_len: u32,
+    tail_num: u32,
+    out_11: *mut u8,
+) -> u32 {
+    if out_11.is_null() || tail_num == 0 || tail_num > 999999 {
+        return 0;
+    }
+    if unsafe { kfat_validate_name(name, name_len) } == 0 {
+        return 0;
+    }
+    let src = unsafe { core::slice::from_raw_parts(name, name_len as usize) };
+    let dst = unsafe { core::slice::from_raw_parts_mut(out_11, 11) };
+
+    let mut k = 0usize;
+    while k < 11 {
+        if let Some(slot) = dst.get_mut(k) {
+            *slot = b' ';
+        }
+        k += 1;
+    }
+
+    let mut last_dot: Option<usize> = None;
+    let mut i = 0usize;
+    while i < name_len as usize {
+        if byte_at(src, i) == b'.' {
+            last_dot = Some(i);
+        }
+        i += 1;
+    }
+
+    let base_end = match last_dot {
+        Some(pos) if pos > 0 => pos,
+        _ => name_len as usize,
+    };
+
+    // Format "~<tail_num>"
+    let mut tail_buf = [0u8; 8];
+    let mut digits = [0u8; 7];
+    let mut dlen = 0usize;
+    let mut n = tail_num;
+    while n > 0 && dlen < 7 {
+        if let Some(slot) = digits.get_mut(dlen) {
+            *slot = b'0' + (n % 10) as u8;
+        }
+        n /= 10;
+        dlen += 1;
+    }
+    if let Some(slot) = tail_buf.get_mut(0) {
+        *slot = b'~';
+    }
+    let mut t = 0usize;
+    while t < dlen {
+        if let Some(slot) = tail_buf.get_mut(1 + t) {
+            *slot = byte_at(&digits, dlen - 1 - t);
+        }
+        t += 1;
+    }
+    let tail_len = 1 + dlen;
+    let max_prefix = 8usize.saturating_sub(tail_len);
+
+    let mut bpos = 0usize;
+    let mut s = 0usize;
+    while s < base_end && bpos < max_prefix {
+        let ch = byte_at(src, s);
+        if ch != b' ' && ch != b'.' {
+            let up = ascii_upper(ch);
+            let mapped = if is_valid_83_char(up) { up } else { b'_' };
+            if let Some(slot) = dst.get_mut(bpos) {
+                *slot = mapped;
+            }
+            bpos += 1;
+        }
+        s += 1;
+    }
+    if bpos == 0 && max_prefix > 0 {
+        if let Some(slot) = dst.get_mut(0) {
+            *slot = b'_';
+        }
+        bpos = 1;
+    }
+    let mut j = 0usize;
+    while j < tail_len && bpos + j < 8 {
+        if let Some(slot) = dst.get_mut(bpos + j) {
+            *slot = byte_at(&tail_buf, j);
+        }
+        j += 1;
+    }
+
+    if let Some(dot) = last_dot {
+        if dot > 0 && dot + 1 < name_len as usize {
+            let mut epos = 0usize;
+            let mut e = dot + 1;
+            while e < name_len as usize && epos < 3 {
+                let ch = byte_at(src, e);
+                if ch != b' ' && ch != b'.' {
+                    let up = ascii_upper(ch);
+                    let mapped = if is_valid_83_char(up) { up } else { b'_' };
+                    if let Some(slot) = dst.get_mut(8 + epos) {
+                        *slot = mapped;
+                    }
+                    epos += 1;
+                }
+                e += 1;
+            }
+        }
+    }
+    1
+}
+
+// ====== kfat_build_lfn_entries ======
+
+// Microsoft FAT32 File System Specification v1.03, §7.1: builds 1..5 32-byte LFN entries in on-disk reverse order.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kfat_build_lfn_entries(
+    name: *const u8,
+    name_len: u32,
+    short_11: *const u8,
+    out_entries: *mut u8,
+    max_entries: u32,
+) -> u32 {
+    if short_11.is_null() || out_entries.is_null() {
+        return 0;
+    }
+    if unsafe { kfat_validate_name(name, name_len) } == 0 {
+        return 0;
+    }
+    let count = (name_len + 12) / 13;
+    if count == 0 || count > 5 || count > max_entries {
+        return 0;
+    }
+    let src = unsafe { core::slice::from_raw_parts(name, name_len as usize) };
+    let dst = unsafe { core::slice::from_raw_parts_mut(out_entries, (count as usize) * 32) };
+    let checksum = unsafe { kfat_lfn_checksum(short_11) };
+    let offsets: [usize; 13] = [1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30];
+
+    let mut idx = 0usize;
+    while idx < count as usize {
+        let seq = (count as usize) - idx;
+        let base = idx * 32;
+        let mut z = 0usize;
+        while z < 32 {
+            if let Some(slot) = dst.get_mut(base + z) {
+                *slot = 0;
+            }
+            z += 1;
+        }
+        let ord = (seq as u8) | if idx == 0 { 0x40 } else { 0 };
+        if let Some(slot) = dst.get_mut(base) {
+            *slot = ord;
+        }
+        if let Some(slot) = dst.get_mut(base + 11) {
+            *slot = FAT_ATTR_LONG_NAME;
+        }
+        if let Some(slot) = dst.get_mut(base + 13) {
+            *slot = checksum;
+        }
+        let start_char = (seq - 1) * 13;
+        let mut c = 0usize;
+        while c < 13 {
+            let off = match offsets.get(c) {
+                Some(&o) => o,
+                None => 1,
+            };
+            let pos = start_char + c;
+            let code: u16 = if pos < name_len as usize {
+                byte_at(src, pos) as u16
+            } else if pos == name_len as usize {
+                0x0000
+            } else {
+                0xFFFF
+            };
+            write_le16(dst, base + off, code);
+            c += 1;
+        }
+        idx += 1;
+    }
+    count
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -786,5 +1090,65 @@ mod tests {
         let mut enc = [0u8; 11];
         assert_eq!(unsafe { kfat_encode_83_name(b"hello.txt".as_ptr(), 9, enc.as_mut_ptr()) }, 1);
         assert_eq!(&enc, b"HELLO   TXT");
+    }
+
+    #[test]
+    fn encodes_and_roundtrips_lfn_entries() {
+        assert_eq!(unsafe { kfat_validate_name(b".".as_ptr(), 1) }, 0);
+        assert_eq!(unsafe { kfat_validate_name(b"..".as_ptr(), 2) }, 0);
+        assert_eq!(unsafe { kfat_validate_name(b"bad/name".as_ptr(), 8) }, 0);
+        assert_eq!(unsafe { kfat_validate_name(b"trail.".as_ptr(), 6) }, 0);
+        assert_eq!(unsafe { kfat_validate_name(b"My Notes.txt".as_ptr(), 12) }, 1);
+
+        assert_eq!(unsafe { kfat_needs_lfn(b"README.TXT".as_ptr(), 10) }, 0);
+        assert_eq!(unsafe { kfat_needs_lfn(b"SHNOTE".as_ptr(), 6) }, 0);
+        assert_eq!(unsafe { kfat_needs_lfn(b"readme.txt".as_ptr(), 10) }, 1);
+        assert_eq!(unsafe { kfat_needs_lfn(b"My Long Document.json".as_ptr(), 21) }, 1);
+
+        let cases: &[&[u8]] = &[
+            b"readme.md",
+            b"1234567890123", // exact 13-char LFN boundary
+            b"My Long Document.json",
+            b"a_very_long_filename_with_exactly_sixty_three_characters_123456", // 63 chars (5 LFN entries)
+        ];
+
+        for &name in cases {
+            let mut alias = [0u8; 11];
+            assert_eq!(
+                unsafe { kfat_build_short_alias(name.as_ptr(), name.len() as u32, 1, alias.as_mut_ptr()) },
+                1
+            );
+            let mut lfn_buf = [0u8; 5 * 32];
+            let count = unsafe {
+                kfat_build_lfn_entries(
+                    name.as_ptr(),
+                    name.len() as u32,
+                    alias.as_ptr(),
+                    lfn_buf.as_mut_ptr(),
+                    5,
+                )
+            };
+            assert!(count >= 1 && count <= 5);
+            let expected_csum = unsafe { kfat_lfn_checksum(alias.as_ptr()) };
+            assert_eq!(lfn_buf[13], expected_csum);
+
+            let mut short = [0u8; 32];
+            short[0..11].copy_from_slice(&alias);
+            short[11] = FAT_ATTR_ARCHIVE;
+
+            let mut state = FatLfnState::default();
+            let mut out = FatDirEntry::default();
+            for i in 0..count as usize {
+                assert_eq!(
+                    unsafe { kfat_dir_step(lfn_buf[i * 32..].as_ptr(), (i * 32) as u32, &mut state, &mut out) },
+                    1
+                );
+            }
+            assert_eq!(
+                unsafe { kfat_dir_step(short.as_ptr(), (count * 32) as u32, &mut state, &mut out) },
+                2
+            );
+            assert_eq!(&out.name[..out.name_len as usize], name);
+        }
     }
 }
