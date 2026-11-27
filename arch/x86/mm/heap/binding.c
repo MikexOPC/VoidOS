@@ -32,17 +32,19 @@ int x86_heap_check(const X86_HEAP_AUTH *auth)
 // heap PT k slot s -> page k * 512 + s.
 static BOOT_U64 entry_private(const X86_HEAP_AUTH *auth, BOOT_U32 table, BOOT_U32 slot)
 {
+    BOOT_U32 data_pts = (BOOT_U32)(auth->Data.Pages / 512ULL);
+
     if (table == 0) return slot ? 0 : (auth->Tables.Base + 4096) | 3;
 
     if (table == 1) {
-        if (slot >= 1 && slot <= X86_HEAP_DATA_PTS)
+        if (slot >= 1 && slot <= data_pts)
             return (auth->Tables.Base + (slot + 1ULL) * 4096ULL) | 3;
         if (slot >= X86_HEAP_STACK_PD && slot < X86_HEAP_STACK_PD + X86_HEAP_STACK_PTS)
-            return (auth->Tables.Base + (2ULL + X86_HEAP_DATA_PTS + (slot - X86_HEAP_STACK_PD)) * 4096ULL) | 3;
+            return (auth->Tables.Base + (2ULL + data_pts + (slot - X86_HEAP_STACK_PD)) * 4096ULL) | 3;
         return 0;
     }
 
-    if (table >= 2U + X86_HEAP_DATA_PTS) return 0;
+    if (table >= 2U + data_pts) return 0;
 
     return (auth->Data.Base + ((table - 2ULL) * 512ULL + slot) * 4096) | 0x8000000000000003ULL;
 }
@@ -97,12 +99,12 @@ static int construct_private(X86_HEAP_BINDING *owner)
 {
     HEAP_WRITE request = {owner, 0};
 
-    if (!unreferenced_private(owner->Inventory, owner->Authority.Data.Base, X86_HEAP_PAGES) ||
-        !unreferenced_private(owner->Inventory, owner->Authority.Tables.Base, X86_HEAP_TABLES)
+    if (!unreferenced_private(owner->Inventory, owner->Authority.Data.Base, owner->Authority.Data.Pages) ||
+        !unreferenced_private(owner->Inventory, owner->Authority.Tables.Base, owner->Authority.Tables.Pages)
     )
     return 0;
 
-    for (request.Index = 0; request.Index < X86_HEAP_TABLES; ++request.Index)
+    for (request.Index = 0; request.Index < owner->Authority.Tables.Pages; ++request.Index)
         if (!x86_apic_borrow(owner->Window, owner->Authority.Tables.Base + request.Index * 4096ULL, 0, 1, write_private, &request) ||
             !x86_page_window_idle_valid(owner->Window)
         )
@@ -181,7 +183,7 @@ int x86_heap_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window, c
 
     if (!context || !window || !window->Pool || !inventory || !capture || !owner || (self & 7) || x86_heap_owner() ||
         os_address_ranges_overlap(self, sizeof(*owner), (BOOT_U64)inventory, sizeof(*inventory)) ||
-        os_address_ranges_overlap(self, sizeof(*owner), X86_HEAP_VIRTUAL, X86_HEAP_PAGES * 4096ULL) ||
+        os_address_ranges_overlap(self, sizeof(*owner), X86_HEAP_VIRTUAL, X86_HEAP_MAX_PAGES * 4096ULL) ||
         !x86_page_window_idle_valid(window) || !x86_fb_cpu(&cpu) || (cpu.Pat & 255) != 6 ||
         cpu.Root != context->Info.PageTableRoot || !x86_fb_root() || x86_fb_root()[X86_HEAP_SLOT]
     )
@@ -189,20 +191,28 @@ int x86_heap_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window, c
 
     for (BOOT_U32 byte = 0; byte < sizeof(*owner); ++byte) if (((const unsigned char *)owner)[byte]) return 0;
 
-    if (!capture(context, window->Pool, lapic, inventory) || !kernel_physical_budget_at_least(window->Pool, X86_HEAP_PAGES + X86_HEAP_TABLES)) return 0;
-
     KERNEL_PHYSICAL_ALLOCATOR *pool = window->Pool;
+    BOOT_U64 free_pages = 0;
+    if (!capture(context, pool, lapic, inventory) || !kernel_physical_budget_read(pool, &free_pages)) return 0;
 
-    owner->Self = self; if (!kernel_physical_budget_read(pool, &owner->Budget)) return 0;
+    // Scale kernel heap to ~25% of free physical RAM (32..96 MiB in 2 MiB PT steps).
+    BOOT_U32 data_pts = (BOOT_U32)((free_pages / 4ULL) / 512ULL);
+    if (data_pts < X86_HEAP_MIN_DATA_PTS) data_pts = X86_HEAP_MIN_DATA_PTS;
+    if (data_pts > X86_HEAP_MAX_DATA_PTS) data_pts = X86_HEAP_MAX_DATA_PTS;
+    BOOT_U32 heap_pages = data_pts * 512U;
+    BOOT_U32 heap_tables = 2U + data_pts + X86_HEAP_STACK_PTS;
+    if (!kernel_physical_budget_at_least(pool, heap_pages + heap_tables)) return 0;
+
+    owner->Self = self; owner->Budget = free_pages;
     owner->Context = context; owner->Window = window; owner->Lapic = lapic; owner->Inventory = inventory; owner->Capture = capture;
     owner->Authority.Self = (BOOT_U64)&owner->Authority; owner->Authority.Root = cpu.Root;
     owner->Authority.Pat = cpu.Pat; owner->Authority.PhysicalBits = cpu.PhysicalBits;
 
-    if (!kernel_physical_allocate(pool, X86_HEAP_PAGES, &owner->Authority.Data)) goto rollback;
+    if (!kernel_physical_allocate(pool, heap_pages, &owner->Authority.Data)) goto rollback;
     owner->DataAllocated = 1;
     if (!kernel_physical_pin(pool, &owner->Authority.Data, 1)) goto rollback;
     owner->DataPinned = 1;
-    if (!kernel_physical_allocate(pool, X86_HEAP_TABLES, &owner->Authority.Tables)) goto rollback;
+    if (!kernel_physical_allocate(pool, heap_tables, &owner->Authority.Tables)) goto rollback;
     owner->TablesAllocated = 1;
     if (!kernel_physical_pin(pool, &owner->Authority.Tables, 1)) goto rollback;
     owner->TablesPinned = 1;
@@ -279,7 +289,7 @@ int x86_heap_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *w
 {
     if (started || !kernel_section("heap kernel") ||
         !x86_heap_bind(context, window, lapic, inventory, x86_paging_inventory_capture_lapic, &binding) ||
-        !kernel_heap_init(&heap, (void *)X86_HEAP_VIRTUAL, X86_HEAP_PAGES)
+        !kernel_heap_init(&heap, (void *)X86_HEAP_VIRTUAL, (uint32_t)binding.Authority.Data.Pages)
     )
     return 0;
 
@@ -298,8 +308,8 @@ int x86_heap_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *w
     return 0;
 
     return kernel_text("KERNEL_HEAP_VIRTUAL: ") && kernel_number(X86_HEAP_VIRTUAL) &&
-        kernel_text("\nKERNEL_HEAP_PAGES: ") && kernel_number(X86_HEAP_PAGES) &&
-        kernel_text("\nKERNEL_HEAP_TABLES: ") && kernel_number(X86_HEAP_TABLES) &&
+        kernel_text("\nKERNEL_HEAP_PAGES: ") && kernel_number(binding.Authority.Data.Pages) &&
+        kernel_text("\nKERNEL_HEAP_TABLES: ") && kernel_number(binding.Authority.Tables.Pages) &&
         kernel_text("\nKERNEL_HEAP_DATA: ") && kernel_number(binding.Authority.Data.Base) &&
         kernel_text("\nKERNEL_HEAP_INVENTORY: ") && kernel_number((BOOT_U64)inventory) &&
         kernel_text("\n") && kernel_log(0, "KERNEL_HEAP_READY");

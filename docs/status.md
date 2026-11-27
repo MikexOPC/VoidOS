@@ -97,8 +97,11 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 - L'uptime parte dalla prima richiesta display del kernel e accumula i wrap
   ACPI PM. Ogni turno utente ha un budget massimo compatibile con mezzo
   periodo del contatore PM a 24 bit.
-- Heap kernel 32 MiB, 1024 lease fisiche e 2048 extent. Il primo init resta
-  incorporato; i programmi successivi vengono caricati dal VFS.
+- Heap kernel scalato dinamicamente al boot in base alla RAM fisica libera
+  (32–96 MiB in passi da 2 MiB, `kernel_heap_grow`, fino a 6 MiB di slab),
+  allocatore fisico a 4096 lease / 4096 extent (validazione hot-path O(Count))
+  e limiti SHM fino a 512 oggetti / 2048 mapping / 64 MiB per oggetto. Il primo
+  `init` resta incorporato; i programmi successivi vengono caricati dal VFS.
 - La vista utente conserva le mapping supervisor minime per le transizioni.
   Le mitigazioni speculative dipendono dalle capability esposte dalla CPU.
 - Dubbio accettato il 15 novembre 2026: in 1 sessione su 21 con tre QEMU

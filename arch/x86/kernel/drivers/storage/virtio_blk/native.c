@@ -531,7 +531,7 @@ int x86_virtio_blk_start(
 
     uintptr_t dma_virt = (uintptr_t)dma_pages;
     if (dma_virt < X86_HEAP_VIRTUAL ||
-        dma_virt + 8192ULL > X86_HEAP_VIRTUAL + (uint64_t)X86_HEAP_PAGES * 4096ULL)
+        dma_virt + 8192ULL > X86_HEAP_VIRTUAL + heap_auth->Data.Pages * 4096ULL)
         return 0;
 
     uint64_t control_phys = heap_auth->Data.Base + (dma_virt - X86_HEAP_VIRTUAL);

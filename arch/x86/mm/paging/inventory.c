@@ -50,8 +50,8 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
     BOOT_U32 index, slot;
     BOOT_U32 surface_seen=0;
     BOOT_U64 surface_leaves=0;
-    BOOT_U32 iommu_seen=0, iommu_leaves=0, dma_seen=0, heap_seen=0;
-    BOOT_U64 dma_leaves=0, heap_leaves=0, ap_leaves=0;
+    BOOT_U32 iommu_seen=0, iommu_leaves=0, dma_seen=0;
+    BOOT_U64 heap_seen=0, dma_leaves=0, heap_leaves=0, ap_leaves=0;
     BOOT_U32 ap_seen=0;
     const X86_PAGING_GPU_AUTH *gpu=x86_paging_gpu_owner();
     for (index = 0; index < sizeof(*draft); ++index) ((volatile unsigned char *)draft)[index] = 0;
@@ -81,8 +81,8 @@ static int scan(const KERNEL_BOOT_CONTEXT *context, const KERNEL_PHYSICAL_ALLOCA
             ap_seen |= 1U << (record->Reserved-X86_AP_TAG);
         } else if (record->Reserved>=X86_HEAP_TAG) {
             if (!x86_heap_record(&draft->Heap,record->Physical,record->View,record->Level,record->Reserved) ||
-                (heap_seen&(1U<<(record->Reserved-X86_HEAP_TAG)))) return 0;
-            heap_seen|=1U<<(record->Reserved-X86_HEAP_TAG);
+                (heap_seen&(1ULL<<(record->Reserved-X86_HEAP_TAG)))) return 0;
+            heap_seen|=1ULL<<(record->Reserved-X86_HEAP_TAG);
         } else if (record->Reserved>=40) {
             if (!x86_dma_record(&draft->Dma,record->Physical,record->View,record->Level,record->Reserved) ||
                 (dma_seen&(1U<<(record->Reserved-40)))) return 0;

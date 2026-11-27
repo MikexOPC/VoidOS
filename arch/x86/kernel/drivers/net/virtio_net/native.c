@@ -490,7 +490,7 @@ int x86_virtio_net_start(
     uintptr_t dma_virt = (uintptr_t)dma_pages;
     uint64_t dma_bytes = (uint64_t)VIRTIO_NET_DMA_PAGES * 4096ULL;
     if (dma_virt < X86_HEAP_VIRTUAL ||
-        dma_virt + dma_bytes > X86_HEAP_VIRTUAL + (uint64_t)X86_HEAP_PAGES * 4096ULL)
+        dma_virt + dma_bytes > X86_HEAP_VIRTUAL + heap_auth->Data.Pages * 4096ULL)
         return 0;
 
     uint64_t dma_phys = heap_auth->Data.Base + (dma_virt - X86_HEAP_VIRTUAL);

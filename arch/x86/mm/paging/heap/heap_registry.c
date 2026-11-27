@@ -12,10 +12,15 @@ const X86_HEAP_AUTH *x86_heap_owner(void) { return registered; }
 
 static int auth_valid(const X86_HEAP_AUTH *owner)
 {
-    return owner && owner->Self == (BOOT_U64)owner && owner->Ready == 1 &&
-        owner->Data.Pages == X86_HEAP_PAGES && owner->Tables.Pages == X86_HEAP_TABLES && (owner->Pat & 255) == 6 &&
+    if (!owner || owner->Self != (BOOT_U64)owner || owner->Ready != 1)
+        return 0;
+    BOOT_U64 data_pts = owner->Data.Pages / 512ULL;
+    if ((owner->Data.Pages % 512ULL) != 0ULL || data_pts < X86_HEAP_MIN_DATA_PTS || data_pts > X86_HEAP_MAX_DATA_PTS)
+        return 0;
+    BOOT_U64 expected_tables = 2ULL + data_pts + X86_HEAP_STACK_PTS;
+    return owner->Tables.Pages == expected_tables && (owner->Pat & 255) == 6 &&
         owner->PhysicalBits >= 32 && owner->PhysicalBits <= 52 &&
-        !kernel_regions_overlap(owner->Tables.Base, X86_HEAP_TABLES, owner->Data.Base, X86_HEAP_PAGES);
+        !kernel_regions_overlap(owner->Tables.Base, owner->Tables.Pages, owner->Data.Base, owner->Data.Pages);
 }
 
 // ====== x86_heap_register ======
@@ -49,7 +54,7 @@ int x86_heap_inputs(const KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 root, BOOT_U
         !kernel_physical_is_pinned(pool, &owner->Data) || !kernel_physical_is_pinned(pool, &owner->Tables) ||
         !registered_check || !registered_check(owner) ||
         os_address_ranges_overlap(output, bytes, (BOOT_U64)owner, sizeof(*owner)) ||
-        os_address_ranges_overlap(output, bytes, X86_HEAP_VIRTUAL, X86_HEAP_PAGES * 4096ULL)
+        os_address_ranges_overlap(output, bytes, X86_HEAP_VIRTUAL, owner->Data.Pages * 4096ULL)
     )
     return 0;
 
@@ -64,7 +69,7 @@ BOOT_U32 x86_heap_source(const KERNEL_PHYSICAL_ALLOCATOR *pool, BOOT_U64 physica
 {
     const X86_HEAP_AUTH *owner = registered;
 
-    if (!owner || physical < owner->Tables.Base || physical - owner->Tables.Base >= X86_HEAP_TABLES * 4096ULL ||
+    if (!owner || physical < owner->Tables.Base || physical - owner->Tables.Base >= owner->Tables.Pages * 4096ULL ||
         (physical & 4095)
     )
     return 0;
@@ -86,7 +91,7 @@ BOOT_U32 x86_heap_leaf(BOOT_U64 entry, BOOT_U64 address)
     if (X86_LAYOUT_SLOT_OF(address) == X86_HEAP_SLOT) {
         if (address & 4095) return 0;
 
-        if (address >= X86_HEAP_VIRTUAL && address < X86_HEAP_VIRTUAL + X86_HEAP_PAGES * 4096ULL) {
+        if (address >= X86_HEAP_VIRTUAL && address < X86_HEAP_VIRTUAL + owner->Data.Pages * 4096ULL) {
             BOOT_U64 index = (address - X86_HEAP_VIRTUAL) / 4096;
 
             return (entry & ~0x60ULL) == ((owner->Data.Base + index * 4096) | 0x8000000000000003ULL) ? 9 : 0;
@@ -96,8 +101,8 @@ BOOT_U32 x86_heap_leaf(BOOT_U64 entry, BOOT_U64 address)
             address < X86_HEAP_STACK_BASE + (BOOT_U64)X86_HEAP_STACK_PTS * 512 * 4096ULL) {
             BOOT_U64 physical = entry & 0x000ffffffffff000ULL;
 
-            return kernel_regions_overlap(physical, 1, owner->Data.Base, X86_HEAP_PAGES) ||
-                kernel_regions_overlap(physical, 1, owner->Tables.Base, X86_HEAP_TABLES) ? 0 : 1;
+            return kernel_regions_overlap(physical, 1, owner->Data.Base, owner->Data.Pages) ||
+                kernel_regions_overlap(physical, 1, owner->Tables.Base, owner->Tables.Pages) ? 0 : 1;
         }
 
         return 0;
@@ -105,8 +110,8 @@ BOOT_U32 x86_heap_leaf(BOOT_U64 entry, BOOT_U64 address)
 
     BOOT_U64 physical = entry & 0x000ffffffffff000ULL;
 
-    return kernel_regions_overlap(physical, 1, owner->Data.Base, X86_HEAP_PAGES) ||
-        kernel_regions_overlap(physical, 1, owner->Tables.Base, X86_HEAP_TABLES) ? 0 : 1;
+    return kernel_regions_overlap(physical, 1, owner->Data.Base, owner->Data.Pages) ||
+        kernel_regions_overlap(physical, 1, owner->Tables.Base, owner->Tables.Pages) ? 0 : 1;
 }
 
 // ====== x86_heap_record ======
@@ -114,7 +119,7 @@ BOOT_U32 x86_heap_leaf(BOOT_U64 entry, BOOT_U64 address)
 int x86_heap_record(const X86_HEAP_SNAPSHOT *snapshot, BOOT_U64 physical, BOOT_U64 view, BOOT_U32 level, BOOT_U32 tag)
 {
     if (!registered || !snapshot || snapshot->Owner != registered->Self || tag < X86_HEAP_TAG ||
-        tag >= X86_HEAP_TAG + X86_HEAP_TABLES || level < 1 || level > 3
+        tag >= X86_HEAP_TAG + registered->Tables.Pages || level < 1 || level > 3
     )
     return 0;
 
@@ -127,7 +132,7 @@ int x86_heap_record(const X86_HEAP_SNAPSHOT *snapshot, BOOT_U64 physical, BOOT_U
 
 // ====== x86_heap_complete ======
 
-int x86_heap_complete(const X86_HEAP_SNAPSHOT *snapshot, BOOT_U32 seen, BOOT_U64 leaves)
+int x86_heap_complete(const X86_HEAP_SNAPSHOT *snapshot, BOOT_U64 seen, BOOT_U64 leaves)
 {
     if (!snapshot) return 0;
 
@@ -138,7 +143,8 @@ int x86_heap_complete(const X86_HEAP_SNAPSHOT *snapshot, BOOT_U32 seen, BOOT_U64
     }
 
     return auth_valid(registered) && snapshot->Owner == registered->Self && snapshot->Base == registered->Data.Base &&
-        snapshot->DataId == registered->Data.Id && snapshot->Pages == X86_HEAP_PAGES &&
+        snapshot->DataId == registered->Data.Id && snapshot->Pages == registered->Data.Pages &&
         snapshot->TableBase == registered->Tables.Base && snapshot->TableId == registered->Tables.Id &&
-        seen == (1U << X86_HEAP_TABLES) - 1 && leaves == X86_HEAP_PAGES && registered_check && registered_check(registered);
+        seen == ((1ULL << registered->Tables.Pages) - 1ULL) && leaves == registered->Data.Pages &&
+        registered_check && registered_check(registered);
 }
