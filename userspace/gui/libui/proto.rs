@@ -17,6 +17,7 @@ pub const MSG_CLIPBOARD_DATA: u32 = 12;
 pub const MSG_INPUT_SCROLL: u32 = 13;
 
 pub const MAX_TITLE_BYTES: usize = 48;
+pub const MAX_CLIPBOARD_SHM_BYTES: usize = 4096;
 pub const PROTO_WIRE_BYTES: usize = 96;
 
 #[repr(C)]
@@ -105,6 +106,13 @@ impl GuiMessage {
         msg
     }
 
+    pub fn clipboard_set_shm(win_id: u32, shm_id: u64, len: u32) -> Self {
+        let mut msg = Self::new(MSG_CLIPBOARD_SET, win_id);
+        msg.a = shm_id;
+        msg.e = len.min(MAX_CLIPBOARD_SHM_BYTES as u32);
+        msg
+    }
+
     pub fn clipboard_get(win_id: u32) -> Self {
         Self::new(MSG_CLIPBOARD_GET, win_id)
     }
@@ -114,6 +122,13 @@ impl GuiMessage {
         let n = data.len().min(MAX_TITLE_BYTES);
         msg.e = n as u32;
         msg.title[..n].copy_from_slice(&data[..n]);
+        msg
+    }
+
+    pub fn clipboard_data_shm(win_id: u32, shm_id: u64, len: u32) -> Self {
+        let mut msg = Self::new(MSG_CLIPBOARD_DATA, win_id);
+        msg.a = shm_id;
+        msg.e = len.min(MAX_CLIPBOARD_SHM_BYTES as u32);
         msg
     }
 

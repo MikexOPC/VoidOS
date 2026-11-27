@@ -121,6 +121,14 @@ mod tests {
         let cmsg = GuiMessage::clipboard_set(1, b"/HELLO.TXT");
         let cdec = GuiMessage::decode(&cmsg.encode()).expect("valid clipboard set");
         assert_eq!(cdec.kind, crate::proto::MSG_CLIPBOARD_SET);
+        let smsg = GuiMessage::clipboard_set_shm(1, 42, 1024);
+        let sdec = GuiMessage::decode(&smsg.encode()).expect("valid clipboard shm set");
+        assert_eq!(sdec.a, 42);
+        assert_eq!(sdec.e, 1024);
+        let dmsg = GuiMessage::clipboard_data_shm(1, 99, 5000);
+        let ddec = GuiMessage::decode(&dmsg.encode()).expect("valid clipboard shm data");
+        assert_eq!(ddec.a, 99);
+        assert_eq!(ddec.e, crate::proto::MAX_CLIPBOARD_SHM_BYTES as u32);
         assert_eq!(cdec.e, 10);
         assert_eq!(&cdec.title[..10], b"/HELLO.TXT");
 

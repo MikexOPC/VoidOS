@@ -3,7 +3,8 @@ use alloc::collections::VecDeque;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
 use libui::proto::{
-    GuiMessage, MAX_TITLE_BYTES, MSG_CLIPBOARD_GET, MSG_CLIPBOARD_SET, MSG_COMMIT_RECT,
+    GuiMessage, MAX_CLIPBOARD_SHM_BYTES, MAX_TITLE_BYTES, MSG_CLIPBOARD_GET, MSG_CLIPBOARD_SET,
+    MSG_COMMIT_RECT,
     MSG_CREATE_WINDOW, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES,
 };
 use slint::{Image, Model, Rgb8Pixel, SharedPixelBuffer, VecModel};
@@ -117,8 +118,9 @@ pub struct Applications {
     rr_cursor: usize,
     pub focused: i32,
     verify: bool,
-    clipboard: [u8; MAX_TITLE_BYTES],
-    clipboard_len: usize,
+    clipboard: Vec<u8>,
+    clipboard_shm_id: u64,
+    clipboard_shm_virt: u64,
 }
 
 impl Applications {
@@ -131,8 +133,9 @@ impl Applications {
             rr_cursor: 0,
             focused: 0,
             verify,
-            clipboard: [0u8; MAX_TITLE_BYTES],
-            clipboard_len: 0,
+            clipboard: Vec::new(),
+            clipboard_shm_id: 0,
+            clipboard_shm_virt: 0,
         }
     }
 
@@ -821,17 +824,59 @@ impl Applications {
                         if result == PROTO_WIRE_BYTES as i64 {
                             let valid = GuiMessage::decode(&wire).is_some_and(|message| {
                                 if message.kind == MSG_CLIPBOARD_SET {
-                                    let n = (message.e as usize).min(MAX_TITLE_BYTES);
-                                    self.clipboard[..n].copy_from_slice(&message.title[..n]);
-                                    self.clipboard_len = n;
+                                    if message.a != 0 {
+                                        let n = (message.e as usize).min(MAX_CLIPBOARD_SHM_BYTES);
+                                        let mapped = libvoid::shm_map(message.a);
+                                        if mapped >= 0x1000_0000 && n > 0 {
+                                            let src = unsafe {
+                                                core::slice::from_raw_parts(mapped as *const u8, n)
+                                            };
+                                            self.clipboard.clear();
+                                            self.clipboard.extend_from_slice(src);
+                                            let _ = libvoid::shm_unmap(message.a);
+                                        }
+                                    } else {
+                                        let n = (message.e as usize).min(MAX_TITLE_BYTES);
+                                        self.clipboard.clear();
+                                        self.clipboard.extend_from_slice(&message.title[..n]);
+                                    }
                                     return true;
                                 }
                                 if message.kind == MSG_CLIPBOARD_GET {
-                                    let reply = GuiMessage::clipboard_data(
-                                        1,
-                                        &self.clipboard[..self.clipboard_len],
-                                    )
-                                    .encode();
+                                    let reply = if self.clipboard.len() <= MAX_TITLE_BYTES {
+                                        GuiMessage::clipboard_data(1, &self.clipboard).encode()
+                                    } else {
+                                        if self.clipboard_shm_id == 0 {
+                                            let sid = libvoid::shm_create(1);
+                                            if sid > 0 {
+                                                let mv = libvoid::shm_map(sid as u64);
+                                                if mv >= 0x1000_0000
+                                                    && libvoid::shm_publish(sid as u64) == 0
+                                                {
+                                                    self.clipboard_shm_id = sid as u64;
+                                                    self.clipboard_shm_virt = mv as u64;
+                                                }
+                                            }
+                                        }
+                                        if self.clipboard_shm_id != 0 && self.clipboard_shm_virt != 0 {
+                                            let n = self.clipboard.len().min(MAX_CLIPBOARD_SHM_BYTES);
+                                            let dst = unsafe {
+                                                core::slice::from_raw_parts_mut(
+                                                    self.clipboard_shm_virt as *mut u8,
+                                                    n,
+                                                )
+                                            };
+                                            dst.copy_from_slice(&self.clipboard[..n]);
+                                            GuiMessage::clipboard_data_shm(
+                                                1,
+                                                self.clipboard_shm_id,
+                                                n as u32,
+                                            )
+                                            .encode()
+                                        } else {
+                                            GuiMessage::clipboard_data(1, &self.clipboard).encode()
+                                        }
+                                    };
                                     app.pending.push_back(reply);
                                     return true;
                                 }

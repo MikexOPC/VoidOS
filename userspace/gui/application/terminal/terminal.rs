@@ -5,8 +5,8 @@ use core::arch::global_asm;
 use core::panic::PanicInfo;
 use libui::draw::{Canvas, Rect};
 use libui::proto::{
-    GuiMessage, MAX_TITLE_BYTES, MSG_CLIPBOARD_DATA, MSG_INPUT_KEY, MSG_INPUT_SCROLL,
-    MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES,
+    GuiMessage, MAX_CLIPBOARD_SHM_BYTES, MAX_TITLE_BYTES, MSG_CLIPBOARD_DATA, MSG_INPUT_KEY,
+    MSG_INPUT_SCROLL, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES,
 };
 use libui::style::{Theme, rgb};
 
@@ -549,6 +549,8 @@ extern "C" fn program_main(arg: u64) -> ! {
         libvoid::exit(92);
     }
     let mut virt = mapped as u64;
+    let mut clip_shm_id: u64 = 0;
+    let mut clip_shm_virt: u64 = 0;
 
     let term = unsafe { &mut *core::ptr::addr_of_mut!(TERM_STATE) };
     term.resize(cur_w, cur_h);
@@ -676,12 +678,28 @@ extern "C" fn program_main(arg: u64) -> ! {
                     }
                 } else if msg.kind == MSG_CLIPBOARD_DATA {
                     term.reset_scroll();
-                    let n = (msg.e as usize).min(MAX_TITLE_BYTES);
-                    for &b in &msg.title[..n] {
-                        if b >= 0x20 && b < 0x7F && term.input_len < LINE_CAP {
-                            term.input[term.input_len] = b;
-                            term.input_len += 1;
-                            term.write_bytes(&[b]);
+                    if msg.a != 0 {
+                        let n = (msg.e as usize).min(MAX_CLIPBOARD_SHM_BYTES);
+                        let mv = libvoid::shm_map(msg.a);
+                        if mv >= 0x1000_0000 {
+                            let src = unsafe { core::slice::from_raw_parts(mv as *const u8, n) };
+                            for &b in src {
+                                if b >= 0x20 && b < 0x7F && term.input_len < LINE_CAP {
+                                    term.input[term.input_len] = b;
+                                    term.input_len += 1;
+                                    term.write_bytes(&[b]);
+                                }
+                            }
+                            let _ = libvoid::shm_unmap(msg.a);
+                        }
+                    } else {
+                        let n = (msg.e as usize).min(MAX_TITLE_BYTES);
+                        for &b in &msg.title[..n] {
+                            if b >= 0x20 && b < 0x7F && term.input_len < LINE_CAP {
+                                term.input[term.input_len] = b;
+                                term.input_len += 1;
+                                term.write_bytes(&[b]);
+                            }
                         }
                     }
                     let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
@@ -708,11 +726,15 @@ extern "C" fn program_main(arg: u64) -> ! {
                     let ch = (msg.f & 0xFF) as u8;
                     term.reset_scroll();
                     if ch == 3 {
-                        // Ctrl+C: copy current input line to compositor clipboard
-                        let copy_len = term.input_len.min(MAX_TITLE_BYTES);
+                        // Ctrl+C: copy current input line to compositor clipboard (SHM if > 48 bytes)
+                        let copy_len = term.input_len;
                         if copy_len > 0 {
-                            let clip = GuiMessage::clipboard_set(1, &term.input[..copy_len]).encode();
-                            send_message(ipc_handle, &clip);
+                            send_clipboard_set(
+                                ipc_handle,
+                                &term.input[..copy_len],
+                                &mut clip_shm_id,
+                                &mut clip_shm_virt,
+                            );
                         }
                         continue;
                     }
@@ -730,9 +752,7 @@ extern "C" fn program_main(arg: u64) -> ! {
                         term.input_len = 0;
                         let (cmd, rest) = libvoid::split_first_token(&cmd_copy[..len]);
                         if cmd == b"clip" {
-                            let clen = rest.len().min(MAX_TITLE_BYTES);
-                            let clip = GuiMessage::clipboard_set(1, &rest[..clen]).encode();
-                            send_message(ipc_handle, &clip);
+                            send_clipboard_set(ipc_handle, rest, &mut clip_shm_id, &mut clip_shm_virt);
                             term.write_bytes(b"CLIP_OK\n");
                         } else if cmd == b"paste" {
                             let req = GuiMessage::clipboard_get(1).encode();
@@ -783,6 +803,36 @@ extern "C" fn program_main(arg: u64) -> ! {
         } else {
             libvoid::exit(96);
         }
+    }
+}
+
+// ====== send_clipboard_set ======
+
+fn send_clipboard_set(handle: u64, data: &[u8], shm_id: &mut u64, shm_virt: &mut u64) {
+    if data.len() <= MAX_TITLE_BYTES {
+        let clip = GuiMessage::clipboard_set(1, data).encode();
+        send_message(handle, &clip);
+        return;
+    }
+    if *shm_id == 0 {
+        let sid = libvoid::shm_create(1);
+        if sid > 0 {
+            let mv = libvoid::shm_map(sid as u64);
+            if mv >= 0x1000_0000 && libvoid::shm_publish(sid as u64) == 0 {
+                *shm_id = sid as u64;
+                *shm_virt = mv as u64;
+            }
+        }
+    }
+    if *shm_id != 0 && *shm_virt != 0 {
+        let n = data.len().min(MAX_CLIPBOARD_SHM_BYTES);
+        let dst = unsafe { core::slice::from_raw_parts_mut(*shm_virt as *mut u8, n) };
+        dst.copy_from_slice(&data[..n]);
+        let clip = GuiMessage::clipboard_set_shm(1, *shm_id, n as u32).encode();
+        send_message(handle, &clip);
+    } else {
+        let clip = GuiMessage::clipboard_set(1, data).encode();
+        send_message(handle, &clip);
     }
 }
 
