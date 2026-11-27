@@ -37,6 +37,13 @@ pub const SYS_IPC_CLOSE: u64 = 26;
 pub const SYS_GUI_WAIT: u64 = 27;
 pub const SYS_SYS_INFO: u64 = 28;
 pub const SYS_GPU_INFO: u64 = 29;
+pub const SYS_NET_INFO: u64 = 30;
+pub const SYS_NET_PING: u64 = 31;
+pub const SYS_NET_RESOLVE: u64 = 32;
+pub const SYS_NET_TCP_OPEN: u64 = 33;
+pub const SYS_NET_TCP_SEND: u64 = 34;
+pub const SYS_NET_TCP_RECV: u64 = 35;
+pub const SYS_NET_TCP_CLOSE: u64 = 36;
 
 // ====== flags and errors ======
 
@@ -623,4 +630,94 @@ impl GpuInfo {
 #[inline]
 pub fn gpu_info(out: &mut GpuInfo) -> i64 {
     raw_syscall(SYS_GPU_INFO, out as *mut GpuInfo as u64, 0, 0)
+}
+
+// ====== NetInfo ======
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct NetInfo {
+    pub mac: [u8; 6],
+    pub reserved: u16,
+    pub ip: u32,
+    pub mask: u32,
+    pub gateway: u32,
+    pub dns: u32,
+    pub present: u32,
+    pub configured: u32,
+    pub link_up: u32,
+    pub pad: u32,
+    pub tx_packets: u64,
+    pub rx_packets: u64,
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn net_info(out: &mut NetInfo) -> i64 {
+    raw_syscall(SYS_NET_INFO, out as *mut NetInfo as u64, 0, 0)
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn net_ping(ip: u32, timeout_ms: u32) -> i64 {
+    raw_syscall(SYS_NET_PING, ip as u64, timeout_ms as u64, 0)
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn net_resolve(host: &[u8], ip_out: &mut u32) -> i64 {
+    raw_syscall(
+        SYS_NET_RESOLVE,
+        host.as_ptr() as u64,
+        host.len() as u64,
+        ip_out as *mut u32 as u64,
+    )
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn net_tcp_open(ip: u32, port: u16, timeout_ms: u32) -> i64 {
+    raw_syscall(SYS_NET_TCP_OPEN, ip as u64, port as u64, timeout_ms as u64)
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn net_tcp_send(handle: u64, data: &[u8]) -> i64 {
+    raw_syscall(SYS_NET_TCP_SEND, handle, data.as_ptr() as u64, data.len() as u64)
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn net_tcp_recv(handle: u64, out: &mut [u8]) -> i64 {
+    raw_syscall(SYS_NET_TCP_RECV, handle, out.as_mut_ptr() as u64, out.len() as u64)
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn net_tcp_close(handle: u64) -> i64 {
+    raw_syscall(SYS_NET_TCP_CLOSE, handle, 0, 0)
+}
+
+// ====== format_ipv4 ======
+
+pub fn format_ipv4(ip: u32, buf: &mut [u8; 16]) -> &[u8] {
+    let octets = [
+        (ip >> 24) & 0xFF,
+        (ip >> 16) & 0xFF,
+        (ip >> 8) & 0xFF,
+        ip & 0xFF,
+    ];
+    let mut pos = 0usize;
+    let mut tmp = [0u8; 20];
+    for (idx, &oct) in octets.iter().enumerate() {
+        if idx > 0 && pos < buf.len() {
+            buf[pos] = b'.';
+            pos += 1;
+        }
+        let s = format_u64(oct as u64, &mut tmp);
+        let n = s.len().min(buf.len() - pos);
+        buf[pos..pos + n].copy_from_slice(&s[..n]);
+        pos += n;
+    }
+    &buf[..pos]
 }

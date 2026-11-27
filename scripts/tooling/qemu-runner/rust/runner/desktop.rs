@@ -65,6 +65,14 @@ pub fn run(tcg: bool) -> Result<bool, String> {
             index += 2;
             continue;
         }
+        if option == "-net" {
+            args.push("-netdev".into());
+            args.push("user,id=net0".into());
+            args.push("-device".into());
+            args.push("virtio-net-pci,netdev=net0,disable-legacy=on".into());
+            index += 2;
+            continue;
+        }
         args.push(option.clone());
         if option == "-accel" || option == "-display" {
             args.push(if option == "-display" { "gtk,zoom-to-fit=on" }

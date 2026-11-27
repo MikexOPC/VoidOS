@@ -138,7 +138,105 @@ impl TerminalBuffer {
             return true;
         }
         if cmd == b"help" {
-            self.write_bytes(b"SHELL_HELP: help | print <testo> | fl [dir] | rp <file> | write <file> <testo> | rm <file> | sync | clear | exit\n");
+            self.write_bytes(b"SHELL_HELP: help | print <testo> | fl [dir] | rp <file> | write <file> <testo> | rm <file> | sync | net | ping <host> | http <host> [path] | clear | exit\n");
+            return true;
+        }
+        if cmd == b"net" {
+            let mut ni = libvoid::NetInfo::default();
+            if libvoid::net_info(&mut ni) != 0 || ni.present == 0 {
+                self.write_bytes(b"net: no interface\n");
+                return true;
+            }
+            let mut ipb = [0u8; 16];
+            let mut num = [0u8; 20];
+            self.write_bytes(b"IP: ");
+            self.write_bytes(libvoid::format_ipv4(ni.ip, &mut ipb));
+            self.write_bytes(b"  GW: ");
+            self.write_bytes(libvoid::format_ipv4(ni.gateway, &mut ipb));
+            self.write_bytes(b"  DNS: ");
+            self.write_bytes(libvoid::format_ipv4(ni.dns, &mut ipb));
+            self.write_bytes(b"\nTX: ");
+            self.write_bytes(libvoid::format_u64(ni.tx_packets, &mut num));
+            self.write_bytes(b"  RX: ");
+            self.write_bytes(libvoid::format_u64(ni.rx_packets, &mut num));
+            self.write_bytes(if ni.link_up != 0 { b"  LINK: UP\n" } else { b"  LINK: DOWN\n" });
+            return true;
+        }
+        if cmd == b"ping" {
+            let (target, _) = libvoid::split_first_token(rest);
+            if target.is_empty() {
+                self.write_bytes(b"ping: <ip|host>\n");
+                return true;
+            }
+            let mut ip = 0u32;
+            if libvoid::net_resolve(target, &mut ip) != 0 {
+                self.write_bytes(b"ping: resolve failed\n");
+                return true;
+            }
+            let rtt = libvoid::net_ping(ip, 2000);
+            let mut ipb = [0u8; 16];
+            let mut num = [0u8; 20];
+            if rtt >= 0 {
+                self.write_bytes(b"PING ");
+                self.write_bytes(libvoid::format_ipv4(ip, &mut ipb));
+                self.write_bytes(b" ok (");
+                self.write_bytes(libvoid::format_u64(rtt as u64, &mut num));
+                self.write_bytes(b" ms)\n");
+            } else {
+                self.write_bytes(b"ping: timeout\n");
+            }
+            return true;
+        }
+        if cmd == b"http" {
+            let (host, path_raw) = libvoid::split_first_token(rest);
+            if host.is_empty() {
+                self.write_bytes(b"http: <host> [path]\n");
+                return true;
+            }
+            let path = if path_raw.is_empty() { b"/" as &[u8] } else { path_raw };
+            let mut ip = 0u32;
+            if libvoid::net_resolve(host, &mut ip) != 0 {
+                self.write_bytes(b"http: dns failed\n");
+                return true;
+            }
+            let handle = libvoid::net_tcp_open(ip, 80, 3000);
+            if handle <= 0 {
+                self.write_bytes(b"http: connect failed\n");
+                return true;
+            }
+            let mut req = [0u8; 320];
+            let mut rpos = 0usize;
+            for part in [b"GET " as &[u8], path, b" HTTP/1.0\r\nHost: ", host, b"\r\nConnection: close\r\n\r\n"] {
+                let n = part.len().min(req.len() - rpos);
+                req[rpos..rpos + n].copy_from_slice(&part[..n]);
+                rpos += n;
+            }
+            if libvoid::net_tcp_send(handle as u64, &req[..rpos]) <= 0 {
+                let _ = libvoid::net_tcp_close(handle as u64);
+                self.write_bytes(b"http: send failed\n");
+                return true;
+            }
+            let mut resp = [0u8; 512];
+            let n = libvoid::net_tcp_recv(handle as u64, &mut resp);
+            let _ = libvoid::net_tcp_close(handle as u64);
+            if n > 0 {
+                let show = (n as usize).min(resp.len());
+                let mut lines = 0usize;
+                for &b in &resp[..show] {
+                    if b == b'\n' {
+                        self.newline();
+                        lines += 1;
+                        if lines >= 10 {
+                            break;
+                        }
+                    } else if b >= 0x20 && b < 0x7F {
+                        self.write_bytes(&[b]);
+                    }
+                }
+                self.newline();
+            } else {
+                self.write_bytes(b"http: empty/timeout\n");
+            }
             return true;
         }
         if cmd == b"print" {

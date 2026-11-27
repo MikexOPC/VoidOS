@@ -86,6 +86,15 @@ static uint32_t elapsed_ms_private(uint32_t start_ticks)
     return (uint32_t)(((uint64_t)dt * 1000ULL) / (uint64_t)knet_state.Clock.Hz);
 }
 
+// ====== wait_expired_private ======
+
+static int wait_expired_private(uint32_t start_ticks, uint32_t limit_ticks, uint32_t spin, uint32_t fallback_spins)
+{
+    if (knet_state.HasClock)
+        return kernel_clock_elapsed(&knet_state.Clock, start_ticks) >= limit_ticks;
+    return spin >= fallback_spins;
+}
+
 // ====== arp_store_private ======
 
 static void arp_store_private(uint32_t ip, const uint8_t mac[6])
@@ -519,13 +528,19 @@ int kernel_net_arp_resolve(uint32_t target_ip, uint8_t mac_out[6], uint32_t time
 
     for (uint32_t attempt = 0; attempt < 2U; ++attempt) {
         (void)send_eth_private(KNET_BCAST_MAC, KNET_ETHERTYPE_ARP, arp, alen);
-        for (uint32_t spin = 0; spin < 100000U; ++spin) {
+        uint32_t step_limit = limit / 2U;
+        if (!step_limit)
+            step_limit = 1U;
+        uint32_t step_start = 0U;
+        if (knet_state.HasClock)
+            (void)kernel_clock_now(&knet_state.Clock, &step_start);
+        for (uint32_t spin = 0; !wait_expired_private(step_start, step_limit, spin, 100000U); ++spin) {
             kernel_net_poll();
             if (arp_lookup_private(next_hop, mac_out))
                 return KERNEL_NET_OK;
-            if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
-                return KERNEL_NET_ERR_TIMEOUT;
         }
+        if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
+            return KERNEL_NET_ERR_TIMEOUT;
     }
     return KERNEL_NET_ERR_TIMEOUT;
 }
@@ -577,7 +592,7 @@ int kernel_net_ping(uint32_t target_ip, uint32_t timeout_ms, uint32_t *rtt_ms_ou
     }
 
     uint32_t limit = ticks_for_ms_private(timeout_ms ? timeout_ms : 2000U);
-    for (uint32_t spin = 0; spin < 400000U; ++spin) {
+    for (uint32_t spin = 0; !wait_expired_private(start, limit, spin, 400000U); ++spin) {
         kernel_net_poll();
         if (knet_state.PingReplyReceived) {
             knet_state.PingWaitActive = 0U;
@@ -585,8 +600,6 @@ int kernel_net_ping(uint32_t target_ip, uint32_t timeout_ms, uint32_t *rtt_ms_ou
                 *rtt_ms_out = elapsed_ms_private(start);
             return KERNEL_NET_OK;
         }
-        if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
-            break;
     }
     knet_state.PingWaitActive = 0U;
     return KERNEL_NET_ERR_TIMEOUT;
@@ -637,15 +650,13 @@ int kernel_net_udp_exchange(
         (void)kernel_clock_now(&knet_state.Clock, &start);
     uint32_t limit = ticks_for_ms_private(timeout_ms ? timeout_ms : 2000U);
 
-    for (uint32_t spin = 0; spin < 400000U; ++spin) {
+    for (uint32_t spin = 0; !wait_expired_private(start, limit, spin, 400000U); ++spin) {
         kernel_net_poll();
         if (knet_state.UdpWaitReceived) {
             *resp_len_out = knet_state.UdpWaitLen;
             knet_state.UdpWaitActive = 0U;
             return KERNEL_NET_OK;
         }
-        if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
-            break;
     }
     knet_state.UdpWaitActive = 0U;
     return KERNEL_NET_ERR_TIMEOUT;
@@ -758,13 +769,17 @@ int kernel_net_tcp_open(uint32_t dst_ip, uint16_t dst_port, uint32_t timeout_ms)
 
     for (uint32_t attempt = 0; attempt < 2U; ++attempt) {
         (void)send_ipv4_mac_private(c->RemoteMac, knet_state.Ip, c->RemoteIp, KNET_IP_PROTO_TCP, syn_seg, slen);
-        for (uint32_t spin = 0; spin < 250000U; ++spin) {
+        uint32_t step_limit = limit / 2U;
+        if (!step_limit)
+            step_limit = 1U;
+        uint32_t step_start = 0U;
+        if (knet_state.HasClock)
+            (void)kernel_clock_now(&knet_state.Clock, &step_start);
+        for (uint32_t spin = 0; !wait_expired_private(step_start, step_limit, spin, 250000U); ++spin) {
             kernel_net_poll();
             if (c->State == KNET_TCP_ESTABLISHED)
                 return slot + 1;
             if (c->State == KNET_TCP_PEER_CLOSED)
-                break;
-            if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
                 break;
         }
         if (c->State == KNET_TCP_PEER_CLOSED ||
@@ -814,7 +829,13 @@ int kernel_net_tcp_send(int handle, const uint8_t *data, uint32_t len, uint32_t 
         int acked = 0;
         for (uint32_t attempt = 0; attempt < 2U && !acked; ++attempt) {
             (void)send_ipv4_mac_private(c->RemoteMac, knet_state.Ip, c->RemoteIp, KNET_IP_PROTO_TCP, seg, slen);
-            for (uint32_t spin = 0; spin < 250000U; ++spin) {
+            uint32_t step_limit = limit / 2U;
+            if (!step_limit)
+                step_limit = 1U;
+            uint32_t step_start = 0U;
+            if (knet_state.HasClock)
+                (void)kernel_clock_now(&knet_state.Clock, &step_start);
+            for (uint32_t spin = 0; !wait_expired_private(step_start, step_limit, spin, 250000U); ++spin) {
                 kernel_net_poll();
                 if ((int32_t)(c->SndUna - c->SndNxt) >= 0) {
                     acked = 1;
@@ -822,9 +843,9 @@ int kernel_net_tcp_send(int handle, const uint8_t *data, uint32_t len, uint32_t 
                 }
                 if (c->State == KNET_TCP_CLOSED)
                     return KERNEL_NET_ERR_IO;
-                if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
-                    break;
             }
+            if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
+                break;
         }
         if (!acked)
             return KERNEL_NET_ERR_TIMEOUT;
@@ -848,7 +869,7 @@ int kernel_net_tcp_recv(int handle, uint8_t *out, uint32_t cap, uint32_t timeout
         (void)kernel_clock_now(&knet_state.Clock, &start);
     uint32_t limit = ticks_for_ms_private(timeout_ms ? timeout_ms : 2500U);
 
-    for (uint32_t spin = 0; spin < 500000U; ++spin) {
+    for (uint32_t spin = 0; !wait_expired_private(start, limit, spin, 500000U); ++spin) {
         kernel_net_poll();
         if (c->RxCount > 0U) {
             uint32_t take = c->RxCount < cap ? c->RxCount : cap;
@@ -861,8 +882,6 @@ int kernel_net_tcp_recv(int handle, uint8_t *out, uint32_t cap, uint32_t timeout
         }
         if (c->State == KNET_TCP_PEER_CLOSED)
             return 0;
-        if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
-            break;
     }
     return KERNEL_NET_ERR_TIMEOUT;
 }

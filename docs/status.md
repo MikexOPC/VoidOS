@@ -29,6 +29,13 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
   **HID Boot** (tastiera USB in shell testuale e GUI, mouse USB in GUI) e
   **USB Mass Storage** (Bulk-Only Transport + SCSI `READ(10)`/`WRITE(10)`/`READ CAPACITY(10)`,
   block device con cache a 64 settori con **unmount/remount VFS live** su `/usb`).
+- Rete **VirtIO-net** (VirtIO 1.2 §5.1, PCI `0x1AF4:0x1041`/`0x1000`, MSI-X
+  vettore `0x47`, fallback `KERNEL_VIRTIO_NET_ABSENT` se assente) dietro
+  interfaccia astratta `KERNEL_NET_DEVICE`, stack di protocolli `no_std`
+  panic-free in Rust (`Ethernet II`, `ARP`, `IPv4`, `ICMP`, `UDP`, `DHCPv4`,
+  `DNS` RFC 1035, `TCP` client RFC 9293), syscall `30..36` (`SYS_NET_*`),
+  wrapper `libvoid` e comandi reali `net`, `ping <ip|host>`, `http <host> [path]`
+  nel Terminale Ring 3 (`avvia.bat` avvia QEMU con `-netdev user -device virtio-net-pci`).
 - NX, WP, SMEP, SMAP, UMIP, guard page, canary, entropia hardware e CSPRNG
   hanno verifiche nell'immagine ordinaria. KPTI esclude heap kernel, vista
   ricorsiva, backbuffer GUI e slot device dalla vista utente.
@@ -55,13 +62,17 @@ INIT/SIPI, IPI di servizio/TLB shootdown, console wake AP1→BSP, NMI panic SMP 
 multi-app GUI.
 **Desktop, VirtIO-GPU 2D reale, cursore hardware e Window Manager — fatta (su QEMU TCG).**
 Attivato il driver **VirtIO-GPU 2D** nell'immagine di produzione `ordinary` (anche senza VT-d IOMMU tramite DMA diretto e senza GOP tramite mode-setting nativo, più gestione `VIRTIO_GPU_EVENT_DISPLAY` / `kernel_gui_display_rebind`) e il **cursore hardware su `cursorq`** (64×64 `B8G8R8A8_UNORM`, `X86_GPU_CAP_HW_CURSOR`, con fallback software su GOP). Nel desktop Ring 3: Terminale stile console con font 9×18 anti-alias e comandi reali (`help`, `print`, `fl`, `rp`, `write`, `rm`, `sync`, `clear`, `exit`), blur nativo del dock generato dallo sfondo con orologio italiano (CET/CEST) e punto per app ridotte, drag fluido su coordinate assolute, wallpaper cachato 1:1, massimizzazione/ripristino e resize interattivo animati (`MSG_RESIZE_WINDOW` con ridisegno nativo in `terminal`, `sysmon` e `files`, angoli inferiori arrotondati sul Default Dock), heap SHM multi-regione in `libvoid`, layout responsive per qualsiasi risoluzione e launcher desktop con `-display gtk,zoom-to-fit=on`.
-Restano: prova interattiva WHPX e hardware fisico (xHCI USB, x2APIC).
+**Milestone 7 — Rete (`VirtIO-net` + DHCPv4/DNS/TCP + Ring 3) — fatta (su QEMU TCG SLIRP).**
+Implementato driver `VirtIO-net` (`KERNEL_NET_DEVICE`, MSI-X `0x47`), stack Rust `no_std` panic-free (Ethernet/ARP/IPv4/ICMP/UDP/DHCPv4/DNS/TCP client), orchestrazione `kernel/net/net.c` (cache ARP 64 voci, 32 connessioni TCP con RX ring buffer da 8 KiB), syscall `30..36` validate con `x86_process_copy_range`/`x86_process_copy_user`, wrapper `libvoid` e comandi `net`, `ping` e `http` nel Terminale GUI Ring 3 (verificati live con DHCP `10.0.2.15`, ping `10.0.2.2` e `http example.com` -> `HTTP/1.1 200 OK`).
+Restano: prova interattiva WHPX e hardware fisico (xHCI USB, x2APIC, NIC fisica).
 Il cancello "base solida" (10/10 boot + soak da 30+30 minuti senza errori né
 perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Limiti noti
 
-- Hardware fisico e rete non sono ancora stati provati o implementati.
+- Hardware fisico non è ancora stato provato (inclusi driver NIC fisici Intel/Realtek).
+- Lo stack di rete supporta solo IPv4, client TCP (niente listen/accept né
+  TLS/HTTPS) e un solo NIC `VirtIO-net`, verificato su QEMU SLIRP (`-netdev user`).
 - USB xHCI supporta un livello di hub USB 2.0 esterni (niente hub a cascata
   multi-livello né hotplug dinamico sulle porte downstream di un hub) e un
   dispositivo USB Mass Storage alla volta (settori 512 byte, LUN 0).
@@ -88,10 +99,10 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Prove e prossimo passo
 
-Verifiche correnti sull'immagine di produzione (x2APIC + xHCI HID/MSC/Hub + VirtIO-GPU 2D/cursorq + Window Manager animato):
-33/33 test host (`meson test`, ASan inclusi `libvoid_rust` multi-regione, `libui_rust` AA/SSE2/resize, `gui_host` rebind, `xhci_host` e `vfs_fat_host`), 2/2 test `qemu-runner`, 10/10 boot `--ordinary-shell --smp 4` (`qemu-runner-18ebed8b9fd98e70-8198`), 1/1 boot multi-app `--ordinary-gui 1 --smp 4` (`qemu-runner-18ebedc5ac23b950-7ea8`), boot live `-vga none -device virtio-vga` a `640×480`, `1280×720` e `1280×800` (`KERNEL_VGPU_PRESENTING`, `KERNEL_VGPU_CURSOR_READY`), prove live QEMU `usb-storage`, hotplug VFS `/usb` e `-device usb-hub`, 3/3 boot fallback xAPIC (`-cpu max,-x2apic`), 3/3 boot WHPX headless in x2APIC, e 1/1 soak continuo `--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min, 248 round, 0 overruns, 0 perdite).
+Verifiche correnti sull'immagine di produzione (x2APIC + xHCI HID/MSC/Hub + VirtIO-GPU 2D/cursorq + Window Manager animato + Rete VirtIO-net/DHCP/DNS/TCP):
+35/35 test host (`meson test`, ASan inclusi `virtio_net_host`, `net_protocol_rust`, `libvoid_rust`, `libui_rust`, `gui_host`, `xhci_host` e `vfs_fat_host`), 2/2 test `qemu-runner`, 3/3 boot `--ordinary-shell --smp 4` (`qemu-runner-18ebf17051385e84-8ff0`, fallback `-net none`), 1/1 boot multi-app `--ordinary-gui 1 --smp 4` (`qemu-runner-18ebf0ba7ff77a18-20b0`), prova live `-netdev user -device virtio-net-pci` con Terminale Ring 3 (`net`, `ping 10.0.2.2`, `http example.com` -> `HTTP/1.1 200 OK`), 10/10 boot `--ordinary-shell --smp 4` (`qemu-runner-18ebed8b9fd98e70-8198`), prove live VirtIO-GPU/USB/xAPIC/WHPX e 1/1 soak continuo `--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min, 248 round, 0 overruns, 0 perdite).
 Validazioni in [gui.md](validation/gui.md),
 [consolidamento.md](validation/consolidamento.md),
 [processi.md](validation/processi.md), [storage.md](validation/storage.md),
 [exec.md](validation/exec.md) e [sicurezza.md](validation/sicurezza.md).
-Prossimo passo: accelerazione GPU 2D/3D (VirtIO-GPU command submission / Mesa), rete o PC fisico.
+Prossimo passo: prova su PC fisico (boot da chiavetta USB / fallback senza PS/2 / log su GOP) oppure estensioni GUI/rete (TLS, clipboard, FAT32 sottodirectory).

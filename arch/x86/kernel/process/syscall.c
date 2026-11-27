@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "gui.h"
+#include "kernel/net/net.h"
 #include "manager.h"
 #include "kernel/mm/heap/heap.h"
 #include "kernel/vfs/vfs.h"
@@ -506,6 +507,102 @@ int process_budget_expired(BOOT_U64 rip)
     return 1;
 }
 
+// ====== sys_net_info ======
+
+static BOOT_U64 sys_net_info(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
+{
+    if (!out_ptr || x86_process_copy_range(out_ptr, sizeof(KERNEL_NET_INFO)) != 1)
+        return RESULT_RANGE;
+    KERNEL_NET_INFO info;
+    if (!kernel_net_info(&info))
+        return RESULT_UNKNOWN;
+    if (x86_process_copy_user(cpu, (void *)out_ptr, &info, out_ptr, sizeof(info), 1))
+        return RESULT_RANGE;
+    return 0;
+}
+
+// ====== sys_net_ping ======
+
+static BOOT_U64 sys_net_ping(BOOT_U64 ip, BOOT_U64 timeout_ms)
+{
+    uint32_t rtt = 0U;
+    uint32_t tmo = (timeout_ms > 0 && timeout_ms <= 5000ULL) ? (uint32_t)timeout_ms : 2000U;
+    int rc = kernel_net_ping((uint32_t)ip, tmo, &rtt);
+    return (rc == KERNEL_NET_OK) ? (BOOT_U64)rtt : (BOOT_U64)(int64_t)rc;
+}
+
+// ====== sys_net_resolve ======
+
+static BOOT_U64 sys_net_resolve(X86_PROCESS_CPU *cpu, BOOT_U64 host_ptr, BOOT_U64 host_len, BOOT_U64 ip_out_ptr)
+{
+    if (!host_ptr || !host_len || host_len > 253ULL || !ip_out_ptr ||
+        x86_process_copy_range(host_ptr, host_len) != 1 ||
+        x86_process_copy_range(ip_out_ptr, sizeof(uint32_t)) != 1)
+        return RESULT_RANGE;
+    char host[256];
+    if (x86_process_copy_user(cpu, host, (const void *)host_ptr, host_ptr, host_len, 0))
+        return RESULT_RANGE;
+    uint32_t ip = 0U;
+    int rc = kernel_net_dns_resolve(host, (uint32_t)host_len, &ip, 2500U);
+    if (rc != KERNEL_NET_OK)
+        return (BOOT_U64)(int64_t)rc;
+    if (x86_process_copy_user(cpu, (void *)ip_out_ptr, &ip, ip_out_ptr, sizeof(ip), 1))
+        return RESULT_RANGE;
+    return 0;
+}
+
+// ====== sys_net_tcp_open ======
+
+static BOOT_U64 sys_net_tcp_open(BOOT_U64 ip, BOOT_U64 port, BOOT_U64 timeout_ms)
+{
+    if (!ip || !port || port > 65535ULL)
+        return RESULT_RANGE;
+    uint32_t tmo = (timeout_ms > 0 && timeout_ms <= 5000ULL) ? (uint32_t)timeout_ms : 3000U;
+    int rc = kernel_net_tcp_open((uint32_t)ip, (uint16_t)port, tmo);
+    return (BOOT_U64)(int64_t)rc;
+}
+
+// ====== sys_net_tcp_send ======
+
+static BOOT_U64 sys_net_tcp_send(X86_PROCESS_CPU *cpu, BOOT_U64 handle, BOOT_U64 data_ptr, BOOT_U64 len)
+{
+    if (!data_ptr || !len)
+        return RESULT_RANGE;
+    uint32_t chunk = len > MAX_COPY ? MAX_COPY : (uint32_t)len;
+    if (x86_process_copy_range(data_ptr, chunk) != 1)
+        return RESULT_RANGE;
+    uint8_t buf[MAX_COPY];
+    if (x86_process_copy_user(cpu, buf, (const void *)data_ptr, data_ptr, chunk, 0))
+        return RESULT_RANGE;
+    int rc = kernel_net_tcp_send((int)handle, buf, chunk, 3000U);
+    return (BOOT_U64)(int64_t)rc;
+}
+
+// ====== sys_net_tcp_recv ======
+
+static BOOT_U64 sys_net_tcp_recv(X86_PROCESS_CPU *cpu, BOOT_U64 handle, BOOT_U64 out_ptr, BOOT_U64 cap)
+{
+    if (!out_ptr || !cap)
+        return RESULT_RANGE;
+    uint32_t want = cap > MAX_COPY ? MAX_COPY : (uint32_t)cap;
+    if (x86_process_copy_range(out_ptr, want) != 1)
+        return RESULT_RANGE;
+    uint8_t buf[MAX_COPY];
+    int rc = kernel_net_tcp_recv((int)handle, buf, want, 2500U);
+    if (rc > 0) {
+        if (x86_process_copy_user(cpu, (void *)out_ptr, buf, out_ptr, (BOOT_U64)rc, 1))
+            return RESULT_RANGE;
+    }
+    return (BOOT_U64)(int64_t)rc;
+}
+
+// ====== sys_net_tcp_close ======
+
+static BOOT_U64 sys_net_tcp_close(BOOT_U64 handle)
+{
+    return (BOOT_U64)(int64_t)kernel_net_tcp_close((int)handle);
+}
+
 // ====== x86_process_syscall_dispatch ======
 
 int x86_process_syscall_dispatch(BOOT_U64 *frame)
@@ -661,6 +758,27 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_GPU_INFO) {
         GPR(frame, GPR_RAX) = x86_gui_sys_gpu_info(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_NET_INFO) {
+        GPR(frame, GPR_RAX) = sys_net_info(cpu, GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_NET_PING) {
+        GPR(frame, GPR_RAX) = sys_net_ping(GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_NET_RESOLVE) {
+        GPR(frame, GPR_RAX) = sys_net_resolve(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI), GPR(frame, GPR_RDX));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_NET_TCP_OPEN) {
+        GPR(frame, GPR_RAX) = sys_net_tcp_open(GPR(frame, GPR_RDI), GPR(frame, GPR_RSI), GPR(frame, GPR_RDX));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_NET_TCP_SEND) {
+        GPR(frame, GPR_RAX) = sys_net_tcp_send(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI), GPR(frame, GPR_RDX));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_NET_TCP_RECV) {
+        GPR(frame, GPR_RAX) = sys_net_tcp_recv(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI), GPR(frame, GPR_RDX));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_NET_TCP_CLOSE) {
+        GPR(frame, GPR_RAX) = sys_net_tcp_close(GPR(frame, GPR_RDI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else {
         GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;
