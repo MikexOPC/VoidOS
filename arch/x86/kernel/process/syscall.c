@@ -266,6 +266,30 @@ static BOOT_U64 sys_unlink(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 pat
     return kernel_vfs_unlink(vfs, path) == KERNEL_STORAGE_OK ? 0ULL : RESULT_UNKNOWN;
 }
 
+// ====== sys_mkdir ======
+
+static BOOT_U64 sys_mkdir(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path_len)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs || !cpu->Pid) return RESULT_UNKNOWN;
+    char path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    BOOT_U64 err = copy_user_path_private(cpu, path_ptr, path_len, path);
+    if (err) return err;
+    return kernel_vfs_mkdir(vfs, path) == KERNEL_STORAGE_OK ? 0ULL : RESULT_UNKNOWN;
+}
+
+// ====== sys_rmdir ======
+
+static BOOT_U64 sys_rmdir(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path_len)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs || !cpu->Pid) return RESULT_UNKNOWN;
+    char path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    BOOT_U64 err = copy_user_path_private(cpu, path_ptr, path_len, path);
+    if (err) return err;
+    return kernel_vfs_rmdir(vfs, path) == KERNEL_STORAGE_OK ? 0ULL : RESULT_UNKNOWN;
+}
+
 // ====== sys_spawn ======
 
 static BOOT_U64 sys_spawn(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path_len, BOOT_U64 args_ptr)
@@ -779,6 +803,12 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_NET_TCP_CLOSE) {
         GPR(frame, GPR_RAX) = sys_net_tcp_close(GPR(frame, GPR_RDI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_MKDIR) {
+        GPR(frame, GPR_RAX) = sys_mkdir(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_RMDIR) {
+        GPR(frame, GPR_RAX) = sys_rmdir(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else {
         GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;

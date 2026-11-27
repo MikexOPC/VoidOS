@@ -20,8 +20,10 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
   a 14 MiB (3584 pagine su 8 PT), con stack da 64 KiB e guard page.
 - VirtIO-blk (MSI-X, vettore `0x44`) e AHCI (MSI, vettore `0x45`) completano
   l'I/O via interrupt con attesa `sti; hlt` (fallback `pause` se `IF=0`) e
-  cleanup pulito allo shutdown. FAT legge directory e LFN; scrittura e unlink
-  operano sui nomi 8.3 nella root del mount.
+  cleanup pulito allo shutdown. FAT32 supporta lettura, scrittura, `unlink`,
+  `mkdir`, `rmdir`, sottodirectory annidate e nomi lunghi (LFN fino a 63
+  caratteri con alias 8.3 anti-collisione e pulizia completa delle entry LFN
+  su rimozione).
 - Controller USB **xHCI 1.2** (PCI `0C:03:30`, MSI-X/MSI vettore `0x46`,
   fallback silenzioso `KERNEL_XHCI_ABSENT` se assente) con enumerazione e
   **hotplug runtime** sul root hub (`Disable Slot` + riutilizzo pagine DMA),

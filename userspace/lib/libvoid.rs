@@ -44,6 +44,8 @@ pub const SYS_NET_TCP_OPEN: u64 = 33;
 pub const SYS_NET_TCP_SEND: u64 = 34;
 pub const SYS_NET_TCP_RECV: u64 = 35;
 pub const SYS_NET_TCP_CLOSE: u64 = 36;
+pub const SYS_MKDIR: u64 = 37;
+pub const SYS_RMDIR: u64 = 38;
 
 // ====== flags and errors ======
 
@@ -696,6 +698,18 @@ pub fn net_tcp_recv(handle: u64, out: &mut [u8]) -> i64 {
 #[inline]
 pub fn net_tcp_close(handle: u64) -> i64 {
     raw_syscall(SYS_NET_TCP_CLOSE, handle, 0, 0)
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn mkdir(path: &[u8]) -> i64 {
+    raw_syscall(SYS_MKDIR, path.as_ptr() as u64, path.len() as u64, 0)
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn rmdir(path: &[u8]) -> i64 {
+    raw_syscall(SYS_RMDIR, path.as_ptr() as u64, path.len() as u64, 0)
 }
 
 // ====== format_ipv4 ======

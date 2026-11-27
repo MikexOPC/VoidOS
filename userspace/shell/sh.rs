@@ -123,6 +123,30 @@ fn cmd_rm(arg: &[u8]) -> i64 {
     libvoid::unlink(path)
 }
 
+// ====== cmd_mkdir ======
+
+fn cmd_mkdir(arg: &[u8]) -> i64 {
+    if arg.is_empty() {
+        return -1;
+    }
+    let mut path_buf = [0u8; 128];
+    let len = make_path(arg, &mut path_buf);
+    let path = path_buf.get(..len).unwrap_or(&[]);
+    libvoid::mkdir(path)
+}
+
+// ====== cmd_rmdir ======
+
+fn cmd_rmdir(arg: &[u8]) -> i64 {
+    if arg.is_empty() {
+        return -1;
+    }
+    let mut path_buf = [0u8; 128];
+    let len = make_path(arg, &mut path_buf);
+    let path = path_buf.get(..len).unwrap_or(&[]);
+    libvoid::rmdir(path)
+}
+
 // ====== cmd_run ======
 
 fn cmd_run(arg: &[u8]) -> i64 {
@@ -154,7 +178,7 @@ fn execute_line(line: &[u8]) -> i64 {
         return 0;
     }
     if cmd == b"help" {
-        let _ = libvoid::write_str("sh: help | print | fl | rp | write | rm | sync | run | exit\n");
+        let _ = libvoid::write_str("sh: help | print | fl | rp | write | rm | mkdir | rmdir | sync | run | exit\n");
         return 0;
     }
     if cmd == b"print" {
@@ -174,6 +198,12 @@ fn execute_line(line: &[u8]) -> i64 {
     }
     if cmd == b"rm" {
         return cmd_rm(arg);
+    }
+    if cmd == b"mkdir" {
+        return cmd_mkdir(arg);
+    }
+    if cmd == b"rmdir" {
+        return cmd_rmdir(arg);
     }
     if cmd == b"sync" {
         return libvoid::sync_fs();

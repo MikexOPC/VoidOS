@@ -263,9 +263,12 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         }
         kernel_log(0, "KERNEL_VFS_EXEC_OK");
 
-        // Verify interactive Ring 3 shell (/bin/sh.elf) via console_read, VFS, and SYS_SPAWN/SYS_WAIT_PID.
+        // Verify interactive Ring 3 shell (/bin/sh.elf) via console_read, VFS (including mkdir/rmdir/LFN), and SYS_SPAWN/SYS_WAIT_PID.
         static const unsigned char sh_script[] =
-            "print sh_ok\nfl /\nwrite shnote ok\nrp /SHNOTE\nrm /SHNOTE\nsync\nrun /bin/init.elf\nexit\n";
+            "print sh_ok\nfl /\nwrite shnote ok\nrp /SHNOTE\nrm /SHNOTE\n"
+            "mkdir /lfn_test_dir\nwrite /lfn_test_dir/long_note_file.txt lfn_ok\n"
+            "rp /lfn_test_dir/long_note_file.txt\nrm /lfn_test_dir/long_note_file.txt\n"
+            "rmdir /lfn_test_dir\nsync\nrun /bin/init.elf\nexit\n";
         BOOT_U64 sh_free_before = 0;
         uint64_t sh_pid = 0;
         uint32_t sh_state = 0;

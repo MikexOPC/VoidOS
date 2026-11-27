@@ -138,7 +138,7 @@ impl TerminalBuffer {
             return true;
         }
         if cmd == b"help" {
-            self.write_bytes(b"SHELL_HELP: help | print <testo> | fl [dir] | rp <file> | write <file> <testo> | rm <file> | sync | net | ping <host> | http <host> [path] | clear | exit\n");
+            self.write_bytes(b"SHELL_HELP: help | print | fl [dir] | rp <file> | write <file> <txt> | rm <file> | mkdir <dir> | rmdir <dir> | sync | net | ping <host> | http <host> | clear | exit\n");
             return true;
         }
         if cmd == b"net" {
@@ -313,6 +313,30 @@ impl TerminalBuffer {
                 self.write_bytes(b"SHELL_RM_OK\n");
             } else {
                 self.write_bytes(b"rm: failed\n");
+            }
+            return true;
+        }
+        if cmd == b"mkdir" {
+            if rest.is_empty() {
+                self.write_bytes(b"mkdir: path required\n");
+                return true;
+            }
+            if libvoid::mkdir(rest) == 0 {
+                self.write_bytes(b"SHELL_MKDIR_OK\n");
+            } else {
+                self.write_bytes(b"mkdir: failed\n");
+            }
+            return true;
+        }
+        if cmd == b"rmdir" {
+            if rest.is_empty() {
+                self.write_bytes(b"rmdir: path required\n");
+                return true;
+            }
+            if libvoid::rmdir(rest) == 0 {
+                self.write_bytes(b"SHELL_RMDIR_OK\n");
+            } else {
+                self.write_bytes(b"rmdir: failed\n");
             }
             return true;
         }
