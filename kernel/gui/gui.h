@@ -138,6 +138,16 @@ uint64_t kernel_gui_epoch_to_rtc_packed(uint64_t epoch_sec);
 
 int kernel_gui_input_push_key(KERNEL_GUI *gui, uint32_t code, uint32_t scalar, uint32_t flags);
 int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_t buttons);
+int kernel_gui_input_push_mouse_abs(
+    KERNEL_GUI *gui,
+    int32_t abs_x,
+    int32_t abs_y,
+    int32_t min_x,
+    int32_t max_x,
+    int32_t min_y,
+    int32_t max_y,
+    uint32_t buttons
+);
 int kernel_gui_input_push_scroll(KERNEL_GUI *gui, int32_t wheel_delta);
 int kernel_gui_pointer_position(KERNEL_GUI *gui, int32_t *x, int32_t *y);
 int kernel_gui_input_poll(KERNEL_GUI *gui, uint64_t pid, KERNEL_INPUT_EVENT *out);

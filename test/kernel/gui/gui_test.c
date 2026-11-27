@@ -223,6 +223,13 @@ static void test_input_ring(KERNEL_HEAP *heap)
     int32_t x = 0, y = 0;
     assert(kernel_gui_pointer_position(&gui, &x, &y));
     assert(x == 799 && y == 599);
+    // Absolute tablet pointer scaling (0..32767 -> 800x600)
+    assert(kernel_gui_input_push_mouse_abs(&gui, 16384, 16384, 0, 32767, 0, 32767, 1));
+    assert(kernel_gui_input_poll(&gui, 20, &ev) == 1);
+    assert(ev.Kind == KERNEL_INPUT_MOUSE && ev.Code == 399 && ev.Value == 299 && (ev.Flags & 7U) == 1U);
+    assert(kernel_gui_pointer_position(&gui, &x, &y));
+    assert(x == 399 && y == 299);
+    assert(!kernel_gui_input_push_mouse_abs(&gui, 0, 0, 10, 10, 0, 100, 0));
     assert(kernel_gui_input_push_key(&gui, 0, 0, KERNEL_INPUT_FLAG_RESYNC));
     assert(kernel_gui_has_input(&gui, 20));
     assert(kernel_gui_input_poll(&gui, 20, &ev) == 1);

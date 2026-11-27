@@ -467,6 +467,68 @@ int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_
     return ok;
 }
 
+// ====== kernel_gui_input_push_mouse_abs ======
+
+int kernel_gui_input_push_mouse_abs(
+    KERNEL_GUI *gui,
+    int32_t abs_x,
+    int32_t abs_y,
+    int32_t min_x,
+    int32_t max_x,
+    int32_t min_y,
+    int32_t max_y,
+    uint32_t buttons
+)
+{
+    if (max_x <= min_x || max_y <= min_y)
+        return 0;
+    GUI_ACCESS access;
+    if (!enter_private(gui, &access))
+        return 0;
+    int ok = 0;
+    if (gui->DisplayOwnerPid && gui->Width > 0U && gui->Height > 0U) {
+        int64_t cx = abs_x < min_x ? min_x : (abs_x > max_x ? max_x : abs_x);
+        int64_t cy = abs_y < min_y ? min_y : (abs_y > max_y ? max_y : abs_y);
+        int64_t span_x = (int64_t)max_x - (int64_t)min_x;
+        int64_t span_y = (int64_t)max_y - (int64_t)min_y;
+        int32_t target_x = (int32_t)(((cx - min_x) * (int64_t)(gui->Width - 1U)) / span_x);
+        int32_t target_y = (int32_t)(((cy - min_y) * (int64_t)(gui->Height - 1U)) / span_y);
+        int32_t dx = target_x - gui->MouseX;
+        int32_t dy = gui->MouseY - target_y;
+        uint32_t clean_buttons = buttons & 7U;
+        gui->MouseX = target_x;
+        gui->MouseY = target_y;
+        gui->LastMouseButtons = clean_buttons;
+        if (gui->InputCount > 0U && !gui->PendingMouseResync) {
+            uint32_t last_idx = (gui->InputTail + KERNEL_GUI_INPUT_CAPACITY - 1U) % KERNEL_GUI_INPUT_CAPACITY;
+            KERNEL_INPUT_EVENT *last = &gui->InputRing[last_idx];
+            if (last->Kind == KERNEL_INPUT_MOUSE && last->Flags == (clean_buttons | KERNEL_INPUT_FLAG_ABSOLUTE)) {
+                last->DeltaX = sat_add_i32_private(last->DeltaX, dx);
+                last->DeltaY = sat_add_i32_private(last->DeltaY, dy);
+                last->Code = (uint32_t)gui->MouseX;
+                last->Value = (uint32_t)gui->MouseY;
+                leave_private(&access);
+                return 1;
+            }
+        }
+        KERNEL_INPUT_EVENT event = {0};
+        event.Kind = KERNEL_INPUT_MOUSE;
+        event.Flags = clean_buttons | KERNEL_INPUT_FLAG_ABSOLUTE;
+        event.Code = (uint32_t)gui->MouseX;
+        event.Value = (uint32_t)gui->MouseY;
+        event.DeltaX = dx;
+        event.DeltaY = dy;
+        ok = push_input_locked(gui, &event);
+        if (!ok) {
+            gui->PendingMouseDx = sat_add_i32_private(gui->PendingMouseDx, dx);
+            gui->PendingMouseDy = sat_add_i32_private(gui->PendingMouseDy, dy);
+            gui->PendingMouseResync = 1U;
+        }
+    }
+    leave_private(&access);
+    return ok;
+}
+
 // ====== kernel_gui_input_push_scroll ======
 
 int kernel_gui_input_push_scroll(KERNEL_GUI *gui, int32_t wheel_delta)

@@ -286,6 +286,31 @@ static void on_usb_mouse_private(void *context, int32_t dx, int32_t dy, uint32_t
 #endif
 }
 
+// ====== on_usb_abs_mouse_private ======
+
+static void on_usb_abs_mouse_private(void *context, int32_t abs_x, int32_t abs_y,
+    int32_t min_x, int32_t max_x, int32_t min_y, int32_t max_y, uint32_t buttons)
+{
+    X86_XHCI_RUNTIME *rt = (X86_XHCI_RUNTIME *)context;
+    if (!rt || rt->Self != (uintptr_t)rt)
+        return;
+    ++rt->MouseEvents;
+#ifdef KERNEL_USER_PROCESS
+    KERNEL_GUI *gui = kernel_gui_global();
+    if (gui && kernel_gui_display_owner(gui) != 0) {
+        int32_t wheel = (int32_t)(int8_t)((buttons >> 8) & 0xFFU);
+        (void)kernel_gui_input_push_mouse_abs(gui, abs_x, abs_y, min_x, max_x, min_y, max_y, buttons & 7U);
+        if (wheel != 0)
+            (void)kernel_gui_input_push_scroll(gui, wheel);
+        int32_t x = 0, y = 0;
+        if (kernel_gui_pointer_position(gui, &x, &y))
+            x86_gui_cursor_position(x, y);
+    }
+#else
+    (void)abs_x; (void)abs_y; (void)min_x; (void)max_x; (void)min_y; (void)max_y; (void)buttons;
+#endif
+}
+
 // ====== xhci_irq_handle_private ======
 
 static int xhci_irq_handle_private(void)
@@ -736,7 +761,8 @@ int x86_xhci_start(
         transport_alloc_dma_page_private,
         transport_clock_private,
         on_usb_key_private,
-        on_usb_mouse_private
+        on_usb_mouse_private,
+        on_usb_abs_mouse_private
     };
 
     if (!kernel_xhci_init(&xhci_rt.Driver, &transport)) {
