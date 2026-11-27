@@ -32,7 +32,9 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
   fallback silenzioso `KERNEL_XHCI_ABSENT` se assente) con enumerazione e
   **hotplug runtime** sul root hub (`Disable Slot` + riutilizzo pagine DMA),
   **Hub USB 2.0 esterni** (`Class 0x09`, `Route String` + `TT`),
-  **HID Boot** (tastiera USB in shell testuale e GUI, mouse USB in GUI) e
+  **HID Boot e Report Protocol 1.11** (tastiera USB in shell testuale e GUI,
+  mouse USB e puntatore assoluto `usb-tablet` con parser HID Report Descriptor
+  e `kernel_gui_input_push_mouse_abs` in GUI) e
   **USB Mass Storage** (Bulk-Only Transport + SCSI `READ(10)`/`WRITE(10)`/`READ CAPACITY(10)`,
   block device con cache a 64 settori con **unmount/remount VFS live** su `/usb`).
 - Rete **VirtIO-net** (VirtIO 1.2 §5.1, PCI `0x1AF4:0x1041`/`0x1000`, MSI-X

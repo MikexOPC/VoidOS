@@ -789,6 +789,9 @@ int x86_xhci_start(
         } else if (hid->Protocol == USB_PROTO_MOUSE) {
             if (!kernel_log(0, "KERNEL_XHCI_HID_MOUSE"))
                 return 0;
+        } else if (hid->Protocol == USB_PROTO_REPORT_PTR) {
+            if (!kernel_log(0, hid->ReportLayout.IsAbsolute ? "KERNEL_XHCI_HID_TABLET" : "KERNEL_XHCI_HID_MOUSE"))
+                return 0;
         }
     }
 
