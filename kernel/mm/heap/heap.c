@@ -19,6 +19,27 @@ int kernel_heap_init(KERNEL_HEAP *heap, void *base, uint32_t pages) {
     return result;
 }
 
+// ====== kernel_heap_grow ======
+
+int kernel_heap_grow(KERNEL_HEAP *heap, uint32_t additional_pages) {
+    KH_ACCESS access = {0};
+    if (!additional_pages || !kh_enter(heap, &access)) return 0;
+    int result = 0;
+    if (kh_shape(heap) && additional_pages <= KERNEL_HEAP_MAX_PAGES - heap->Pages) {
+        uint32_t next_pages = heap->Pages + additional_pages;
+        if (heap->Base <= UINTPTR_MAX - (uintptr_t)next_pages * 4096 &&
+            !ks_overlap(heap, sizeof(*heap), (void *)heap->Base, (size_t)next_pages * 4096) &&
+            !ks_overlap((void *)heap->Base, (size_t)next_pages * 4096, access.Context, sizeof(*access.Context))) {
+            heap->Pages = next_pages;
+            heap->Used.Bits = next_pages;
+            heap->Stats.FreePages += additional_pages;
+            result = 1;
+        }
+    }
+    kh_leave(&access);
+    return result;
+}
+
 // ====== kernel_heap_valid ======
 
 int kernel_heap_valid(const KERNEL_HEAP *heap) {

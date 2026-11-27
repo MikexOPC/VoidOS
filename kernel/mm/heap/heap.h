@@ -9,8 +9,8 @@
 // part maps the range, see arch/x86/mm/heap). Small objects come from size-class slabs, larger
 // ones from contiguous page runs (first fit). Fixed metadata, no allocation of its own.
 // Metadata serialized per owner; backing remains pinned. Never from NMI/fault or IRQ context.
-#define KERNEL_HEAP_MAX_PAGES   8192U       // 32 MiB
-#define KERNEL_HEAP_SLAB_PAGES  512U        // at most 2 MiB of small objects
+#define KERNEL_HEAP_MAX_PAGES   24576U      // 96 MiB ceiling (scaled to available RAM at boot)
+#define KERNEL_HEAP_SLAB_PAGES  1536U       // at most 6 MiB of small objects
 #define KERNEL_HEAP_CLASSES     8U          // 16, 32, ... 2048 bytes
 #define KERNEL_HEAP_CANARY      0x4b48454150434e59ULL
 #define KERNEL_HEAP_POISON      0xccU
@@ -50,6 +50,7 @@ typedef struct {
 } KERNEL_HEAP;
 
 int       kernel_heap_init(KERNEL_HEAP *heap, void *base, uint32_t pages);
+int       kernel_heap_grow(KERNEL_HEAP *heap, uint32_t additional_pages);
 // bytes 1..; alignment a power of two up to 4096 (0 = 16). Zeroed memory or 0.
 void     *kernel_heap_alloc(KERNEL_HEAP *heap, uint64_t bytes, uint64_t alignment);
 // count contiguous pages, page aligned and zeroed, or 0.

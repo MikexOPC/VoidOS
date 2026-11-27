@@ -142,12 +142,37 @@ static void rejected_cases(void)
     }
 }
 
+// ====== grow_cases ======
+
+static void grow_cases(void)
+{
+    static KERNEL_HEAP gheap;
+    static _Alignas(4096) uint8_t backing[16 * 4096];
+    memset(&gheap, 0, sizeof(gheap));
+    memset(backing, 0, sizeof(backing));
+    CHECK(kernel_heap_init(&gheap, backing, 4));
+    void *p1 = kernel_heap_pages(&gheap, 4);
+    CHECK(p1 != NULL);
+    CHECK(kernel_heap_pages(&gheap, 1) == NULL);
+    CHECK(!kernel_heap_grow(&gheap, 0));
+    CHECK(!kernel_heap_grow(&gheap, KERNEL_HEAP_MAX_PAGES));
+    CHECK(kernel_heap_grow(&gheap, 8));
+    CHECK(gheap.Pages == 12 && kernel_heap_stats(&gheap).FreePages == 8);
+    void *p2 = kernel_heap_pages(&gheap, 8);
+    CHECK(p2 != NULL);
+    CHECK(kernel_heap_valid(&gheap));
+    CHECK(kernel_heap_free(&gheap, p1));
+    CHECK(kernel_heap_free(&gheap, p2));
+    CHECK(kernel_heap_stats(&gheap).FreePages == 12 && kernel_heap_valid(&gheap));
+}
+
 // ====== main ======
 
 int main(void)
 {
     rejected_cases();
+    grow_cases();
     random_cases();
-    printf("PASS heap: %lu checks; 200000 random operations, oracle, rejections, canary, poison, classes\n", checks);
+    printf("PASS heap: %lu checks; 200000 random operations, grow, oracle, rejections, canary, poison, classes\n", checks);
     return 0;
 }
