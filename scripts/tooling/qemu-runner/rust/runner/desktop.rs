@@ -55,13 +55,21 @@ pub fn run(tcg: bool) -> Result<bool, String> {
     prepare_esp(&directory, &build.join("kernel.elf"), &paths)?;
     fs::copy(paths.qemu_dir.join("share/edk2-i386-vars.fd"), directory.join("vars.fd"))
         .map_err(|error| format!("Firmware OVMF: {error}"))?;
-    let plan = Plan { memory: 128, smp: 4, inject: Inject::None, cpu: "max", machine: "q35" };
+    let plan = Plan { memory: 256, smp: 4, inject: Inject::None, cpu: "max", machine: "q35" };
     let original = arguments(&directory, &paths, &plan);
     let mut args = Vec::new();
     let mut index = 0;
     while index < original.len() {
         let option = &original[index];
         if option == "-d" || option == "-D" {
+            index += 2;
+            continue;
+        }
+        if option == "-vga" {
+            args.push("-vga".into());
+            args.push("none".into());
+            args.push("-device".into());
+            args.push("virtio-vga".into());
             index += 2;
             continue;
         }
