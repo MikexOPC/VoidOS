@@ -210,15 +210,8 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!x86_virtio_net_start(env, directory, clock)) {
         kernel_log(3, "VIRTIO_NET_START_FAILED"); return 0;
     }
-    if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache())) {
+    if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache(), x86_xhci_msc_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;
-    }
-    if (x86_xhci_msc_cache()) {
-        KERNEL_VFS *vfs = kernel_vfs();
-        const char *usb_prefix = (vfs && vfs->MountCount > 0U) ? "/usb" : "/";
-        if (vfs && kernel_vfs_mount_fat(vfs, usb_prefix, x86_xhci_msc_cache()) == KERNEL_STORAGE_OK) {
-            (void)kernel_log(0, "KERNEL_VFS_USB_MOUNTED");
-        }
     }
 #ifdef KERNEL_USER_PROCESS
     if (!kernel_security_audit_wx_and_guards(x86_user_mode_allowed()) ||
@@ -233,6 +226,10 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
 #endif
 #ifdef KERNEL_USER_PROCESS
     if (x86_user_mode_allowed() && x86_process_manager_ready()) {
+        KERNEL_VFS_STAT init_st = {0};
+        if (!kernel_vfs() || kernel_vfs_stat(kernel_vfs(), "/bin/init.elf", &init_st) != KERNEL_STORAGE_OK) {
+            kernel_log(1, "KERNEL_VFS_EXEC_SKIPPED");
+        } else {
         BOOT_U64 free_before = 0;
         uint64_t init_pid = 0;
         uint32_t init_state = 0;
@@ -291,6 +288,7 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
             kernel_log(3, "USER_SHELL_RUN_FAILED"); return 0;
         }
         kernel_log(0, "KERNEL_USER_SHELL_OK");
+        }
     }
 #endif
     if (!kernel_ps2_discover(directory,env->Window->Pool->PhysicalBits,firmware_read,&session,&description)) {

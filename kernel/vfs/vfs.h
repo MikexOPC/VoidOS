@@ -216,7 +216,8 @@ KERNEL_VFS *kernel_vfs(void);
 int kernel_vfs_system_start(
     KERNEL_HEAP *heap,
     KERNEL_BLOCK_CACHE *root_cache,
-    KERNEL_BLOCK_CACHE *boot_cache
+    KERNEL_BLOCK_CACHE *boot_cache,
+    KERNEL_BLOCK_CACHE *usb_cache
 );
 
 #endif

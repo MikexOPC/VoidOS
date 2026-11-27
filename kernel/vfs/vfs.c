@@ -844,7 +844,8 @@ KERNEL_VFS *kernel_vfs(void)
 int kernel_vfs_system_start(
     KERNEL_HEAP *heap,
     KERNEL_BLOCK_CACHE *root_cache,
-    KERNEL_BLOCK_CACHE *boot_cache
+    KERNEL_BLOCK_CACHE *boot_cache,
+    KERNEL_BLOCK_CACHE *usb_cache
 )
 {
     if (system_vfs.Ready)
@@ -856,6 +857,7 @@ int kernel_vfs_system_start(
     uint32_t root_bytes = 0;
     uint32_t boot_bytes = 0;
     char buf[64];
+    int usb_used_as_root = 0;
 
     if (root_cache && kernel_block_cache_valid(root_cache)) {
         if (kernel_vfs_mount_fat(&system_vfs, "/", root_cache) != KERNEL_STORAGE_OK)
@@ -877,18 +879,37 @@ int kernel_vfs_system_start(
             kernel_vfs_unlink(&system_vfs, "/VERIFY.TXT") != KERNEL_STORAGE_OK ||
             kernel_vfs_stat(&system_vfs, "/VERIFY.TXT", &st) != KERNEL_STORAGE_ERR_NOT_FOUND)
             return 0;
+    } else if (usb_cache && kernel_block_cache_valid(usb_cache)) {
+        if (kernel_vfs_mount_fat(&system_vfs, "/", usb_cache) == KERNEL_STORAGE_OK) {
+            usb_used_as_root = 1;
+            (void)kernel_vfs_read_file(&system_vfs, "/HELLO.TXT", 0U, buf, sizeof(buf), &root_bytes);
+            (void)kernel_log(0, "KERNEL_VFS_USB_ROOT_MOUNTED");
+        }
     }
 
     if (boot_cache && kernel_block_cache_valid(boot_cache)) {
         const char *boot_prefix = system_vfs.MountCount ? "/boot" : "/";
-        if (kernel_vfs_mount_fat(&system_vfs, boot_prefix, boot_cache) != KERNEL_STORAGE_OK)
-            return 0;
-        const char *check_path = (boot_prefix[1] == '\0')
-            ? "/EFI/BOOT/boot-check.txt"
-            : "/boot/EFI/BOOT/boot-check.txt";
-        if (kernel_vfs_read_file(&system_vfs, check_path, 0U, buf, sizeof(buf), &boot_bytes) != KERNEL_STORAGE_OK ||
-            boot_bytes != 15U || buf[0] != 'O' || buf[1] != 'S')
-            return 0;
+        if (kernel_vfs_mount_fat(&system_vfs, boot_prefix, boot_cache) == KERNEL_STORAGE_OK) {
+            const char *check_path = (boot_prefix[1] == '\0')
+                ? "/EFI/BOOT/boot-check.txt"
+                : "/boot/EFI/BOOT/boot-check.txt";
+            int check_rc = kernel_vfs_read_file(&system_vfs, check_path, 0U, buf, sizeof(buf), &boot_bytes);
+            if (check_rc == KERNEL_STORAGE_OK) {
+                if (boot_bytes != 15U || buf[0] != 'O' || buf[1] != 'S')
+                    return 0;
+            } else if (root_cache && kernel_block_cache_valid(root_cache)) {
+                return 0;
+            }
+        } else {
+            (void)kernel_log(1, "KERNEL_VFS_BOOT_SKIPPED");
+        }
+    }
+
+    if (!usb_used_as_root && usb_cache && kernel_block_cache_valid(usb_cache)) {
+        const char *usb_prefix = system_vfs.MountCount ? "/usb" : "/";
+        if (kernel_vfs_mount_fat(&system_vfs, usb_prefix, usb_cache) == KERNEL_STORAGE_OK) {
+            (void)kernel_log(0, "KERNEL_VFS_USB_MOUNTED");
+        }
     }
 
     return kernel_text("KERNEL_VFS_MOUNTS: ") && kernel_number(system_vfs.MountCount) &&
