@@ -53,15 +53,34 @@ static int insertion_fits(const KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 base,
     return 0;
 }
 
+// ====== kphys_header_valid_private ======
+
+static int kphys_header_valid_private(const KERNEL_PHYSICAL_ALLOCATOR *owner)
+{
+    if (!owner || owner->Ready != 1 || owner->Self != (BOOT_U64)owner ||
+        owner->PhysicalBits < 32 || owner->PhysicalBits > 52 || !owner->NextId ||
+        owner->Count > KERNEL_PHYSICAL_EXTENTS || !owner->TotalPages ||
+        owner->FreePages > owner->TotalPages)
+        return 0;
+    BOOT_U64 free_pages = 0;
+    for (BOOT_U32 i = 0; i < owner->Count; ++i) {
+        const KERNEL_PHYSICAL_EXTENT *range = &owner->Free[i];
+        if (!range->Pages || range->Pages > owner->FreePages - free_pages)
+            return 0;
+        if (i && owner->Free[i - 1].Base + owner->Free[i - 1].Pages * 4096 >= range->Base)
+            return 0;
+        free_pages += range->Pages;
+    }
+    return free_pages == owner->FreePages;
+}
+
 // ====== invarianti prima di ogni modifica e nessuna dereferenziazione fisica ====== //
 
 int kphys_validate(const KERNEL_PHYSICAL_ALLOCATOR *owner)
 {
     BOOT_U32 index, other;
     BOOT_U64 free_pages = 0, live_pages = 0;
-    if (!owner || owner->Ready != 1 || owner->Self != (BOOT_U64)owner ||
-        owner->PhysicalBits < 32 || owner->PhysicalBits > 52 || !owner->NextId ||
-        owner->Count > KERNEL_PHYSICAL_EXTENTS || !owner->TotalPages || owner->FreePages > owner->TotalPages) return 0;
+    if (!kphys_header_valid_private(owner)) return 0;
     for (index = 0; index < owner->Count; ++index) {
         const KERNEL_PHYSICAL_EXTENT *range = &owner->Free[index];
         if (kernel_physical_pages(range->Base, range->Pages, 8, 7, owner->PhysicalBits) != range->Pages ||
@@ -135,7 +154,7 @@ int kphys_allocate_within(KERNEL_PHYSICAL_ALLOCATOR *owner, BOOT_U64 pages,
     BOOT_U64 base = 0, prefix = 0, suffix = 0;
     KERNEL_PHYSICAL_LEASE lease;
     if (!owner || !output || !pages || overlaps(owner, sizeof(*owner), output, sizeof(*output)) ||
-        !kphys_validate(owner) || minimum < 4096 || minimum >= limit || (minimum & 4095) ||
+        !kphys_header_valid_private(owner) || minimum < 4096 || minimum >= limit || (minimum & 4095) ||
         (limit & 4095) || limit > (1ULL << owner->PhysicalBits) || owner->NextId == ~0ULL ||
         output->Base || output->Pages || output->Id || output->Owner) return 0;
     for (slot = 0; slot < KERNEL_PHYSICAL_LEASES; ++slot) if (!owner->Live[slot].Id) break;
@@ -186,7 +205,7 @@ int kphys_release(KERNEL_PHYSICAL_ALLOCATOR *owner, KERNEL_PHYSICAL_LEASE *lease
 {
     BOOT_U32 slot;
     if (!owner || !lease || overlaps(owner, sizeof(*owner), lease, sizeof(*lease)) ||
-        !kphys_validate(owner) || !lease->Id || lease->Owner != (BOOT_U64)owner) return 0;
+        !kphys_header_valid_private(owner) || !lease->Id || lease->Owner != (BOOT_U64)owner) return 0;
     for (slot = 0; slot < KERNEL_PHYSICAL_LEASES; ++slot) {
         const KERNEL_PHYSICAL_LEASE *live = &owner->Live[slot];
         if (live->Id == lease->Id && live->Base == lease->Base && live->Pages == lease->Pages) break;
@@ -205,7 +224,7 @@ int kphys_release(KERNEL_PHYSICAL_ALLOCATOR *owner, KERNEL_PHYSICAL_LEASE *lease
 int kphys_pin(KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lease, BOOT_U32 pin)
 {
     BOOT_U32 slot;
-    if (!owner || !lease || pin > 1 || !kphys_validate(owner) || lease->Owner != (BOOT_U64)owner || !lease->Id) return 0;
+    if (!owner || !lease || pin > 1 || !kphys_header_valid_private(owner) || lease->Owner != (BOOT_U64)owner || !lease->Id) return 0;
     for (slot = 0; slot < KERNEL_PHYSICAL_LEASES; ++slot) {
         const KERNEL_PHYSICAL_LEASE *live = &owner->Live[slot];
         if (live->Id == lease->Id && live->Base == lease->Base && live->Pages == lease->Pages) {
@@ -223,7 +242,7 @@ int kphys_pin(KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lea
 int kphys_is_pinned(const KERNEL_PHYSICAL_ALLOCATOR *owner, const KERNEL_PHYSICAL_LEASE *lease)
 {
     BOOT_U32 slot;
-    if (!owner || !lease || !kphys_validate(owner) || !lease->Id || lease->Owner != (BOOT_U64)owner) return 0;
+    if (!owner || !lease || !kphys_header_valid_private(owner) || !lease->Id || lease->Owner != (BOOT_U64)owner) return 0;
     for (slot = 0; slot < KERNEL_PHYSICAL_LEASES; ++slot) {
         const KERNEL_PHYSICAL_LEASE *live = &owner->Live[slot];
         if (live->Id == lease->Id && live->Base == lease->Base && live->Pages == lease->Pages) return owner->Pins[slot] == 1;

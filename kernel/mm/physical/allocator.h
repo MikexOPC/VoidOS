@@ -3,9 +3,9 @@
 #include "kernel/mm/inventory.h"
 #include "kernel/sync/lock.h"
 #define KERNEL_PHYSICAL_REGIONS 128U
-#define KERNEL_PHYSICAL_EXTENTS 2048U
+#define KERNEL_PHYSICAL_EXTENTS 4096U
 // Generous ceiling for multi-process GUI, SHM surfaces, GPU buffers, and driver rings.
-#define KERNEL_PHYSICAL_LEASES  1024U
+#define KERNEL_PHYSICAL_LEASES  4096U
 typedef struct { BOOT_U64 Base, Pages; } KERNEL_PHYSICAL_EXTENT;
 typedef struct { BOOT_U64 Base, Pages, Id, Owner; } KERNEL_PHYSICAL_LEASE;
 typedef struct {
@@ -18,7 +18,7 @@ typedef struct {
     BOOT_U32 Pins[KERNEL_PHYSICAL_LEASES];
     KERNEL_LOCK Gate;
 } KERNEL_PHYSICAL_ALLOCATOR;
-_Static_assert(sizeof(KERNEL_PHYSICAL_ALLOCATOR) <= 73728, "Metadati allocatore entro 72 KiB");
+_Static_assert(sizeof(KERNEL_PHYSICAL_ALLOCATOR) <= 262144, "Metadati allocatore entro 256 KiB");
 BOOT_U64 kernel_physical_base(BOOT_U64 base);
 BOOT_U64 kernel_physical_pages(BOOT_U64 base, BOOT_U64 pages, BOOT_U64 attributes, BOOT_U32 type, BOOT_U32 bits);
 int kernel_physical_initialize(KERNEL_PHYSICAL_ALLOCATOR *owner, const unsigned char *map,
