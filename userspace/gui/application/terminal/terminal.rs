@@ -22,6 +22,7 @@ const WIN_W: u32 = 680;
 const WIN_H: u32 = 368;
 const MAX_COLS: usize = 144;
 const MAX_ROWS: usize = 40;
+const SCROLLBACK_CAP: usize = 256;
 const CELL_W: i32 = 9;
 const CELL_H: i32 = 18;
 const PAD_X: i32 = 14;
@@ -37,6 +38,10 @@ const CONSOLE_CUR: u32 = rgb(0xE6, 0xED, 0xF3);
 struct TerminalBuffer {
     cells: [[u8; MAX_COLS]; MAX_ROWS],
     prev_cells: [[u8; MAX_COLS]; MAX_ROWS],
+    history: [[u8; MAX_COLS]; SCROLLBACK_CAP],
+    hist_head: usize,
+    hist_len: usize,
+    scroll_offset: usize,
     cols: usize,
     rows: usize,
     row: usize,
@@ -55,6 +60,10 @@ impl TerminalBuffer {
         Self {
             cells: [[b' '; MAX_COLS]; MAX_ROWS],
             prev_cells: [[b' '; MAX_COLS]; MAX_ROWS],
+            history: [[b' '; MAX_COLS]; SCROLLBACK_CAP],
+            hist_head: 0,
+            hist_len: 0,
+            scroll_offset: 0,
             cols: 72,
             rows: 19,
             row: 0,
@@ -92,9 +101,46 @@ impl TerminalBuffer {
         for r in 0..MAX_ROWS {
             self.cells[r] = [b' '; MAX_COLS];
         }
+        self.hist_head = 0;
+        self.hist_len = 0;
+        self.scroll_offset = 0;
         self.row = 0;
         self.col = 0;
         self.full_dirty = true;
+    }
+
+    fn scroll_by(&mut self, delta: i32) {
+        let old = self.scroll_offset;
+        if delta > 0 {
+            let step = (delta as usize).saturating_mul(3);
+            self.scroll_offset = (self.scroll_offset + step).min(self.hist_len);
+        } else if delta < 0 {
+            let step = ((-delta) as usize).saturating_mul(3);
+            self.scroll_offset = self.scroll_offset.saturating_sub(step);
+        }
+        if self.scroll_offset != old {
+            self.full_dirty = true;
+        }
+    }
+
+    fn reset_scroll(&mut self) {
+        if self.scroll_offset != 0 {
+            self.scroll_offset = 0;
+            self.full_dirty = true;
+        }
+    }
+
+    fn visible_row(&self, screen_row: usize) -> &[u8; MAX_COLS] {
+        if self.scroll_offset == 0 || self.hist_len == 0 {
+            return &self.cells[screen_row];
+        }
+        let off = self.scroll_offset.min(self.hist_len);
+        if screen_row < off {
+            let idx = (self.hist_head + SCROLLBACK_CAP - off + screen_row) % SCROLLBACK_CAP;
+            &self.history[idx]
+        } else {
+            &self.cells[screen_row - off]
+        }
     }
 
     fn newline(&mut self) {
@@ -102,6 +148,11 @@ impl TerminalBuffer {
         if self.row + 1 < self.rows {
             self.row += 1;
         } else {
+            self.history[self.hist_head] = self.cells[0];
+            self.hist_head = (self.hist_head + 1) % SCROLLBACK_CAP;
+            if self.hist_len < SCROLLBACK_CAP {
+                self.hist_len += 1;
+            }
             for r in 1..self.rows {
                 self.cells[r - 1] = self.cells[r];
             }
@@ -382,9 +433,21 @@ impl TerminalBuffer {
         canvas.fill_rect(Rect::new(0, 0, cur_w as i32, cur_h as i32), CONSOLE_BG);
         for r in 0..self.rows {
             let y = PAD_Y + (r as i32) * CELL_H;
-            canvas.draw_text_aa(PAD_X, y, &self.cells[r][..self.cols], CONSOLE_FG, CONSOLE_BG);
+            let line = self.visible_row(r);
+            canvas.draw_text_aa(PAD_X, y, &line[..self.cols], CONSOLE_FG, CONSOLE_BG);
         }
-        Self::draw_caret(canvas, self.row.min(self.rows - 1), self.col.min(self.cols - 1));
+        if self.scroll_offset == 0 {
+            Self::draw_caret(canvas, self.row.min(self.rows - 1), self.col.min(self.cols - 1));
+        } else if self.hist_len > 0 && cur_w > 12 && cur_h > 24 {
+            // Scrollbar indicator on the right edge when viewing scrollback history
+            let track_h = (cur_h as i32) - 16;
+            let total = (self.hist_len + self.rows) as i32;
+            let thumb_h = ((self.rows as i32) * track_h / total.max(1)).clamp(16, track_h);
+            let max_y = track_h - thumb_h;
+            let pos = max_y - ((self.scroll_offset as i32) * max_y / (self.hist_len as i32).max(1));
+            canvas.fill_rect(Rect::new((cur_w as i32) - 6, 8, 4, track_h), rgb(0x1C, 0x24, 0x30));
+            canvas.fill_rect(Rect::new((cur_w as i32) - 6, 8 + pos, 4, thumb_h), rgb(0x6C, 0x9E, 0xE6));
+        }
     }
 
     fn render_dirty(&mut self, canvas: &mut Canvas<'_>, theme: &Theme, cur_w: u32, cur_h: u32) -> Rect {
@@ -595,7 +658,7 @@ extern "C" fn program_main(arg: u64) -> ! {
                 } else if msg.kind == MSG_INPUT_SCROLL {
                     let delta = msg.e as i32;
                     if delta != 0 {
-                        term.full_dirty = true;
+                        term.scroll_by(delta);
                         let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
                         let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
                         let dirty = term.render_dirty(&mut canvas, &theme, cur_w, cur_h);
@@ -612,6 +675,7 @@ extern "C" fn program_main(arg: u64) -> ! {
                         }
                     }
                 } else if msg.kind == MSG_CLIPBOARD_DATA {
+                    term.reset_scroll();
                     let n = (msg.e as usize).min(MAX_TITLE_BYTES);
                     for &b in &msg.title[..n] {
                         if b >= 0x20 && b < 0x7F && term.input_len < LINE_CAP {
@@ -642,6 +706,7 @@ extern "C" fn program_main(arg: u64) -> ! {
                         continue;
                     }
                     let ch = (msg.f & 0xFF) as u8;
+                    term.reset_scroll();
                     if ch == 3 {
                         // Ctrl+C: copy current input line to compositor clipboard
                         let copy_len = term.input_len.min(MAX_TITLE_BYTES);
