@@ -159,8 +159,15 @@ int x86_vgpu_present_rect(X86_VGPU_PRESENT *self, BOOT_U32 x, BOOT_U32 y, BOOT_U
 
 // ====== x86_vgpu_present_poll ======
 
-// Every console flush: progress of the update in flight, or the recovery after a timeout.
-int x86_vgpu_present_poll(X86_VGPU_PRESENT *self) { return self->Presenting ? x86_vgpu_present_pump(self) : recover_private(self); }
+// Every console flush: progress of the update in flight, display resize events, or recovery after a timeout.
+int x86_vgpu_present_poll(X86_VGPU_PRESENT *self)
+{
+    if (!self->Presenting)
+        return recover_private(self);
+    if (!x86_vgpu_present_pump(self))
+        return 0;
+    return x86_vgpu_present_check_resize(self);
+}
 
 // ====== x86_vgpu_present_busy ======
 

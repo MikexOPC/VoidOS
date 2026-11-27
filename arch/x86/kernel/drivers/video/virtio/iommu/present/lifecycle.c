@@ -73,6 +73,69 @@ int x86_vgpu_present_cursor(X86_VGPU_PRESENT *self, BOOT_U32 x, BOOT_U32 y, BOOT
     return 1;
 }
 
+// ====== x86_vgpu_present_check_resize ======
+
+// VirtIO 1.2 Section 5.7.4: device config region 3, offset 0x00 events_read (bit 0 = VIRTIO_GPU_EVENT_DISPLAY),
+// offset 0x04 events_clear (W1C). When the host window resizes, re-query GET_DISPLAY_INFO (5.7.6.8) and
+// rebind scanout 0 on the pre-allocated 1920x1080 backing surface if the new geometry fits.
+int x86_vgpu_present_check_resize(X86_VGPU_PRESENT *self)
+{
+    if (!self || !self->Presenting || self->Phase || !os_damage_empty(&self->Damage) || !self->SurfaceSaved)
+        return 1;
+    uint32_t events = 0U;
+    if (!x86_vgpu_queue_register(&self->Native, 3U, 0U, 4U, 0U, &events))
+        return 1;
+    if ((events & 1U) == 0U)
+        return 1;
+
+    uint32_t clear_bit = 1U;
+    (void)x86_vgpu_queue_register(&self->Native, 3U, 4U, 4U, 1U, &clear_bit);
+
+    uint32_t old_w = self->Queue.Width;
+    uint32_t old_h = self->Queue.Height;
+    uint32_t old_scanout = self->Queue.Scanout;
+    if (!kernel_vgpu_queue_exchange(&self->Queue))
+        return x86_vgpu_present_fallback(self, "KERNEL_VGPU_RESIZE_INFO_FAILED");
+
+    uint32_t new_w = self->Queue.Width;
+    uint32_t new_h = self->Queue.Height;
+    uint32_t new_scanout = self->Queue.Scanout;
+    if (new_w == old_w && new_h == old_h)
+        return 1;
+
+    BOOT_U64 needed = kernel_vgpu_surface_bytes(new_w, new_h);
+    if (!needed || needed > self->SurfaceSaved->Authority.Bytes) {
+        self->Queue.Width = old_w;
+        self->Queue.Height = old_h;
+        self->Queue.Scanout = old_scanout;
+        return 1;
+    }
+
+    self->Queue.Width = old_w;
+    self->Queue.Height = old_h;
+    self->Queue.Scanout = old_scanout;
+    if (!kernel_vgpu_scanout_unbind(&self->Queue, &self->Resource) ||
+        !kernel_vgpu_resource_close(&self->Queue, &self->Resource))
+        return x86_vgpu_present_fallback(self, "KERNEL_VGPU_RESIZE_UNBIND_FAILED");
+
+    self->Queue.Width = new_w;
+    self->Queue.Height = new_h;
+    self->Queue.Scanout = new_scanout;
+    self->Resource = (VGPU_RESOURCE){0};
+    if (!kernel_vgpu_resource_open(&self->Queue, &self->Resource, self->SurfaceSaved->Authority.Data.Base,
+            self->BackingSaved, new_w, new_h) ||
+        !kernel_vgpu_scanout_bind(&self->Queue, &self->Resource))
+        return x86_vgpu_present_fallback(self, "KERNEL_VGPU_RESIZE_REBIND_FAILED");
+
+    self->Target.Width = new_w;
+    self->Target.Height = new_h;
+    self->Target.Stride = new_w;
+    self->Redraw = 1U;
+    (void)(kernel_text("KERNEL_VGPU_RESIZE: ") && kernel_number(new_w) &&
+        kernel_text("x") && kernel_number(new_h) && kernel_text("\n"));
+    return 1;
+}
+
 // ====== target_private ======
 
 // The console target stays valid only while the surface is the registered, published one. The

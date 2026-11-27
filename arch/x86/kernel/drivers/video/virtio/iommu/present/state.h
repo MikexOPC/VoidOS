@@ -14,6 +14,7 @@
 // lifecycle.c
 int x86_vgpu_present_fallback(X86_VGPU_PRESENT *self, const char *reason);
 const char *x86_vgpu_present_bringup(X86_VGPU_PRESENT *self);
+int x86_vgpu_present_check_resize(X86_VGPU_PRESENT *self);
 // update.c
 int x86_vgpu_present_fault(X86_VGPU_PRESENT *self);
 int x86_vgpu_present_pump(X86_VGPU_PRESENT *self);

@@ -59,12 +59,13 @@ int x86_vgpu_queue_clock(void *opaque,uint32_t *value)
 
 // ====== x86_vgpu_queue_register ======
 
-// VirtIO1.2 4.1.4.3/4.1.4.4/4.1.4.5: common fields, u16 notify, read-clear ISR byte.
+// VirtIO1.2 4.1.4.3/4.1.4.4/4.1.4.5/5.7.4: common fields, u16 notify, read-clear ISR byte,
+// and device-specific config (region 3: offset 0 events_read R/O, offset 4 events_clear W/O).
 // Notify address = capability base + queue_notify_off * multiplier; never an unbounded pointer.
 int x86_vgpu_queue_register(void *opaque,uint32_t region,uint32_t offset,uint32_t width,uint32_t write,uint32_t *value)
 {
     const X86_VGPU_QUEUE_TRANSPORT *native=opaque;
-    if (!value || !live_private(native) || region>2 || write>1 ||
+    if (!value || !live_private(native) || region>3 || write>1 ||
         os_address_ranges_overlap((BOOT_U64)value,4,(BOOT_U64)native,sizeof(*native)) ||
         os_address_ranges_overlap((BOOT_U64)value,4,(BOOT_U64)native->Transport,sizeof(*native->Transport)) ||
         os_address_ranges_overlap((BOOT_U64)value,4,(BOOT_U64)native->Transport->Owner,sizeof(*native->Transport->Owner))) return 0;
@@ -78,7 +79,11 @@ int x86_vgpu_queue_register(void *opaque,uint32_t region,uint32_t offset,uint32_
     } else if (region==1) {
         if (width!=2 || !write || *value>1 || offset>65535) return 0;
         at=(BOOT_U64)offset*cap->Multiplier;
-    } else if (width!=1 || write || offset) return 0;
+    } else if (region==2) {
+        if (width!=1 || write || offset) return 0;
+    } else {
+        if (width!=4 || (offset==0 && write) || (offset==4 && !write) || (offset!=0 && offset!=4)) return 0;
+    }
     const X86_VGPU_MAPPING *owner=native->Transport->Owner;
     if (!width || (width!=1 && width!=2 && width!=4) || at>cap->Length || width>cap->Length-at ||
         (width==2 && write && *value>65535)) return 0;
