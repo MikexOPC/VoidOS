@@ -1,4 +1,4 @@
-# Stato di VoidOS — 26 novembre 2026
+# Stato di VoidOS — 27 novembre 2026
 
 ## Immagine di produzione
 
@@ -53,9 +53,9 @@ Implementato driver xHCI 1.2 (BIOS handoff, `HCRST`, DCBAA/Scratchpad, Command/E
 e tutti gli AP con fallback automatico su xAPIC; verificati timer LAPIC, IPI
 INIT/SIPI, IPI di servizio/TLB shootdown, console wake AP1→BSP, NMI panic SMP e
 multi-app GUI.
-**Desktop, VirtIO-GPU 2D reale, cursore hardware e `SYS_LIST_DIR` — fatta (su QEMU TCG).**
-Attivato il driver **VirtIO-GPU 2D** nell'immagine di produzione `ordinary` (anche senza VT-d IOMMU tramite DMA diretto e senza GOP tramite display mode-setting nativo `GET_DISPLAY_INFO` -> `RESOURCE_CREATE_2D` -> `SET_SCANOUT` -> `TRANSFER_TO_HOST_2D` + `RESOURCE_FLUSH`), compatibile con lo scheduler preemptive `IF=1`. Aggiunto il **cursore hardware su `cursorq`** (VirtIO 1.2 §5.7.6.10, risorsa 64×64 `B8G8R8A8_UNORM`, `UPDATE_CURSOR`/`MOVE_CURSOR`, flag `X86_GPU_CAP_HW_CURSOR`, con fallback automatico al cursore software 18×18 su GOP). Introdotti `SYS_GPU_INFO` (`29`), primitive 2D SSE2 in `libui`, Window Manager con drag/z-order/minimize, File Manager Ring 3 (`/bin/files.elf`) e `SYS_LIST_DIR` estesa fino a 4096 byte (256 voci).
-Restano: prova interattiva WHPX/SDL e hardware fisico (xHCI USB, x2APIC).
+**Desktop, VirtIO-GPU 2D reale, cursore hardware e Window Manager — fatta (su QEMU TCG).**
+Attivato il driver **VirtIO-GPU 2D** nell'immagine di produzione `ordinary` (anche senza VT-d IOMMU tramite DMA diretto e senza GOP tramite mode-setting nativo, più gestione `VIRTIO_GPU_EVENT_DISPLAY` / `kernel_gui_display_rebind`) e il **cursore hardware su `cursorq`** (64×64 `B8G8R8A8_UNORM`, `X86_GPU_CAP_HW_CURSOR`, con fallback software su GOP). Nel desktop Ring 3: Terminale stile console con font 9×18 anti-alias e comandi reali (`help`, `print`, `fl`, `rp`, `write`, `rm`, `sync`, `clear`, `exit`), blur nativo del dock generato dallo sfondo con orologio italiano (CET/CEST) e punto per app ridotte, drag fluido su coordinate assolute, wallpaper cachato 1:1, massimizzazione/ripristino e resize interattivo animati (`MSG_RESIZE_WINDOW` con ridisegno nativo in `terminal`, `sysmon` e `files`, angoli inferiori arrotondati sul Default Dock), heap SHM multi-regione in `libvoid`, layout responsive per qualsiasi risoluzione e launcher desktop con `-display gtk,zoom-to-fit=on`.
+Restano: prova interattiva WHPX e hardware fisico (xHCI USB, x2APIC).
 Il cancello "base solida" (10/10 boot + soak da 30+30 minuti senza errori né
 perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
@@ -88,18 +88,8 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 
 ## Prove e prossimo passo
 
-Verifiche correnti sull'immagine di produzione (x2APIC + xHCI HID/MSC/Hub + VirtIO-GPU 2D/cursorq):
-33/33 test host (`meson test`, ASan inclusi `libvoid_rust`, `libui_rust` SSE2,
-`xhci_host` e `vfs_fat_host`), 10/10 boot `--ordinary-shell --smp 4`
-(`qemu-runner-18ebb7fecdffb170-a188`, con self-test parallelo di `ui`, `terminal`,
-`sysmon` e `files`), 1/1 boot multi-app `--ordinary-gui 1 --smp 4`
-(`qemu-runner-18ebb7ecc17ac9b0-3c60`), 1/1 boot live `-vga none -device virtio-gpu-pci`
-(senza GOP né VT-d: `KERNEL_VGPU_PRESENTING`, `KERNEL_VGPU_CURSOR_READY`, `1280x800`),
-1/1 boot live `-vga none -device virtio-vga` (`KERNEL_VGPU_PRESENTING`, `KERNEL_VGPU_CURSOR_READY`),
-prove live QEMU `usb-storage`, hotplug VFS `/usb` e `-device usb-hub`,
-3/3 boot fallback xAPIC (`-cpu max,-x2apic`), 3/3 boot WHPX headless in x2APIC,
-e 1/1 soak continuo `--ordinary-soak 30 --smp 4`
-(`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min, 248 round, 0 overruns, 0 perdite).
+Verifiche correnti sull'immagine di produzione (x2APIC + xHCI HID/MSC/Hub + VirtIO-GPU 2D/cursorq + Window Manager animato):
+33/33 test host (`meson test`, ASan inclusi `libvoid_rust` multi-regione, `libui_rust` AA/SSE2/resize, `gui_host` rebind, `xhci_host` e `vfs_fat_host`), 2/2 test `qemu-runner`, 10/10 boot `--ordinary-shell --smp 4` (`qemu-runner-18ebed8b9fd98e70-8198`), 1/1 boot multi-app `--ordinary-gui 1 --smp 4` (`qemu-runner-18ebedc5ac23b950-7ea8`), boot live `-vga none -device virtio-vga` a `640×480`, `1280×720` e `1280×800` (`KERNEL_VGPU_PRESENTING`, `KERNEL_VGPU_CURSOR_READY`), prove live QEMU `usb-storage`, hotplug VFS `/usb` e `-device usb-hub`, 3/3 boot fallback xAPIC (`-cpu max,-x2apic`), 3/3 boot WHPX headless in x2APIC, e 1/1 soak continuo `--ordinary-soak 30 --smp 4` (`qemu-runner-18eba603e3ccafc4-2fc8`, 30+30 min, 248 round, 0 overruns, 0 perdite).
 Validazioni in [gui.md](validation/gui.md),
 [consolidamento.md](validation/consolidamento.md),
 [processi.md](validation/processi.md), [storage.md](validation/storage.md),
