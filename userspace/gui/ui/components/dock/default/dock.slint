@@ -96,9 +96,9 @@ export component DefaultDock inherits Rectangle {
                 }
             }
 
-            // 2) Wider Search bar (216px, vertically centered inside 38px dock-content)
+            // 2) Responsive Search bar (216px on standard/wide screens, shrinks cleanly on compact monitors)
             Rectangle {
-                width: 216px;
+                width: min(216px, max(100px, root.width - 360px));
                 height: 100%;
                 background: transparent;
 

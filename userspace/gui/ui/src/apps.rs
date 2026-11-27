@@ -999,6 +999,12 @@ impl Application {
             self.height = msg.f;
             self.view_w = msg.e as f32;
             self.view_h = msg.f as f32;
+            let max_x = ((display_width as f32) - (self.view_w + 2.0) - 16.0).max(0.0);
+            let max_y = ((display_height as f32) - (self.view_h + 34.0) - 72.0).max(0.0);
+            self.pos_x = self.pos_x.clamp(0.0, max_x);
+            self.pos_y = self.pos_y.clamp(0.0, max_y);
+            self.saved_x = self.pos_x;
+            self.saved_y = self.pos_y;
             self.saved_w = self.view_w;
             self.saved_h = self.view_h;
             self.buffer = SharedPixelBuffer::<Rgb8Pixel>::new(self.width, self.height);

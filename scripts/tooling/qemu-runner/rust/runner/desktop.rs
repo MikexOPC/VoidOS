@@ -65,17 +65,9 @@ pub fn run(tcg: bool) -> Result<bool, String> {
             index += 2;
             continue;
         }
-        if option == "-vga" {
-            args.push("-vga".into());
-            args.push("none".into());
-            args.push("-device".into());
-            args.push("virtio-vga,xres=1280,yres=720".into());
-            index += 2;
-            continue;
-        }
         args.push(option.clone());
         if option == "-accel" || option == "-display" {
-            args.push(if option == "-display" { "gtk,zoom-to-fit=on,show-menubar=off,show-tabs=off" }
+            args.push(if option == "-display" { "gtk,zoom-to-fit=on" }
                 else if tcg { "tcg" } else { "whpx,kernel-irqchip=off" }.into());
             index += 2;
         } else {
