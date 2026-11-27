@@ -530,6 +530,105 @@ static void test_parse_hub_descriptor(void)
     assert(kernel_xhci_parse_hub_config(fake_msc_cfg, sizeof(fake_msc_cfg), &cfg_val) == 0);
 }
 
+// ====== test_hid_report_tablet_and_rel_pointer ======
+
+typedef struct {
+    int      AbsCalled;
+    int      RelCalled;
+    int32_t  X;
+    int32_t  Y;
+    int32_t  MinX;
+    int32_t  MaxX;
+    int32_t  MinY;
+    int32_t  MaxY;
+    uint32_t Buttons;
+} REPORT_PTR_CAPTURE;
+
+static void capture_abs_cb(void *ctx, int32_t ax, int32_t ay, int32_t min_x, int32_t max_x,
+    int32_t min_y, int32_t max_y, uint32_t buttons)
+{
+    REPORT_PTR_CAPTURE *c = (REPORT_PTR_CAPTURE *)ctx;
+    c->AbsCalled++;
+    c->X = ax; c->Y = ay;
+    c->MinX = min_x; c->MaxX = max_x;
+    c->MinY = min_y; c->MaxY = max_y;
+    c->Buttons = buttons;
+}
+
+static void capture_rel_cb(void *ctx, int32_t dx, int32_t dy, uint32_t buttons)
+{
+    REPORT_PTR_CAPTURE *c = (REPORT_PTR_CAPTURE *)ctx;
+    c->RelCalled++;
+    c->X = dx; c->Y = dy;
+    c->Buttons = buttons;
+}
+
+static void test_hid_report_tablet_and_rel_pointer(void)
+{
+    // QEMU usb-tablet exact HID Report Descriptor (74 bytes):
+    // Buttons(3 bits)+Pad(5 bits), Abs X(16b 0..32767), Abs Y(16b 0..32767), Rel Wheel(8b -127..127).
+    static const uint8_t qemu_tablet_rdesc[] = {
+        0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x09, 0x01,
+        0xA1, 0x00, 0x05, 0x09, 0x19, 0x01, 0x29, 0x03,
+        0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01,
+        0x81, 0x02, 0x95, 0x01, 0x75, 0x05, 0x81, 0x01,
+        0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15, 0x00,
+        0x26, 0xFF, 0x7F, 0x35, 0x00, 0x46, 0xFF, 0x7F,
+        0x75, 0x10, 0x95, 0x02, 0x81, 0x02, 0x05, 0x01,
+        0x09, 0x38, 0x15, 0x81, 0x25, 0x7F, 0x35, 0x00,
+        0x45, 0x00, 0x75, 0x08, 0x95, 0x01, 0x81, 0x06,
+        0xC0, 0xC0
+    };
+    XHCI_HID_REPORT_LAYOUT lay;
+    assert(kernel_xhci_parse_hid_report_desc(qemu_tablet_rdesc, sizeof(qemu_tablet_rdesc), &lay) == 1);
+    assert(lay.Valid == 1U && lay.IsAbsolute == 1U && lay.HasReportId == 0U);
+    assert(lay.ButtonsBit == 0U && lay.ButtonsCount == 3U);
+    assert(lay.XBit == 8U && lay.XBits == 16U && lay.XMin == 0 && lay.XMax == 32767);
+    assert(lay.YBit == 24U && lay.YBits == 16U && lay.YMin == 0 && lay.YMax == 32767);
+    assert(lay.WheelBit == 40U && lay.WheelBits == 8U);
+
+    // Report: button1=1, abs_x=16384 (0x4000), abs_y=8192 (0x2000), wheel=-1 (0xFF)
+    const uint8_t rep[6] = { 0x01, 0x00, 0x40, 0x00, 0x20, 0xFF };
+    REPORT_PTR_CAPTURE cap = {0};
+    kernel_xhci_decode_hid_report_pointer(&lay, rep, sizeof(rep), capture_rel_cb, capture_abs_cb, &cap);
+    assert(cap.AbsCalled == 1 && cap.RelCalled == 0);
+    assert(cap.X == 16384 && cap.Y == 8192);
+    assert(cap.MinX == 0 && cap.MaxX == 32767 && cap.MinY == 0 && cap.MaxY == 32767);
+    assert((cap.Buttons & 7U) == 1U);
+    assert((int8_t)((cap.Buttons >> 8) & 0xFFU) == -1);
+
+    // Config descriptor for non-boot HID tablet (SubClass=0, Protocol=0) with HID descriptor (0x21)
+    static const uint8_t tablet_cfg[] = {
+        9, 2, 34, 0, 1, 1, 0, 0xA0, 50,
+        9, 4, 0, 0, 1, 0x03, 0x00, 0x00, 0,
+        9, 0x21, 0x01, 0x01, 0, 1, 0x22, 74, 0,
+        7, 5, 0x81, 0x03, 8, 0, 10
+    };
+    XHCI_HID_INFO hinfo = {0};
+    assert(kernel_xhci_parse_hid_config(tablet_cfg, sizeof(tablet_cfg), &hinfo) == 1);
+    assert(hinfo.SubClass == 0U && hinfo.Protocol == 0U && hinfo.ReportDescLen == 74U);
+
+    // Relative mouse with Report ID = 2
+    static const uint8_t rel_rdesc[] = {
+        0x05, 0x01, 0x09, 0x02, 0xA1, 0x01,
+        0x85, 0x02, // Report ID 2
+        0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01, 0x81, 0x02,
+        0x95, 0x01, 0x75, 0x05, 0x81, 0x01,
+        0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15, 0x81, 0x25, 0x7F, 0x75, 0x08, 0x95, 0x02, 0x81, 0x06,
+        0xC0
+    };
+    XHCI_HID_REPORT_LAYOUT rlay;
+    assert(kernel_xhci_parse_hid_report_desc(rel_rdesc, sizeof(rel_rdesc), &rlay) == 1);
+    assert(rlay.Valid == 1U && rlay.IsAbsolute == 0U && rlay.HasReportId == 1U && rlay.ReportId == 2U);
+    REPORT_PTR_CAPTURE rcap = {0};
+    const uint8_t bad_id[4] = { 0x01, 0x02, 0x05, 0xFB };
+    kernel_xhci_decode_hid_report_pointer(&rlay, bad_id, sizeof(bad_id), capture_rel_cb, capture_abs_cb, &rcap);
+    assert(rcap.RelCalled == 0);
+    const uint8_t good_id[4] = { 0x02, 0x02, 0x05, 0xFB }; // dx=+5, dy=-5, btn=2
+    kernel_xhci_decode_hid_report_pointer(&rlay, good_id, sizeof(good_id), capture_rel_cb, capture_abs_cb, &rcap);
+    assert(rcap.RelCalled == 1 && rcap.X == 5 && rcap.Y == -5 && (rcap.Buttons & 7U) == 2U);
+}
+
 // ====== main ======
 
 int main(void)
@@ -541,6 +640,7 @@ int main(void)
     test_parse_msc_descriptor();
     test_msc_bot_read_write();
     test_parse_hub_descriptor();
+    test_hid_report_tablet_and_rel_pointer();
     puts("xhci_host: PASS");
     return 0;
 }

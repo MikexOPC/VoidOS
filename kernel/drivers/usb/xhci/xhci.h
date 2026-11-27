@@ -93,10 +93,13 @@
 #define USB_DESC_CONFIG         2U
 #define USB_DESC_INTERFACE      4U
 #define USB_DESC_ENDPOINT       5U
+#define USB_DESC_HID            0x21U
+#define USB_DESC_HID_REPORT     0x22U
 #define USB_CLASS_HID           3U
 #define USB_SUBCLASS_BOOT       1U
 #define USB_PROTO_KEYBOARD      1U
 #define USB_PROTO_MOUSE         2U
+#define USB_PROTO_REPORT_PTR    3U
 #define USB_CLASS_MSC           8U
 #define USB_SUBCLASS_SCSI       6U
 #define USB_PROTO_BOT           0x50U
@@ -130,12 +133,33 @@ _Static_assert(sizeof(XHCI_ERST_ENTRY) == 16U, "xHCI ERST entry ABI must be 16 b
 typedef struct {
     uint8_t   ConfigValue;
     uint8_t   InterfaceNumber;
+    uint8_t   SubClass;
     uint8_t   Protocol;
     uint8_t   EndpointAddr;
-    uint16_t  MaxPacketSize;
     uint8_t   Interval;
-    uint8_t   Reserved;
+    uint16_t  MaxPacketSize;
+    uint16_t  ReportDescLen;
+    uint16_t  Reserved;
 } XHCI_HID_INFO;
+
+typedef struct {
+    uint8_t   Valid;
+    uint8_t   IsAbsolute;
+    uint8_t   HasReportId;
+    uint8_t   ReportId;
+    uint16_t  ButtonsBit;
+    uint8_t   ButtonsCount;
+    uint8_t   WheelBits;
+    uint16_t  XBit;
+    uint8_t   XBits;
+    uint8_t   YBits;
+    uint16_t  YBit;
+    uint16_t  WheelBit;
+    int32_t   XMin;
+    int32_t   XMax;
+    int32_t   YMin;
+    int32_t   YMax;
+} XHCI_HID_REPORT_LAYOUT;
 
 typedef struct {
     uint8_t   Active;
@@ -155,6 +179,7 @@ typedef struct {
     uint8_t  *ReportBuf;
     uint64_t  ReportBufPhys;
     uint8_t   PrevReport[8];
+    XHCI_HID_REPORT_LAYOUT ReportLayout;
 } XHCI_HID_SLOT;
 
 typedef struct {
@@ -198,6 +223,8 @@ typedef struct {
 
 typedef void (*XHCI_KEY_CALLBACK)(void *ctx, uint32_t code, uint32_t scalar, uint32_t flags);
 typedef void (*XHCI_MOUSE_CALLBACK)(void *ctx, int32_t dx, int32_t dy, uint32_t buttons);
+typedef void (*XHCI_ABS_MOUSE_CALLBACK)(void *ctx, int32_t abs_x, int32_t abs_y,
+    int32_t min_x, int32_t max_x, int32_t min_y, int32_t max_y, uint32_t buttons);
 
 typedef struct {
     void     *Context;
@@ -209,8 +236,9 @@ typedef struct {
     void    (*Barrier)(void *ctx);
     void   *(*AllocDmaPage)(void *ctx, uint64_t *phys_out);
     int     (*ClockRead)(void *ctx, uint32_t *ticks_out);
-    XHCI_KEY_CALLBACK   OnKey;
-    XHCI_MOUSE_CALLBACK OnMouse;
+    XHCI_KEY_CALLBACK       OnKey;
+    XHCI_MOUSE_CALLBACK     OnMouse;
+    XHCI_ABS_MOUSE_CALLBACK OnAbsMouse;
 } KERNEL_XHCI_TRANSPORT;
 
 typedef struct {
@@ -248,12 +276,16 @@ typedef struct {
 } KERNEL_XHCI_DEVICE;
 
 int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INFO *out);
+int kernel_xhci_parse_hid_report_desc(const uint8_t *desc, uint32_t len, XHCI_HID_REPORT_LAYOUT *out);
 int kernel_xhci_parse_msc_config(const uint8_t *desc, uint32_t len, XHCI_MSC_INFO *out);
 int kernel_xhci_parse_hub_config(const uint8_t *desc, uint32_t len, uint8_t *config_val_out);
 void kernel_xhci_decode_hid_kbd(uint8_t prev_report[8], const uint8_t report[8],
     XHCI_KEY_CALLBACK on_key, void *ctx);
 void kernel_xhci_decode_hid_mouse(const uint8_t *report, uint32_t len,
     XHCI_MOUSE_CALLBACK on_mouse, void *ctx);
+void kernel_xhci_decode_hid_report_pointer(const XHCI_HID_REPORT_LAYOUT *layout,
+    const uint8_t *report, uint32_t len, XHCI_MOUSE_CALLBACK on_mouse,
+    XHCI_ABS_MOUSE_CALLBACK on_abs_mouse, void *ctx);
 
 int kernel_xhci_init(KERNEL_XHCI_DEVICE *dev, const KERNEL_XHCI_TRANSPORT *transport);
 uint32_t kernel_xhci_poll_events(KERNEL_XHCI_DEVICE *dev);

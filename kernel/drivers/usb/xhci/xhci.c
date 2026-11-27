@@ -93,7 +93,7 @@ static int wait_op_bits_private(KERNEL_XHCI_DEVICE *dev, uint32_t op_off,
 
 // ====== kernel_xhci_parse_hid_config ======
 
-// USB 2.0 §9.6.3/9.6.5/9.6.6 & HID 1.11 §4.2: parse Configuration descriptor for Boot HID interface + Interrupt IN EP.
+// USB 2.0 §9.6.3/9.6.5/9.6.6 & HID 1.11 §4.2/§6.2.1: parse Configuration descriptor for HID interface + Interrupt IN EP.
 int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INFO *out)
 {
     if (!desc || !out || len < 9U)
@@ -105,8 +105,10 @@ int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INF
         total = len;
     uint8_t config_val = desc[5];
     uint8_t cur_iface = 0;
+    uint8_t cur_sub = 0;
     uint8_t cur_proto = 0;
-    int in_boot_hid = 0;
+    uint16_t cur_report_len = 0;
+    int in_hid = 0;
 
     uint32_t pos = 0;
     while (pos + 2U <= total) {
@@ -118,15 +120,22 @@ int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INF
             uint8_t iclass = desc[pos + 5U];
             uint8_t isub = desc[pos + 6U];
             uint8_t iproto = desc[pos + 7U];
-            if (iclass == USB_CLASS_HID && isub == USB_SUBCLASS_BOOT &&
-                (iproto == USB_PROTO_KEYBOARD || iproto == USB_PROTO_MOUSE)) {
+            if (iclass == USB_CLASS_HID &&
+                ((isub == USB_SUBCLASS_BOOT && (iproto == USB_PROTO_KEYBOARD || iproto == USB_PROTO_MOUSE)) ||
+                 (isub == 0U && iproto == 0U))) {
                 cur_iface = desc[pos + 2U];
+                cur_sub = isub;
                 cur_proto = iproto;
-                in_boot_hid = 1;
+                cur_report_len = 0U;
+                in_hid = 1;
             } else {
-                in_boot_hid = 0;
+                in_hid = 0;
             }
-        } else if (b_type == USB_DESC_ENDPOINT && b_len >= 7U && in_boot_hid) {
+        } else if (b_type == USB_DESC_HID && b_len >= 9U && in_hid) {
+            // HID 1.11 §6.2.1: offset 6 = bDescriptorType (0x22=Report), offset 7..8 = wDescriptorLength.
+            if (desc[pos + 6U] == USB_DESC_HID_REPORT)
+                cur_report_len = (uint16_t)desc[pos + 7U] | ((uint16_t)desc[pos + 8U] << 8);
+        } else if (b_type == USB_DESC_ENDPOINT && b_len >= 7U && in_hid) {
             uint8_t ep_addr = desc[pos + 2U];
             uint8_t ep_attr = desc[pos + 3U];
             uint16_t max_pkt = (uint16_t)desc[pos + 4U] | ((uint16_t)desc[pos + 5U] << 8);
@@ -135,10 +144,12 @@ int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INF
             if ((ep_addr & 0x80U) != 0U && (ep_attr & 0x03U) == 3U && max_pkt >= 3U) {
                 out->ConfigValue = config_val;
                 out->InterfaceNumber = cur_iface;
+                out->SubClass = cur_sub;
                 out->Protocol = cur_proto;
                 out->EndpointAddr = ep_addr;
                 out->MaxPacketSize = max_pkt;
                 out->Interval = interval ? interval : 10U;
+                out->ReportDescLen = cur_report_len;
                 out->Reserved = 0U;
                 return 1;
             }
@@ -146,6 +157,212 @@ int kernel_xhci_parse_hid_config(const uint8_t *desc, uint32_t len, XHCI_HID_INF
         pos += b_len;
     }
     return 0;
+}
+
+// ====== hid_item_signed_private ======
+
+static int32_t hid_item_signed_private(uint32_t raw, uint32_t size)
+{
+    if (size == 1U && (raw & 0x80U))
+        return (int32_t)(raw | 0xFFFFFF00U);
+    if (size == 2U && (raw & 0x8000U))
+        return (int32_t)(raw | 0xFFFF0000U);
+    return (int32_t)raw;
+}
+
+// ====== kernel_xhci_parse_hid_report_desc ======
+
+// USB HID 1.11 §6.2.2 (Short Items): parse pointer/tablet Input fields (Buttons, X, Y, Wheel).
+int kernel_xhci_parse_hid_report_desc(const uint8_t *desc, uint32_t len, XHCI_HID_REPORT_LAYOUT *out)
+{
+    if (!desc || !out || !len)
+        return 0;
+    zero_mem_private(out, sizeof(*out));
+
+    uint32_t usage_page = 0U;
+    int32_t logical_min = 0;
+    int32_t logical_max = 0;
+    uint32_t report_size = 0U;
+    uint32_t report_count = 0U;
+    uint32_t report_id = 0U;
+    int has_report_id = 0;
+
+    uint32_t local_usages[16];
+    uint32_t local_usage_count = 0U;
+    uint32_t usage_min = 0U;
+    uint32_t usage_max = 0U;
+    int has_usage_range = 0;
+
+    uint32_t bit_off = 0U;
+    int x_abs = 0, y_abs = 0;
+
+    uint32_t pos = 0U;
+    while (pos < len) {
+        uint8_t prefix = desc[pos++];
+        if (prefix == 0xFEU) {
+            // Long item (§6.2.2.3): skip [bDataSize, bLongItemTag, data...]
+            if (pos + 2U > len)
+                break;
+            uint32_t lsz = desc[pos];
+            pos += 2U + lsz;
+            continue;
+        }
+        uint32_t b_size = prefix & 3U;
+        if (b_size == 3U)
+            b_size = 4U;
+        uint32_t b_type = (prefix >> 2) & 3U;
+        uint32_t b_tag = (prefix >> 4) & 0x0FU;
+        if (pos + b_size > len)
+            break;
+        uint32_t val = 0U;
+        for (uint32_t k = 0; k < b_size; ++k)
+            val |= ((uint32_t)desc[pos + k] << (k * 8U));
+        pos += b_size;
+
+        if (b_type == 1U) {
+            // Global items (§6.2.2.7)
+            if (b_tag == 0U) usage_page = val;
+            else if (b_tag == 1U) logical_min = hid_item_signed_private(val, b_size);
+            else if (b_tag == 2U) logical_max = hid_item_signed_private(val, b_size);
+            else if (b_tag == 7U) report_size = val;
+            else if (b_tag == 8U) {
+                if (!has_report_id) {
+                    report_id = val & 0xFFU;
+                    has_report_id = 1;
+                    out->HasReportId = 1U;
+                    out->ReportId = (uint8_t)report_id;
+                    bit_off = 8U;
+                } else if ((val & 0xFFU) != report_id) {
+                    // Stop parsing at a second distinct Report ID to keep first pointer report intact.
+                    break;
+                }
+            }
+            else if (b_tag == 9U) report_count = val;
+        } else if (b_type == 2U) {
+            // Local items (§6.2.2.8)
+            if (b_tag == 0U && local_usage_count < 16U)
+                local_usages[local_usage_count++] = val;
+            else if (b_tag == 1U) { usage_min = val; has_usage_range = 1; }
+            else if (b_tag == 2U) { usage_max = val; has_usage_range = 1; }
+        } else if (b_type == 0U) {
+            // Main items (§6.2.2.4)
+            if (b_tag == 8U) {
+                // Input item: bit 0 = Constant, bit 1 = Variable, bit 2 = Relative (0 = Absolute).
+                int is_data = (val & 1U) == 0U;
+                int is_var = (val & 2U) != 0U;
+                int is_abs = (val & 4U) == 0U;
+                if (is_data && is_var && report_size > 0U && report_size <= 32U && report_count > 0U) {
+                    if (usage_page == 0x09U && !out->ButtonsCount) {
+                        out->ButtonsBit = (uint16_t)bit_off;
+                        uint32_t cnt = report_count > 8U ? 8U : report_count;
+                        out->ButtonsCount = (uint8_t)cnt;
+                    } else if (usage_page == 0x01U) {
+                        for (uint32_t i = 0; i < report_count; ++i) {
+                            uint32_t u = 0U;
+                            if (i < local_usage_count)
+                                u = local_usages[i];
+                            else if (has_usage_range && usage_min + i <= usage_max)
+                                u = usage_min + i;
+                            else if (local_usage_count > 0U)
+                                u = local_usages[local_usage_count - 1U];
+                            uint32_t fbit = bit_off + i * report_size;
+                            if (u == 0x30U && !out->XBits) {
+                                out->XBit = (uint16_t)fbit;
+                                out->XBits = (uint8_t)report_size;
+                                out->XMin = logical_min;
+                                out->XMax = logical_max;
+                                x_abs = is_abs;
+                            } else if (u == 0x31U && !out->YBits) {
+                                out->YBit = (uint16_t)fbit;
+                                out->YBits = (uint8_t)report_size;
+                                out->YMin = logical_min;
+                                out->YMax = logical_max;
+                                y_abs = is_abs;
+                            } else if (u == 0x38U && !out->WheelBits) {
+                                out->WheelBit = (uint16_t)fbit;
+                                out->WheelBits = (uint8_t)report_size;
+                            }
+                        }
+                    }
+                }
+                bit_off += report_size * report_count;
+            }
+            // Clear local items after every Main item (§6.2.2.8)
+            local_usage_count = 0U;
+            has_usage_range = 0;
+        }
+    }
+
+    if (out->XBits >= 8U && out->XBits <= 24U && out->YBits >= 8U && out->YBits <= 24U) {
+        if (x_abs && y_abs && out->XMax > out->XMin && out->YMax > out->YMin)
+            out->IsAbsolute = 1U;
+        out->Valid = 1U;
+        return 1;
+    }
+    return 0;
+}
+
+// ====== extract_bits_private ======
+
+static uint32_t extract_bits_private(const uint8_t *buf, uint32_t len_bytes, uint32_t bit_off, uint32_t bit_len)
+{
+    if (!buf || !bit_len || bit_len > 32U || (bit_off + bit_len + 7U) / 8U > len_bytes)
+        return 0U;
+    uint32_t val = 0U;
+    for (uint32_t i = 0; i < bit_len; ++i) {
+        uint32_t bi = (bit_off + i) >> 3;
+        uint32_t sh = (bit_off + i) & 7U;
+        if (buf[bi] & (1U << sh))
+            val |= (1U << i);
+    }
+    return val;
+}
+
+static int32_t sign_extend_private(uint32_t raw, uint32_t bit_len)
+{
+    if (!bit_len || bit_len >= 32U)
+        return (int32_t)raw;
+    uint32_t sign = 1U << (bit_len - 1U);
+    if (raw & sign)
+        return (int32_t)(raw | ~(sign - 1U));
+    return (int32_t)raw;
+}
+
+// ====== kernel_xhci_decode_hid_report_pointer ======
+
+void kernel_xhci_decode_hid_report_pointer(const XHCI_HID_REPORT_LAYOUT *layout,
+    const uint8_t *report, uint32_t len, XHCI_MOUSE_CALLBACK on_mouse,
+    XHCI_ABS_MOUSE_CALLBACK on_abs_mouse, void *ctx)
+{
+    if (!layout || !layout->Valid || !report || !len)
+        return;
+    if (layout->HasReportId && report[0] != layout->ReportId)
+        return;
+
+    uint32_t buttons = 0U;
+    if (layout->ButtonsCount > 0U)
+        buttons = extract_bits_private(report, len, layout->ButtonsBit, layout->ButtonsCount) & 0x07U;
+    if (layout->WheelBits > 0U) {
+        int32_t w = sign_extend_private(extract_bits_private(report, len, layout->WheelBit, layout->WheelBits),
+            layout->WheelBits);
+        if (w != 0)
+            buttons |= ((uint32_t)(uint8_t)(int8_t)w << 8);
+    }
+
+    uint32_t raw_x = extract_bits_private(report, len, layout->XBit, layout->XBits);
+    uint32_t raw_y = extract_bits_private(report, len, layout->YBit, layout->YBits);
+
+    if (layout->IsAbsolute) {
+        int32_t ax = layout->XMin < 0 ? sign_extend_private(raw_x, layout->XBits) : (int32_t)raw_x;
+        int32_t ay = layout->YMin < 0 ? sign_extend_private(raw_y, layout->YBits) : (int32_t)raw_y;
+        if (on_abs_mouse)
+            on_abs_mouse(ctx, ax, ay, layout->XMin, layout->XMax, layout->YMin, layout->YMax, buttons);
+    } else {
+        int32_t dx = sign_extend_private(raw_x, layout->XBits);
+        int32_t dy = sign_extend_private(raw_y, layout->YBits);
+        if (on_mouse)
+            on_mouse(ctx, dx, dy, buttons);
+    }
 }
 
 // ====== usage_to_scalar_private ======
@@ -591,10 +808,39 @@ int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx
         return 0;
     }
 
-    // 5) HID SET_PROTOCOL (Boot Protocol = 0): bmReq=0x21, bReq=0x0B, wVal=0, wIdx=InterfaceNumber.
-    uint64_t set_boot = 0x21ULL | (0x0BULL << 8) | ((uint64_t)hid_info.InterfaceNumber << 32);
-    (void)ep0_transfer_private(dev, slot_id, hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
-        set_boot, 0ULL, 0U, 0);
+    // 5) HID Protocol selection: fetch Report Descriptor for pointers/tablets (HID 1.11 §7.1.1);
+    // keep Boot Protocol (0) for keyboards or when Report Descriptor is unavailable.
+    zero_mem_private(&hid->ReportLayout, sizeof(hid->ReportLayout));
+    uint8_t active_proto = hid_info.Protocol;
+    if (hid_info.Protocol != USB_PROTO_KEYBOARD && hid_info.ReportDescLen > 0U) {
+        uint32_t rlen = hid_info.ReportDescLen > 255U ? 255U : hid_info.ReportDescLen;
+        zero_mem_private(scratch, 256U);
+        // GET_DESCRIPTOR(HID Report = 0x22): bmReq=0x81, bReq=6, wVal=0x2200, wIdx=iface, wLen=rlen.
+        uint64_t get_rep = 0x81ULL | (6ULL << 8) | ((uint64_t)USB_DESC_HID_REPORT << 24) |
+                           ((uint64_t)hid_info.InterfaceNumber << 32) | ((uint64_t)rlen << 48);
+        if (ep0_transfer_private(dev, slot_id, hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
+            get_rep, scratch_phys, rlen, 1) &&
+            kernel_xhci_parse_hid_report_desc(scratch, rlen, &hid->ReportLayout)) {
+            active_proto = USB_PROTO_REPORT_PTR;
+            if (hid_info.SubClass == USB_SUBCLASS_BOOT) {
+                // HID SET_PROTOCOL (Report Protocol = 1): bmReq=0x21, bReq=0x0B, wVal=1, wIdx=iface.
+                uint64_t set_rep = 0x21ULL | (0x0BULL << 8) | (1ULL << 16) |
+                                   ((uint64_t)hid_info.InterfaceNumber << 32);
+                (void)ep0_transfer_private(dev, slot_id, hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
+                    set_rep, 0ULL, 0U, 0);
+            }
+        }
+    }
+    if (active_proto == 0U) {
+        disable_slot_cmd_private(dev, slot_id);
+        return 0;
+    }
+    if (active_proto != USB_PROTO_REPORT_PTR) {
+        // HID SET_PROTOCOL (Boot Protocol = 0): bmReq=0x21, bReq=0x0B, wVal=0, wIdx=InterfaceNumber.
+        uint64_t set_boot = 0x21ULL | (0x0BULL << 8) | ((uint64_t)hid_info.InterfaceNumber << 32);
+        (void)ep0_transfer_private(dev, slot_id, hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
+            set_boot, 0ULL, 0U, 0);
+    }
 
     // 6) Configure Interrupt IN Endpoint (§4.6.6).
     uint32_t ep_num = (uint32_t)(hid_info.EndpointAddr & 0x0FU);
@@ -627,7 +873,7 @@ int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx
     hid->Active = 1U;
     hid->SlotId = (uint8_t)slot_id;
     hid->PortId = (uint8_t)(root_port_idx + 1U);
-    hid->Protocol = hid_info.Protocol;
+    hid->Protocol = active_proto;
     hid->EpDci = (uint8_t)ep_dci;
     hid->Cycle = 1U;
     hid->Enqueue = 0U;
@@ -909,6 +1155,9 @@ uint32_t kernel_xhci_poll_events(KERNEL_XHCI_DEVICE *dev)
                         } else if (hid->Protocol == USB_PROTO_MOUSE) {
                             kernel_xhci_decode_hid_mouse(hid->ReportBuf, hid->MaxPacketSize,
                                 t->OnMouse, t->Context);
+                        } else if (hid->Protocol == USB_PROTO_REPORT_PTR) {
+                            kernel_xhci_decode_hid_report_pointer(&hid->ReportLayout, hid->ReportBuf,
+                                hid->MaxPacketSize, t->OnMouse, t->OnAbsMouse, t->Context);
                         }
                         queue_hid_trb_private(dev, hid);
                     }
