@@ -30,6 +30,13 @@ typedef struct {
     uint64_t  Pending;        // reserved objects being cleared or retired
 } KERNEL_HEAP_STATS;
 
+typedef int (*KERNEL_HEAP_GROW_FN)(
+    void *context,
+    uint32_t current_pages,
+    uint32_t min_additional_pages,
+    uint32_t *added_pages_out
+);
+
 typedef struct {
     uintptr_t   Self;
     uintptr_t   Base;
@@ -47,10 +54,13 @@ typedef struct {
     KERNEL_HEAP_STATS  Stats;
     uint64_t    BusyWords[KERNEL_HEAP_SLAB_PAGES][4];
     KERNEL_LOCK Gate;
+    KERNEL_HEAP_GROW_FN  Grow;
+    void                *GrowContext;
 } KERNEL_HEAP;
 
 int       kernel_heap_init(KERNEL_HEAP *heap, void *base, uint32_t pages);
 int       kernel_heap_grow(KERNEL_HEAP *heap, uint32_t additional_pages);
+int       kernel_heap_set_grow(KERNEL_HEAP *heap, KERNEL_HEAP_GROW_FN grow_fn, void *context);
 // bytes 1..; alignment a power of two up to 4096 (0 = 16). Zeroed memory or 0.
 void     *kernel_heap_alloc(KERNEL_HEAP *heap, uint64_t bytes, uint64_t alignment);
 // count contiguous pages, page aligned and zeroed, or 0.

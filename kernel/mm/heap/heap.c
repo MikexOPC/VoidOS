@@ -40,6 +40,21 @@ int kernel_heap_grow(KERNEL_HEAP *heap, uint32_t additional_pages) {
     return result;
 }
 
+// ====== kernel_heap_set_grow ======
+
+int kernel_heap_set_grow(KERNEL_HEAP *heap, KERNEL_HEAP_GROW_FN grow_fn, void *context) {
+    KH_ACCESS access = {0};
+    if (!kh_enter(heap, &access)) return 0;
+    int result = 0;
+    if (kh_shape(heap)) {
+        heap->Grow = grow_fn;
+        heap->GrowContext = grow_fn ? context : 0;
+        result = 1;
+    }
+    kh_leave(&access);
+    return result;
+}
+
 // ====== kernel_heap_valid ======
 
 int kernel_heap_valid(const KERNEL_HEAP *heap) {
@@ -67,7 +82,30 @@ static void *allocate_private(KERNEL_HEAP *heap, uint64_t bytes, uint64_t alignm
     KH_TRANSFER transfer = {0};
     if (!kh_enter(heap, &access)) return 0;
     int reserved = kh_reserve(heap, bytes, alignment, pages, &transfer);
+    KERNEL_HEAP_GROW_FN grow_fn = 0;
+    void *grow_ctx = 0;
+    uint32_t cur_pages = 0;
+    if (!reserved && kh_shape(heap) && heap->Grow && heap->Pages < KERNEL_HEAP_MAX_PAGES) {
+        grow_fn = heap->Grow;
+        grow_ctx = heap->GrowContext;
+        cur_pages = heap->Pages;
+    }
     kh_leave(&access);
+
+    if (!reserved && grow_fn && bytes > 0) {
+        uint64_t need_pages_64 = pages ? (bytes / 4096ULL) : ((bytes + 4095ULL) / 4096ULL);
+        if (!need_pages_64) need_pages_64 = 1ULL;
+        if (need_pages_64 <= (uint64_t)(KERNEL_HEAP_MAX_PAGES - cur_pages)) {
+            uint32_t added = 0;
+            if (grow_fn(grow_ctx, cur_pages, (uint32_t)need_pages_64, &added) && added > 0) {
+                (void)kernel_heap_grow(heap, added);
+                if (kh_enter(heap, &access)) {
+                    reserved = kh_reserve(heap, bytes, alignment, pages, &transfer);
+                    kh_leave(&access);
+                }
+            }
+        }
+    }
     if (!reserved) return 0;
     return transfer_private(heap, &transfer) ? (void *)transfer.Address : 0;
 }

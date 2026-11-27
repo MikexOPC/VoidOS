@@ -144,6 +144,17 @@ static void rejected_cases(void)
 
 // ====== grow_cases ======
 
+static int mock_auto_grow(void *ctx, uint32_t current_pages, uint32_t min_add, uint32_t *added_out)
+{
+    uint32_t *cap = (uint32_t *)ctx;
+    if (!cap || current_pages >= *cap) return 0;
+    uint32_t add = min_add < 4U ? 4U : min_add;
+    if (current_pages + add > *cap) add = *cap - current_pages;
+    if (add < min_add) return 0;
+    *added_out = add;
+    return 1;
+}
+
 static void grow_cases(void)
 {
     static KERNEL_HEAP gheap;
@@ -156,14 +167,25 @@ static void grow_cases(void)
     CHECK(kernel_heap_pages(&gheap, 1) == NULL);
     CHECK(!kernel_heap_grow(&gheap, 0));
     CHECK(!kernel_heap_grow(&gheap, KERNEL_HEAP_MAX_PAGES));
-    CHECK(kernel_heap_grow(&gheap, 8));
-    CHECK(gheap.Pages == 12 && kernel_heap_stats(&gheap).FreePages == 8);
-    void *p2 = kernel_heap_pages(&gheap, 8);
+    CHECK(kernel_heap_grow(&gheap, 4));
+    CHECK(gheap.Pages == 8 && kernel_heap_stats(&gheap).FreePages == 4);
+    void *p2 = kernel_heap_pages(&gheap, 4);
     CHECK(p2 != NULL);
+
+    // Automatic on-demand growth on OOM up to backing capacity (16 pages).
+    uint32_t cap = 16U;
+    CHECK(kernel_heap_set_grow(&gheap, mock_auto_grow, &cap));
+    void *p3 = kernel_heap_pages(&gheap, 6);
+    CHECK(p3 != NULL && gheap.Pages == 14);
+    void *p4 = kernel_heap_alloc(&gheap, 128, 16);
+    CHECK(p4 != NULL && gheap.Pages == 16);
+    CHECK(kernel_heap_pages(&gheap, 4) == NULL);
     CHECK(kernel_heap_valid(&gheap));
     CHECK(kernel_heap_free(&gheap, p1));
     CHECK(kernel_heap_free(&gheap, p2));
-    CHECK(kernel_heap_stats(&gheap).FreePages == 12 && kernel_heap_valid(&gheap));
+    CHECK(kernel_heap_free(&gheap, p3));
+    CHECK(kernel_heap_free(&gheap, p4));
+    CHECK(kernel_heap_stats(&gheap).FreePages == 16 && kernel_heap_valid(&gheap));
 }
 
 // ====== main ======
