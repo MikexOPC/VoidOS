@@ -22,6 +22,8 @@ export component VoidDesktop inherits Window {
     in-out property <int> dock-mode: 0;
     in-out property <bool> dock-visible: true;
     in-out property <image> dock-backdrop;
+    in-out property <bool> wallpaper-cached: false;
+    in-out property <image> cached-wallpaper;
     in-out property <bool> terminal-open: true;
     in-out property <bool> sysmon-open: false;
     in-out property <bool> files-open: false;
@@ -39,10 +41,12 @@ export component VoidDesktop inherits Window {
     callback minimize-app(int);
     callback quit-desktop();
 
-    // Layer 0: Wallpaper background (no VoidOS text on top)
+    // Layer 0: Wallpaper background (1:1 screen-cached after startup for lag-free window drag)
     DesktopBackground {
         width: root.width;
         height: root.height;
+        use-cached: root.wallpaper-cached;
+        cached-wallpaper: root.cached-wallpaper;
     }
 
     // Layer 1: Live application surfaces from real Ring 3 processes
@@ -50,12 +54,13 @@ export component VoidDesktop inherits Window {
         property <float> p: surface.scale-progress;
         property <length> full-w: surface.client-width + 2px;
         property <length> full-h: surface.client-height + 34px;
+        property <float> scale: 0.62 + 0.38 * p;
         visible: !surface.minimized && p > 0.01;
-        x: surface.pos-x + (1.0 - p) * full-w * 0.08;
-        y: surface.pos-y + (1.0 - p) * full-h * 0.08;
-        width: full-w * (0.84 + 0.16 * p);
-        height: full-h * (0.84 + 0.16 * p);
-        opacity: p;
+        x: surface.pos-x + (1.0 - scale) * full-w * 0.5;
+        y: surface.pos-y + (1.0 - scale) * full-h * 0.5 + (1.0 - p) * 20px;
+        width: full-w * scale;
+        height: full-h * scale;
+        opacity: p < 0.99 ? p : 1.0;
         app-kind: surface.kind;
         title: surface.title;
         focused: root.focused-window == surface.kind;

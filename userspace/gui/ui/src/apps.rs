@@ -132,8 +132,8 @@ impl Applications {
     // ====== tick_animations ======
 
     pub fn tick_animations(&mut self, ui: &VoidDesktop, now_ms: u64) -> bool {
-        const OPEN_MS: f32 = 160.0;
-        const CLOSE_MS: f32 = 135.0;
+        const OPEN_MS: f32 = 210.0;
+        const CLOSE_MS: f32 = 185.0;
         let mut to_close = Vec::new();
         let mut any_updated = false;
         for app in &mut self.windows {
@@ -143,7 +143,7 @@ impl Applications {
             let elapsed = now_ms.saturating_sub(app.anim_start_ms) as f32;
             if app.anim_mode == 1 {
                 let t = (elapsed / OPEN_MS).clamp(0.0, 1.0);
-                // Ease-out cubic for snappy iOS-like zoom-in
+                // Smooth ease-out cubic
                 let inv = 1.0 - t;
                 app.scale_progress = 1.0 - inv * inv * inv;
                 if t >= 1.0 {
@@ -153,8 +153,14 @@ impl Applications {
                 any_updated = true;
             } else if app.anim_mode == 2 {
                 let t = (elapsed / CLOSE_MS).clamp(0.0, 1.0);
-                // Ease-in quadratic for smooth shrink-out
-                app.scale_progress = (1.0 - t * t).max(0.0);
+                // Smooth ease-in-out cubic shrink-out towards dock
+                let eased = if t < 0.5 {
+                    4.0 * t * t * t
+                } else {
+                    let f = -2.0 * t + 2.0;
+                    1.0 - (f * f * f) * 0.5
+                };
+                app.scale_progress = (1.0 - eased).max(0.0);
                 if t >= 1.0 {
                     app.scale_progress = 0.0;
                     app.anim_mode = 0;

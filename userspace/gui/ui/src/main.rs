@@ -71,6 +71,7 @@ impl TargetPixel for BgrxPixel {
 struct VoidPlatform {
     window: Rc<MinimalSoftwareWindow>,
     start_ms: u64,
+    now_ms: Rc<Cell<u64>>,
 }
 
 impl Platform for VoidPlatform {
@@ -79,12 +80,7 @@ impl Platform for VoidPlatform {
     }
 
     fn duration_since_start(&self) -> Duration {
-        let mut info = libvoid::DisplayInfo::default();
-        if libvoid::display_info(&mut info) == 0 {
-            Duration::from_millis(info.uptime_ms.saturating_sub(self.start_ms))
-        } else {
-            libvoid::exit(96)
-        }
+        Duration::from_millis(self.now_ms.get().saturating_sub(self.start_ms))
     }
 }
 
@@ -251,7 +247,40 @@ fn build_dock_blur(
 
     let mut buf = SharedPixelBuffer::<Rgb8Pixel>::new(dw, dh);
     for (dst, src) in buf.make_mut_slice().iter_mut().zip(cur.iter()) {
-        *dst = Rgb8Pixel::new(src[0], src[1], src[2]);
+        // iOS Liquid Glass vibrancy boost (+22% saturation, +5% lift) so wallpaper colors glow through the glass.
+        let r = src[0] as i32;
+        let g = src[1] as i32;
+        let b = src[2] as i32;
+        let lum = (r * 77 + g * 150 + b * 29) >> 8;
+        let vr = (lum + ((r - lum) * 122) / 100 + 8).clamp(0, 255) as u8;
+        let vg = (lum + ((g - lum) * 122) / 100 + 8).clamp(0, 255) as u8;
+        let vb = (lum + ((b - lum) * 122) / 100 + 8).clamp(0, 255) as u8;
+        *dst = Rgb8Pixel::new(vr, vg, vb);
+    }
+    Image::from_rgb8(buf)
+}
+
+// ====== cache_screen_wallpaper ======
+
+// Captures the rendered 1:1 screen-sized wallpaper so window drag redraws use direct copy
+// instead of per-frame CPU bilinear JPEG resampling.
+fn cache_screen_wallpaper(
+    backbuffer: &[BgrxPixel],
+    stride: u32,
+    width: u32,
+    height: u32,
+) -> Image {
+    let mut buf = SharedPixelBuffer::<Rgb8Pixel>::new(width, height);
+    let dst = buf.make_mut_slice();
+    let w = width as usize;
+    let s = stride as usize;
+    for y in 0..(height as usize) {
+        let src_row = &backbuffer[y * s..y * s + w];
+        let dst_row = &mut dst[y * w..y * w + w];
+        for (d, p) in dst_row.iter_mut().zip(src_row.iter()) {
+            let v = p.0;
+            *d = Rgb8Pixel::new(((v >> 16) & 0xFF) as u8, ((v >> 8) & 0xFF) as u8, (v & 0xFF) as u8);
+        }
     }
     Image::from_rgb8(buf)
 }
@@ -277,9 +306,11 @@ extern "C" fn program_main(mode: u64) -> ! {
     let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
     window.set_size(PhysicalSize::new(acq.width, acq.height));
 
+    let platform_now = Rc::new(Cell::new(dinfo.uptime_ms));
     if slint::platform::set_platform(Box::new(VoidPlatform {
         window: window.clone(),
         start_ms: dinfo.uptime_ms,
+        now_ms: platform_now.clone(),
     }))
     .is_err()
     {
@@ -393,6 +424,9 @@ extern "C" fn program_main(mode: u64) -> ! {
         height: acq.height,
     }]);
     let dock_blur = build_dock_blur(backbuffer, acq.stride, acq.width, acq.height);
+    let cached_wp = cache_screen_wallpaper(backbuffer, acq.stride, acq.width, acq.height);
+    ui.set_cached_wallpaper(cached_wp);
+    ui.set_wallpaper_cached(true);
     ui.set_dock_backdrop(dock_blur);
     ui.set_dock_visible(true);
 
@@ -413,6 +447,7 @@ extern "C" fn program_main(mode: u64) -> ! {
                 let _ = applications.shutdown();
                 libvoid::exit(96);
             }
+            platform_now.set(dinfo.uptime_ms);
             let second = dinfo.uptime_ms / 1000;
             if second < last_uptime_second {
                 let _ = applications.shutdown();
@@ -616,7 +651,7 @@ extern "C" fn program_main(mode: u64) -> ! {
             libvoid::yield_now();
         } else {
             let wait_ms = slint::platform::duration_until_next_timer_update()
-                .map(|d| (d.as_millis() as u64).clamp(1, 250))
+                .map(|d| (d.as_millis() as u64).clamp(1, 8))
                 .unwrap_or(250);
             let _ = libvoid::gui_wait(wait_ms);
         }

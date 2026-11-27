@@ -109,10 +109,10 @@ export component VoidWindow inherits Rectangle {
                         height: 22px;
                         border-radius: 7px;
                         border-width: 1px;
-                        border-color: min-ta.has-hover ? #5E6E94B8 : #8896B270;
-                        background: min-ta.has-hover ? #FFFFFFDD : #FFFFFF72;
-                        animate background { duration: 140ms; easing: ease-out; }
-                        animate border-color { duration: 140ms; easing: ease-out; }
+                        border-color: min-ta.pressed ? #4A5E90CC : (min-ta.has-hover ? #5E6E94B8 : #8896B270);
+                        background: min-ta.pressed ? #DCE5F8E8 : (min-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
+                        animate background { duration: 120ms; easing: ease-out; }
+                        animate border-color { duration: 120ms; easing: ease-out; }
                         min-ta := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.minimize-clicked(); }
@@ -133,10 +133,10 @@ export component VoidWindow inherits Rectangle {
                         height: 22px;
                         border-radius: 7px;
                         border-width: 1px;
-                        border-color: max-ta.has-hover ? #5E6E94B8 : #8896B270;
-                        background: max-ta.has-hover ? #FFFFFFDD : #FFFFFF72;
-                        animate background { duration: 140ms; easing: ease-out; }
-                        animate border-color { duration: 140ms; easing: ease-out; }
+                        border-color: max-ta.pressed ? #4A5E90CC : (max-ta.has-hover ? #5E6E94B8 : #8896B270);
+                        background: max-ta.pressed ? #DCE5F8E8 : (max-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
+                        animate background { duration: 120ms; easing: ease-out; }
+                        animate border-color { duration: 120ms; easing: ease-out; }
                         max-ta := TouchArea { mouse-cursor: pointer; }
                         Rectangle {
                             x: 7px;
@@ -150,16 +150,16 @@ export component VoidWindow inherits Rectangle {
                         }
                     }
 
-                    // Close square (×) — neutral Liquid Glass hover, geometrically centered vector X
+                    // Close square (×) — neutral Liquid Glass hover/press, geometrically centered X
                     Rectangle {
                         width: 22px;
                         height: 22px;
                         border-radius: 7px;
                         border-width: 1px;
-                        border-color: close-ta.has-hover ? #5E6E94B8 : #8896B270;
-                        background: close-ta.has-hover ? #FFFFFFDD : #FFFFFF72;
-                        animate background { duration: 140ms; easing: ease-out; }
-                        animate border-color { duration: 140ms; easing: ease-out; }
+                        border-color: close-ta.pressed ? #4A5E90CC : (close-ta.has-hover ? #5E6E94B8 : #8896B270);
+                        background: close-ta.pressed ? #DCE5F8E8 : (close-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
+                        animate background { duration: 120ms; easing: ease-out; }
+                        animate border-color { duration: 120ms; easing: ease-out; }
                         close-ta := TouchArea {
                             mouse-cursor: pointer;
                             clicked => { root.close-clicked(); }
