@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "kernel/drivers/net/net_device.h"
+#include "kernel/mm/heap/heap.h"
 #include "kernel/time/clock.h"
 
 // ====== Rust protocol FFI ======
@@ -19,6 +20,24 @@
 #define KNET_DHCP_SERVER_PORT   67U
 #define KNET_DHCP_OFFER         2U
 #define KNET_DHCP_ACK           5U
+
+#define KNET_TCP_FIN            0x01U
+#define KNET_TCP_SYN            0x02U
+#define KNET_TCP_RST            0x04U
+#define KNET_TCP_PSH            0x08U
+#define KNET_TCP_ACK            0x10U
+
+typedef struct {
+    uint16_t  SrcPort;
+    uint16_t  DstPort;
+    uint32_t  Seq;
+    uint32_t  Ack;
+    uint8_t   Flags;
+    uint8_t   HeaderLen;
+    uint16_t  Window;
+    uint16_t  PayloadLen;
+    uint16_t  Reserved;
+} KNET_TCP_INFO;
 
 typedef struct {
     uint8_t   Dst[6];
@@ -92,6 +111,16 @@ uint32_t knet_dhcp_build_discover(uint8_t *out, uint32_t cap, const uint8_t *mac
 uint32_t knet_dhcp_build_request(uint8_t *out, uint32_t cap, const uint8_t *mac, uint32_t xid,
                                  uint32_t requested_ip, uint32_t server_ip);
 int      knet_dhcp_parse_reply(const uint8_t *payload, uint32_t len, KNET_DHCP_REPLY *out);
+int      knet_parse_ipv4(const uint8_t *text, uint32_t len, uint32_t *ip_out);
+uint32_t knet_dns_build_query(uint8_t *out, uint32_t cap, uint16_t tx_id,
+                              const uint8_t *hostname, uint32_t host_len);
+int      knet_dns_parse_response(const uint8_t *resp, uint32_t len,
+                                 uint16_t expected_tx_id, uint32_t *ip_out);
+int      knet_tcp_parse(uint32_t src_ip, uint32_t dst_ip, const uint8_t *segment,
+                        uint32_t len, KNET_TCP_INFO *out);
+uint32_t knet_tcp_build(uint8_t *out, uint32_t cap, uint32_t src_ip, uint32_t dst_ip,
+                        uint16_t src_port, uint16_t dst_port, uint32_t seq, uint32_t ack,
+                        uint8_t flags, uint16_t window, const uint8_t *data, uint32_t data_len);
 
 // ====== Kernel Network Runtime API ======
 
@@ -110,7 +139,7 @@ typedef struct {
     uint64_t  RxPackets;
 } KERNEL_NET_INFO;
 
-int  kernel_net_start(KERNEL_NET_DEVICE *dev, const KERNEL_CLOCK *clock);
+int  kernel_net_start(KERNEL_HEAP *heap, KERNEL_NET_DEVICE *dev, const KERNEL_CLOCK *clock);
 void kernel_net_poll(void);
 int  kernel_net_info(KERNEL_NET_INFO *out);
 int  kernel_net_arp_resolve(uint32_t target_ip, uint8_t mac_out[6], uint32_t timeout_ms);
@@ -127,5 +156,10 @@ int  kernel_net_udp_exchange(
     uint32_t *resp_len_out,
     uint32_t timeout_ms
 );
+int  kernel_net_dns_resolve(const char *hostname, uint32_t host_len, uint32_t *ip_out, uint32_t timeout_ms);
+int  kernel_net_tcp_open(uint32_t dst_ip, uint16_t dst_port, uint32_t timeout_ms);
+int  kernel_net_tcp_send(int handle, const uint8_t *data, uint32_t len, uint32_t timeout_ms);
+int  kernel_net_tcp_recv(int handle, uint8_t *out, uint32_t cap, uint32_t timeout_ms);
+int  kernel_net_tcp_close(int handle);
 
 #endif

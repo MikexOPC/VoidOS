@@ -1,7 +1,31 @@
 #include "net.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/mm/heap/heap.h"
 
-#define KNET_ARP_CACHE_CAP 64U
+#define KNET_ARP_CACHE_CAP  64U
+#define KNET_TCP_MAX_CONNS  32U
+#define KNET_TCP_RX_CAP     8192U
+
+#define KNET_TCP_CLOSED      0U
+#define KNET_TCP_SYN_SENT    1U
+#define KNET_TCP_ESTABLISHED 2U
+#define KNET_TCP_PEER_CLOSED 3U
+
+typedef struct {
+    uint32_t  State;
+    uint32_t  RemoteIp;
+    uint8_t   RemoteMac[6];
+    uint16_t  LocalPort;
+    uint16_t  RemotePort;
+    uint16_t  Pad;
+    uint32_t  SndUna;
+    uint32_t  SndNxt;
+    uint32_t  RcvNxt;
+    uint8_t  *RxBuf;
+    uint32_t  RxHead;
+    uint32_t  RxTail;
+    uint32_t  RxCount;
+} KNET_TCP_CONN;
 
 typedef struct {
     uint32_t  Ip;
@@ -10,6 +34,7 @@ typedef struct {
 } KNET_ARP_ENTRY;
 
 typedef struct {
+    KERNEL_HEAP        *Heap;
     KERNEL_NET_DEVICE  *Dev;
     KERNEL_CLOCK        Clock;
     uint32_t            HasClock;
@@ -35,6 +60,10 @@ typedef struct {
     uint32_t            UdpWaitCap;
     uint32_t            UdpWaitLen;
     uint32_t            UdpWaitReceived;
+    uint16_t            NextEphemeralPort;
+    uint16_t            NextDnsTxId;
+    uint32_t            IsnCounter;
+    KNET_TCP_CONN       Tcp[KNET_TCP_MAX_CONNS];
 } KERNEL_NET_STATE;
 
 static KERNEL_NET_STATE knet_state;
@@ -197,6 +226,76 @@ static void handle_frame_private(const uint8_t *frame, uint32_t len)
             knet_state.UdpWaitLen = copy_len;
             knet_state.UdpWaitReceived = 1U;
         }
+        return;
+    }
+
+    if (ip.Protocol == KNET_IP_PROTO_TCP && knet_state.Configured && ip.DstIp == knet_state.Ip) {
+        KNET_TCP_INFO tcp;
+        if (!knet_tcp_parse(ip.SrcIp, ip.DstIp, l4, l4_len, &tcp))
+            return;
+        for (uint32_t i = 0; i < KNET_TCP_MAX_CONNS; ++i) {
+            KNET_TCP_CONN *c = &knet_state.Tcp[i];
+            if (c->State == KNET_TCP_CLOSED || c->RemoteIp != ip.SrcIp ||
+                c->RemotePort != tcp.SrcPort || c->LocalPort != tcp.DstPort)
+                continue;
+
+            if ((tcp.Flags & KNET_TCP_RST) != 0U) {
+                c->State = KNET_TCP_PEER_CLOSED;
+                return;
+            }
+            if (c->State == KNET_TCP_SYN_SENT) {
+                if ((tcp.Flags & (KNET_TCP_SYN | KNET_TCP_ACK)) == (KNET_TCP_SYN | KNET_TCP_ACK) &&
+                    tcp.Ack == c->SndNxt) {
+                    c->SndUna = tcp.Ack;
+                    c->RcvNxt = tcp.Seq + 1U;
+                    c->State = KNET_TCP_ESTABLISHED;
+                    uint8_t ack_seg[20];
+                    uint32_t alen = knet_tcp_build(
+                        ack_seg, sizeof(ack_seg), knet_state.Ip, c->RemoteIp,
+                        c->LocalPort, c->RemotePort, c->SndNxt, c->RcvNxt,
+                        KNET_TCP_ACK, (uint16_t)(KNET_TCP_RX_CAP - c->RxCount), NULL, 0U
+                    );
+                    if (alen)
+                        (void)send_ipv4_mac_private(c->RemoteMac, knet_state.Ip, c->RemoteIp, KNET_IP_PROTO_TCP, ack_seg, alen);
+                }
+                return;
+            }
+
+            if ((tcp.Flags & KNET_TCP_ACK) != 0U) {
+                if ((int32_t)(tcp.Ack - c->SndUna) > 0 && (int32_t)(c->SndNxt - tcp.Ack) >= 0)
+                    c->SndUna = tcp.Ack;
+            }
+
+            int need_ack = 0;
+            if (tcp.PayloadLen > 0U && tcp.Seq == c->RcvNxt && c->RxBuf) {
+                const uint8_t *pay = l4 + tcp.HeaderLen;
+                uint32_t space = KNET_TCP_RX_CAP - c->RxCount;
+                uint32_t take = tcp.PayloadLen < space ? tcp.PayloadLen : space;
+                for (uint32_t k = 0; k < take; ++k) {
+                    c->RxBuf[c->RxTail] = pay[k];
+                    c->RxTail = (c->RxTail + 1U) % KNET_TCP_RX_CAP;
+                }
+                c->RxCount += take;
+                c->RcvNxt += take;
+                need_ack = 1;
+            }
+            if ((tcp.Flags & KNET_TCP_FIN) != 0U && tcp.Seq + tcp.PayloadLen == c->RcvNxt) {
+                c->RcvNxt += 1U;
+                c->State = KNET_TCP_PEER_CLOSED;
+                need_ack = 1;
+            }
+            if (need_ack) {
+                uint8_t ack_seg[20];
+                uint32_t alen = knet_tcp_build(
+                    ack_seg, sizeof(ack_seg), knet_state.Ip, c->RemoteIp,
+                    c->LocalPort, c->RemotePort, c->SndNxt, c->RcvNxt,
+                    KNET_TCP_ACK, (uint16_t)(KNET_TCP_RX_CAP - c->RxCount), NULL, 0U
+                );
+                if (alen)
+                    (void)send_ipv4_mac_private(c->RemoteMac, knet_state.Ip, c->RemoteIp, KNET_IP_PROTO_TCP, ack_seg, alen);
+            }
+            return;
+        }
     }
 }
 
@@ -331,13 +430,14 @@ static int dhcp_exchange_private(void)
 
 // ====== kernel_net_start ======
 
-int kernel_net_start(KERNEL_NET_DEVICE *dev, const KERNEL_CLOCK *clock)
+int kernel_net_start(KERNEL_HEAP *heap, KERNEL_NET_DEVICE *dev, const KERNEL_CLOCK *clock)
 {
     for (uint32_t i = 0; i < sizeof(knet_state); ++i)
         ((uint8_t *)&knet_state)[i] = 0U;
     if (!dev)
         return 1;
 
+    knet_state.Heap = heap;
     knet_state.Dev = dev;
     if (clock && clock->Read && clock->Hz) {
         knet_state.Clock = *clock;
@@ -549,4 +649,251 @@ int kernel_net_udp_exchange(
     }
     knet_state.UdpWaitActive = 0U;
     return KERNEL_NET_ERR_TIMEOUT;
+}
+
+// ====== next_ephemeral_port_private ======
+
+static uint16_t next_ephemeral_port_private(void)
+{
+    uint16_t p = (uint16_t)(49152U + (knet_state.NextEphemeralPort % 16000U));
+    ++knet_state.NextEphemeralPort;
+    return p;
+}
+
+// ====== kernel_net_dns_resolve ======
+
+int kernel_net_dns_resolve(const char *hostname, uint32_t host_len, uint32_t *ip_out, uint32_t timeout_ms)
+{
+    if (!hostname || !host_len || !ip_out)
+        return KERNEL_NET_ERR_PARAM;
+
+    if (knet_parse_ipv4((const uint8_t *)hostname, host_len, ip_out))
+        return KERNEL_NET_OK;
+
+    if (!knet_state.Dev || !knet_state.Configured || !knet_state.Dns)
+        return KERNEL_NET_ERR_IO;
+
+    uint16_t tx_id = (uint16_t)(0x4200U + (++knet_state.NextDnsTxId));
+    uint8_t query[320];
+    uint32_t qlen = knet_dns_build_query(query, sizeof(query), tx_id, (const uint8_t *)hostname, host_len);
+    if (!qlen)
+        return KERNEL_NET_ERR_PARAM;
+
+    uint8_t resp[512];
+    uint32_t rlen = 0U;
+    uint16_t sport = next_ephemeral_port_private();
+    int rc = kernel_net_udp_exchange(
+        knet_state.Dns, sport, 53U,
+        query, qlen, resp, sizeof(resp), &rlen,
+        timeout_ms ? timeout_ms : 2500U
+    );
+    if (rc != KERNEL_NET_OK)
+        return rc;
+
+    if (!knet_dns_parse_response(resp, rlen, tx_id, ip_out))
+        return KERNEL_NET_ERR_IO;
+    return KERNEL_NET_OK;
+}
+
+// ====== kernel_net_tcp_open ======
+
+int kernel_net_tcp_open(uint32_t dst_ip, uint16_t dst_port, uint32_t timeout_ms)
+{
+    if (!knet_state.Dev || !knet_state.Configured || !dst_ip || !dst_port)
+        return KERNEL_NET_ERR_PARAM;
+
+    uint8_t dst_mac[6];
+    int rc = kernel_net_arp_resolve(dst_ip, dst_mac, 1500U);
+    if (rc != KERNEL_NET_OK)
+        return rc;
+
+    int slot = -1;
+    for (uint32_t i = 0; i < KNET_TCP_MAX_CONNS; ++i) {
+        if (knet_state.Tcp[i].State == KNET_TCP_CLOSED) {
+            slot = (int)i;
+            break;
+        }
+    }
+    if (slot < 0)
+        return KERNEL_NET_ERR_FULL;
+
+    KERNEL_HEAP *heap = knet_state.Heap;
+    if (!heap)
+        return KERNEL_NET_ERR_IO;
+    uint8_t *rx_buf = (uint8_t *)kernel_heap_alloc(heap, KNET_TCP_RX_CAP, 16U);
+    if (!rx_buf)
+        return KERNEL_NET_ERR_FULL;
+
+    KNET_TCP_CONN *c = &knet_state.Tcp[slot];
+    for (uint32_t i = 0; i < sizeof(*c); ++i)
+        ((uint8_t *)c)[i] = 0U;
+    c->State = KNET_TCP_SYN_SENT;
+    c->RemoteIp = dst_ip;
+    for (uint32_t i = 0; i < 6U; ++i)
+        c->RemoteMac[i] = dst_mac[i];
+    c->LocalPort = next_ephemeral_port_private();
+    c->RemotePort = dst_port;
+    knet_state.IsnCounter += 64000U;
+    c->SndUna = 0x10000000U + knet_state.IsnCounter;
+    c->SndNxt = c->SndUna + 1U;
+    c->RxBuf = rx_buf;
+
+    uint8_t syn_seg[20];
+    uint32_t slen = knet_tcp_build(
+        syn_seg, sizeof(syn_seg), knet_state.Ip, c->RemoteIp,
+        c->LocalPort, c->RemotePort, c->SndUna, 0U,
+        KNET_TCP_SYN, (uint16_t)KNET_TCP_RX_CAP, NULL, 0U
+    );
+    if (!slen) {
+        c->State = KNET_TCP_CLOSED;
+        c->RxBuf = NULL;
+        (void)kernel_heap_free(heap, rx_buf);
+        return KERNEL_NET_ERR_PARAM;
+    }
+
+    uint32_t start = 0U;
+    if (knet_state.HasClock)
+        (void)kernel_clock_now(&knet_state.Clock, &start);
+    uint32_t limit = ticks_for_ms_private(timeout_ms ? timeout_ms : 3000U);
+
+    for (uint32_t attempt = 0; attempt < 2U; ++attempt) {
+        (void)send_ipv4_mac_private(c->RemoteMac, knet_state.Ip, c->RemoteIp, KNET_IP_PROTO_TCP, syn_seg, slen);
+        for (uint32_t spin = 0; spin < 250000U; ++spin) {
+            kernel_net_poll();
+            if (c->State == KNET_TCP_ESTABLISHED)
+                return slot + 1;
+            if (c->State == KNET_TCP_PEER_CLOSED)
+                break;
+            if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
+                break;
+        }
+        if (c->State == KNET_TCP_PEER_CLOSED ||
+            (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit))
+            break;
+    }
+
+    c->State = KNET_TCP_CLOSED;
+    c->RxBuf = NULL;
+    (void)kernel_heap_free(heap, rx_buf);
+    return KERNEL_NET_ERR_TIMEOUT;
+}
+
+// ====== kernel_net_tcp_send ======
+
+int kernel_net_tcp_send(int handle, const uint8_t *data, uint32_t len, uint32_t timeout_ms)
+{
+    if (handle < 1 || (uint32_t)handle > KNET_TCP_MAX_CONNS || (!data && len > 0U))
+        return KERNEL_NET_ERR_PARAM;
+    KNET_TCP_CONN *c = &knet_state.Tcp[handle - 1];
+    if (c->State != KNET_TCP_ESTABLISHED)
+        return KERNEL_NET_ERR_IO;
+
+    uint32_t sent = 0U;
+    uint32_t limit = ticks_for_ms_private(timeout_ms ? timeout_ms : 3000U);
+    while (sent < len) {
+        uint32_t chunk = len - sent;
+        if (chunk > 1400U)
+            chunk = 1400U;
+        uint32_t seq_start = c->SndNxt;
+        c->SndNxt += chunk;
+
+        uint8_t seg[1440];
+        uint32_t slen = knet_tcp_build(
+            seg, sizeof(seg), knet_state.Ip, c->RemoteIp,
+            c->LocalPort, c->RemotePort, seq_start, c->RcvNxt,
+            KNET_TCP_PSH | KNET_TCP_ACK, (uint16_t)(KNET_TCP_RX_CAP - c->RxCount),
+            data + sent, chunk
+        );
+        if (!slen)
+            return KERNEL_NET_ERR_PARAM;
+
+        uint32_t start = 0U;
+        if (knet_state.HasClock)
+            (void)kernel_clock_now(&knet_state.Clock, &start);
+
+        int acked = 0;
+        for (uint32_t attempt = 0; attempt < 2U && !acked; ++attempt) {
+            (void)send_ipv4_mac_private(c->RemoteMac, knet_state.Ip, c->RemoteIp, KNET_IP_PROTO_TCP, seg, slen);
+            for (uint32_t spin = 0; spin < 250000U; ++spin) {
+                kernel_net_poll();
+                if ((int32_t)(c->SndUna - c->SndNxt) >= 0) {
+                    acked = 1;
+                    break;
+                }
+                if (c->State == KNET_TCP_CLOSED)
+                    return KERNEL_NET_ERR_IO;
+                if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
+                    break;
+            }
+        }
+        if (!acked)
+            return KERNEL_NET_ERR_TIMEOUT;
+        sent += chunk;
+    }
+    return (int)sent;
+}
+
+// ====== kernel_net_tcp_recv ======
+
+int kernel_net_tcp_recv(int handle, uint8_t *out, uint32_t cap, uint32_t timeout_ms)
+{
+    if (handle < 1 || (uint32_t)handle > KNET_TCP_MAX_CONNS || !out || !cap)
+        return KERNEL_NET_ERR_PARAM;
+    KNET_TCP_CONN *c = &knet_state.Tcp[handle - 1];
+    if (c->State == KNET_TCP_CLOSED || !c->RxBuf)
+        return KERNEL_NET_ERR_IO;
+
+    uint32_t start = 0U;
+    if (knet_state.HasClock)
+        (void)kernel_clock_now(&knet_state.Clock, &start);
+    uint32_t limit = ticks_for_ms_private(timeout_ms ? timeout_ms : 2500U);
+
+    for (uint32_t spin = 0; spin < 500000U; ++spin) {
+        kernel_net_poll();
+        if (c->RxCount > 0U) {
+            uint32_t take = c->RxCount < cap ? c->RxCount : cap;
+            for (uint32_t i = 0; i < take; ++i) {
+                out[i] = c->RxBuf[c->RxHead];
+                c->RxHead = (c->RxHead + 1U) % KNET_TCP_RX_CAP;
+            }
+            c->RxCount -= take;
+            return (int)take;
+        }
+        if (c->State == KNET_TCP_PEER_CLOSED)
+            return 0;
+        if (knet_state.HasClock && kernel_clock_elapsed(&knet_state.Clock, start) >= limit)
+            break;
+    }
+    return KERNEL_NET_ERR_TIMEOUT;
+}
+
+// ====== kernel_net_tcp_close ======
+
+int kernel_net_tcp_close(int handle)
+{
+    if (handle < 1 || (uint32_t)handle > KNET_TCP_MAX_CONNS)
+        return KERNEL_NET_ERR_PARAM;
+    KNET_TCP_CONN *c = &knet_state.Tcp[handle - 1];
+    if (c->State == KNET_TCP_CLOSED)
+        return KERNEL_NET_OK;
+
+    if (c->State == KNET_TCP_ESTABLISHED || c->State == KNET_TCP_PEER_CLOSED) {
+        uint8_t fin_seg[20];
+        uint32_t flen = knet_tcp_build(
+            fin_seg, sizeof(fin_seg), knet_state.Ip, c->RemoteIp,
+            c->LocalPort, c->RemotePort, c->SndNxt, c->RcvNxt,
+            KNET_TCP_FIN | KNET_TCP_ACK, (uint16_t)(KNET_TCP_RX_CAP - c->RxCount), NULL, 0U
+        );
+        if (flen)
+            (void)send_ipv4_mac_private(c->RemoteMac, knet_state.Ip, c->RemoteIp, KNET_IP_PROTO_TCP, fin_seg, flen);
+        for (uint32_t i = 0; i < 1000U; ++i)
+            kernel_net_poll();
+    }
+
+    KERNEL_HEAP *heap = knet_state.Heap;
+    if (heap && c->RxBuf)
+        (void)kernel_heap_free(heap, c->RxBuf);
+    c->RxBuf = NULL;
+    c->State = KNET_TCP_CLOSED;
+    return KERNEL_NET_OK;
 }

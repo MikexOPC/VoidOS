@@ -540,7 +540,7 @@ int x86_virtio_net_start(
         return 0;
 
     KERNEL_CLOCK net_clock = {transport_clock_private, &vnet_rt, clock->Mask, KERNEL_PM_TIMER_HZ};
-    (void)kernel_net_start(&vnet_rt.Driver.NetDevice, &net_clock);
+    (void)kernel_net_start(heap, &vnet_rt.Driver.NetDevice, &net_clock);
     KERNEL_NET_INFO ninfo;
     if (kernel_net_info(&ninfo) && ninfo.Configured && ninfo.Gateway) {
         uint32_t rtt_ms = 0U;

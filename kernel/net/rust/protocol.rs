@@ -29,6 +29,12 @@ pub const DHCP_MSG_REQUEST: u8 = 3;
 pub const DHCP_MSG_ACK: u8 = 5;
 pub const DHCP_MSG_NAK: u8 = 6;
 
+pub const TCP_FIN: u8 = 0x01;
+pub const TCP_SYN: u8 = 0x02;
+pub const TCP_RST: u8 = 0x04;
+pub const TCP_PSH: u8 = 0x08;
+pub const TCP_ACK: u8 = 0x10;
+
 // ====== FFI structs ======
 
 #[repr(C)]
@@ -94,6 +100,20 @@ pub struct KnetDhcpReply {
     pub lease_seconds: u32,
     pub msg_type: u8,
     pub reserved: [u8; 3],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KnetTcpInfo {
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub seq: u32,
+    pub ack: u32,
+    pub flags: u8,
+    pub header_len: u8,
+    pub window: u16,
+    pub payload_len: u16,
+    pub reserved: u16,
 }
 
 // ====== helpers (panic-free for no_std kernel .obj linking) ======
@@ -617,6 +637,270 @@ pub unsafe extern "C" fn knet_dhcp_parse_reply(
     1
 }
 
+// ====== IPv4 dotted-quad parser ======
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn knet_parse_ipv4(
+    text: *const u8,
+    len: u32,
+    ip_out: *mut u32,
+) -> i32 {
+    if text.is_null() || ip_out.is_null() || len < 7 || len > 15 {
+        return 0;
+    }
+    let buf = unsafe { core::slice::from_raw_parts(text, len as usize) };
+    let mut octets = [0u32; 4];
+    let mut idx = 0usize;
+    let mut cur: u32 = 0;
+    let mut digits = 0u32;
+    for i in 0..buf.len() {
+        let ch = read_u8(buf, i);
+        if ch >= b'0' && ch <= b'9' {
+            cur = cur * 10 + u32::from(ch - b'0');
+            digits += 1;
+            if cur > 255 || digits > 3 {
+                return 0;
+            }
+        } else if ch == b'.' {
+            if digits == 0 || idx >= 3 {
+                return 0;
+            }
+            if let Some(slot) = octets.get_mut(idx) {
+                *slot = cur;
+            }
+            idx += 1;
+            cur = 0;
+            digits = 0;
+        } else {
+            return 0;
+        }
+    }
+    if idx != 3 || digits == 0 {
+        return 0;
+    }
+    octets[3] = cur;
+    let ip = (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3];
+    unsafe { *ip_out = ip };
+    1
+}
+
+// ====== DNS (RFC 1035) ======
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn knet_dns_build_query(
+    out: *mut u8,
+    cap: u32,
+    tx_id: u16,
+    hostname: *const u8,
+    host_len: u32,
+) -> u32 {
+    if out.is_null() || hostname.is_null() || host_len == 0 || host_len > 253 {
+        return 0;
+    }
+    let need = 12u32.saturating_add(host_len).saturating_add(6);
+    if need > cap {
+        return 0;
+    }
+    let buf = unsafe { core::slice::from_raw_parts_mut(out, cap as usize) };
+    let host = unsafe { core::slice::from_raw_parts(hostname, host_len as usize) };
+    for i in 0..12 {
+        write_u8(buf, i, 0);
+    }
+    write_be16(buf, 0, tx_id);
+    write_be16(buf, 2, 0x0100); // Standard query, Recursion Desired (RD=1)
+    write_be16(buf, 4, 1);      // QDCOUNT = 1
+
+    let mut pos = 12usize;
+    let mut label_start = 0usize;
+    for i in 0..=host.len() {
+        let is_sep = i == host.len() || read_u8(host, i) == b'.';
+        if is_sep {
+            let llen = i - label_start;
+            if llen == 0 {
+                if i == host.len() && pos > 12 {
+                    break;
+                }
+                return 0;
+            }
+            if llen > 63 || pos + 1 + llen + 5 > cap as usize {
+                return 0;
+            }
+            write_u8(buf, pos, llen as u8);
+            pos += 1;
+            copy_bytes_safe(buf, pos, host, label_start, llen);
+            pos += llen;
+            label_start = i + 1;
+        }
+    }
+    write_u8(buf, pos, 0); // Root label terminator
+    pos += 1;
+    write_be16(buf, pos, 1);     // QTYPE = A
+    write_be16(buf, pos + 2, 1); // QCLASS = IN
+    (pos + 4) as u32
+}
+
+fn dns_skip_name(buf: &[u8], mut off: usize) -> Option<usize> {
+    let mut steps = 0usize;
+    while off < buf.len() && steps < 128 {
+        let b = read_u8(buf, off);
+        if b == 0 {
+            return Some(off + 1);
+        }
+        if (b & 0xC0) == 0xC0 {
+            if off + 2 > buf.len() {
+                return None;
+            }
+            return Some(off + 2);
+        }
+        if (b & 0xC0) != 0 {
+            return None;
+        }
+        let next = off + 1 + (b as usize);
+        if next > buf.len() {
+            return None;
+        }
+        off = next;
+        steps += 1;
+    }
+    None
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn knet_dns_parse_response(
+    resp: *const u8,
+    len: u32,
+    expected_tx_id: u16,
+    ip_out: *mut u32,
+) -> i32 {
+    if resp.is_null() || ip_out.is_null() || len < 12 {
+        return 0;
+    }
+    let buf = unsafe { core::slice::from_raw_parts(resp, len as usize) };
+    if read_be16(buf, 0) != expected_tx_id {
+        return 0;
+    }
+    let flags = read_be16(buf, 2);
+    if (flags & 0x8000) == 0 || (flags & 0x000F) != 0 {
+        return 0;
+    }
+    let qdcount = read_be16(buf, 4) as usize;
+    let ancount = read_be16(buf, 6) as usize;
+    if ancount == 0 || qdcount > 8 || ancount > 32 {
+        return 0;
+    }
+    let mut off = 12usize;
+    for _ in 0..qdcount {
+        off = match dns_skip_name(buf, off) {
+            Some(n) => n,
+            None => return 0,
+        };
+        if off + 4 > buf.len() {
+            return 0;
+        }
+        off += 4;
+    }
+    for _ in 0..ancount {
+        off = match dns_skip_name(buf, off) {
+            Some(n) => n,
+            None => return 0,
+        };
+        if off + 10 > buf.len() {
+            return 0;
+        }
+        let rtype = read_be16(buf, off);
+        let rclass = read_be16(buf, off + 2);
+        let rdlen = read_be16(buf, off + 8) as usize;
+        off += 10;
+        if off + rdlen > buf.len() {
+            return 0;
+        }
+        if rtype == 1 && rclass == 1 && rdlen == 4 {
+            let ip = read_be32(buf, off);
+            unsafe { *ip_out = ip };
+            return 1;
+        }
+        off += rdlen;
+    }
+    0
+}
+
+// ====== TCP (RFC 9293) ======
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn knet_tcp_parse(
+    src_ip: u32,
+    dst_ip: u32,
+    segment: *const u8,
+    len: u32,
+    out: *mut KnetTcpInfo,
+) -> i32 {
+    if segment.is_null() || out.is_null() || len < 20 {
+        return 0;
+    }
+    let buf = unsafe { core::slice::from_raw_parts(segment, len as usize) };
+    let data_off = ((read_u8(buf, 12) >> 4) as usize) * 4;
+    if data_off < 20 || data_off > buf.len() {
+        return 0;
+    }
+    if transport_checksum(src_ip, dst_ip, IP_PROTO_TCP, buf) != 0 {
+        return 0;
+    }
+    let info = KnetTcpInfo {
+        src_port: read_be16(buf, 0),
+        dst_port: read_be16(buf, 2),
+        seq: read_be32(buf, 4),
+        ack: read_be32(buf, 8),
+        flags: read_u8(buf, 13),
+        header_len: data_off as u8,
+        window: read_be16(buf, 14),
+        payload_len: (buf.len() - data_off) as u16,
+        reserved: 0,
+    };
+    unsafe { *out = info };
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn knet_tcp_build(
+    out: *mut u8,
+    cap: u32,
+    src_ip: u32,
+    dst_ip: u32,
+    src_port: u16,
+    dst_port: u16,
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    window: u16,
+    data: *const u8,
+    data_len: u32,
+) -> u32 {
+    if out.is_null() || (data_len > 0 && data.is_null()) {
+        return 0;
+    }
+    let total = 20u32.saturating_add(data_len);
+    if total > cap || total > 1480 {
+        return 0;
+    }
+    let buf = unsafe { core::slice::from_raw_parts_mut(out, total as usize) };
+    write_be16(buf, 0, src_port);
+    write_be16(buf, 2, dst_port);
+    write_be32(buf, 4, seq);
+    write_be32(buf, 8, ack);
+    write_u8(buf, 12, 0x50); // 5 * 4 = 20-byte header
+    write_u8(buf, 13, flags);
+    write_be16(buf, 14, window);
+    write_be16(buf, 16, 0);
+    write_be16(buf, 18, 0);
+    if data_len > 0 {
+        let src = unsafe { core::slice::from_raw_parts(data, data_len as usize) };
+        copy_bytes_safe(buf, 20, src, 0, data_len as usize);
+    }
+    let csum = transport_checksum(src_ip, dst_ip, IP_PROTO_TCP, buf);
+    write_be16(buf, 16, csum);
+    total
+}
+
 // ====== host unit tests ======
 
 #[cfg(test)]
@@ -730,5 +1014,65 @@ mod tests {
         // Bad magic cookie must reject.
         offer[236] ^= 0xFF;
         assert_eq!(unsafe { knet_dhcp_parse_reply(offer.as_ptr(), 300, &mut parsed) }, 0);
+    }
+
+    #[test]
+    fn ipv4_text_dns_and_tcp_roundtrip() {
+        let mut ip = 0u32;
+        assert_eq!(unsafe { knet_parse_ipv4(b"10.0.2.2".as_ptr(), 8, &mut ip) }, 1);
+        assert_eq!(ip, 0x0A00_0202);
+        assert_eq!(unsafe { knet_parse_ipv4(b"999.0.0.1".as_ptr(), 9, &mut ip) }, 0);
+        assert_eq!(unsafe { knet_parse_ipv4(b"example.com".as_ptr(), 11, &mut ip) }, 0);
+
+        let mut q = [0u8; 128];
+        let qlen = unsafe { knet_dns_build_query(q.as_mut_ptr(), 128, 0xABCD, b"example.com".as_ptr(), 11) };
+        assert_eq!(qlen, 29);
+
+        // Build synthetic DNS A-record response pointing to 93.184.216.34.
+        let mut resp = [0u8; 64];
+        resp[..29].copy_from_slice(&q[..29]);
+        write_be16(&mut resp, 2, 0x8180); // QR=1, RD=1, RA=1, RCODE=0
+        write_be16(&mut resp, 6, 1);      // ANCOUNT=1
+        // Answer: ptr to offset 12 (0xC00C), TYPE=A(1), CLASS=IN(1), TTL=60, RDLEN=4, 93.184.216.34
+        let ans: [u8; 16] = [0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 93, 184, 216, 34];
+        resp[29..45].copy_from_slice(&ans);
+        let mut resolved = 0u32;
+        assert_eq!(unsafe { knet_dns_parse_response(resp.as_ptr(), 45, 0xABCD, &mut resolved) }, 1);
+        assert_eq!(resolved, 0x5DB8_D822);
+        // Wrong tx_id rejected.
+        assert_eq!(unsafe { knet_dns_parse_response(resp.as_ptr(), 45, 0x1111, &mut resolved) }, 0);
+
+        // TCP build + parse + checksum verification.
+        let mut seg = [0u8; 128];
+        let msg = b"GET / HTTP/1.0\r\n\r\n";
+        let slen = unsafe {
+            knet_tcp_build(
+                seg.as_mut_ptr(),
+                128,
+                0x0A00_020F,
+                0x5DB8_D822,
+                40001,
+                80,
+                1000,
+                2000,
+                TCP_PSH | TCP_ACK,
+                8192,
+                msg.as_ptr(),
+                msg.len() as u32,
+            )
+        };
+        assert_eq!(slen, 20 + msg.len() as u32);
+        let mut tinfo = KnetTcpInfo::default();
+        assert_eq!(unsafe { knet_tcp_parse(0x0A00_020F, 0x5DB8_D822, seg.as_ptr(), slen, &mut tinfo) }, 1);
+        assert_eq!(tinfo.src_port, 40001);
+        assert_eq!(tinfo.dst_port, 80);
+        assert_eq!(tinfo.seq, 1000);
+        assert_eq!(tinfo.ack, 2000);
+        assert_eq!(tinfo.flags, TCP_PSH | TCP_ACK);
+        assert_eq!(tinfo.payload_len, msg.len() as u16);
+
+        // Corrupt TCP payload byte -> checksum must reject.
+        seg[22] ^= 0x01;
+        assert_eq!(unsafe { knet_tcp_parse(0x0A00_020F, 0x5DB8_D822, seg.as_ptr(), slen, &mut tinfo) }, 0);
     }
 }
