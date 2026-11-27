@@ -247,61 +247,54 @@ static int split_parent_and_name_private(
     return 1;
 }
 
-// ====== create_file_entry_private ======
+// ====== dir_has_short_name_private ======
 
-static int create_file_entry_private(
+static int dir_has_short_name_private(
     const KERNEL_VFS_MOUNT *mount,
     uint32_t dir_cluster,
-    const char *name,
-    uint32_t name_len,
-    FAT_NODE_LOC *out_node
+    const uint8_t short_11[11],
+    int *found_out
 )
 {
-    uint8_t name_83[11];
-    if (!kfat_encode_83_name((const uint8_t *)name, name_len, name_83))
-        return KERNEL_STORAGE_ERR_ARG;
-
+    *found_out = 0;
     uint8_t sector[512];
+
     if (dir_cluster == 0U && !mount->Geometry.IsFat32) {
         for (uint32_t s = 0; s < mount->Geometry.RootDirSectors; ++s) {
             uint64_t lba = mount->Geometry.RootDirLba + s;
             int status = kernel_block_cache_read_sectors(mount->Cache, lba, 1U, sector);
             if (status != KERNEL_STORAGE_OK)
                 return status;
-
             for (uint32_t off = 0; off < 512U; off += 32U) {
-                if (sector[off] == 0x00U || sector[off] == 0xE5U) {
-                    zero_bytes(sector + off, 32U);
-                    copy_bytes(sector + off, name_83, 11U);
-                    sector[off + 11U] = FAT_ATTR_ARCHIVE;
-                    status = kernel_block_cache_write_sectors(mount->Cache, lba, 1U, sector);
-                    if (status != KERNEL_STORAGE_OK)
-                        return status;
-
-                    zero_bytes(out_node, sizeof(*out_node));
-                    out_node->DirEntryLba = lba;
-                    out_node->DirEntryByteOffset = off;
-                    out_node->Attr = FAT_ATTR_ARCHIVE;
-                    out_node->NameLen = name_len;
-                    copy_bytes(out_node->Name, name, name_len);
+                uint8_t first = sector[off];
+                if (first == 0x00U)
+                    return KERNEL_STORAGE_OK;
+                if (first == 0xE5U || sector[off + 11U] == FAT_ATTR_LONG_NAME)
+                    continue;
+                int eq = 1;
+                for (uint32_t k = 0; k < 11U; ++k) {
+                    if (sector[off + k] != short_11[k]) {
+                        eq = 0;
+                        break;
+                    }
+                }
+                if (eq) {
+                    *found_out = 1;
                     return KERNEL_STORAGE_OK;
                 }
             }
         }
-        return KERNEL_STORAGE_ERR_NOSPC;
+        return KERNEL_STORAGE_OK;
     }
 
     uint32_t current = (dir_cluster == 0U && mount->Geometry.IsFat32)
         ? mount->Geometry.RootCluster
         : dir_cluster;
-    uint32_t last_valid = current;
     uint32_t hops = 0;
 
     while (current >= 2U && current != FAT_CLUSTER_EOF) {
         if (++hops > mount->Geometry.TotalClusters)
             return KERNEL_STORAGE_ERR_CORRUPT;
-
-        last_valid = current;
         uint64_t cluster_lba = kfat_cluster_to_lba(&mount->Geometry, current);
         if (!cluster_lba)
             return KERNEL_STORAGE_ERR_CORRUPT;
@@ -311,42 +304,277 @@ static int create_file_entry_private(
             int status = kernel_block_cache_read_sectors(mount->Cache, lba, 1U, sector);
             if (status != KERNEL_STORAGE_OK)
                 return status;
-
             for (uint32_t off = 0; off < 512U; off += 32U) {
-                if (sector[off] == 0x00U || sector[off] == 0xE5U) {
-                    zero_bytes(sector + off, 32U);
-                    copy_bytes(sector + off, name_83, 11U);
-                    sector[off + 11U] = FAT_ATTR_ARCHIVE;
-                    status = kernel_block_cache_write_sectors(mount->Cache, lba, 1U, sector);
-                    if (status != KERNEL_STORAGE_OK)
-                        return status;
-
-                    zero_bytes(out_node, sizeof(*out_node));
-                    out_node->DirEntryLba = lba;
-                    out_node->DirEntryByteOffset = off;
-                    out_node->Attr = FAT_ATTR_ARCHIVE;
-                    out_node->NameLen = name_len;
-                    copy_bytes(out_node->Name, name, name_len);
+                uint8_t first = sector[off];
+                if (first == 0x00U)
+                    return KERNEL_STORAGE_OK;
+                if (first == 0xE5U || sector[off + 11U] == FAT_ATTR_LONG_NAME)
+                    continue;
+                int eq = 1;
+                for (uint32_t k = 0; k < 11U; ++k) {
+                    if (sector[off + k] != short_11[k]) {
+                        eq = 0;
+                        break;
+                    }
+                }
+                if (eq) {
+                    *found_out = 1;
                     return KERNEL_STORAGE_OK;
                 }
             }
         }
-
         uint32_t next = FAT_CLUSTER_EOF;
         int status = vfs_read_next_cluster_private(mount, current, &next);
         if (status != KERNEL_STORAGE_OK)
             return status;
-        if (next == FAT_CLUSTER_EOF) {
-            uint32_t new_cluster = 0;
-            status = allocate_cluster_private(mount, last_valid, &new_cluster);
-            if (status != KERNEL_STORAGE_OK)
-                return status;
-            next = new_cluster;
-        }
         current = next;
     }
+    return KERNEL_STORAGE_OK;
+}
 
-    return KERNEL_STORAGE_ERR_NOSPC;
+// ====== write_slot_private ======
+
+static int write_slot_private(
+    const KERNEL_VFS_MOUNT *mount,
+    uint64_t lba,
+    uint32_t byte_offset,
+    const uint8_t entry_32[32]
+)
+{
+    uint8_t sector[512];
+    int status = kernel_block_cache_read_sectors(mount->Cache, lba, 1U, sector);
+    if (status != KERNEL_STORAGE_OK)
+        return status;
+    copy_bytes(sector + byte_offset, entry_32, 32U);
+    return kernel_block_cache_write_sectors(mount->Cache, lba, 1U, sector);
+}
+
+// ====== create_dir_entry_private ======
+
+static int create_dir_entry_private(
+    const KERNEL_VFS_MOUNT *mount,
+    uint32_t dir_cluster,
+    const char *name,
+    uint32_t name_len,
+    uint8_t attr,
+    uint32_t first_cluster,
+    FAT_NODE_LOC *out_node
+)
+{
+    if (!kfat_validate_name((const uint8_t *)name, name_len))
+        return KERNEL_STORAGE_ERR_ARG;
+
+    uint8_t name_83[11];
+    uint8_t lfn_entries[5 * 32];
+    uint32_t lfn_count = 0U;
+
+    if (!kfat_needs_lfn((const uint8_t *)name, name_len)) {
+        if (!kfat_encode_83_name((const uint8_t *)name, name_len, name_83))
+            return KERNEL_STORAGE_ERR_ARG;
+    } else {
+        int alias_ok = 0;
+        for (uint32_t tail = 1U; tail <= 9999U; ++tail) {
+            if (!kfat_build_short_alias((const uint8_t *)name, name_len, tail, name_83))
+                return KERNEL_STORAGE_ERR_ARG;
+            int exists = 0;
+            int st = dir_has_short_name_private(mount, dir_cluster, name_83, &exists);
+            if (st != KERNEL_STORAGE_OK)
+                return st;
+            if (!exists) {
+                alias_ok = 1;
+                break;
+            }
+        }
+        if (!alias_ok)
+            return KERNEL_STORAGE_ERR_NOSPC;
+        lfn_count = kfat_build_lfn_entries(
+            (const uint8_t *)name,
+            name_len,
+            name_83,
+            lfn_entries,
+            5U
+        );
+        if (!lfn_count)
+            return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    uint32_t need_slots = lfn_count + 1U;
+    uint64_t slot_lba[6];
+    uint32_t slot_off[6];
+    uint32_t run = 0U;
+    uint8_t sector[512];
+
+    if (dir_cluster == 0U && !mount->Geometry.IsFat32) {
+        for (uint32_t s = 0; s < mount->Geometry.RootDirSectors && run < need_slots; ++s) {
+            uint64_t lba = mount->Geometry.RootDirLba + s;
+            int status = kernel_block_cache_read_sectors(mount->Cache, lba, 1U, sector);
+            if (status != KERNEL_STORAGE_OK)
+                return status;
+            for (uint32_t off = 0; off < 512U && run < need_slots; off += 32U) {
+                if (sector[off] == 0x00U || sector[off] == 0xE5U) {
+                    slot_lba[run] = lba;
+                    slot_off[run] = off;
+                    ++run;
+                } else {
+                    run = 0U;
+                }
+            }
+        }
+        if (run < need_slots)
+            return KERNEL_STORAGE_ERR_NOSPC;
+    } else {
+        uint32_t current = (dir_cluster == 0U && mount->Geometry.IsFat32)
+            ? mount->Geometry.RootCluster
+            : dir_cluster;
+        uint32_t last_valid = current;
+        uint32_t hops = 0;
+
+        while (current >= 2U && current != FAT_CLUSTER_EOF && run < need_slots) {
+            if (++hops > mount->Geometry.TotalClusters)
+                return KERNEL_STORAGE_ERR_CORRUPT;
+
+            last_valid = current;
+            uint64_t cluster_lba = kfat_cluster_to_lba(&mount->Geometry, current);
+            if (!cluster_lba)
+                return KERNEL_STORAGE_ERR_CORRUPT;
+
+            for (uint32_t s = 0; s < mount->Geometry.SectorsPerCluster && run < need_slots; ++s) {
+                uint64_t lba = cluster_lba + s;
+                int status = kernel_block_cache_read_sectors(mount->Cache, lba, 1U, sector);
+                if (status != KERNEL_STORAGE_OK)
+                    return status;
+
+                for (uint32_t off = 0; off < 512U && run < need_slots; off += 32U) {
+                    if (sector[off] == 0x00U || sector[off] == 0xE5U) {
+                        slot_lba[run] = lba;
+                        slot_off[run] = off;
+                        ++run;
+                    } else {
+                        run = 0U;
+                    }
+                }
+            }
+
+            if (run >= need_slots)
+                break;
+
+            uint32_t next = FAT_CLUSTER_EOF;
+            int status = vfs_read_next_cluster_private(mount, current, &next);
+            if (status != KERNEL_STORAGE_OK)
+                return status;
+            if (next == FAT_CLUSTER_EOF) {
+                uint32_t new_cluster = 0;
+                status = allocate_cluster_private(mount, last_valid, &new_cluster);
+                if (status != KERNEL_STORAGE_OK)
+                    return status;
+                next = new_cluster;
+            }
+            current = next;
+        }
+        if (run < need_slots)
+            return KERNEL_STORAGE_ERR_NOSPC;
+    }
+
+    for (uint32_t i = 0; i < lfn_count; ++i) {
+        int status = write_slot_private(mount, slot_lba[i], slot_off[i], lfn_entries + i * 32U);
+        if (status != KERNEL_STORAGE_OK)
+            return status;
+    }
+
+    uint8_t short_entry[32];
+    zero_bytes(short_entry, sizeof(short_entry));
+    copy_bytes(short_entry, name_83, 11U);
+    short_entry[11] = attr;
+    uint16_t hi = (uint16_t)((first_cluster >> 16) & 0xFFFFU);
+    uint16_t lo = (uint16_t)(first_cluster & 0xFFFFU);
+    short_entry[20] = (uint8_t)(hi & 0xFFU);
+    short_entry[21] = (uint8_t)((hi >> 8) & 0xFFU);
+    short_entry[26] = (uint8_t)(lo & 0xFFU);
+    short_entry[27] = (uint8_t)((lo >> 8) & 0xFFU);
+
+    int status = write_slot_private(mount, slot_lba[lfn_count], slot_off[lfn_count], short_entry);
+    if (status != KERNEL_STORAGE_OK)
+        return status;
+
+    zero_bytes(out_node, sizeof(*out_node));
+    out_node->DirEntryLba = slot_lba[lfn_count];
+    out_node->DirEntryByteOffset = slot_off[lfn_count];
+    out_node->FirstCluster = first_cluster;
+    out_node->Attr = attr;
+    out_node->NameLen = name_len;
+    copy_bytes(out_node->Name, name, name_len);
+    out_node->LfnCount = lfn_count;
+    for (uint32_t i = 0; i < lfn_count; ++i) {
+        out_node->LfnLba[i] = slot_lba[i];
+        out_node->LfnByteOffset[i] = slot_off[i];
+    }
+    return KERNEL_STORAGE_OK;
+}
+
+// ====== delete_dir_entry_private ======
+
+static int delete_dir_entry_private(const KERNEL_VFS_MOUNT *mount, const FAT_NODE_LOC *node)
+{
+    uint8_t sector[512];
+    int status = kernel_block_cache_read_sectors(mount->Cache, node->DirEntryLba, 1U, sector);
+    if (status != KERNEL_STORAGE_OK)
+        return status;
+    sector[node->DirEntryByteOffset] = 0xE5U;
+    status = kernel_block_cache_write_sectors(mount->Cache, node->DirEntryLba, 1U, sector);
+    if (status != KERNEL_STORAGE_OK)
+        return status;
+
+    for (uint32_t i = 0; i < node->LfnCount && i < FAT_MAX_LFN_SLOTS; ++i) {
+        status = kernel_block_cache_read_sectors(mount->Cache, node->LfnLba[i], 1U, sector);
+        if (status != KERNEL_STORAGE_OK)
+            return status;
+        sector[node->LfnByteOffset[i]] = 0xE5U;
+        status = kernel_block_cache_write_sectors(mount->Cache, node->LfnLba[i], 1U, sector);
+        if (status != KERNEL_STORAGE_OK)
+            return status;
+    }
+    return KERNEL_STORAGE_OK;
+}
+
+// ====== dir_is_empty_private ======
+
+static int dir_is_empty_private(const KERNEL_VFS_MOUNT *mount, uint32_t dir_cluster, int *empty_out)
+{
+    *empty_out = 1;
+    uint8_t sector[512];
+    KERNEL_FAT_LFN_STATE lfn = {0};
+    uint32_t current = dir_cluster;
+    uint32_t hops = 0;
+
+    while (current >= 2U && current != FAT_CLUSTER_EOF) {
+        if (++hops > mount->Geometry.TotalClusters)
+            return KERNEL_STORAGE_ERR_CORRUPT;
+        uint64_t cluster_lba = kfat_cluster_to_lba(&mount->Geometry, current);
+        if (!cluster_lba)
+            return KERNEL_STORAGE_ERR_CORRUPT;
+
+        for (uint32_t s = 0; s < mount->Geometry.SectorsPerCluster; ++s) {
+            int status = kernel_block_cache_read_sectors(mount->Cache, cluster_lba + s, 1U, sector);
+            if (status != KERNEL_STORAGE_OK)
+                return status;
+            for (uint32_t off = 0; off < 512U; off += 32U) {
+                KERNEL_FAT_DIR_ENTRY parsed;
+                uint32_t step = kfat_dir_step(sector + off, off, &lfn, &parsed);
+                if (step == 0U)
+                    return KERNEL_STORAGE_OK;
+                if (step == 2U) {
+                    *empty_out = 0;
+                    return KERNEL_STORAGE_OK;
+                }
+            }
+        }
+        uint32_t next = FAT_CLUSTER_EOF;
+        int status = vfs_read_next_cluster_private(mount, current, &next);
+        if (status != KERNEL_STORAGE_OK)
+            return status;
+        current = next;
+    }
+    return KERNEL_STORAGE_OK;
 }
 
 // ====== kernel_vfs_write_file ======
@@ -403,11 +631,13 @@ int kernel_vfs_write_file(
             return KERNEL_STORAGE_ERR_ARG;
         }
 
-        status = create_file_entry_private(
+        status = create_dir_entry_private(
             mount,
             parent_node.FirstCluster,
             file_name,
             name_len,
+            FAT_ATTR_ARCHIVE,
+            0U,
             &node
         );
     }
@@ -592,18 +822,182 @@ int kernel_vfs_unlink(KERNEL_VFS *vfs, const char *path)
         return KERNEL_STORAGE_ERR_ARG;
     }
 
-    // Mark the directory entry deleted (0xE5) on disk BEFORE freeing the FAT cluster chain
-    // so a directory write error never leaves a visible file referencing freed clusters.
+    // Mark the directory entry (and any preceding LFN entries) deleted (0xE5) on disk BEFORE freeing
+    // the FAT cluster chain so a directory write error never leaves a visible file referencing freed clusters.
     uint32_t old_first = node.FirstCluster;
-    uint8_t sector[512];
-    status = kernel_block_cache_read_sectors(mount->Cache, node.DirEntryLba, 1U, sector);
-    if (status == KERNEL_STORAGE_OK) {
-        sector[node.DirEntryByteOffset] = 0xE5U;
-        status = kernel_block_cache_write_sectors(mount->Cache, node.DirEntryLba, 1U, sector);
-    }
+    status = delete_dir_entry_private(mount, &node);
     if (status == KERNEL_STORAGE_OK && old_first >= 2U) {
         status = free_cluster_chain_private(mount, old_first);
     }
+
+    vfs_leave_private(&access);
+    return status;
+}
+
+// ====== kernel_vfs_mkdir ======
+
+// Microsoft FAT32 File System Specification v1.03, §6.5: "." points to self, ".." points to parent (0 if root).
+int kernel_vfs_mkdir(KERNEL_VFS *vfs, const char *path)
+{
+    if (!vfs || !path)
+        return KERNEL_STORAGE_ERR_ARG;
+
+    VFS_ACCESS access;
+    if (!vfs_enter_private(vfs, &access))
+        return KERNEL_STORAGE_ERR_ARG;
+
+    const char *subpath = NULL;
+    const KERNEL_VFS_MOUNT *mount = vfs_resolve_mount_private(vfs, path, &subpath);
+    if (!mount) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_NOT_FOUND;
+    }
+    if (mount->Cache->Device->ReadOnly) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_READ_ONLY;
+    }
+
+    FAT_NODE_LOC existing;
+    int status = vfs_resolve_path_private(mount, subpath, &existing);
+    if (status == KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+    if (status != KERNEL_STORAGE_ERR_NOT_FOUND) {
+        vfs_leave_private(&access);
+        return status;
+    }
+
+    char parent_path[KERNEL_VFS_PATH_CAPACITY];
+    char dir_name[KERNEL_VFS_NAME_CAPACITY];
+    uint32_t name_len = 0;
+    if (!split_parent_and_name_private(subpath, parent_path, dir_name, &name_len)) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    FAT_NODE_LOC parent_node;
+    status = vfs_resolve_path_private(mount, parent_path, &parent_node);
+    if (status != KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return status;
+    }
+    if (!(parent_node.Attr & FAT_ATTR_DIRECTORY)) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    uint32_t new_cluster = 0U;
+    status = allocate_cluster_private(mount, 0U, &new_cluster);
+    if (status != KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return status;
+    }
+
+    uint64_t new_lba = kfat_cluster_to_lba(&mount->Geometry, new_cluster);
+    if (!new_lba) {
+        (void)free_cluster_chain_private(mount, new_cluster);
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_CORRUPT;
+    }
+
+    uint8_t sector[512];
+    zero_bytes(sector, sizeof(sector));
+
+    // "." entry
+    for (uint32_t k = 0; k < 11U; ++k)
+        sector[k] = ' ';
+    sector[0] = '.';
+    sector[11] = FAT_ATTR_DIRECTORY;
+    sector[20] = (uint8_t)((new_cluster >> 16) & 0xFFU);
+    sector[21] = (uint8_t)((new_cluster >> 24) & 0xFFU);
+    sector[26] = (uint8_t)(new_cluster & 0xFFU);
+    sector[27] = (uint8_t)((new_cluster >> 8) & 0xFFU);
+
+    // ".." entry (cluster 0 when parent is root)
+    uint32_t dotdot_cluster = parent_node.DirEntryLba == 0ULL ? 0U : parent_node.FirstCluster;
+    for (uint32_t k = 0; k < 11U; ++k)
+        sector[32U + k] = ' ';
+    sector[32] = '.';
+    sector[33] = '.';
+    sector[32 + 11] = FAT_ATTR_DIRECTORY;
+    sector[32 + 20] = (uint8_t)((dotdot_cluster >> 16) & 0xFFU);
+    sector[32 + 21] = (uint8_t)((dotdot_cluster >> 24) & 0xFFU);
+    sector[32 + 26] = (uint8_t)(dotdot_cluster & 0xFFU);
+    sector[32 + 27] = (uint8_t)((dotdot_cluster >> 8) & 0xFFU);
+
+    status = kernel_block_cache_write_sectors(mount->Cache, new_lba, 1U, sector);
+    if (status != KERNEL_STORAGE_OK) {
+        (void)free_cluster_chain_private(mount, new_cluster);
+        vfs_leave_private(&access);
+        return status;
+    }
+
+    FAT_NODE_LOC created;
+    status = create_dir_entry_private(
+        mount,
+        parent_node.FirstCluster,
+        dir_name,
+        name_len,
+        FAT_ATTR_DIRECTORY,
+        new_cluster,
+        &created
+    );
+    if (status != KERNEL_STORAGE_OK)
+        (void)free_cluster_chain_private(mount, new_cluster);
+
+    vfs_leave_private(&access);
+    return status;
+}
+
+// ====== kernel_vfs_rmdir ======
+
+int kernel_vfs_rmdir(KERNEL_VFS *vfs, const char *path)
+{
+    if (!vfs || !path)
+        return KERNEL_STORAGE_ERR_ARG;
+
+    VFS_ACCESS access;
+    if (!vfs_enter_private(vfs, &access))
+        return KERNEL_STORAGE_ERR_ARG;
+
+    const char *subpath = NULL;
+    const KERNEL_VFS_MOUNT *mount = vfs_resolve_mount_private(vfs, path, &subpath);
+    if (!mount) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_NOT_FOUND;
+    }
+    if (mount->Cache->Device->ReadOnly) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_READ_ONLY;
+    }
+
+    FAT_NODE_LOC node;
+    int status = vfs_resolve_path_private(mount, subpath, &node);
+    if (status != KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return status;
+    }
+    if (!(node.Attr & FAT_ATTR_DIRECTORY) || !node.DirEntryLba) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    int is_empty = 0;
+    status = dir_is_empty_private(mount, node.FirstCluster, &is_empty);
+    if (status != KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return status;
+    }
+    if (!is_empty) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    uint32_t old_first = node.FirstCluster;
+    status = delete_dir_entry_private(mount, &node);
+    if (status == KERNEL_STORAGE_OK && old_first >= 2U)
+        status = free_cluster_chain_private(mount, old_first);
 
     vfs_leave_private(&access);
     return status;

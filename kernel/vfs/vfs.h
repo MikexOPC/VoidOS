@@ -181,6 +181,8 @@ int  kernel_vfs_write_file(
     uint32_t *bytes_written_out
 );
 int  kernel_vfs_unlink(KERNEL_VFS *vfs, const char *path);
+int  kernel_vfs_mkdir(KERNEL_VFS *vfs, const char *path);
+int  kernel_vfs_rmdir(KERNEL_VFS *vfs, const char *path);
 int  kernel_vfs_sync(KERNEL_VFS *vfs);
 
 int  kernel_vfs_open(

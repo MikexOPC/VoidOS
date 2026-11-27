@@ -370,12 +370,19 @@ static int read_next_cluster_private(
 
 // ====== scan_dir_sector_private ======
 
+typedef struct {
+    uint32_t  Count;
+    uint64_t  Lba[FAT_MAX_LFN_SLOTS];
+    uint32_t  ByteOffset[FAT_MAX_LFN_SLOTS];
+} FAT_LFN_TRACKER;
+
 // Mode 0: find by name (`target_name`, `target_len`).
 // Mode 1: find by valid entry index (`target_index`, current counter in `*seen_count`).
 static int scan_dir_sector_private(
     const uint8_t sector[512],
     uint64_t sector_lba,
     KERNEL_FAT_LFN_STATE *lfn,
+    FAT_LFN_TRACKER *tracker,
     int by_index,
     const char *target_name,
     uint32_t target_len,
@@ -385,12 +392,29 @@ static int scan_dir_sector_private(
 )
 {
     for (uint32_t off = 0; off < 512U; off += 32U) {
+        uint8_t first = sector[off];
+        uint8_t attr = sector[off + 11U];
+        if (first != 0x00U && first != 0xE5U && attr == FAT_ATTR_LONG_NAME) {
+            if ((first & 0x40U) != 0U)
+                tracker->Count = 0U;
+            if (tracker->Count < FAT_MAX_LFN_SLOTS) {
+                tracker->Lba[tracker->Count] = sector_lba;
+                tracker->ByteOffset[tracker->Count] = off;
+                ++tracker->Count;
+            }
+        }
+
         KERNEL_FAT_DIR_ENTRY parsed;
         uint32_t step = kfat_dir_step(sector + off, off, lfn, &parsed);
-        if (step == 0U)
+        if (step == 0U) {
+            tracker->Count = 0U;
             return KERNEL_STORAGE_ERR_NOT_FOUND;
-        if (step != 2U)
+        }
+        if (step != 2U) {
+            if (first == 0xE5U || attr != FAT_ATTR_LONG_NAME)
+                tracker->Count = 0U;
             continue;
+        }
 
         int matched = 0;
         if (by_index) {
@@ -416,8 +440,15 @@ static int scan_dir_sector_private(
             out_node->NameLen = parsed.NameLen < 63U ? parsed.NameLen : 63U;
             copy_bytes(out_node->Name, parsed.Name, out_node->NameLen);
             out_node->Name[out_node->NameLen] = '\0';
+            out_node->LfnCount = tracker->Count;
+            for (uint32_t k = 0; k < tracker->Count; ++k) {
+                out_node->LfnLba[k] = tracker->Lba[k];
+                out_node->LfnByteOffset[k] = tracker->ByteOffset[k];
+            }
+            tracker->Count = 0U;
             return KERNEL_STORAGE_OK;
         }
+        tracker->Count = 0U;
     }
     return 1;
 }
@@ -436,6 +467,7 @@ static int search_directory_private(
 {
     uint8_t sector[512];
     KERNEL_FAT_LFN_STATE lfn = {0};
+    FAT_LFN_TRACKER tracker = {0};
     uint32_t seen = 0;
 
     // FAT16 fixed root directory when dir_cluster == 0 and !IsFat32.
@@ -450,6 +482,7 @@ static int search_directory_private(
                 sector,
                 lba,
                 &lfn,
+                &tracker,
                 by_index,
                 target_name,
                 target_len,
@@ -486,6 +519,7 @@ static int search_directory_private(
                 sector,
                 lba,
                 &lfn,
+                &tracker,
                 by_index,
                 target_name,
                 target_len,

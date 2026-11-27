@@ -8,6 +8,8 @@ typedef struct {
     KERNEL_VFS  *Vfs;
 } VFS_ACCESS;
 
+#define FAT_MAX_LFN_SLOTS 20U
+
 typedef struct {
     uint64_t  DirEntryLba;
     uint32_t  DirEntryByteOffset;
@@ -16,6 +18,9 @@ typedef struct {
     uint32_t  Attr;
     char      Name[KERNEL_VFS_NAME_CAPACITY];
     uint32_t  NameLen;
+    uint32_t  LfnCount;
+    uint64_t  LfnLba[FAT_MAX_LFN_SLOTS];
+    uint32_t  LfnByteOffset[FAT_MAX_LFN_SLOTS];
 } FAT_NODE_LOC;
 
 int  vfs_enter_private(KERNEL_VFS *vfs, VFS_ACCESS *access);

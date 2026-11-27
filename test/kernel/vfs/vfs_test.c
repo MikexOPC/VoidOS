@@ -311,12 +311,63 @@ int main(void)
         CHECK(kernel_vfs_stat(&vfs, "/usb/HELLO.TXT", &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
     }
 
+    // 7. mkdir, nested LFN subdirectories, LFN files (including alias collisions and 63-char max), unlink & rmdir
+    {
+        CHECK(kernel_vfs_mkdir(&vfs, "/Documenti") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_mkdir(&vfs, "/Documenti") == KERNEL_STORAGE_ERR_ARG);
+        CHECK(kernel_vfs_stat(&vfs, "/Documenti", &st) == KERNEL_STORAGE_OK);
+        CHECK(st.IsDirectory == 1U && strcmp(st.Name, "Documenti") == 0);
+
+        CHECK(kernel_vfs_mkdir(&vfs, "/Documenti/Sotto Cartella") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_stat(&vfs, "/Documenti/Sotto Cartella", &st) == KERNEL_STORAGE_OK);
+        CHECK(st.IsDirectory == 1U && strcmp(st.Name, "Sotto Cartella") == 0);
+
+        const char *p1 = "/Documenti/Sotto Cartella/my_long_config_alpha.json";
+        const char *p2 = "/Documenti/Sotto Cartella/my_long_config_beta.json";
+        const char *p3 = "/Documenti/Sotto Cartella/file_with_63_chars_abcdefghijklmnopqrstuvwxyz_0123456789_end123";
+        uint32_t lfn_written = 0;
+        CHECK(kernel_vfs_write_file(&vfs, p1, 0, "{\"a\":1}", 7, 1, 1, &lfn_written) == KERNEL_STORAGE_OK && lfn_written == 7);
+        CHECK(kernel_vfs_write_file(&vfs, p2, 0, "{\"b\":2}", 7, 1, 1, &lfn_written) == KERNEL_STORAGE_OK && lfn_written == 7);
+        CHECK(kernel_vfs_write_file(&vfs, p3, 0, "sixtythree", 10, 1, 1, &lfn_written) == KERNEL_STORAGE_OK && lfn_written == 10);
+
+        char lfn_rbuf[32];
+        uint32_t lfn_rlen = 0;
+        CHECK(kernel_vfs_read_file(&vfs, p1, 0, lfn_rbuf, sizeof(lfn_rbuf), &lfn_rlen) == KERNEL_STORAGE_OK && lfn_rlen == 7);
+        CHECK(memcmp(lfn_rbuf, "{\"a\":1}", 7) == 0);
+        CHECK(kernel_vfs_read_file(&vfs, p2, 0, lfn_rbuf, sizeof(lfn_rbuf), &lfn_rlen) == KERNEL_STORAGE_OK && lfn_rlen == 7);
+        CHECK(memcmp(lfn_rbuf, "{\"b\":2}", 7) == 0);
+        CHECK(kernel_vfs_read_file(&vfs, p3, 0, lfn_rbuf, sizeof(lfn_rbuf), &lfn_rlen) == KERNEL_STORAGE_OK && lfn_rlen == 10);
+        CHECK(memcmp(lfn_rbuf, "sixtythree", 10) == 0);
+
+        CHECK(kernel_vfs_readdir(&vfs, "/Documenti/Sotto Cartella", 0, &st) == KERNEL_STORAGE_OK);
+        CHECK(strcmp(st.Name, "my_long_config_alpha.json") == 0);
+        CHECK(kernel_vfs_readdir(&vfs, "/Documenti/Sotto Cartella", 1, &st) == KERNEL_STORAGE_OK);
+        CHECK(strcmp(st.Name, "my_long_config_beta.json") == 0);
+        CHECK(kernel_vfs_readdir(&vfs, "/Documenti/Sotto Cartella", 2, &st) == KERNEL_STORAGE_OK);
+        CHECK(strcmp(st.Name, "file_with_63_chars_abcdefghijklmnopqrstuvwxyz_0123456789_end123") == 0);
+
+        // Non-empty rmdir must fail
+        CHECK(kernel_vfs_rmdir(&vfs, "/Documenti/Sotto Cartella") == KERNEL_STORAGE_ERR_ARG);
+        CHECK(kernel_vfs_rmdir(&vfs, "/") == KERNEL_STORAGE_ERR_ARG);
+
+        // Unlink all LFN files (must clean all LFN slots) then rmdir nested dirs
+        CHECK(kernel_vfs_unlink(&vfs, p1) == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_unlink(&vfs, p2) == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_unlink(&vfs, p3) == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_stat(&vfs, p1, &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+        CHECK(kernel_vfs_readdir(&vfs, "/Documenti/Sotto Cartella", 0, &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+        CHECK(kernel_vfs_rmdir(&vfs, "/Documenti/Sotto Cartella") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_rmdir(&vfs, "/Documenti") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_stat(&vfs, "/Documenti", &st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+        CHECK(kernel_vfs_sync(&vfs) == KERNEL_STORAGE_OK);
+    }
+
     kernel_vfs_destroy(&vfs);
     kernel_block_cache_destroy(&fat32_cache);
 
     KERNEL_HEAP_STATS hstats = kernel_heap_stats(&test_heap);
     CHECK(hstats.FreePages == KERNEL_HEAP_MAX_PAGES && hstats.Objects == 0);
 
-    printf("PASS: vfs_fat_host (mount, stat, readdir, multi-cluster read, subdir lookup, cycle detection, zero leaks)\n");
+    printf("PASS: vfs_fat_host (mount, stat, readdir, multi-cluster read, subdir lookup, mkdir, LFN, rmdir, cycle detection, zero leaks)\n");
     return 0;
 }
