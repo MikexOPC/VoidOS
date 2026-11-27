@@ -486,13 +486,17 @@ static void test_msc_bot_read_write(void)
 
     KERNEL_XHCI_DEVICE dev;
     assert(kernel_xhci_init(&dev, &transport) == 1);
-    assert(dev.Msc.Active == 1U);
-    assert(dev.Msc.BlockSize == 512U);
-    assert(dev.Msc.TotalSectors == 16ULL);
+    assert(dev.MscCount == 1U);
+    assert(dev.Msc[0].Active == 1U);
+    assert(dev.Msc[0].BlockSize == 512U);
+    assert(dev.Msc[0].TotalSectors == 16ULL);
+    assert(dev.Msc[1].Active == 0U);
 
     uint8_t buf[512] = {0};
-    assert(kernel_xhci_msc_read_sectors(&dev, 0ULL, 1U, buf) == 1);
+    assert(kernel_xhci_msc_read_sectors_at(&dev, 0U, 0ULL, 1U, buf) == 1);
     assert(memcmp(buf, m.Disk, 512U) == 0);
+    assert(kernel_xhci_msc_read_sectors_at(&dev, 1U, 0ULL, 1U, buf) == 0);
+    assert(kernel_xhci_msc_read_sectors_at(&dev, XHCI_MAX_MSC_DEVICES, 0ULL, 1U, buf) == 0);
 
     uint8_t pattern[512];
     for (uint32_t i = 0; i < 512U; ++i)

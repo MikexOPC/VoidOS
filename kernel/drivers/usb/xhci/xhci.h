@@ -104,6 +104,8 @@
 
 #define XHCI_RING_TRBS          64U
 #define XHCI_MAX_HID_DEVICES    16U
+// Up to 4 simultaneous USB Mass Storage drives (/usb, /usb1, /usb2, /usb3) within KERNEL_VFS_MAX_MOUNTS (8).
+#define XHCI_MAX_MSC_DEVICES    4U
 
 #define XHCI_KEY_MOD_SHIFT      (1U << 0)
 #define XHCI_KEY_MOD_CTRL       (1U << 1)
@@ -238,7 +240,8 @@ typedef struct {
     uint64_t               ScratchBufPhys;
     XHCI_HID_SLOT          HidDevices[XHCI_MAX_HID_DEVICES];
     uint32_t               HidCount;
-    XHCI_MSC_SLOT          Msc;
+    XHCI_MSC_SLOT          Msc[XHCI_MAX_MSC_DEVICES];
+    uint32_t               MscCount;
     uint32_t               HotplugConnects;
     uint32_t               HotplugDisconnects;
     uint32_t               Ready;
@@ -277,6 +280,8 @@ int kernel_xhci_hub_probe(KERNEL_XHCI_DEVICE *dev, uint32_t hub_slot_id, uint32_
 int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t port_idx,
     uint32_t speed, uint32_t route_string, uint32_t tt_info, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
     uint32_t *ep0_enq, uint8_t *ep0_cycle, const XHCI_MSC_INFO *info, uint8_t *dev_ctx, uint64_t dev_ctx_phys);
+int kernel_xhci_msc_read_sectors_at(KERNEL_XHCI_DEVICE *dev, uint32_t index, uint64_t lba, uint32_t count, void *buffer);
+int kernel_xhci_msc_write_sectors_at(KERNEL_XHCI_DEVICE *dev, uint32_t index, uint64_t lba, uint32_t count, const void *buffer);
 int kernel_xhci_msc_read_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, void *buffer);
 int kernel_xhci_msc_write_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, const void *buffer);
 

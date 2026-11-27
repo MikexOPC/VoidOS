@@ -556,7 +556,7 @@ int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx
     XHCI_HID_INFO hid_info = {0};
     if (!kernel_xhci_parse_hid_config(scratch, 255U, &hid_info)) {
         XHCI_MSC_INFO msc_info = {0};
-        if (!dev->Msc.Active && kernel_xhci_parse_msc_config(scratch, 255U, &msc_info)) {
+        if (dev->MscCount < XHCI_MAX_MSC_DEVICES && kernel_xhci_parse_msc_config(scratch, 255U, &msc_info)) {
             if (kernel_xhci_msc_setup(dev, slot_id, root_port_idx, speed, route_string, tt_info,
                 hid->Ep0Ring, hid->Ep0RingPhys, &ep0_enq, &ep0_cycle,
                 &msc_info, hid->DevCtx, hid->DevCtxPhys)) {
@@ -639,13 +639,24 @@ int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx
     return 1;
 }
 
+// ====== find_msc_by_port_private ======
+
+static XHCI_MSC_SLOT *find_msc_by_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_id)
+{
+    for (uint32_t i = 0; i < XHCI_MAX_MSC_DEVICES; ++i) {
+        if (dev->Msc[i].Active && dev->Msc[i].PortId == (uint8_t)port_id)
+            return &dev->Msc[i];
+    }
+    return NULL;
+}
+
 // ====== probe_port_private ======
 
 static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
 {
     if (find_hid_by_port_private(dev, port_idx + 1U))
         return 0;
-    if (dev->Msc.Active && dev->Msc.PortId == (uint8_t)(port_idx + 1U))
+    if (find_msc_by_port_private(dev, port_idx + 1U))
         return 0;
     const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
     uint32_t portsc_off = dev->CapLength + XHCI_OP_PORTSC_BASE + port_idx * XHCI_OP_PORT_STRIDE;
@@ -698,16 +709,21 @@ static void handle_port_change_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_id
                 --dev->HidCount;
             disable_slot_cmd_private(dev, old_slot);
             ++dev->HotplugDisconnects;
-        } else if (dev->Msc.Active && dev->Msc.PortId == (uint8_t)port_id) {
-            uint32_t old_slot = dev->Msc.SlotId;
-            dev->Msc.Active = 0U;
-            dev->Msc.SlotId = 0U;
-            dev->Msc.PortId = 0U;
-            disable_slot_cmd_private(dev, old_slot);
-            ++dev->HotplugDisconnects;
+        } else {
+            XHCI_MSC_SLOT *msc = find_msc_by_port_private(dev, port_id);
+            if (msc) {
+                uint32_t old_slot = msc->SlotId;
+                msc->Active = 0U;
+                msc->SlotId = 0U;
+                msc->PortId = 0U;
+                if (dev->MscCount > 0U)
+                    --dev->MscCount;
+                disable_slot_cmd_private(dev, old_slot);
+                ++dev->HotplugDisconnects;
+            }
         }
     } else if (!find_hid_by_port_private(dev, port_id) &&
-               !(dev->Msc.Active && dev->Msc.PortId == (uint8_t)port_id)) {
+               !find_msc_by_port_private(dev, port_id)) {
         if (probe_port_private(dev, port_idx))
             ++dev->HotplugConnects;
     }

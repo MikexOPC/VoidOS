@@ -129,11 +129,10 @@ static void bulk_push_private(KERNEL_XHCI_DEVICE *dev, XHCI_TRB *ring, uint64_t 
 // ====== bot_transfer_private ======
 
 // USB MSC Bulk-Only Transport 1.0 §5.1 (CBW) & §5.2 (CSW).
-static int bot_transfer_private(KERNEL_XHCI_DEVICE *dev, const uint8_t *cdb, uint8_t cdb_len,
-    uint32_t data_len, int data_in)
+static int bot_transfer_private(KERNEL_XHCI_DEVICE *dev, XHCI_MSC_SLOT *msc, const uint8_t *cdb,
+    uint8_t cdb_len, uint32_t data_len, int data_in)
 {
-    XHCI_MSC_SLOT *msc = &dev->Msc;
-    if (!msc->Active || !cdb || !cdb_len || cdb_len > 16U || data_len > MSC_MAX_IO_BYTES)
+    if (!msc || !msc->Active || !cdb || !cdb_len || cdb_len > 16U || data_len > MSC_MAX_IO_BYTES)
         return 0;
 
     uint32_t tag = ++msc->Tag;
@@ -206,7 +205,16 @@ int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t po
     uint32_t speed, uint32_t route_string, uint32_t tt_info, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
     uint32_t *ep0_enq, uint8_t *ep0_cycle, const XHCI_MSC_INFO *info, uint8_t *dev_ctx, uint64_t dev_ctx_phys)
 {
-    if (!dev || !info || !slot_id || dev->Msc.Active)
+    if (!dev || !info || !slot_id)
+        return 0;
+    XHCI_MSC_SLOT *msc = NULL;
+    for (uint32_t i = 0; i < XHCI_MAX_MSC_DEVICES; ++i) {
+        if (!dev->Msc[i].Active) {
+            msc = &dev->Msc[i];
+            break;
+        }
+    }
+    if (!msc)
         return 0;
     const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
 
@@ -223,7 +231,6 @@ int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t po
         set_cfg, 0ULL, 0U, 0))
         return 0;
 
-    XHCI_MSC_SLOT *msc = &dev->Msc;
     if (!msc->InRing)
         msc->InRing = (XHCI_TRB *)t->AllocDmaPage(t->Context, &msc->InRingPhys);
     if (!msc->OutRing)
@@ -291,13 +298,13 @@ int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t po
     // SCSI TEST UNIT READY (0x00): up to 3 attempts to clear initial Unit Attention.
     uint8_t tur[6] = {SCSI_OP_TEST_UNIT_READY, 0, 0, 0, 0, 0};
     for (uint32_t attempt = 0; attempt < 3U; ++attempt) {
-        if (bot_transfer_private(dev, tur, 6U, 0U, 0))
+        if (bot_transfer_private(dev, msc, tur, 6U, 0U, 0))
             break;
     }
 
     // SCSI READ CAPACITY(10) (0x25): 8-byte response [last_lba BE32, block_size BE32].
     uint8_t rcap[10] = {SCSI_OP_READ_CAPACITY10, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    if (!bot_transfer_private(dev, rcap, 10U, 8U, 1)) {
+    if (!bot_transfer_private(dev, msc, rcap, 10U, 8U, 1)) {
         msc->Active = 0U;
         return 0;
     }
@@ -317,16 +324,17 @@ int kernel_xhci_msc_setup(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t po
 
     msc->BlockSize = block_size;
     msc->TotalSectors = (uint64_t)last_lba + 1ULL;
+    ++dev->MscCount;
     return 1;
 }
 
-// ====== kernel_xhci_msc_read_sectors ======
+// ====== kernel_xhci_msc_read_sectors_at ======
 
-int kernel_xhci_msc_read_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, void *buffer)
+int kernel_xhci_msc_read_sectors_at(KERNEL_XHCI_DEVICE *dev, uint32_t index, uint64_t lba, uint32_t count, void *buffer)
 {
-    if (!dev || !dev->Ready || !dev->Msc.Active || !buffer || !count)
+    if (!dev || !dev->Ready || index >= XHCI_MAX_MSC_DEVICES || !dev->Msc[index].Active || !buffer || !count)
         return 0;
-    XHCI_MSC_SLOT *msc = &dev->Msc;
+    XHCI_MSC_SLOT *msc = &dev->Msc[index];
     if (msc->BlockSize != 512U || lba >= msc->TotalSectors || count > msc->TotalSectors - lba ||
         lba + count - 1ULL > 0xFFFFFFFFULL)
         return 0;
@@ -347,7 +355,7 @@ int kernel_xhci_msc_read_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t
             (uint8_t)(chunk & 0xFFU),
             0U
         };
-        if (!bot_transfer_private(dev, cdb, 10U, chunk * 512U, 1))
+        if (!bot_transfer_private(dev, msc, cdb, 10U, chunk * 512U, 1))
             return 0;
         copy_mem_private(dst, msc->DataBuf, (size_t)chunk * 512U);
         dst += (size_t)chunk * 512U;
@@ -357,13 +365,13 @@ int kernel_xhci_msc_read_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t
     return 1;
 }
 
-// ====== kernel_xhci_msc_write_sectors ======
+// ====== kernel_xhci_msc_write_sectors_at ======
 
-int kernel_xhci_msc_write_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, const void *buffer)
+int kernel_xhci_msc_write_sectors_at(KERNEL_XHCI_DEVICE *dev, uint32_t index, uint64_t lba, uint32_t count, const void *buffer)
 {
-    if (!dev || !dev->Ready || !dev->Msc.Active || !buffer || !count)
+    if (!dev || !dev->Ready || index >= XHCI_MAX_MSC_DEVICES || !dev->Msc[index].Active || !buffer || !count)
         return 0;
-    XHCI_MSC_SLOT *msc = &dev->Msc;
+    XHCI_MSC_SLOT *msc = &dev->Msc[index];
     if (msc->BlockSize != 512U || lba >= msc->TotalSectors || count > msc->TotalSectors - lba ||
         lba + count - 1ULL > 0xFFFFFFFFULL)
         return 0;
@@ -385,11 +393,25 @@ int kernel_xhci_msc_write_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_
             (uint8_t)(chunk & 0xFFU),
             0U
         };
-        if (!bot_transfer_private(dev, cdb, 10U, chunk * 512U, 0))
+        if (!bot_transfer_private(dev, msc, cdb, 10U, chunk * 512U, 0))
             return 0;
         src += (size_t)chunk * 512U;
         cur_lba += chunk;
         remaining -= chunk;
     }
     return 1;
+}
+
+// ====== kernel_xhci_msc_read_sectors ======
+
+int kernel_xhci_msc_read_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, void *buffer)
+{
+    return kernel_xhci_msc_read_sectors_at(dev, 0U, lba, count, buffer);
+}
+
+// ====== kernel_xhci_msc_write_sectors ======
+
+int kernel_xhci_msc_write_sectors(KERNEL_XHCI_DEVICE *dev, uint64_t lba, uint32_t count, const void *buffer)
+{
+    return kernel_xhci_msc_write_sectors_at(dev, 0U, lba, count, buffer);
 }
