@@ -333,8 +333,10 @@ extern "C" fn program_main(arg: u64) -> ! {
         libvoid::exit(98);
     }
     let theme = load_theme();
-    let mut cur_w = WIN_W;
-    let mut cur_h = WIN_H;
+    let max_w = if display.width > 16 { display.width - 16 } else { WIN_W };
+    let max_h = if display.height > 48 { display.height - 48 } else { WIN_H };
+    let mut cur_w = WIN_W.min(max_w).max(240);
+    let mut cur_h = WIN_H.min(max_h).max(160);
     let mut shm_cap_pages = pages_for_surface(cur_w, cur_h);
     let created = libvoid::shm_create(shm_cap_pages);
     if created <= 0 {

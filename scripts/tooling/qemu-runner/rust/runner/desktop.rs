@@ -69,7 +69,7 @@ pub fn run(tcg: bool) -> Result<bool, String> {
             args.push("-vga".into());
             args.push("none".into());
             args.push("-device".into());
-            args.push("virtio-vga".into());
+            args.push("virtio-vga,xres=1280,yres=720".into());
             index += 2;
             continue;
         }
