@@ -615,6 +615,45 @@ impl Applications {
         None
     }
 
+    // ====== on_display_resized ======
+
+    pub fn on_display_resized(
+        &mut self,
+        ui: &VoidDesktop,
+        dock_mode: i32,
+        display_w: u32,
+        display_h: u32,
+    ) {
+        let max_x = (display_w as f32 - 80.0).max(0.0);
+        let max_y = (display_h as f32 - 64.0).max(0.0);
+        for app in &mut self.windows {
+            if app.commits == 0 {
+                continue;
+            }
+            if app.maximized {
+                let layout = dock_maximized_layout(dock_mode, display_w, display_h);
+                app.pos_x = layout.x;
+                app.pos_y = layout.y;
+                app.view_w = layout.client_w as f32;
+                app.view_h = layout.client_h as f32;
+                app.top_radius = layout.top_radius;
+                app.bottom_radius = layout.bottom_radius;
+                app.anim_mode = 0;
+                if app.pending.len() < 4096 {
+                    app.pending.push_back(
+                        GuiMessage::resize_window(1, layout.client_w, layout.client_h, 0).encode(),
+                    );
+                }
+            } else {
+                app.pos_x = app.pos_x.clamp(0.0, max_x);
+                app.pos_y = app.pos_y.clamp(0.0, max_y);
+                app.saved_x = app.pos_x;
+                app.saved_y = app.pos_y;
+            }
+        }
+        self.refresh(ui);
+    }
+
     // ====== move_to ======
 
     pub fn move_to(&mut self, kind: i32, nx: f32, ny: f32, display_w: u32, display_h: u32) {

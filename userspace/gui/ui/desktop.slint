@@ -27,6 +27,7 @@ export component VoidDesktop inherits Window {
 
     in-out property <int> dock-mode: 0;
     in-out property <bool> dock-visible: true;
+    in-out property <bool> surfaces-visible: true;
     in-out property <image> dock-backdrop;
     in-out property <bool> wallpaper-cached: false;
     in-out property <image> cached-wallpaper;
@@ -67,7 +68,7 @@ export component VoidDesktop inherits Window {
         property <float> min-scale: surface.anim-kind == 2 ? 0.50 : (surface.anim-kind == 1 ? 0.72 : 0.80);
         property <float> scale: min-scale + (1.0 - min-scale) * p;
         property <length> slide-y: surface.anim-kind == 2 ? (1.0 - p) * 44px : (surface.anim-kind == 0 ? (1.0 - p) * 16px : 0px);
-        visible: !surface.minimized && p > 0.01;
+        visible: root.surfaces-visible && !surface.minimized && p > 0.01;
         x: surface.pos-x + (1.0 - scale) * full-w * 0.5;
         y: surface.pos-y + (1.0 - scale) * full-h * 0.5 + slide-y;
         width: full-w * scale;

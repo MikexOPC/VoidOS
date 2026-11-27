@@ -416,8 +416,8 @@ extern "C" fn program_main(mode: u64) -> ! {
     ui.set_display_label(clock_str);
     ui.set_uptime_label(date_str);
 
-    let total_pixels = (acq.stride as usize).saturating_mul(acq.height as usize);
-    let backbuffer =
+    let mut total_pixels = (acq.stride as usize).saturating_mul(acq.height as usize);
+    let mut backbuffer =
         unsafe { core::slice::from_raw_parts_mut(acq.user_virt as *mut BgrxPixel, total_pixels) };
 
     if mode == 1 || mode == 2 {
@@ -529,6 +529,60 @@ extern "C" fn program_main(mode: u64) -> ! {
             if libvoid::display_info(&mut dinfo) != 0 {
                 let _ = applications.shutdown();
                 libvoid::exit(96);
+            }
+            if dinfo.width >= 320
+                && dinfo.height >= 240
+                && (dinfo.width != acq.width || dinfo.height != acq.height)
+            {
+                let mut next_acq = libvoid::DisplayAcquireOut::default();
+                if libvoid::display_acquire(&mut next_acq) == 0
+                    && next_acq.user_virt >= 0x1000_0000
+                    && next_acq.width > 0
+                    && next_acq.height > 0
+                {
+                    acq = next_acq;
+                    total_pixels = (acq.stride as usize).saturating_mul(acq.height as usize);
+                    backbuffer = unsafe {
+                        core::slice::from_raw_parts_mut(
+                            acq.user_virt as *mut BgrxPixel,
+                            total_pixels,
+                        )
+                    };
+                    cx = cx.clamp(0.0, (acq.width - 1) as f32);
+                    cy = cy.clamp(0.0, (acq.height - 1) as f32);
+                    window.set_size(PhysicalSize::new(acq.width, acq.height));
+                    ui.set_surfaces_visible(false);
+                    ui.set_dock_visible(false);
+                    ui.set_wallpaper_cached(false);
+                    ui.set_cached_wallpaper(Image::default());
+                    ui.set_dock_backdrop(Image::default());
+                    window.draw_if_needed(|renderer| {
+                        let _ = renderer.render(backbuffer, acq.stride as usize);
+                    });
+                    let dock_blur = build_dock_blur(backbuffer, acq.stride, acq.width, acq.height);
+                    let cached_wp =
+                        cache_screen_wallpaper(backbuffer, acq.stride, acq.width, acq.height);
+                    ui.set_cached_wallpaper(cached_wp);
+                    ui.set_wallpaper_cached(true);
+                    ui.set_dock_backdrop(dock_blur);
+                    ui.set_dock_visible(true);
+                    ui.set_surfaces_visible(true);
+                    applications.on_display_resized(
+                        &ui,
+                        ui.get_dock_mode(),
+                        acq.width,
+                        acq.height,
+                    );
+                    window.draw_if_needed(|renderer| {
+                        let _ = renderer.render(backbuffer, acq.stride as usize);
+                    });
+                    let _ = libvoid::display_present(&[libvoid::DisplayRect {
+                        x: 0,
+                        y: 0,
+                        width: acq.width,
+                        height: acq.height,
+                    }]);
+                }
             }
             platform_now.set(dinfo.uptime_ms);
             let second = dinfo.uptime_ms / 1000;
