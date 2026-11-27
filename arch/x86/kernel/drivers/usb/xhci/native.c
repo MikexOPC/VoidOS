@@ -35,6 +35,21 @@ typedef struct {
 #define X86_XHCI_SHELL_Q_CAP    64U
 
 typedef struct {
+    void                 *Runtime;
+    uint32_t              Index;
+    uint32_t              Ready;
+    KERNEL_BLOCK_DEVICE   Device;
+    KERNEL_BLOCK_CACHE    Cache;
+} X86_XHCI_MSC_HOST;
+
+static const char *const xhci_msc_names[XHCI_MAX_MSC_DEVICES] = {
+    "usb-msc0", "usb-msc1", "usb-msc2", "usb-msc3"
+};
+static const char *const xhci_msc_mounts[XHCI_MAX_MSC_DEVICES] = {
+    "/usb", "/usb1", "/usb2", "/usb3"
+};
+
+typedef struct {
     uintptr_t                 Self;
     X86_PAGE_WINDOW          *Window;
     const X86_LAPIC_MAPPING  *LapicMapping;
@@ -65,9 +80,7 @@ typedef struct {
     uint32_t                  ShellScalars[X86_XHCI_SHELL_Q_CAP];
     uint32_t                  ShellHead;
     uint32_t                  ShellTail;
-    uint32_t                  MscReady;
-    KERNEL_BLOCK_DEVICE       MscDevice;
-    KERNEL_BLOCK_CACHE        MscCache;
+    X86_XHCI_MSC_HOST         MscHosts[XHCI_MAX_MSC_DEVICES];
     KERNEL_XHCI_DEVICE        Driver;
 } X86_XHCI_RUNTIME;
 
@@ -611,8 +624,9 @@ static int enable_msi_private(const uint8_t pci_cfg[256], uint32_t bsp_apic_id)
 
 static int msc_block_read_private(KERNEL_BLOCK_DEVICE *device, uint64_t lba, uint32_t sector_count, void *buffer)
 {
-    X86_XHCI_RUNTIME *rt = device ? (X86_XHCI_RUNTIME *)device->Context : NULL;
-    if (!rt || rt->Self != (uintptr_t)rt || !rt->Ready || !rt->MscReady)
+    X86_XHCI_MSC_HOST *host = device ? (X86_XHCI_MSC_HOST *)device->Context : NULL;
+    X86_XHCI_RUNTIME *rt = host ? (X86_XHCI_RUNTIME *)host->Runtime : NULL;
+    if (!rt || rt->Self != (uintptr_t)rt || !rt->Ready || !host->Ready)
         return KERNEL_STORAGE_ERR_IO;
     if (!buffer || !sector_count)
         return KERNEL_STORAGE_ERR_ARG;
@@ -621,7 +635,7 @@ static int msc_block_read_private(KERNEL_BLOCK_DEVICE *device, uint64_t lba, uin
 
     while (_InterlockedCompareExchange(&rt->PollBusy, 1L, 0L) != 0L)
         _mm_pause();
-    int ok = kernel_xhci_msc_read_sectors(&rt->Driver, lba, sector_count, buffer);
+    int ok = kernel_xhci_msc_read_sectors_at(&rt->Driver, host->Index, lba, sector_count, buffer);
     _InterlockedExchange(&rt->PollBusy, 0L);
     return ok ? KERNEL_STORAGE_OK : KERNEL_STORAGE_ERR_IO;
 }
@@ -630,8 +644,9 @@ static int msc_block_read_private(KERNEL_BLOCK_DEVICE *device, uint64_t lba, uin
 
 static int msc_block_write_private(KERNEL_BLOCK_DEVICE *device, uint64_t lba, uint32_t sector_count, const void *buffer)
 {
-    X86_XHCI_RUNTIME *rt = device ? (X86_XHCI_RUNTIME *)device->Context : NULL;
-    if (!rt || rt->Self != (uintptr_t)rt || !rt->Ready || !rt->MscReady)
+    X86_XHCI_MSC_HOST *host = device ? (X86_XHCI_MSC_HOST *)device->Context : NULL;
+    X86_XHCI_RUNTIME *rt = host ? (X86_XHCI_RUNTIME *)host->Runtime : NULL;
+    if (!rt || rt->Self != (uintptr_t)rt || !rt->Ready || !host->Ready)
         return KERNEL_STORAGE_ERR_IO;
     if (!buffer || !sector_count)
         return KERNEL_STORAGE_ERR_ARG;
@@ -640,7 +655,7 @@ static int msc_block_write_private(KERNEL_BLOCK_DEVICE *device, uint64_t lba, ui
 
     while (_InterlockedCompareExchange(&rt->PollBusy, 1L, 0L) != 0L)
         _mm_pause();
-    int ok = kernel_xhci_msc_write_sectors(&rt->Driver, lba, sector_count, buffer);
+    int ok = kernel_xhci_msc_write_sectors_at(&rt->Driver, host->Index, lba, sector_count, buffer);
     _InterlockedExchange(&rt->PollBusy, 0L);
     return ok ? KERNEL_STORAGE_OK : KERNEL_STORAGE_ERR_IO;
 }
@@ -649,8 +664,9 @@ static int msc_block_write_private(KERNEL_BLOCK_DEVICE *device, uint64_t lba, ui
 
 static int msc_block_flush_private(KERNEL_BLOCK_DEVICE *device)
 {
-    X86_XHCI_RUNTIME *rt = device ? (X86_XHCI_RUNTIME *)device->Context : NULL;
-    return (rt && rt->Self == (uintptr_t)rt && rt->Ready && rt->MscReady)
+    X86_XHCI_MSC_HOST *host = device ? (X86_XHCI_MSC_HOST *)device->Context : NULL;
+    X86_XHCI_RUNTIME *rt = host ? (X86_XHCI_RUNTIME *)host->Runtime : NULL;
+    return (rt && rt->Self == (uintptr_t)rt && rt->Ready && host->Ready)
         ? KERNEL_STORAGE_OK
         : KERNEL_STORAGE_ERR_IO;
 }
@@ -750,26 +766,31 @@ int x86_xhci_start(
         }
     }
 
-    if (xhci_rt.Driver.Msc.Active && xhci_rt.Driver.Msc.TotalSectors > 0ULL) {
-        xhci_rt.MscDevice.Self = (uintptr_t)&xhci_rt.MscDevice;
-        xhci_rt.MscDevice.Name = "usb-msc0";
-        xhci_rt.MscDevice.Context = &xhci_rt;
-        xhci_rt.MscDevice.TotalSectors = xhci_rt.Driver.Msc.TotalSectors;
-        xhci_rt.MscDevice.SectorBytes = 512U;
-        xhci_rt.MscDevice.MaxTransferSectors = 8U;
-        xhci_rt.MscDevice.Kind = KERNEL_BLOCK_KIND_USB_MSC;
-        xhci_rt.MscDevice.ReadOnly = 0U;
-        xhci_rt.MscDevice.Ready = 1U;
-        xhci_rt.MscDevice.Read = msc_block_read_private;
-        xhci_rt.MscDevice.Write = msc_block_write_private;
-        xhci_rt.MscDevice.Flush = msc_block_flush_private;
-        if (kernel_block_cache_init(&xhci_rt.MscCache, heap, &xhci_rt.MscDevice, 64U) == KERNEL_STORAGE_OK) {
-            xhci_rt.MscReady = 1U;
-            if (!kernel_text("KERNEL_XHCI_MSC_SECTORS: ") ||
-                !kernel_number(xhci_rt.MscDevice.TotalSectors) ||
-                !kernel_text("\n") ||
-                !kernel_log(0, "KERNEL_XHCI_MSC_READY"))
-                return 0;
+    for (uint32_t i = 0; i < XHCI_MAX_MSC_DEVICES; ++i) {
+        if (xhci_rt.Driver.Msc[i].Active && xhci_rt.Driver.Msc[i].TotalSectors > 0ULL) {
+            X86_XHCI_MSC_HOST *host = &xhci_rt.MscHosts[i];
+            host->Runtime = &xhci_rt;
+            host->Index = i;
+            host->Device.Self = (uintptr_t)&host->Device;
+            host->Device.Name = xhci_msc_names[i];
+            host->Device.Context = host;
+            host->Device.TotalSectors = xhci_rt.Driver.Msc[i].TotalSectors;
+            host->Device.SectorBytes = 512U;
+            host->Device.MaxTransferSectors = 8U;
+            host->Device.Kind = KERNEL_BLOCK_KIND_USB_MSC;
+            host->Device.ReadOnly = 0U;
+            host->Device.Ready = 1U;
+            host->Device.Read = msc_block_read_private;
+            host->Device.Write = msc_block_write_private;
+            host->Device.Flush = msc_block_flush_private;
+            if (kernel_block_cache_init(&host->Cache, heap, &host->Device, 64U) == KERNEL_STORAGE_OK) {
+                host->Ready = 1U;
+                if (!kernel_text("KERNEL_XHCI_MSC_SECTORS: ") ||
+                    !kernel_number(host->Device.TotalSectors) ||
+                    !kernel_text("\n") ||
+                    !kernel_log(0, "KERNEL_XHCI_MSC_READY"))
+                    return 0;
+            }
         }
     }
 
@@ -785,8 +806,8 @@ uint32_t x86_xhci_poll(void)
     if (_InterlockedCompareExchange(&xhci_rt.PollBusy, 1L, 0L) != 0L)
         return 0U;
     uint32_t events = kernel_xhci_poll_events(&xhci_rt.Driver);
-    int msc_unmount = 0;
-    int msc_remount = 0;
+    uint32_t unmount_mask = 0U;
+    uint32_t remount_mask = 0U;
     if (xhci_rt.Driver.HotplugDisconnects != xhci_rt.LastDisconnects) {
         xhci_rt.LastDisconnects = xhci_rt.Driver.HotplugDisconnects;
         (void)kernel_text("KERNEL_XHCI_HOTPLUG_DISCONNECT: ");
@@ -799,48 +820,56 @@ uint32_t x86_xhci_poll(void)
         (void)kernel_number(xhci_rt.Driver.HidCount);
         (void)kernel_text("\n");
     }
-    if (xhci_rt.MscReady && !xhci_rt.Driver.Msc.Active) {
-        xhci_rt.MscReady = 0U;
-        xhci_rt.MscDevice.Ready = 0U;
-        msc_unmount = 1;
-    } else if (!xhci_rt.MscReady && xhci_rt.Driver.Msc.Active && xhci_rt.Driver.Msc.TotalSectors > 0ULL) {
-        xhci_rt.MscDevice.Self = (uintptr_t)&xhci_rt.MscDevice;
-        xhci_rt.MscDevice.Name = "usb-msc0";
-        xhci_rt.MscDevice.Context = &xhci_rt;
-        xhci_rt.MscDevice.TotalSectors = xhci_rt.Driver.Msc.TotalSectors;
-        xhci_rt.MscDevice.SectorBytes = 512U;
-        xhci_rt.MscDevice.MaxTransferSectors = 8U;
-        xhci_rt.MscDevice.Kind = KERNEL_BLOCK_KIND_USB_MSC;
-        xhci_rt.MscDevice.ReadOnly = 0U;
-        xhci_rt.MscDevice.Ready = 1U;
-        xhci_rt.MscDevice.Read = msc_block_read_private;
-        xhci_rt.MscDevice.Write = msc_block_write_private;
-        xhci_rt.MscDevice.Flush = msc_block_flush_private;
-        if (!xhci_rt.MscCache.Ready) {
-            if (kernel_block_cache_init(&xhci_rt.MscCache, xhci_rt.Heap, &xhci_rt.MscDevice, 64U) == KERNEL_STORAGE_OK)
-                xhci_rt.MscReady = 1U;
-        } else {
-            (void)kernel_block_cache_invalidate(&xhci_rt.MscCache);
-            xhci_rt.MscReady = 1U;
+    for (uint32_t i = 0; i < XHCI_MAX_MSC_DEVICES; ++i) {
+        X86_XHCI_MSC_HOST *host = &xhci_rt.MscHosts[i];
+        if (host->Ready && !xhci_rt.Driver.Msc[i].Active) {
+            host->Ready = 0U;
+            host->Device.Ready = 0U;
+            unmount_mask |= (1U << i);
+        } else if (!host->Ready && xhci_rt.Driver.Msc[i].Active && xhci_rt.Driver.Msc[i].TotalSectors > 0ULL) {
+            host->Runtime = &xhci_rt;
+            host->Index = i;
+            host->Device.Self = (uintptr_t)&host->Device;
+            host->Device.Name = xhci_msc_names[i];
+            host->Device.Context = host;
+            host->Device.TotalSectors = xhci_rt.Driver.Msc[i].TotalSectors;
+            host->Device.SectorBytes = 512U;
+            host->Device.MaxTransferSectors = 8U;
+            host->Device.Kind = KERNEL_BLOCK_KIND_USB_MSC;
+            host->Device.ReadOnly = 0U;
+            host->Device.Ready = 1U;
+            host->Device.Read = msc_block_read_private;
+            host->Device.Write = msc_block_write_private;
+            host->Device.Flush = msc_block_flush_private;
+            if (!host->Cache.Ready) {
+                if (kernel_block_cache_init(&host->Cache, xhci_rt.Heap, &host->Device, 64U) == KERNEL_STORAGE_OK)
+                    host->Ready = 1U;
+            } else {
+                (void)kernel_block_cache_invalidate(&host->Cache);
+                host->Ready = 1U;
+            }
+            if (host->Ready)
+                remount_mask |= (1U << i);
         }
-        msc_remount = xhci_rt.MscReady != 0U;
     }
     _InterlockedExchange(&xhci_rt.PollBusy, 0L);
 
-    if (msc_unmount) {
-        if (xhci_rt.MscCache.Ready)
-            (void)kernel_block_cache_invalidate(&xhci_rt.MscCache);
-        KERNEL_VFS *vfs = kernel_vfs();
-        if (vfs && kernel_vfs_unmount(vfs, "/usb") == KERNEL_STORAGE_OK)
-            (void)kernel_log(1, "KERNEL_VFS_USB_UNMOUNTED");
-    } else if (msc_remount) {
-        (void)kernel_text("KERNEL_XHCI_MSC_SECTORS: ");
-        (void)kernel_number(xhci_rt.MscDevice.TotalSectors);
-        (void)kernel_text("\n");
-        (void)kernel_log(0, "KERNEL_XHCI_MSC_READY");
-        KERNEL_VFS *vfs = kernel_vfs();
-        if (vfs && kernel_vfs_mount_fat(vfs, "/usb", &xhci_rt.MscCache) == KERNEL_STORAGE_OK)
-            (void)kernel_log(0, "KERNEL_VFS_USB_MOUNTED");
+    KERNEL_VFS *vfs = kernel_vfs();
+    for (uint32_t i = 0; i < XHCI_MAX_MSC_DEVICES; ++i) {
+        X86_XHCI_MSC_HOST *host = &xhci_rt.MscHosts[i];
+        if (unmount_mask & (1U << i)) {
+            if (host->Cache.Ready)
+                (void)kernel_block_cache_invalidate(&host->Cache);
+            if (vfs && kernel_vfs_unmount(vfs, xhci_msc_mounts[i]) == KERNEL_STORAGE_OK)
+                (void)kernel_log(1, "KERNEL_VFS_USB_UNMOUNTED");
+        } else if (remount_mask & (1U << i)) {
+            (void)kernel_text("KERNEL_XHCI_MSC_SECTORS: ");
+            (void)kernel_number(host->Device.TotalSectors);
+            (void)kernel_text("\n");
+            (void)kernel_log(0, "KERNEL_XHCI_MSC_READY");
+            if (vfs && kernel_vfs_mount_fat(vfs, xhci_msc_mounts[i], &host->Cache) == KERNEL_STORAGE_OK)
+                (void)kernel_log(0, "KERNEL_VFS_USB_MOUNTED");
+        }
     }
     return events;
 }
@@ -921,11 +950,25 @@ int x86_xhci_ready(void)
     return xhci_rt.Self == (uintptr_t)&xhci_rt && xhci_rt.Ready;
 }
 
+// ====== x86_xhci_msc_cache_at ======
+
+KERNEL_BLOCK_CACHE *x86_xhci_msc_cache_at(uint32_t index)
+{
+    if (xhci_rt.Self != (uintptr_t)&xhci_rt || !xhci_rt.Ready || index >= XHCI_MAX_MSC_DEVICES)
+        return NULL;
+    return xhci_rt.MscHosts[index].Ready ? &xhci_rt.MscHosts[index].Cache : NULL;
+}
+
+// ====== x86_xhci_msc_mount_at ======
+
+const char *x86_xhci_msc_mount_at(uint32_t index)
+{
+    return index < XHCI_MAX_MSC_DEVICES ? xhci_msc_mounts[index] : NULL;
+}
+
 // ====== x86_xhci_msc_cache ======
 
 KERNEL_BLOCK_CACHE *x86_xhci_msc_cache(void)
 {
-    return (xhci_rt.Self == (uintptr_t)&xhci_rt && xhci_rt.Ready && xhci_rt.MscReady)
-        ? &xhci_rt.MscCache
-        : NULL;
+    return x86_xhci_msc_cache_at(0U);
 }

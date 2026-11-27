@@ -18,5 +18,7 @@ int x86_xhci_pop_shell_scalar(uint32_t *scalar_out);
 void x86_xhci_stop(void);
 int x86_xhci_ready(void);
 KERNEL_BLOCK_CACHE *x86_xhci_msc_cache(void);
+KERNEL_BLOCK_CACHE *x86_xhci_msc_cache_at(uint32_t index);
+const char *x86_xhci_msc_mount_at(uint32_t index);
 
 #endif
