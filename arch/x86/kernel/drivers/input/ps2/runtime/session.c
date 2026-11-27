@@ -84,13 +84,17 @@ static int clock_read(void *context, uint32_t *ticks)
 int x86_ps2_activate(void)
 {
     if (!session.Active || session.Quiet || !x86_watchdog_budget_active()) return 0;
+    if (session.HasPs2) {
 #ifdef KERNEL_PS2_MOUSE
-    if (!kernel_ps2_pair_start(&session.Controller) || !x86_ps2_mouse_route_apply(&session,0)) return 0;
+        if (!kernel_ps2_pair_start(&session.Controller) || !x86_ps2_mouse_route_apply(&session,0)) return 0;
 #else
-    if (!kernel_ps2_start(&session.Controller)) return 0;
+        if (!kernel_ps2_start(&session.Controller)) return 0;
 #endif
-    return x86_ps2_route_apply(&session,0) && (session.Persistent || x86_preempt_open(x86_timer_owner())) &&
-        kernel_log(0,"KERNEL_PS2_INPUT_READY");
+        return x86_ps2_route_apply(&session,0) && (session.Persistent || x86_preempt_open(x86_timer_owner())) &&
+            kernel_log(0,"KERNEL_PS2_INPUT_READY");
+    }
+    return (session.Persistent || x86_preempt_open(x86_timer_owner())) &&
+        kernel_log(0,"KERNEL_USB_INPUT_READY");
 }
 
 // ====== x86_ps2_after_dispatch ======
@@ -107,13 +111,16 @@ int x86_ps2_after_dispatch(void)
 #endif
     if (!session.Stop || session.Quiet) return 1;
     if (!(session.Persistent ? x86_preempt_pause() : x86_preempt_close())) return 0;
-    if (!session.WorkerGeneration || !x86_ps2_route_apply(&session,1)) return 0;
+    if (!session.WorkerGeneration) return 0;
+    if (session.HasPs2) {
+        if (!x86_ps2_route_apply(&session,1)) return 0;
 #ifdef KERNEL_PS2_MOUSE
-    if (!session.Mouse.Generation || !x86_ps2_mouse_route_apply(&session,1) ||
-        !kernel_ps2_pair_stop(&session.Controller)) return 0;
+        if (!session.Mouse.Generation || !x86_ps2_mouse_route_apply(&session,1) ||
+            !kernel_ps2_pair_stop(&session.Controller)) return 0;
 #else
-    if (!kernel_ps2_stop(&session.Controller)) return 0;
+        if (!kernel_ps2_stop(&session.Controller)) return 0;
 #endif
+    }
     session.Quiet = 1; session.Ready = 1;
     // Drain any owned IRR (including trailing storage MSI/MSI-X) before releasing the handler; independent HPET ack.
     if (!x86_watchdog_idle(&session.Ready)) return 0;
@@ -121,13 +128,15 @@ int x86_ps2_after_dispatch(void)
     __nop();
     __nop();
     _disable();
-    if (!x86_lapic_idle(session.Env.Mapping) ||
-        x86_irq_registry_deliveries(x86_irq_registry(),&session.Token) != session.Irqs ||
-        !x86_irq_registry_unbind(x86_irq_registry(),&session.Token) || !x86_ps2_route_apply(&session,2)) return 0;
+    if (!x86_lapic_idle(session.Env.Mapping)) return 0;
+    if (session.HasPs2) {
+        if (x86_irq_registry_deliveries(x86_irq_registry(),&session.Token) != session.Irqs ||
+            !x86_irq_registry_unbind(x86_irq_registry(),&session.Token) || !x86_ps2_route_apply(&session,2)) return 0;
 #ifdef KERNEL_PS2_MOUSE
-    if (x86_irq_registry_deliveries(x86_irq_registry(),&session.Mouse.Token) != session.Mouse.Irqs ||
-        !x86_irq_registry_unbind(x86_irq_registry(),&session.Mouse.Token) || !x86_ps2_mouse_route_apply(&session,2)) return 0;
+        if (x86_irq_registry_deliveries(x86_irq_registry(),&session.Mouse.Token) != session.Mouse.Irqs ||
+            !x86_irq_registry_unbind(x86_irq_registry(),&session.Mouse.Token) || !x86_ps2_mouse_route_apply(&session,2)) return 0;
 #endif
+    }
     x86_virtio_blk_stop();
     x86_ahci_stop();
     x86_xhci_stop();
@@ -149,8 +158,10 @@ int x86_ps2_after_dispatch(void)
     }
 #endif
 #ifdef KERNEL_PS2_MOUSE
-    reply = kernel_scheduler_stop_apply(0,3,session.Mouse.Generation);
-    if (reply.reply.status != KERNEL_SCHEDULER_OK) return 0;
+    if (session.HasPs2) {
+        reply = kernel_scheduler_stop_apply(0,3,session.Mouse.Generation);
+        if (reply.reply.status != KERNEL_SCHEDULER_OK) return 0;
+    }
 #endif
     reply = kernel_scheduler_stop_apply(0,1,session.WorkerGeneration);
     if (reply.reply.status != KERNEL_SCHEDULER_OK || !session.ConsumerGeneration) return 0;
@@ -176,14 +187,14 @@ int x86_ps2_before_collect(void)
 int x86_ps2_complete(void)
 {
 #ifdef KERNEL_PS2_MOUSE
-    if (!session.Mouse.Done || session.Mouse.Token.Id || session.Mouse.RouteOwned ||
-        session.Mouse.Decoder.State || session.Mouse.Buttons) return 0;
+    if (session.HasPs2 && (!session.Mouse.Done || session.Mouse.Token.Id || session.Mouse.RouteOwned ||
+        session.Mouse.Decoder.State || session.Mouse.Buttons)) return 0;
 #endif
     return session.Stop && session.Quiet && session.ScopeEnded && session.ConsumerDone && session.WorkerDone &&
         session.ShellDone && kernel_ps2_command_closed_empty(&session.Commands) &&
         !session.Error && !session.TextState && !session.LineTruncated && !session.Line.Length && !session.Line.Data[0] &&
         !session.Token.Id && !session.RouteOwned &&
-        session.Controller.Phase == KERNEL_PS2_CLOSED;
+        (!session.HasPs2 || session.Controller.Phase == KERNEL_PS2_CLOSED);
 }
 
 // ====== x86_ps2_session_run ======
@@ -294,31 +305,38 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!kernel_ps2_discover(directory,env->Window->Pool->PhysicalBits,firmware_read,&session,&description)) {
         kernel_log(3,"PS2_DISCOVERY_FAILED"); return 0;
     }
-    if (!description.Present) {
+    session.HasPs2 = description.Present != 0;
+    if (!session.HasPs2) {
         if (!kernel_log(2,"KERNEL_PS2_INPUT_ABSENT")) return 0;
-        return !session.Persistent || x86_scheduler_run_input();
+        if (!session.Persistent && !x86_xhci_ready())
+            return 1;
     }
 #ifdef KERNEL_USER_PROCESS
     if (!x86_shell_bridge_open(env->Window, x86_timer_owner())) {
         kernel_log(3, "SHELL_BRIDGE_OPEN_FAILED"); return 0;
     }
 #endif
-    if (!x86_ps2_route_plan(env->Topology,env->Capabilities,env->Window->Pool->PhysicalBits,&session.Route)) {
-        kernel_log(3,"PS2_ROUTE_PLAN_FAILED"); return 0;
-    }
-    kernel_log(1,"KERNEL_PS2_ROUTE_CAPTURED");
-    if (env->Capabilities->Io[session.Route.Io].Address == watchdog->IoAddress && session.Route.Pin == watchdog->Pin) return 0;
-    io = (KERNEL_PS2_IO){&session,port_read,port_write,clock_read,clock->Mask,357955};
-    if (!kernel_ps2_prepare(&session.Controller,&io)) { kernel_log(3,"PS2_PREPARE_FAILED"); return 0; }
-    if (!x86_ps2_route_apply(&session,1)) { kernel_log(3,"PS2_ROUTE_ACQUIRE_FAILED"); return 0; }
-    kernel_log(1,"KERNEL_PS2_ROUTE_ACQUIRED");
     if (!session.CommandsLock.Ready && !kernel_lock_initialize(&session.CommandsLock, X86_PS2_COMMANDS_RANK)) {
         kernel_log(3,"PS2_COMMANDS_LOCK_FAILED"); return 0;
     }
-    session.Binding = kernel_scheduler_irq_bind(4,(BOOT_U64)&session);
-    if (!session.Binding || !kernel_scheduler_payload_open(4,(BOOT_U64)&session,session.Binding,0) ||
-        !x86_irq_registry_bind(x86_irq_registry(),0x41,x86_ps2_handle,x86_ps2_quiet,&session.Token)) {
-        kernel_log(3,"PS2_BINDING_FAILED"); return 0;
+    if (session.HasPs2) {
+        if (!x86_ps2_route_plan(env->Topology,env->Capabilities,env->Window->Pool->PhysicalBits,&session.Route)) {
+            kernel_log(3,"PS2_ROUTE_PLAN_FAILED"); return 0;
+        }
+        kernel_log(1,"KERNEL_PS2_ROUTE_CAPTURED");
+        if (env->Capabilities->Io[session.Route.Io].Address == watchdog->IoAddress && session.Route.Pin == watchdog->Pin) return 0;
+        io = (KERNEL_PS2_IO){&session,port_read,port_write,clock_read,clock->Mask,357955};
+        if (!kernel_ps2_prepare(&session.Controller,&io)) { kernel_log(3,"PS2_PREPARE_FAILED"); return 0; }
+        if (!x86_ps2_route_apply(&session,1)) { kernel_log(3,"PS2_ROUTE_ACQUIRE_FAILED"); return 0; }
+        kernel_log(1,"KERNEL_PS2_ROUTE_ACQUIRED");
+        session.Binding = kernel_scheduler_irq_bind(4,(BOOT_U64)&session);
+        if (!session.Binding || !kernel_scheduler_payload_open(4,(BOOT_U64)&session,session.Binding,0) ||
+            !x86_irq_registry_bind(x86_irq_registry(),0x41,x86_ps2_handle,x86_ps2_quiet,&session.Token)) {
+            kernel_log(3,"PS2_BINDING_FAILED"); return 0;
+        }
+#ifdef KERNEL_PS2_MOUSE
+        if (!x86_ps2_mouse_open(&session)) { kernel_log(3,"PS2_MOUSE_OPEN_FAILED"); return 0; }
+#endif
     }
     if (x86_xhci_ready()) {
         session.XhciBinding = kernel_scheduler_irq_bind(3, (BOOT_U64)&session.XhciBinding);
@@ -326,9 +344,6 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
             kernel_log(3, "XHCI_BINDING_FAILED"); return 0;
         }
     }
-#ifdef KERNEL_PS2_MOUSE
-    if (!x86_ps2_mouse_open(&session)) { kernel_log(3,"PS2_MOUSE_OPEN_FAILED"); return 0; }
-#endif
 #ifdef KERNEL_CONSOLE_SHELL
     session.Console = &console;
     if (!x86_console_open(&session, x86_vgpu_kernel_display())) return 0;
@@ -359,16 +374,21 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
 
 int x86_ps2_session_finish(void)
 {
-    if (!x86_ps2_complete() || !kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
-        !kernel_scheduler_irq_unbind(4,(BOOT_U64)&session,session.Binding) || !x86_watchdog_valid()) return 0;
-    session.Binding = 0;
+    if (!x86_ps2_complete() || !x86_watchdog_valid()) return 0;
+    if (session.HasPs2) {
+        if (!kernel_scheduler_payload_close(4,(BOOT_U64)&session,session.Binding) ||
+            !kernel_scheduler_irq_unbind(4,(BOOT_U64)&session,session.Binding)) return 0;
+        session.Binding = 0;
+    }
     if (session.XhciBinding) {
         if (!kernel_scheduler_irq_unbind(3, (BOOT_U64)&session.XhciBinding, session.XhciBinding)) return 0;
         session.XhciBinding = 0;
     }
 #ifdef KERNEL_PS2_MOUSE
-    if (!x86_ps2_mouse_close(&session) || !x86_ps2_mouse_report(&session)) return 0;
-    session.Mouse.Binding = 0;
+    if (session.HasPs2) {
+        if (!x86_ps2_mouse_close(&session) || !x86_ps2_mouse_report(&session)) return 0;
+        session.Mouse.Binding = 0;
+    }
 #endif
     session.Active = 0;
 #ifdef KERNEL_CONSOLE_SHELL

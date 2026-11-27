@@ -42,7 +42,13 @@ init e la shell. Le verifiche attuali sono su QEMU/OVMF q35 TCG.
   hanno verifiche nell'immagine ordinaria. KPTI esclude heap kernel, vista
   ricorsiva, backbuffer GUI e slot device dalla vista utente.
 - Seriale COM1 con FIFO 16550A da 16 byte e spinlock atomico SMP (bypassato
-  in panic); `KERNEL_PREEMPT_DEFERRED_LINE = 0` nei boot misurati.
+  in panic); `KERNEL_PREEMPT_DEFERRED_LINE = 0` nei boot misurati. Avvio
+  supportato anche senza seriale COM1 (`KERNEL_UART_ABSENT`), con rendering
+  diretto su framebuffer GOP dei log precoci e delle schermate di panic.
+- Preparazione PC fisico: boot supportato senza COM1, senza controller PS/2
+  (`KERNEL_PS2_INPUT_ABSENT` con apertura console/GUI e input USB xHCI), da
+  chiavetta USB come root `/` in assenza di VirtIO-blk (`KERNEL_VFS_USB_ROOT_MOUNTED`)
+  e con skip non bloccante dei dischi SATA AHCI non-FAT (`KERNEL_VFS_BOOT_SKIPPED`).
 - La shell offre `help`, `print`, `status`, `bridge status`, `proc`, `fl`,
   `rp`, `write`, `rm`, `sync`, `ap`, `gui`, `exit`.
 - Il desktop (`gui`) avvia il compositor Slint e il Terminale come processo

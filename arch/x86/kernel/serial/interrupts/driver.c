@@ -333,8 +333,16 @@ int x86_uart_irq_run(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window
     unsigned char saved;
     int result = 0, closed, restored, detached = 1;
     if (finished || owner.Active || !x86_irq_ready() ||
-        !x86_apic_mapping_ready(context,window,inventory,topology,profile) ||
-        !x86_uart_route_plan(topology,caps,&route) || !uart_disable() || !uart_idle()) return 0;
+        !x86_apic_mapping_ready(context,window,inventory,topology,profile)) return 0;
+    if (!x86_serial_present()) {
+        if (!x86_lapic_bind(context,window,inventory,topology,profile,&mapping)) return 0;
+        owner.Mapping = &mapping; owner.Profile = profile;
+        if (!x86_paging_inventory_capture_lapic(context,window->Pool,&mapping,inventory) ||
+            !x86_paging_inventory_verify_lapic(context,window->Pool,&mapping,inventory)) return 0;
+        finished = 1;
+        return x86_lapic_report(&mapping) && report_inventory(inventory) && kernel_log(2,"KERNEL_UART_ABSENT");
+    }
+    if (!x86_uart_route_plan(topology,caps,&route) || !uart_disable() || !uart_idle()) return 0;
     saved = x86_read_port(COM1+4);
     if (saved & ~3U) return 0;
     if (!x86_lapic_bind(context,window,inventory,topology,profile,&mapping)) return 0;
