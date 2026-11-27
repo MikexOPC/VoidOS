@@ -394,6 +394,8 @@ extern "C" fn program_main(mode: u64) -> ! {
         Ok(u) => u,
         Err(_) => libvoid::exit(82),
     };
+    ui.set_screen_w(acq.width as f32);
+    ui.set_screen_h(acq.height as f32);
     let requests = Rc::new(RefCell::new(VecDeque::new()));
     let launch = requests.clone();
     ui.on_launch_app(move |kind| launch.borrow_mut().push_back((0, kind)));
@@ -550,6 +552,8 @@ extern "C" fn program_main(mode: u64) -> ! {
                     };
                     cx = cx.clamp(0.0, (acq.width - 1) as f32);
                     cy = cy.clamp(0.0, (acq.height - 1) as f32);
+                    ui.set_screen_w(acq.width as f32);
+                    ui.set_screen_h(acq.height as f32);
                     window.set_size(PhysicalSize::new(acq.width, acq.height));
                     ui.set_surfaces_visible(false);
                     ui.set_dock_visible(false);
