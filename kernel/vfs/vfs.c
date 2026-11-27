@@ -845,7 +845,8 @@ int kernel_vfs_system_start(
     KERNEL_HEAP *heap,
     KERNEL_BLOCK_CACHE *root_cache,
     KERNEL_BLOCK_CACHE *boot_cache,
-    KERNEL_BLOCK_CACHE *usb_cache
+    KERNEL_BLOCK_CACHE *usb_cache,
+    KERNEL_BLOCK_CACHE *nvme_cache
 )
 {
     if (system_vfs.Ready)
@@ -858,6 +859,7 @@ int kernel_vfs_system_start(
     uint32_t boot_bytes = 0;
     char buf[64];
     int usb_used_as_root = 0;
+    int nvme_used_as_root = 0;
 
     if (root_cache && kernel_block_cache_valid(root_cache)) {
         if (kernel_vfs_mount_fat(&system_vfs, "/", root_cache) != KERNEL_STORAGE_OK)
@@ -879,6 +881,12 @@ int kernel_vfs_system_start(
             kernel_vfs_unlink(&system_vfs, "/VERIFY.TXT") != KERNEL_STORAGE_OK ||
             kernel_vfs_stat(&system_vfs, "/VERIFY.TXT", &st) != KERNEL_STORAGE_ERR_NOT_FOUND)
             return 0;
+    } else if (nvme_cache && kernel_block_cache_valid(nvme_cache)) {
+        if (kernel_vfs_mount_fat(&system_vfs, "/", nvme_cache) == KERNEL_STORAGE_OK) {
+            nvme_used_as_root = 1;
+            (void)kernel_vfs_read_file(&system_vfs, "/HELLO.TXT", 0U, buf, sizeof(buf), &root_bytes);
+            (void)kernel_log(0, "KERNEL_VFS_NVME_ROOT_MOUNTED");
+        }
     } else if (usb_cache && kernel_block_cache_valid(usb_cache)) {
         if (kernel_vfs_mount_fat(&system_vfs, "/", usb_cache) == KERNEL_STORAGE_OK) {
             usb_used_as_root = 1;
@@ -902,6 +910,13 @@ int kernel_vfs_system_start(
             }
         } else {
             (void)kernel_log(1, "KERNEL_VFS_BOOT_SKIPPED");
+        }
+    }
+
+    if (!nvme_used_as_root && nvme_cache && kernel_block_cache_valid(nvme_cache)) {
+        const char *nvme_prefix = system_vfs.MountCount ? "/nvme" : "/";
+        if (kernel_vfs_mount_fat(&system_vfs, nvme_prefix, nvme_cache) == KERNEL_STORAGE_OK) {
+            (void)kernel_log(0, "KERNEL_VFS_NVME_MOUNTED");
         }
     }
 

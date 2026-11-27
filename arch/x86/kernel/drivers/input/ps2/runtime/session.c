@@ -22,6 +22,7 @@
 #include "arch/x86/kernel/drivers/storage/virtio_blk/native.h"
 #include "arch/x86/kernel/drivers/net/virtio_net/native.h"
 #include "arch/x86/kernel/drivers/storage/ahci/native.h"
+#include "arch/x86/kernel/drivers/storage/nvme/native.h"
 #include "arch/x86/kernel/drivers/usb/xhci/native.h"
 #include "arch/x86/mm/heap/binding.h"
 #include "kernel/vfs/vfs.h"
@@ -139,6 +140,7 @@ int x86_ps2_after_dispatch(void)
     }
     x86_virtio_blk_stop();
     x86_ahci_stop();
+    x86_nvme_stop();
     x86_xhci_stop();
     x86_virtio_net_stop();
 #ifdef KERNEL_AP_TASKS
@@ -215,13 +217,16 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!x86_ahci_start(env, directory, clock)) {
         kernel_log(3, "AHCI_START_FAILED"); return 0;
     }
+    if (!x86_nvme_start(env, directory, clock)) {
+        kernel_log(3, "NVME_START_FAILED"); return 0;
+    }
     if (!x86_xhci_start(env, directory, clock)) {
         kernel_log(3, "XHCI_START_FAILED"); return 0;
     }
     if (!x86_virtio_net_start(env, directory, clock)) {
         kernel_log(3, "VIRTIO_NET_START_FAILED"); return 0;
     }
-    if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache(), x86_xhci_msc_cache())) {
+    if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache(), x86_xhci_msc_cache(), x86_nvme_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;
     }
 #ifdef KERNEL_USER_PROCESS
