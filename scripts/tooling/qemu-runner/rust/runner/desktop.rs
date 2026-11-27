@@ -67,7 +67,7 @@ pub fn run(tcg: bool) -> Result<bool, String> {
         }
         args.push(option.clone());
         if option == "-accel" || option == "-display" {
-            args.push(if option == "-display" { "sdl" }
+            args.push(if option == "-display" { "gtk,zoom-to-fit=on,show-menubar=off,show-tabs=off" }
                 else if tcg { "tcg" } else { "whpx,kernel-irqchip=off" }.into());
             index += 2;
         } else {
