@@ -274,7 +274,8 @@ fn ap_dispatchers(vm: &mut Vm, cpus: u32) -> Result<Value, String> {
         let completed = words[74] >> 32;
         let expected_cpu = log.numbers("SHELL_AP_CPU").iter().filter(|owner| **owner == u64::from(cpu)).count() as u64;
         let count_ok = if has_batch { completed >= expected_cpu } else { completed == expected_cpu };
-        if words[78] != 0 || words[80] != 0xffff_ffff_0000_0001 || words[81] != 0 ||
+        let expected_owner_word = (u64::from(u32::MAX) << 32) | 1;
+        if words[78] != 0 || words[80] != expected_owner_word || words[81] != 0 ||
             words[82] != address || words[83] == 0 || words[85] != 1 || !count_ok {
             return Err(format!("AP {cpu} lost its permanent dispatcher or job ownership"));
         }

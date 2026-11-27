@@ -44,15 +44,6 @@ jobs:
           rustup default 1.98.1
           rustc --version
 
-      # Same cppcheck as the reference machine, from the official release.
-      - name: cppcheck 2.22.0
-        run: |
-          $msi = Join-Path $env:RUNNER_TEMP 'cppcheck.msi'
-          Invoke-WebRequest 'https://github.com/danmar/cppcheck/releases/download/2.22.0/cppcheck-2.22.0-x64-Setup.msi' -OutFile $msi
-          $install = Start-Process msiexec.exe -ArgumentList @('/i', $msi, '/qn', '/norestart') -Wait -PassThru
-          if ($install.ExitCode) { throw "cppcheck install failed: $($install.ExitCode)" }
-          & "$env:ProgramFiles\Cppcheck\cppcheck.exe" --version
-
       - name: QEMU with OVMF
         run: |
           choco install qemu --no-progress -y
@@ -64,10 +55,28 @@ jobs:
 
       # ============ check ============
 
-      - name: Host suites and ordinary boot
+      - name: Layout check
+        run: ./scripts/test/layout-check.ps1
+
+      - name: Build UEFI boot loader
+        run: ./arch/x86/boot/uefi/scripts/build.ps1 -BootKernel
+
+      - name: Host tests (Meson + ASan)
         run: |
-          $env:VOIDOS_PWSH = (Get-Command pwsh.exe).Source
-          ./scripts/test/run.ps1 -Check -Suite runner,build-plan,kernel,sync,security,clock,layout
+          meson setup kernel/build/meson-host-tests test --vsenv
+          meson test -C kernel/build/meson-host-tests --print-errorlogs
+
+      - name: Build ordinary kernel (Meson + Ninja)
+        run: |
+          meson setup kernel/build/meson-kernel kernel --vsenv -Dprofile=ordinary
+          meson compile -C kernel/build/meson-kernel
+
+      - name: Build QEMU runner and boot ordinary image
+        run: |
+          meson setup kernel/build/meson-qemu-runner scripts/tooling/qemu-runner --vsenv
+          meson compile -C kernel/build/meson-qemu-runner
+          meson test -C kernel/build/meson-qemu-runner --print-errorlogs
+          ./kernel/build/meson-qemu-runner/qemu_runner.exe --image kernel/build/meson-kernel/kernel.elf --ordinary-shell --smp 4 --boots 1
 
       - name: Evidence
         if: always()
@@ -75,8 +84,9 @@ jobs:
         with:
           name: evidence
           path: |
-            kernel/build/test-run-*/
-            kernel/build/qemu-run-*/*.log
-            kernel/build/qemu-run-*/**/results.json
+            kernel/build/meson-host-tests/meson-logs/testlog.txt
+            kernel/build/qemu-runner-*/*.log
+            kernel/build/qemu-runner-*/**/serial.log
+            kernel/build/qemu-runner-*/**/results.json
           if-no-files-found: ignore
           retention-days: 7
