@@ -4,7 +4,7 @@
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use libui::draw::{Canvas, Rect};
-use libui::proto::{GuiMessage, MSG_INPUT_KEY, PROTO_WIRE_BYTES};
+use libui::proto::{GuiMessage, MSG_INPUT_KEY, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES};
 use libui::style::{Theme, rgb};
 
 global_asm!(
@@ -17,8 +17,7 @@ global_asm!(
 
 const WIN_W: u32 = 460;
 const WIN_H: u32 = 300;
-const SHM_PAGES: u64 = ((WIN_W as u64 * WIN_H as u64 * 4) + 4095) / 4096;
-const MAX_ENTRIES: usize = 12;
+const MAX_ENTRIES: usize = 32;
 
 struct Entry {
     name: [u8; 40],
@@ -136,20 +135,27 @@ impl FileBrowser {
         }
     }
 
-    fn render(&self, canvas: &mut Canvas<'_>, theme: &Theme) {
-        canvas.fill_rect(Rect::new(0, 0, WIN_W as i32, WIN_H as i32), theme.window_bg);
-        canvas.fill_rect(Rect::new(0, 0, WIN_W as i32, 30), rgb(0x1E, 0x29, 0x3B));
+    fn render(&self, canvas: &mut Canvas<'_>, win_w: u32, win_h: u32, theme: &Theme) {
+        let w = win_w as i32;
+        let h = win_h as i32;
+        let footer_y = (h - 40).max(60);
+
+        canvas.fill_rect(Rect::new(0, 0, w, h), theme.window_bg);
+        canvas.fill_rect(Rect::new(0, 0, w, 30), rgb(0x1E, 0x29, 0x3B));
         canvas.draw_text(12, 10, b"PATH:", theme.text_muted);
         canvas.draw_text(60, 10, &self.path[..self.path_len], theme.text_primary);
-        canvas.draw_text(270, 10, b"[r:/ u:/usb Enter]", theme.text_muted);
+        let hint_x = (w - 156).max(180);
+        canvas.draw_text(hint_x, 10, b"[r:/ u:/usb Enter]", theme.text_muted);
 
         if self.count == 0 {
             canvas.draw_text(16, 48, b"(directory vuota o non montata)", theme.text_muted);
         } else {
-            for i in 0..self.count {
+            let max_rows = ((footer_y - 40) / 18).max(1) as usize;
+            let show_count = self.count.min(max_rows);
+            for i in 0..show_count {
                 let y = 38 + (i as i32) * 18;
                 if i == self.selected {
-                    canvas.fill_rect(Rect::new(8, y - 2, (WIN_W - 16) as i32, 16), rgb(0x25, 0x63, 0xEB));
+                    canvas.fill_rect(Rect::new(8, y - 2, (w - 16).max(32), 16), rgb(0x25, 0x63, 0xEB));
                 }
                 let ent = &self.entries[i];
                 let tag = if ent.is_dir { b"[DIR] " } else { b"[FILE]" };
@@ -159,13 +165,14 @@ impl FileBrowser {
             }
         }
 
-        canvas.fill_rect(Rect::new(0, 260, WIN_W as i32, 40), rgb(0x0F, 0x17, 0x2A));
-        canvas.draw_text(12, 266, b"PREVIEW:", theme.text_muted);
+        canvas.fill_rect(Rect::new(0, footer_y, w, h - footer_y), rgb(0x0F, 0x17, 0x2A));
+        canvas.draw_text(12, footer_y + 12, b"PREVIEW:", theme.text_muted);
         if self.preview_len > 0 {
-            let show = self.preview_len.min(44);
-            canvas.draw_text(84, 266, &self.preview[..show], rgb(0x22, 0xC5, 0x5E));
+            let max_chars = ((w - 96) / 8).max(8) as usize;
+            let show = self.preview_len.min(max_chars);
+            canvas.draw_text(84, footer_y + 12, &self.preview[..show], rgb(0x22, 0xC5, 0x5E));
         } else {
-            canvas.draw_text(84, 266, b"(w/s muovi, Enter apri, Backspace /)", theme.text_muted);
+            canvas.draw_text(84, footer_y + 12, b"(w/s muovi, Enter apri, Backspace /)", theme.text_muted);
         }
     }
 }
@@ -185,6 +192,12 @@ fn load_theme() -> Theme {
     } else {
         Theme::void_dark()
     }
+}
+
+// ====== pages_for_surface ======
+
+fn pages_for_surface(width: u32, height: u32) -> u64 {
+    ((width as u64).saturating_mul(height as u64).saturating_mul(4) + 4095) / 4096
 }
 
 // ====== send_message ======
@@ -213,24 +226,29 @@ extern "C" fn program_main(arg: u64) -> ! {
     }
 
     let theme = load_theme();
-    let shm_id = libvoid::shm_create(SHM_PAGES);
-    if shm_id <= 0 {
+    let mut cur_w = WIN_W;
+    let mut cur_h = WIN_H;
+    let mut shm_cap_pages = pages_for_surface(cur_w, cur_h);
+    let created = libvoid::shm_create(shm_cap_pages);
+    if created <= 0 {
         libvoid::exit(111);
     }
-    let virt = libvoid::shm_map(shm_id as u64);
-    if virt < 0x1000_0000 {
+    let mut shm_id = created as u64;
+    let mapped = libvoid::shm_map(shm_id);
+    if mapped < 0x1000_0000 {
         libvoid::exit(112);
     }
-    let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (WIN_W * WIN_H) as usize) };
-    let mut canvas = Canvas::new(pixels, WIN_W, WIN_H, WIN_W);
+    let mut virt = mapped as u64;
     let mut browser = FileBrowser::new();
 
     if arg == 1 {
         if browser.count == 0 {
             libvoid::exit(113);
         }
-        browser.render(&mut canvas, &theme);
-        if libvoid::shm_unmap(shm_id as u64) != 0 {
+        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+        browser.render(&mut canvas, cur_w, cur_h, &theme);
+        if libvoid::shm_unmap(shm_id) != 0 {
             libvoid::exit(114);
         }
         let _ = libvoid::write_console(b"VoidOS gui files ok\n");
@@ -238,26 +256,70 @@ extern "C" fn program_main(arg: u64) -> ! {
     }
 
     let ipc_handle = arg & !(1u64 << 63);
-    if libvoid::shm_publish(shm_id as u64) != 0 {
+    if libvoid::shm_publish(shm_id) != 0 {
         libvoid::exit(115);
     }
-    let create = GuiMessage::create_window(WIN_W, WIN_H, shm_id as u64, b"Files");
+    let create = GuiMessage::create_window(cur_w, cur_h, shm_id, b"Files");
     send_message(ipc_handle, &create.encode());
-    browser.render(&mut canvas, &theme);
-    let commit = GuiMessage::commit_rect(1, 0, 0, WIN_W, WIN_H).encode();
-    send_message(ipc_handle, &commit);
+    {
+        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+        browser.render(&mut canvas, cur_w, cur_h, &theme);
+    }
+    send_message(ipc_handle, &GuiMessage::commit_rect(1, 0, 0, cur_w, cur_h).encode());
 
     let mut rx = [0u8; PROTO_WIRE_BYTES];
     loop {
         let n = libvoid::ipc_recv(ipc_handle, &mut rx);
         if n == libvoid::ERR_PEER_CLOSED {
-            let _ = libvoid::shm_unmap(shm_id as u64);
+            let _ = libvoid::shm_unmap(shm_id);
             libvoid::exit(0);
         }
         if n == PROTO_WIRE_BYTES as i64 {
             if let Some(msg) = GuiMessage::decode(&rx) {
-                if msg.kind == MSG_INPUT_KEY {
-                    let scalar = msg.c as u32;
+                if msg.kind == MSG_RESIZE_WINDOW {
+                    let req_w = msg.e.clamp(240, 2048);
+                    let req_h = msg.f.clamp(160, 2048);
+                    if req_w != cur_w || req_h != cur_h {
+                        let need_pages = pages_for_surface(req_w, req_h);
+                        let mut ok = true;
+                        if need_pages > shm_cap_pages {
+                            let next_id = libvoid::shm_create(need_pages);
+                            if next_id > 0 {
+                                let next_virt = libvoid::shm_map(next_id as u64);
+                                if next_virt >= 0x1000_0000 && libvoid::shm_publish(next_id as u64) == 0 {
+                                    let _ = libvoid::shm_unmap(shm_id);
+                                    shm_id = next_id as u64;
+                                    virt = next_virt as u64;
+                                    shm_cap_pages = need_pages;
+                                } else {
+                                    if next_virt >= 0x1000_0000 {
+                                        let _ = libvoid::shm_unmap(next_id as u64);
+                                    }
+                                    ok = false;
+                                }
+                            } else {
+                                ok = false;
+                            }
+                        }
+                        if ok {
+                            cur_w = req_w;
+                            cur_h = req_h;
+                            send_message(ipc_handle, &GuiMessage::resize_window(1, cur_w, cur_h, shm_id).encode());
+                            let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+                            let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+                            browser.render(&mut canvas, cur_w, cur_h, &theme);
+                            send_message(ipc_handle, &GuiMessage::commit_rect(1, 0, 0, cur_w, cur_h).encode());
+                        }
+                    }
+                } else if msg.kind == MSG_INPUT_KEY {
+                    if msg.e & 0xffff_0000 == 0x0002_0000
+                        || msg.f == 0
+                        || msg.flags & libvoid::INPUT_FLAG_RESYNC != 0
+                    {
+                        continue;
+                    }
+                    let scalar = msg.f;
                     let mut dirty = true;
                     if scalar == b'w' as u32 || scalar == b'k' as u32 {
                         if browser.selected > 0 {
@@ -269,16 +331,18 @@ extern "C" fn program_main(arg: u64) -> ! {
                         }
                     } else if scalar == b'u' as u32 {
                         browser.set_path(b"/usb");
-                    } else if scalar == b'r' as u32 || scalar == 0x110001 {
+                    } else if scalar == b'r' as u32 || scalar == 8 {
                         browser.set_path(b"/");
-                    } else if scalar == 0x110003 || scalar == b'\n' as u32 {
+                    } else if scalar == 10 || scalar == 13 {
                         browser.open_selected();
                     } else {
                         dirty = false;
                     }
                     if dirty {
-                        browser.render(&mut canvas, &theme);
-                        send_message(ipc_handle, &commit);
+                        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+                        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+                        browser.render(&mut canvas, cur_w, cur_h, &theme);
+                        send_message(ipc_handle, &GuiMessage::commit_rect(1, 0, 0, cur_w, cur_h).encode());
                     }
                 }
             }

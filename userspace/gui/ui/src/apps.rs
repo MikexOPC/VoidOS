@@ -2,8 +2,70 @@ use crate::{AppSurface, VoidDesktop};
 use alloc::collections::VecDeque;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
-use libui::proto::{GuiMessage, MSG_COMMIT_RECT, MSG_CREATE_WINDOW, PROTO_WIRE_BYTES};
+use libui::proto::{
+    GuiMessage, MSG_COMMIT_RECT, MSG_CREATE_WINDOW, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES,
+};
 use slint::{Image, Model, Rgb8Pixel, SharedPixelBuffer, VecModel};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HitZone {
+    Titlebar,
+    Client,
+    ResizeRight,
+    ResizeBottom,
+    ResizeBottomRight,
+}
+
+#[derive(Clone, Copy)]
+pub struct HitResult {
+    pub kind: i32,
+    pub zone: HitZone,
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub view_w: f32,
+    pub view_h: f32,
+    pub maximized: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct MaximizedLayout {
+    pub x: f32,
+    pub y: f32,
+    pub client_w: u32,
+    pub client_h: u32,
+    pub top_radius: f32,
+    pub bottom_radius: f32,
+}
+
+// ====== dock_maximized_layout ======
+
+// Per-dock maximize geometry policy:
+// - dock_mode == 0 (Default Dock): reserves the bottom floating dock strip with an 8px breathing gap
+//   and rounds ONLY the bottom corners (14px) while keeping the top corners flush (0px).
+// - dock_mode != 0 (future docks): neutral full-screen geometry without bottom corner radius until
+//   dedicated dock layouts are added natively.
+pub fn dock_maximized_layout(dock_mode: i32, display_w: u32, display_h: u32) -> MaximizedLayout {
+    if dock_mode == 0 {
+        let win_h = display_h.saturating_sub(70).max(200);
+        MaximizedLayout {
+            x: 0.0,
+            y: 0.0,
+            client_w: display_w.saturating_sub(2).max(240),
+            client_h: win_h.saturating_sub(34).max(160),
+            top_radius: 0.0,
+            bottom_radius: 14.0,
+        }
+    } else {
+        MaximizedLayout {
+            x: 0.0,
+            y: 0.0,
+            client_w: display_w.saturating_sub(2).max(240),
+            client_h: display_h.saturating_sub(34).max(160),
+            top_radius: 0.0,
+            bottom_radius: 0.0,
+        }
+    }
+}
 
 pub struct Application {
     kind: i32,
@@ -12,12 +74,35 @@ pub struct Application {
     view: libvoid::ShmView,
     width: u32,
     height: u32,
+    view_w: f32,
+    view_h: f32,
     pos_x: f32,
     pos_y: f32,
+    saved_x: f32,
+    saved_y: f32,
+    saved_w: f32,
+    saved_h: f32,
     minimized: bool,
+    maximized: bool,
+    top_radius: f32,
+    bottom_radius: f32,
+    // anim_mode: 0 = idle, 1 = open, 2 = close, 3 = minimize, 4 = geometry/maximize/resize
     anim_mode: u8,
     anim_start_ms: u64,
     scale_progress: f32,
+    geo_from_x: f32,
+    geo_from_y: f32,
+    geo_from_w: f32,
+    geo_from_h: f32,
+    geo_from_tr: f32,
+    geo_from_br: f32,
+    geo_to_x: f32,
+    geo_to_y: f32,
+    geo_to_w: f32,
+    geo_to_h: f32,
+    geo_to_tr: f32,
+    geo_to_br: f32,
+    geo_anim_ms: f32,
     buffer: SharedPixelBuffer<Rgb8Pixel>,
     image: Image,
     pending: VecDeque<[u8; PROTO_WIRE_BYTES]>,
@@ -91,12 +176,34 @@ impl Applications {
             view: libvoid::ShmView::default(),
             width: 0,
             height: 0,
+            view_w: 0.0,
+            view_h: 0.0,
             pos_x: init_x,
             pos_y: init_y,
+            saved_x: init_x,
+            saved_y: init_y,
+            saved_w: 0.0,
+            saved_h: 0.0,
             minimized: false,
+            maximized: false,
+            top_radius: 12.0,
+            bottom_radius: 12.0,
             anim_mode: if self.verify { 0 } else { 1 },
             anim_start_ms: now_ms,
             scale_progress: if self.verify { 1.0 } else { 0.05 },
+            geo_from_x: init_x,
+            geo_from_y: init_y,
+            geo_from_w: 0.0,
+            geo_from_h: 0.0,
+            geo_from_tr: 12.0,
+            geo_from_br: 12.0,
+            geo_to_x: init_x,
+            geo_to_y: init_y,
+            geo_to_w: 0.0,
+            geo_to_h: 0.0,
+            geo_to_tr: 12.0,
+            geo_to_br: 12.0,
+            geo_anim_ms: 240.0,
             buffer: SharedPixelBuffer::new(0, 0),
             image: Image::default(),
             pending: VecDeque::new(),
@@ -140,6 +247,201 @@ impl Applications {
         }
     }
 
+    // ====== toggle_maximize ======
+
+    pub fn toggle_maximize(
+        &mut self,
+        kind: i32,
+        dock_mode: i32,
+        display_w: u32,
+        display_h: u32,
+        now_ms: u64,
+    ) {
+        let Some(app) = self.windows.iter_mut().find(|a| a.kind == kind) else {
+            return;
+        };
+        if app.commits == 0 || app.minimized {
+            return;
+        }
+        self.focused = kind;
+        let (to_x, to_y, to_w, to_h, to_tr, to_br, dur) = if !app.maximized {
+            app.saved_x = app.pos_x;
+            app.saved_y = app.pos_y;
+            app.saved_w = app.view_w.max(240.0);
+            app.saved_h = app.view_h.max(160.0);
+            app.maximized = true;
+            let layout = dock_maximized_layout(dock_mode, display_w, display_h);
+            (
+                layout.x,
+                layout.y,
+                layout.client_w as f32,
+                layout.client_h as f32,
+                layout.top_radius,
+                layout.bottom_radius,
+                240.0,
+            )
+        } else {
+            app.maximized = false;
+            (
+                app.saved_x,
+                app.saved_y,
+                app.saved_w.max(240.0),
+                app.saved_h.max(160.0),
+                12.0,
+                12.0,
+                220.0,
+            )
+        };
+
+        app.geo_from_x = app.pos_x;
+        app.geo_from_y = app.pos_y;
+        app.geo_from_w = app.view_w;
+        app.geo_from_h = app.view_h;
+        app.geo_from_tr = app.top_radius;
+        app.geo_from_br = app.bottom_radius;
+        app.geo_to_x = to_x;
+        app.geo_to_y = to_y;
+        app.geo_to_w = to_w;
+        app.geo_to_h = to_h;
+        app.geo_to_tr = to_tr;
+        app.geo_to_br = to_br;
+        app.geo_anim_ms = dur;
+        app.scale_progress = 1.0;
+
+        if self.verify {
+            app.pos_x = to_x;
+            app.pos_y = to_y;
+            app.view_w = to_w;
+            app.view_h = to_h;
+            app.top_radius = to_tr;
+            app.bottom_radius = to_br;
+            app.anim_mode = 0;
+        } else {
+            app.anim_mode = 4;
+            app.anim_start_ms = now_ms;
+        }
+
+        if app.pending.len() < 4096 {
+            app.pending.push_back(
+                GuiMessage::resize_window(1, to_w as u32, to_h as u32, 0).encode(),
+            );
+        }
+    }
+
+    // ====== unmaximize_for_drag ======
+
+    pub fn unmaximize_for_drag(
+        &mut self,
+        kind: i32,
+        cursor_x: f32,
+        cursor_y: f32,
+        display_w: u32,
+    ) -> Option<(f32, f32)> {
+        let app = self.windows.iter_mut().find(|a| a.kind == kind)?;
+        if !app.maximized {
+            return Some((app.pos_x, app.pos_y));
+        }
+        let restore_w = app.saved_w.max(320.0);
+        let restore_h = app.saved_h.max(200.0);
+        let frac = (cursor_x / (display_w.max(1) as f32)).clamp(0.1, 0.85);
+        let new_x = (cursor_x - frac * (restore_w + 2.0)).clamp(0.0, (display_w as f32 - 80.0).max(0.0));
+        let new_y = (cursor_y - 16.0).max(0.0);
+        app.maximized = false;
+        app.anim_mode = 0;
+        app.pos_x = new_x;
+        app.pos_y = new_y;
+        app.view_w = restore_w;
+        app.view_h = restore_h;
+        app.top_radius = 12.0;
+        app.bottom_radius = 12.0;
+        if app.pending.len() < 4096 {
+            app.pending.push_back(
+                GuiMessage::resize_window(1, restore_w as u32, restore_h as u32, 0).encode(),
+            );
+        }
+        for row in 0..self.model.row_count() {
+            if let Some(mut surface) = self.model.row_data(row) {
+                if surface.kind == kind {
+                    surface.pos_x = new_x;
+                    surface.pos_y = new_y;
+                    surface.view_width = restore_w;
+                    surface.view_height = restore_h;
+                    surface.maximized = false;
+                    surface.corner_top_radius = 12.0;
+                    surface.corner_bottom_radius = 12.0;
+                    self.model.set_row_data(row, surface);
+                    break;
+                }
+            }
+        }
+        Some((new_x, new_y))
+    }
+
+    // ====== resize_live ======
+
+    pub fn resize_live(&mut self, kind: i32, new_w: f32, new_h: f32, display_w: u32, display_h: u32) {
+        let Some(app) = self.windows.iter_mut().find(|a| a.kind == kind) else {
+            return;
+        };
+        if app.maximized {
+            return;
+        }
+        let max_w = ((display_w as f32) - app.pos_x - 2.0).max(320.0);
+        let max_h = ((display_h as f32) - app.pos_y - 34.0).max(200.0);
+        let cw = new_w.clamp(320.0, max_w);
+        let ch = new_h.clamp(200.0, max_h);
+        if (app.view_w - cw).abs() < 0.5 && (app.view_h - ch).abs() < 0.5 {
+            return;
+        }
+        app.anim_mode = 0;
+        app.view_w = cw;
+        app.view_h = ch;
+        app.saved_w = cw;
+        app.saved_h = ch;
+        for row in 0..self.model.row_count() {
+            if let Some(mut surface) = self.model.row_data(row) {
+                if surface.kind == kind {
+                    surface.view_width = cw;
+                    surface.view_height = ch;
+                    self.model.set_row_data(row, surface);
+                    break;
+                }
+            }
+        }
+    }
+
+    // ====== finish_resize ======
+
+    pub fn finish_resize(&mut self, kind: i32, now_ms: u64) {
+        let Some(app) = self.windows.iter_mut().find(|a| a.kind == kind) else {
+            return;
+        };
+        if app.commits == 0 || app.maximized {
+            return;
+        }
+        let target_w = ((app.view_w as u32) & !1).max(320);
+        let target_h = ((app.view_h as u32) & !1).max(200);
+        app.geo_from_x = app.pos_x;
+        app.geo_from_y = app.pos_y;
+        app.geo_from_w = app.view_w;
+        app.geo_from_h = app.view_h;
+        app.geo_from_tr = app.top_radius;
+        app.geo_from_br = app.bottom_radius;
+        app.geo_to_x = app.pos_x;
+        app.geo_to_y = app.pos_y;
+        app.geo_to_w = target_w as f32;
+        app.geo_to_h = target_h as f32;
+        app.geo_to_tr = 12.0;
+        app.geo_to_br = 12.0;
+        app.geo_anim_ms = 110.0;
+        app.anim_mode = 4;
+        app.anim_start_ms = now_ms;
+        if app.pending.len() < 4096 {
+            app.pending
+                .push_back(GuiMessage::resize_window(1, target_w, target_h, 0).encode());
+        }
+    }
+
     // ====== has_active_animations ======
 
     pub fn has_active_animations(&self) -> bool {
@@ -154,6 +456,7 @@ impl Applications {
         const MIN_MS: f32 = 190.0;
         let mut to_close = Vec::new();
         let mut any_updated = false;
+        let mut any_minimized = false;
         for app in &mut self.windows {
             if app.anim_mode == 0 || app.commits == 0 || app.minimized {
                 continue;
@@ -167,7 +470,6 @@ impl Applications {
             };
             if app.anim_mode == 1 {
                 let t = (elapsed / OPEN_MS).clamp(0.0, 1.0);
-                // Ultra-smooth ease-out quartic
                 let inv = 1.0 - t;
                 let inv2 = inv * inv;
                 app.scale_progress = 1.0 - inv2 * inv2;
@@ -179,7 +481,6 @@ impl Applications {
             } else if app.anim_mode == 2 || app.anim_mode == 3 {
                 let dur = if app.anim_mode == 2 { CLOSE_MS } else { MIN_MS };
                 let t = (elapsed / dur).clamp(0.0, 1.0);
-                // Smooth ease-in-out cubic
                 let eased = if t < 0.5 {
                     4.0 * t * t * t
                 } else {
@@ -196,17 +497,54 @@ impl Applications {
                     } else {
                         app.minimized = true;
                         finished_min = true;
+                        any_minimized = true;
                     }
+                }
+                any_updated = true;
+            } else if app.anim_mode == 4 {
+                let t = (elapsed / app.geo_anim_ms.max(1.0)).clamp(0.0, 1.0);
+                // Smooth ease-out quintic for natural maximize/restore/resize glide
+                let inv = 1.0 - t;
+                let inv2 = inv * inv;
+                let e = 1.0 - inv2 * inv2 * inv;
+                app.pos_x = app.geo_from_x + (app.geo_to_x - app.geo_from_x) * e;
+                app.pos_y = app.geo_from_y + (app.geo_to_y - app.geo_from_y) * e;
+                app.view_w = app.geo_from_w + (app.geo_to_w - app.geo_from_w) * e;
+                app.view_h = app.geo_from_h + (app.geo_to_h - app.geo_from_h) * e;
+                app.top_radius = app.geo_from_tr + (app.geo_to_tr - app.geo_from_tr) * e;
+                app.bottom_radius = app.geo_from_br + (app.geo_to_br - app.geo_from_br) * e;
+                if t >= 1.0 {
+                    app.pos_x = app.geo_to_x;
+                    app.pos_y = app.geo_to_y;
+                    app.view_w = app.geo_to_w;
+                    app.view_h = app.geo_to_h;
+                    app.top_radius = app.geo_to_tr;
+                    app.bottom_radius = app.geo_to_br;
+                    app.anim_mode = 0;
                 }
                 any_updated = true;
             }
             let kind = app.kind;
             let progress = app.scale_progress;
+            let pos_x = app.pos_x;
+            let pos_y = app.pos_y;
+            let view_w = app.view_w;
+            let view_h = app.view_h;
+            let top_r = app.top_radius;
+            let bot_r = app.bottom_radius;
+            let is_max = app.maximized;
             for row in 0..self.model.row_count() {
                 if let Some(mut surface) = self.model.row_data(row) {
                     if surface.kind == kind {
                         surface.scale_progress = progress;
                         surface.anim_kind = cur_anim_kind;
+                        surface.pos_x = pos_x;
+                        surface.pos_y = pos_y;
+                        surface.view_width = view_w;
+                        surface.view_height = view_h;
+                        surface.corner_top_radius = top_r;
+                        surface.corner_bottom_radius = bot_r;
+                        surface.maximized = is_max;
                         if finished_min {
                             surface.minimized = true;
                         }
@@ -221,15 +559,15 @@ impl Applications {
                 let _ = self.close(kind);
             }
             self.refresh(ui);
+        } else if any_minimized {
+            self.sync_dock_indicators(ui);
         }
         any_updated
     }
 
     // ====== hit_test ======
 
-    // Returns (kind, in_titlebar_drag_zone, win_x, win_y) for the topmost visible window under (x, y).
-    pub fn hit_test(&self, x: f32, y: f32) -> Option<(i32, bool, f32, f32)> {
-        // Z-order matches refresh(): focused window is topmost, then others in reverse order.
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<HitResult> {
         let ordered = self
             .windows
             .iter()
@@ -239,15 +577,39 @@ impl Applications {
             if app.minimized || app.commits == 0 || app.anim_mode == 2 || app.anim_mode == 3 {
                 continue;
             }
-            let total_w = app.width as f32 + 2.0;
-            let total_h = app.height as f32 + 34.0;
+            let total_w = app.view_w + 2.0;
+            let total_h = app.view_h + 34.0;
             if x >= app.pos_x
                 && x < app.pos_x + total_w
                 && y >= app.pos_y
                 && y < app.pos_y + total_h
             {
-                let in_titlebar = y < app.pos_y + 32.0 && x < app.pos_x + (total_w - 88.0).max(0.0);
-                return Some((app.kind, in_titlebar, app.pos_x, app.pos_y));
+                let zone = if y < app.pos_y + 32.0 && x < app.pos_x + (total_w - 88.0).max(0.0) {
+                    HitZone::Titlebar
+                } else if !app.maximized
+                    && x >= app.pos_x + total_w - 16.0
+                    && y >= app.pos_y + total_h - 16.0
+                {
+                    HitZone::ResizeBottomRight
+                } else if !app.maximized
+                    && x >= app.pos_x + total_w - 8.0
+                    && y >= app.pos_y + 32.0
+                {
+                    HitZone::ResizeRight
+                } else if !app.maximized && y >= app.pos_y + total_h - 8.0 {
+                    HitZone::ResizeBottom
+                } else {
+                    HitZone::Client
+                };
+                return Some(HitResult {
+                    kind: app.kind,
+                    zone,
+                    pos_x: app.pos_x,
+                    pos_y: app.pos_y,
+                    view_w: app.view_w,
+                    view_h: app.view_h,
+                    maximized: app.maximized,
+                });
             }
         }
         None
@@ -268,6 +630,8 @@ impl Applications {
         }
         app.pos_x = clamped_x;
         app.pos_y = clamped_y;
+        app.saved_x = clamped_x;
+        app.saved_y = clamped_y;
         for row in 0..self.model.row_count() {
             if let Some(mut surface) = self.model.row_data(row) {
                 if surface.kind == kind {
@@ -395,9 +759,7 @@ impl Applications {
                         let result = libvoid::ipc_recv(app.child.endpoint, &mut wire);
                         if result == PROTO_WIRE_BYTES as i64 {
                             let valid = GuiMessage::decode(&wire).is_some_and(|message| {
-                                if message.kind == MSG_COMMIT_RECT {
-                                    // Drop model's Image reference before in-place buffer update so
-                                    // SharedPixelBuffer::make_mut_slice() stays refcount == 1 (zero alloc).
+                                if message.kind == MSG_COMMIT_RECT || message.kind == MSG_RESIZE_WINDOW {
                                     for row in 0..self.model.row_count() {
                                         if let Some(mut surface) = self.model.row_data(row) {
                                             if surface.kind == app.kind {
@@ -407,7 +769,9 @@ impl Applications {
                                             }
                                         }
                                     }
-                                    pixels_updated = true;
+                                    if message.kind == MSG_COMMIT_RECT {
+                                        pixels_updated = true;
+                                    }
                                 }
                                 app.receive(message, display_width, display_height)
                             });
@@ -491,6 +855,17 @@ impl Applications {
         (healthy, activity)
     }
 
+    // ====== sync_dock_indicators ======
+
+    pub fn sync_dock_indicators(&self, ui: &VoidDesktop) {
+        ui.set_terminal_open(self.windows.iter().any(|app| app.kind == 0 && !app.minimized && app.anim_mode != 3));
+        ui.set_sysmon_open(self.windows.iter().any(|app| app.kind == 1 && !app.minimized && app.anim_mode != 3));
+        ui.set_files_open(self.windows.iter().any(|app| app.kind == 2 && !app.minimized && app.anim_mode != 3));
+        ui.set_terminal_minimized(self.windows.iter().any(|app| app.kind == 0 && (app.minimized || app.anim_mode == 3)));
+        ui.set_sysmon_minimized(self.windows.iter().any(|app| app.kind == 1 && (app.minimized || app.anim_mode == 3)));
+        ui.set_files_minimized(self.windows.iter().any(|app| app.kind == 2 && (app.minimized || app.anim_mode == 3)));
+    }
+
     // ====== refresh ======
 
     pub fn refresh(&self, ui: &VoidDesktop) {
@@ -514,9 +889,14 @@ impl Applications {
                 pixels: app.image.clone(),
                 client_width: app.width as f32,
                 client_height: app.height as f32,
+                view_width: app.view_w,
+                view_height: app.view_h,
                 pos_x: app.pos_x,
                 pos_y: app.pos_y,
                 minimized: app.minimized,
+                maximized: app.maximized,
+                corner_top_radius: app.top_radius,
+                corner_bottom_radius: app.bottom_radius,
                 scale_progress: app.scale_progress,
                 anim_kind: match app.anim_mode {
                     2 => 1,
@@ -526,9 +906,7 @@ impl Applications {
             });
         }
         self.model.set_vec(surfaces);
-        ui.set_terminal_open(self.windows.iter().any(|app| app.kind == 0 && !app.minimized));
-        ui.set_sysmon_open(self.windows.iter().any(|app| app.kind == 1 && !app.minimized));
-        ui.set_files_open(self.windows.iter().any(|app| app.kind == 2 && !app.minimized));
+        self.sync_dock_indicators(ui);
         ui.set_focused_window(self.focused);
     }
 
@@ -557,7 +935,7 @@ impl Application {
                 || msg.e == 0
                 || msg.f == 0
                 || msg.e > display_width
-                || msg.f > display_height.saturating_sub(160)
+                || msg.f > display_height
             {
                 return false;
             }
@@ -580,8 +958,52 @@ impl Application {
             self.view = view;
             self.width = msg.e;
             self.height = msg.f;
+            self.view_w = msg.e as f32;
+            self.view_h = msg.f as f32;
+            self.saved_w = self.view_w;
+            self.saved_h = self.view_h;
             self.buffer = SharedPixelBuffer::<Rgb8Pixel>::new(self.width, self.height);
             self.image = Image::default();
+            return true;
+        }
+        if msg.kind == MSG_RESIZE_WINDOW {
+            if self.shm == 0
+                || msg.a == 0
+                || msg.e < 160
+                || msg.f < 120
+                || msg.e > display_width
+                || msg.f > display_height
+            {
+                return false;
+            }
+            let bytes = u64::from(msg.e) * u64::from(msg.f) * 4;
+            if msg.a != self.shm {
+                let mut view = libvoid::ShmView::default();
+                if libvoid::shm_view(msg.a, &mut view) != 0 {
+                    return false;
+                }
+                if view.address < 0x1000_0000
+                    || bytes > view.bytes
+                    || view
+                        .address
+                        .checked_add(view.bytes)
+                        .is_none_or(|end| end > 0x4000_0000)
+                {
+                    let _ = libvoid::shm_unmap(msg.a);
+                    return false;
+                }
+                let old_shm = self.shm;
+                self.shm = msg.a;
+                self.view = view;
+                let _ = libvoid::shm_unmap(old_shm);
+            } else if bytes > self.view.bytes {
+                return false;
+            }
+            self.width = msg.e;
+            self.height = msg.f;
+            self.image = Image::default();
+            self.buffer = SharedPixelBuffer::new(0, 0);
+            self.buffer = SharedPixelBuffer::<Rgb8Pixel>::new(self.width, self.height);
             return true;
         }
         if msg.kind != MSG_COMMIT_RECT

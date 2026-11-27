@@ -1,201 +1,277 @@
-// Layer 1: Light-theme window with slim titlebar (32px), terminal.png icon,
-// and 3 compact Windows-style bordered mini-squares on the right (22x22).
+// Layer 1: Light-theme window with slim titlebar (32px), per-app icon,
+// animated per-edge corner radii (bottom-only rounding when maximized with Default Dock),
+// and 3 compact Liquid Glass mini-squares on the right (22x22).
 export component VoidWindow inherits Rectangle {
     in property <string> title: "Terminal";
     in property <int> app-kind: 0;
     in property <bool> focused: true;
+    in property <bool> maximized: false;
+    in property <length> corner-top-radius: 12px;
+    in property <length> corner-bottom-radius: 12px;
     callback close-clicked();
     callback minimize-clicked();
+    callback maximize-clicked();
 
-    background: #F4F7FEF2;
-    border-radius: 12px;
-    border-width: 1px;
-    border-color: root.focused ? #5B71A0C8 : #94A3B888;
+    // When corner-bottom-radius > corner-top-radius (e.g. maximized on Default Dock: 0px top, 14px bottom),
+    // shift the inner rounded surface upward by top-clip inside this outer clip container so the top
+    // corners are cleanly squared against the top screen edge while the bottom corners stay rounded.
+    property <length> top-clip: max(0px, root.corner-bottom-radius - root.corner-top-radius);
+    property <length> body-radius: max(root.corner-top-radius, root.corner-bottom-radius);
+
+    background: transparent;
     clip: true;
 
-    VerticalLayout {
-        padding: 0px;
-        spacing: 0px;
+    Rectangle {
+        x: 0px;
+        y: -root.top-clip;
+        width: 100%;
+        height: parent.height + root.top-clip;
+        background: #F4F7FEF2;
+        border-radius: root.body-radius;
+        border-width: 1px;
+        border-color: root.focused ? #5B71A0C8 : #94A3B888;
+        clip: true;
 
-        // Liquid-glass Titlebar (32px height, dragged by compositor in absolute screen coordinates)
-        Rectangle {
-            height: 32px;
-            background: root.focused
-                ? @linear-gradient(180deg, #FFFFFFF0 0%, #EAF0FBE8 100%)
-                : @linear-gradient(180deg, #F5F8FDE0 0%, #E6ECF8D8 100%);
+        VerticalLayout {
+            padding-top: root.top-clip;
+            padding-left: 0px;
+            padding-right: 0px;
+            padding-bottom: 0px;
+            spacing: 0px;
 
-            // Top specular Liquid Glass rim
+            // Titlebar (32px height, dragged/double-clicked by compositor in absolute screen coordinates)
             Rectangle {
-                x: 0px;
-                y: 0px;
-                width: 100%;
-                height: 1px;
-                background: #FFFFFFEE;
-            }
+                height: 32px;
+                background: root.focused
+                    ? @linear-gradient(180deg, #FFFFFFF0 0%, #EAF0FBE8 100%)
+                    : @linear-gradient(180deg, #F5F8FDE0 0%, #E6ECF8D8 100%);
 
-            // Bottom subtle divider between titlebar and client surface
-            Rectangle {
-                x: 0px;
-                y: parent.height - 1px;
-                width: 100%;
-                height: 1px;
-                background: #7E8BA838;
-            }
-
-            HorizontalLayout {
-                padding-left: 10px;
-                padding-right: 7px;
-                padding-top: 5px;
-                padding-bottom: 5px;
-                alignment: space-between;
-
-                // Left: App-specific icon + compact window title
-                HorizontalLayout {
-                    spacing: 7px;
-                    alignment: start;
-
-                    Rectangle {
-                        width: 22px;
-                        height: 22px;
-                        border-radius: 7px;
-                        border-width: 1px;
-                        border-color: #FFFFFFCC;
-                        background: @linear-gradient(180deg, #FFFFFFAA 0%, #E8EEF978 100%);
-
-                        if root.app-kind == 0: Image {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            width: 15px;
-                            height: 15px;
-                            source: @image-url("../../../application/terminal/icon/terminal.png");
-                        }
-
-                        if root.app-kind == 1: Rectangle {
-                            width: 100%;
-                            height: 100%;
-                            background: transparent;
-                            Rectangle { x: 4px;  y: 11px; width: 3px; height: 6px;  border-radius: 1px; background: #22C55E; }
-                            Rectangle { x: 9px;  y: 6px;  width: 3px; height: 11px; border-radius: 1px; background: #3B82F6; }
-                            Rectangle { x: 14px; y: 8px;  width: 3px; height: 9px;  border-radius: 1px; background: #6366F1; }
-                        }
-
-                        if root.app-kind == 2: Rectangle {
-                            width: 100%;
-                            height: 100%;
-                            background: transparent;
-                            Rectangle { x: 4px; y: 6px;  width: 6px;  height: 3px; border-radius: 1px; background: #D97706; }
-                            Rectangle { x: 4px; y: 8px;  width: 14px; height: 9px; border-radius: 2px; background: #F59E0B; }
-                            Rectangle { x: 5px; y: 10px; width: 12px; height: 1.5px; border-radius: 1px; background: #FDE68A; }
-                        }
-                    }
-
-                    Text {
-                        text: root.title;
-                        color: root.focused ? #161C2C : #47526B;
-                        font-size: 11px;
-                        font-weight: 700;
-                        vertical-alignment: center;
-                    }
+                // Top specular rim
+                Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    width: 100%;
+                    height: 1px;
+                    background: #FFFFFFEE;
                 }
 
-                // Right: 3 compact Liquid Glass mini-squares (22x22)
+                // Bottom subtle divider between titlebar and client surface
+                Rectangle {
+                    x: 0px;
+                    y: parent.height - 1px;
+                    width: 100%;
+                    height: 1px;
+                    background: #7E8BA838;
+                }
+
                 HorizontalLayout {
-                    spacing: 5px;
-                    alignment: end;
+                    padding-left: 10px;
+                    padding-right: 7px;
+                    padding-top: 5px;
+                    padding-bottom: 5px;
+                    alignment: space-between;
 
-                    // Minimize square (—)
-                    Rectangle {
-                        width: 22px;
-                        height: 22px;
-                        border-radius: 7px;
-                        border-width: 1px;
-                        border-color: min-ta.pressed ? #4A5E90CC : (min-ta.has-hover ? #5E6E94B8 : #8896B270);
-                        background: min-ta.pressed ? #DCE5F8E8 : (min-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
-                        animate background { duration: 120ms; easing: ease-out; }
-                        animate border-color { duration: 120ms; easing: ease-out; }
-                        min-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.minimize-clicked(); }
-                        }
+                    // Left: App-specific icon + compact window title
+                    HorizontalLayout {
+                        spacing: 7px;
+                        alignment: start;
+
                         Rectangle {
-                            x: 7px;
-                            y: 10.5px;
-                            width: 8px;
-                            height: 1.4px;
-                            border-radius: 0.7px;
-                            background: #22283A;
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 7px;
+                            border-width: 1px;
+                            border-color: #FFFFFFCC;
+                            background: @linear-gradient(180deg, #FFFFFFAA 0%, #E8EEF978 100%);
+
+                            if root.app-kind == 0: Image {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                width: 15px;
+                                height: 15px;
+                                source: @image-url("../../../application/terminal/icon/terminal.png");
+                            }
+
+                            if root.app-kind == 1: Rectangle {
+                                width: 100%;
+                                height: 100%;
+                                background: transparent;
+                                Rectangle { x: 4px;  y: 11px; width: 3px; height: 6px;  border-radius: 1px; background: #22C55E; }
+                                Rectangle { x: 9px;  y: 6px;  width: 3px; height: 11px; border-radius: 1px; background: #3B82F6; }
+                                Rectangle { x: 14px; y: 8px;  width: 3px; height: 9px;  border-radius: 1px; background: #6366F1; }
+                            }
+
+                            if root.app-kind == 2: Rectangle {
+                                width: 100%;
+                                height: 100%;
+                                background: transparent;
+                                Rectangle { x: 4px; y: 6px;  width: 6px;  height: 3px; border-radius: 1px; background: #D97706; }
+                                Rectangle { x: 4px; y: 8px;  width: 14px; height: 9px; border-radius: 2px; background: #F59E0B; }
+                                Rectangle { x: 5px; y: 10px; width: 12px; height: 1.5px; border-radius: 1px; background: #FDE68A; }
+                            }
+                        }
+
+                        Text {
+                            text: root.title;
+                            color: root.focused ? #161C2C : #47526B;
+                            font-size: 11px;
+                            font-weight: 700;
+                            vertical-alignment: center;
                         }
                     }
 
-                    // Maximize square (□)
-                    Rectangle {
-                        width: 22px;
-                        height: 22px;
-                        border-radius: 7px;
-                        border-width: 1px;
-                        border-color: max-ta.pressed ? #4A5E90CC : (max-ta.has-hover ? #5E6E94B8 : #8896B270);
-                        background: max-ta.pressed ? #DCE5F8E8 : (max-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
-                        animate background { duration: 120ms; easing: ease-out; }
-                        animate border-color { duration: 120ms; easing: ease-out; }
-                        max-ta := TouchArea { mouse-cursor: pointer; }
-                        Rectangle {
-                            x: 7px;
-                            y: 7px;
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 1.5px;
-                            border-width: 1.4px;
-                            border-color: #22283A;
-                            background: transparent;
-                        }
-                    }
+                    // Right: 3 compact mini-squares (22x22)
+                    HorizontalLayout {
+                        spacing: 5px;
+                        alignment: end;
 
-                    // Close square (×) — neutral Liquid Glass hover/press, geometrically centered X
-                    Rectangle {
-                        width: 22px;
-                        height: 22px;
-                        border-radius: 7px;
-                        border-width: 1px;
-                        border-color: close-ta.pressed ? #4A5E90CC : (close-ta.has-hover ? #5E6E94B8 : #8896B270);
-                        background: close-ta.pressed ? #DCE5F8E8 : (close-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
-                        animate background { duration: 120ms; easing: ease-out; }
-                        animate border-color { duration: 120ms; easing: ease-out; }
-                        close-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => { root.close-clicked(); }
+                        // Minimize square (—)
+                        Rectangle {
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 7px;
+                            border-width: 1px;
+                            border-color: min-ta.pressed ? #4A5E90CC : (min-ta.has-hover ? #5E6E94B8 : #8896B270);
+                            background: min-ta.pressed ? #DCE5F8E8 : (min-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
+                            animate background { duration: 120ms; easing: ease-out; }
+                            animate border-color { duration: 120ms; easing: ease-out; }
+                            min-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.minimize-clicked(); }
+                            }
+                            Rectangle {
+                                x: 7px;
+                                y: 10.5px;
+                                width: 8px;
+                                height: 1.4px;
+                                border-radius: 0.7px;
+                                background: #22283A;
+                            }
                         }
-                        // Pixel-centered geometric X (1px diagonal step -> ~1.41px visual stroke matching - and [])
-                        Rectangle { x: 7px;  y: 7px;  width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 8px;  y: 8px;  width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 9px;  y: 9px;  width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 10px; y: 10px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 11px; y: 11px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 12px; y: 12px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 13px; y: 13px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 14px; y: 14px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 14px; y: 7px;  width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 13px; y: 8px;  width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 12px; y: 9px;  width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 11px; y: 10px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 10px; y: 11px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 9px;  y: 12px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 8px;  y: 13px; width: 1px; height: 1px; background: #22283A; }
-                        Rectangle { x: 7px;  y: 14px; width: 1px; height: 1px; background: #22283A; }
+
+                        // Maximize / Restore square (□ / overlapping restore squares)
+                        Rectangle {
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 7px;
+                            border-width: 1px;
+                            border-color: max-ta.pressed ? #4A5E90CC : (max-ta.has-hover ? #5E6E94B8 : #8896B270);
+                            background: max-ta.pressed ? #DCE5F8E8 : (max-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
+                            animate background { duration: 120ms; easing: ease-out; }
+                            animate border-color { duration: 120ms; easing: ease-out; }
+                            max-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.maximize-clicked(); }
+                            }
+
+                            if !root.maximized: Rectangle {
+                                x: 7px;
+                                y: 7px;
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 1.5px;
+                                border-width: 1.4px;
+                                border-color: #22283A;
+                                background: transparent;
+                            }
+
+                            if root.maximized: Rectangle {
+                                width: 100%;
+                                height: 100%;
+                                background: transparent;
+                                // Back square (top-right offset)
+                                Rectangle {
+                                    x: 8.5px;
+                                    y: 6px;
+                                    width: 7px;
+                                    height: 7px;
+                                    border-radius: 1.2px;
+                                    border-width: 1.3px;
+                                    border-color: #22283A;
+                                    background: transparent;
+                                }
+                                // Front square (bottom-left offset, masked over back square)
+                                Rectangle {
+                                    x: 6px;
+                                    y: 8.5px;
+                                    width: 7px;
+                                    height: 7px;
+                                    border-radius: 1.2px;
+                                    border-width: 1.3px;
+                                    border-color: #22283A;
+                                    background: max-ta.pressed ? #DCE5F8 : (max-ta.has-hover ? #FFFFFF : #EEF3FC);
+                                }
+                            }
+                        }
+
+                        // Close square (×) — neutral hover/press, geometrically centered X
+                        Rectangle {
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 7px;
+                            border-width: 1px;
+                            border-color: close-ta.pressed ? #4A5E90CC : (close-ta.has-hover ? #5E6E94B8 : #8896B270);
+                            background: close-ta.pressed ? #DCE5F8E8 : (close-ta.has-hover ? #FFFFFFE8 : #FFFFFF72);
+                            animate background { duration: 120ms; easing: ease-out; }
+                            animate border-color { duration: 120ms; easing: ease-out; }
+                            close-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.close-clicked(); }
+                            }
+                            Rectangle { x: 7px;  y: 7px;  width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 8px;  y: 8px;  width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 9px;  y: 9px;  width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 10px; y: 10px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 11px; y: 11px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 12px; y: 12px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 13px; y: 13px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 14px; y: 14px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 14px; y: 7px;  width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 13px; y: 8px;  width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 12px; y: 9px;  width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 11px; y: 10px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 10px; y: 11px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 9px;  y: 12px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 8px;  y: 13px; width: 1px; height: 1px; background: #22283A; }
+                            Rectangle { x: 7px;  y: 14px; width: 1px; height: 1px; background: #22283A; }
+                        }
                     }
                 }
             }
-        }
 
-        // Crisp 1px separator line
-        Rectangle {
-            height: 1px;
-            background: #C4CCDE88;
-        }
+            // Crisp 1px separator line
+            Rectangle {
+                height: 1px;
+                background: #C4CCDE88;
+            }
 
-        // Window content area
-        Rectangle {
-            vertical-stretch: 1;
-            @children
+            // Window content area
+            Rectangle {
+                vertical-stretch: 1;
+                @children
+
+                // Subtle bottom-right resize grip indicator (floating windows only)
+                if !root.maximized: Rectangle {
+                    x: parent.width - 12px;
+                    y: parent.height - 12px;
+                    width: 10px;
+                    height: 10px;
+                    background: transparent;
+
+                    Rectangle { x: 7px; y: 1px; width: 1px; height: 1px; background: #94A3B888; }
+                    Rectangle { x: 6px; y: 2px; width: 1px; height: 1px; background: #94A3B888; }
+                    Rectangle { x: 5px; y: 3px; width: 1px; height: 1px; background: #94A3B888; }
+                    Rectangle { x: 4px; y: 4px; width: 1px; height: 1px; background: #94A3B888; }
+                    Rectangle { x: 3px; y: 5px; width: 1px; height: 1px; background: #94A3B888; }
+                    Rectangle { x: 2px; y: 6px; width: 1px; height: 1px; background: #94A3B888; }
+                    Rectangle { x: 1px; y: 7px; width: 1px; height: 1px; background: #94A3B888; }
+
+                    Rectangle { x: 7px; y: 4px; width: 1px; height: 1px; background: #94A3B899; }
+                    Rectangle { x: 6px; y: 5px; width: 1px; height: 1px; background: #94A3B899; }
+                    Rectangle { x: 5px; y: 6px; width: 1px; height: 1px; background: #94A3B899; }
+                    Rectangle { x: 4px; y: 7px; width: 1px; height: 1px; background: #94A3B899; }
+                }
+            }
         }
     }
 }

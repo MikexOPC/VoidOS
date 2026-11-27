@@ -10,7 +10,7 @@ pub mod style;
 mod tests {
     use crate::anim::{Easing, RectAnim, Tween, eval_easing, lerp_color_bgra};
     use crate::draw::{Canvas, DirtyList, Rect, blend_bgra};
-    use crate::proto::{GuiMessage, MSG_CREATE_WINDOW, PROTO_WIRE_BYTES};
+    use crate::proto::{GuiMessage, MSG_CREATE_WINDOW, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES};
     use crate::style::{DockEdge, DockShape, Theme, rgb, rgba};
 
     #[test]
@@ -108,6 +108,15 @@ mod tests {
         let mut bad = wire;
         bad[0] ^= 0xFF;
         assert!(GuiMessage::decode(&bad).is_none());
+
+        let rmsg = GuiMessage::resize_window(1, 1278, 616, 42);
+        let rwire = rmsg.encode();
+        let rdec = GuiMessage::decode(&rwire).expect("valid resize message");
+        assert_eq!(rdec.kind, MSG_RESIZE_WINDOW);
+        assert_eq!(rdec.win_id, 1);
+        assert_eq!(rdec.a, 42);
+        assert_eq!(rdec.e, 1278);
+        assert_eq!(rdec.f, 616);
     }
 
     #[test]

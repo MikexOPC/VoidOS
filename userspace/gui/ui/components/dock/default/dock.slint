@@ -12,6 +12,9 @@ export component DefaultDock inherits Rectangle {
     in property <bool> terminal-open: true;
     in property <bool> sysmon-open: false;
     in property <bool> files-open: false;
+    in property <bool> terminal-minimized: false;
+    in property <bool> sysmon-minimized: false;
+    in property <bool> files-minimized: false;
     in property <image> backdrop-image;
     in property <string> clock-text: "15:44";
     in property <string> sub-clock-text: "24 Nov 2026";
@@ -168,8 +171,8 @@ export component DefaultDock inherits Rectangle {
                         height: term-ta.has-hover ? 42px : 38px;
                         border-radius: term-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
-                        border-color: term-ta.has-hover ? #FFFFFFCC : (root.terminal-open ? #FFFFFF88 : #FFFFFF48);
-                        background: term-ta.pressed ? #FFFFFFBA : (term-ta.has-hover ? #FFFFFF96 : (root.terminal-open ? #FFFFFF58 : #FFFFFF34));
+                        border-color: term-ta.has-hover ? #FFFFFFCC : (root.terminal-open ? #FFFFFF88 : (root.terminal-minimized ? #FFFFFF6C : #FFFFFF48));
+                        background: term-ta.pressed ? #FFFFFFBA : (term-ta.has-hover ? #FFFFFF96 : (root.terminal-open ? #FFFFFF58 : (root.terminal-minimized ? #FFFFFF46 : #FFFFFF34)));
                         animate x { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate y { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate width { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
@@ -194,12 +197,15 @@ export component DefaultDock inherits Rectangle {
 
                         Rectangle {
                             x: (parent.width - self.width) / 2;
-                            y: parent.height - 4px;
-                            width: root.terminal-open ? 14px : 0px;
-                            height: 2px;
-                            border-radius: 1px;
-                            background: #1E2436;
+                            y: parent.height - (root.terminal-minimized ? 5px : 4px);
+                            width: root.terminal-open ? 14px : (root.terminal-minimized ? 4px : 0px);
+                            height: root.terminal-minimized ? 4px : 2px;
+                            border-radius: root.terminal-minimized ? 2px : 1px;
+                            background: root.terminal-minimized ? #334155 : #1E2436;
                             animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate border-radius { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         }
                     }
                 }
@@ -217,8 +223,8 @@ export component DefaultDock inherits Rectangle {
                         height: sysmon-ta.has-hover ? 42px : 38px;
                         border-radius: sysmon-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
-                        border-color: sysmon-ta.has-hover ? #FFFFFFCC : (root.sysmon-open ? #FFFFFF88 : #FFFFFF48);
-                        background: sysmon-ta.pressed ? #FFFFFFBA : (sysmon-ta.has-hover ? #FFFFFF96 : (root.sysmon-open ? #FFFFFF58 : #FFFFFF34));
+                        border-color: sysmon-ta.has-hover ? #FFFFFFCC : (root.sysmon-open ? #FFFFFF88 : (root.sysmon-minimized ? #FFFFFF6C : #FFFFFF48));
+                        background: sysmon-ta.pressed ? #FFFFFFBA : (sysmon-ta.has-hover ? #FFFFFF96 : (root.sysmon-open ? #FFFFFF58 : (root.sysmon-minimized ? #FFFFFF46 : #FFFFFF34)));
                         animate x { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate y { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate width { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
@@ -245,12 +251,15 @@ export component DefaultDock inherits Rectangle {
 
                         Rectangle {
                             x: (parent.width - self.width) / 2;
-                            y: parent.height - 4px;
-                            width: root.sysmon-open ? 14px : 0px;
-                            height: 2px;
-                            border-radius: 1px;
-                            background: #1E2436;
+                            y: parent.height - (root.sysmon-minimized ? 5px : 4px);
+                            width: root.sysmon-open ? 14px : (root.sysmon-minimized ? 4px : 0px);
+                            height: root.sysmon-minimized ? 4px : 2px;
+                            border-radius: root.sysmon-minimized ? 2px : 1px;
+                            background: root.sysmon-minimized ? #334155 : #1E2436;
                             animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate border-radius { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         }
                     }
                 }
@@ -268,8 +277,8 @@ export component DefaultDock inherits Rectangle {
                         height: files-ta.has-hover ? 42px : 38px;
                         border-radius: files-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
-                        border-color: files-ta.has-hover ? #FFFFFFCC : (root.files-open ? #FFFFFF88 : #FFFFFF48);
-                        background: files-ta.pressed ? #FFFFFFBA : (files-ta.has-hover ? #FFFFFF96 : (root.files-open ? #FFFFFF58 : #FFFFFF34));
+                        border-color: files-ta.has-hover ? #FFFFFFCC : (root.files-open ? #FFFFFF88 : (root.files-minimized ? #FFFFFF6C : #FFFFFF48));
+                        background: files-ta.pressed ? #FFFFFFBA : (files-ta.has-hover ? #FFFFFF96 : (root.files-open ? #FFFFFF58 : (root.files-minimized ? #FFFFFF46 : #FFFFFF34)));
                         animate x { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate y { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate width { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
@@ -296,12 +305,15 @@ export component DefaultDock inherits Rectangle {
 
                         Rectangle {
                             x: (parent.width - self.width) / 2;
-                            y: parent.height - 4px;
-                            width: root.files-open ? 14px : 0px;
-                            height: 2px;
-                            border-radius: 1px;
-                            background: #1E2436;
+                            y: parent.height - (root.files-minimized ? 5px : 4px);
+                            width: root.files-open ? 14px : (root.files-minimized ? 4px : 0px);
+                            height: root.files-minimized ? 4px : 2px;
+                            border-radius: root.files-minimized ? 2px : 1px;
+                            background: root.files-minimized ? #334155 : #1E2436;
                             animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate border-radius { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         }
                     }
                 }

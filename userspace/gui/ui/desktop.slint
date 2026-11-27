@@ -8,9 +8,14 @@ export struct AppSurface {
     pixels: image,
     client-width: length,
     client-height: length,
+    view-width: length,
+    view-height: length,
     pos-x: length,
     pos-y: length,
     minimized: bool,
+    maximized: bool,
+    corner-top-radius: length,
+    corner-bottom-radius: length,
     scale-progress: float,
     anim-kind: int,
 }
@@ -28,6 +33,9 @@ export component VoidDesktop inherits Window {
     in-out property <bool> terminal-open: true;
     in-out property <bool> sysmon-open: false;
     in-out property <bool> files-open: false;
+    in-out property <bool> terminal-minimized: false;
+    in-out property <bool> sysmon-minimized: false;
+    in-out property <bool> files-minimized: false;
     in-out property <int> focused-window: 0;
     in-out property <string> overlay-text: "";
     in-out property <string> status: "";
@@ -40,6 +48,7 @@ export component VoidDesktop inherits Window {
     callback launch-app(int);
     callback close-app(int);
     callback minimize-app(int);
+    callback maximize-app(int);
     callback quit-desktop();
 
     // Layer 0: Wallpaper background (1:1 screen-cached after startup for lag-free window drag)
@@ -53,8 +62,8 @@ export component VoidDesktop inherits Window {
     // Layer 1: Live application surfaces from real Ring 3 processes
     for surface in root.surfaces: VoidWindow {
         property <float> p: surface.scale-progress;
-        property <length> full-w: surface.client-width + 2px;
-        property <length> full-h: surface.client-height + 34px;
+        property <length> full-w: surface.view-width + 2px;
+        property <length> full-h: surface.view-height + 34px;
         property <float> min-scale: surface.anim-kind == 2 ? 0.50 : (surface.anim-kind == 1 ? 0.72 : 0.80);
         property <float> scale: min-scale + (1.0 - min-scale) * p;
         property <length> slide-y: surface.anim-kind == 2 ? (1.0 - p) * 44px : (surface.anim-kind == 0 ? (1.0 - p) * 16px : 0px);
@@ -67,18 +76,27 @@ export component VoidDesktop inherits Window {
         app-kind: surface.kind;
         title: surface.title;
         focused: root.focused-window == surface.kind;
+        maximized: surface.maximized;
+        corner-top-radius: surface.corner-top-radius;
+        corner-bottom-radius: surface.corner-bottom-radius;
         minimize-clicked => {
             root.minimize-app(surface.kind);
+        }
+        maximize-clicked => {
+            root.maximize-app(surface.kind);
         }
         close-clicked => {
             if (surface.kind == 0) {
                 root.terminal-open = false;
+                root.terminal-minimized = false;
             }
             if (surface.kind == 1) {
                 root.sysmon-open = false;
+                root.sysmon-minimized = false;
             }
             if (surface.kind == 2) {
                 root.files-open = false;
+                root.files-minimized = false;
             }
             root.close-app(surface.kind);
         }
@@ -87,6 +105,7 @@ export component VoidDesktop inherits Window {
             width: 100%;
             height: 100%;
             source: surface.pixels;
+            image-fit: fill;
             image-rendering: pixelated;
         }
     }
@@ -122,7 +141,7 @@ export component VoidDesktop inherits Window {
         }
     }
 
-    // Layer 2: Compact Liquid Glass 3-zone Dock
+    // Layer 2: Default Dock
     DefaultDock {
         visible: root.dock-visible;
         backdrop-image: root.dock-backdrop;
@@ -132,6 +151,9 @@ export component VoidDesktop inherits Window {
         terminal-open: root.terminal-open;
         sysmon-open: root.sysmon-open;
         files-open: root.files-open;
+        terminal-minimized: root.terminal-minimized;
+        sysmon-minimized: root.sysmon-minimized;
+        files-minimized: root.files-minimized;
         clock-text: root.display-label;
         sub-clock-text: root.uptime-label;
         toggle-terminal => {
@@ -140,6 +162,7 @@ export component VoidDesktop inherits Window {
                 root.close-app(0);
             } else {
                 root.terminal-open = true;
+                root.terminal-minimized = false;
                 root.launch-app(0);
             }
         }
@@ -149,6 +172,7 @@ export component VoidDesktop inherits Window {
                 root.close-app(1);
             } else {
                 root.sysmon-open = true;
+                root.sysmon-minimized = false;
                 root.launch-app(1);
             }
         }
@@ -158,6 +182,7 @@ export component VoidDesktop inherits Window {
                 root.close-app(2);
             } else {
                 root.files-open = true;
+                root.files-minimized = false;
                 root.launch-app(2);
             }
         }

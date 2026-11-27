@@ -26,9 +26,11 @@ const fn align_up(val: usize, align: usize) -> usize {
 
 // ====== HeapCore ======
 
+const MAX_HEAP_REGIONS: usize = 32;
+
 pub struct HeapCore {
-    base: usize,
-    size: usize,
+    regions: [(usize, usize); MAX_HEAP_REGIONS],
+    region_count: usize,
     head: *mut BlockHeader,
     initialized: bool,
 }
@@ -36,15 +38,32 @@ pub struct HeapCore {
 impl HeapCore {
     pub const fn empty() -> Self {
         Self {
-            base: 0,
-            size: 0,
+            regions: [(0, 0); MAX_HEAP_REGIONS],
+            region_count: 0,
             head: ptr::null_mut(),
             initialized: false,
         }
     }
 
+    fn contains(&self, addr: usize) -> bool {
+        for i in 0..self.region_count {
+            let (base, size) = self.regions[i];
+            if addr >= base && addr < base.saturating_add(size) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub unsafe fn init(&mut self, base: usize, size: usize) -> bool {
-        if self.initialized || base == 0 || size < HEADER_SIZE * 2 {
+        if self.initialized {
+            return false;
+        }
+        unsafe { self.add_region(base, size) }
+    }
+
+    pub unsafe fn add_region(&mut self, base: usize, size: usize) -> bool {
+        if self.region_count >= MAX_HEAP_REGIONS || base == 0 || size < HEADER_SIZE * 2 {
             return false;
         }
         let aligned = align_up(base, MIN_ALIGN);
@@ -53,16 +72,31 @@ impl HeapCore {
             return false;
         }
         let usable = (size - lost) & !(MIN_ALIGN - 1);
-        let first = aligned as *mut BlockHeader;
+        let blk = aligned as *mut BlockHeader;
         unsafe {
-            (*first).size = usable;
-            (*first).magic = MAGIC_FREE;
-            (*first)._pad = 0;
-            (*first).next = ptr::null_mut();
+            (*blk).size = usable;
+            (*blk).magic = MAGIC_FREE;
+            (*blk)._pad = 0;
+            (*blk).next = ptr::null_mut();
         }
-        self.base = aligned;
-        self.size = usable;
-        self.head = first;
+        let mut prev: *mut BlockHeader = ptr::null_mut();
+        let mut cur = self.head;
+        while !cur.is_null() && (cur as usize) < (blk as usize) {
+            prev = cur;
+            cur = unsafe { (*cur).next };
+        }
+        unsafe {
+            (*blk).next = cur;
+        }
+        if prev.is_null() {
+            self.head = blk;
+        } else {
+            unsafe {
+                (*prev).next = blk;
+            }
+        }
+        self.regions[self.region_count] = (aligned, usable);
+        self.region_count += 1;
         self.initialized = true;
         true
     }
@@ -170,14 +204,14 @@ impl HeapCore {
             (addr - HEADER_SIZE) as *mut BlockHeader
         } else {
             let candidate = (addr - HEADER_SIZE) as *mut BlockHeader;
-            if (candidate as usize) >= self.base && unsafe { (*candidate).magic == MAGIC_USED } {
+            if self.contains(candidate as usize) && unsafe { (*candidate).magic == MAGIC_USED } {
                 candidate
             } else {
                 let back_ptr = (addr - core::mem::size_of::<usize>()) as *const usize;
                 unsafe { (*back_ptr) as *mut BlockHeader }
             }
         };
-        if (blk as usize) < self.base || (blk as usize) >= self.base + self.size {
+        if !self.contains(blk as usize) {
             return;
         }
         unsafe {
@@ -266,14 +300,16 @@ impl ShmAllocator {
     }
 
     #[cfg(not(test))]
-    unsafe fn ensure_init(&self, heap: &mut HeapCore) -> bool {
-        if heap.initialized {
-            return true;
-        }
-        let mut req_pages = self.pages;
+    unsafe fn grow_shm(&self, heap: &mut HeapCore, min_bytes: usize) -> bool {
+        let min_pages = ((min_bytes + HEADER_SIZE * 4 + 4095) / 4096) as u64;
+        let mut req_pages = if !heap.initialized {
+            self.pages.max(min_pages)
+        } else {
+            min_pages.max(512)
+        };
         let mut shm_id = crate::shm_create(req_pages);
-        while shm_id <= 0 && req_pages > 512 {
-            req_pages /= 2;
+        while shm_id <= 0 && req_pages > min_pages {
+            req_pages = (req_pages.saturating_sub(256)).max(min_pages);
             shm_id = crate::shm_create(req_pages);
         }
         if shm_id <= 0 {
@@ -281,13 +317,14 @@ impl ShmAllocator {
         }
         let virt = crate::shm_map(shm_id as u64);
         if virt < 0x1000_0000 {
+            let _ = crate::shm_unmap(shm_id as u64);
             return false;
         }
-        unsafe { heap.init(virt as usize, (req_pages as usize) * 4096) }
+        unsafe { heap.add_region(virt as usize, (req_pages as usize) * 4096) }
     }
 
     #[cfg(test)]
-    unsafe fn ensure_init(&self, heap: &mut HeapCore) -> bool {
+    unsafe fn grow_shm(&self, heap: &mut HeapCore, _min_bytes: usize) -> bool {
         let _ = self.pages;
         heap.initialized
     }
@@ -297,11 +334,14 @@ unsafe impl GlobalAlloc for ShmAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         self.lock();
         let heap = unsafe { &mut *self.core.get() };
-        let ptr = if unsafe { self.ensure_init(heap) } {
+        let mut ptr = if heap.initialized || unsafe { self.grow_shm(heap, layout.size()) } {
             unsafe { heap.alloc(layout) }
         } else {
             ptr::null_mut()
         };
+        if ptr.is_null() && layout.size() > 0 && unsafe { self.grow_shm(heap, layout.size() + layout.align()) } {
+            ptr = unsafe { heap.alloc(layout) };
+        }
         self.unlock();
         ptr
     }
@@ -349,5 +389,16 @@ mod tests {
             heap.dealloc(p3, l3);
         }
         assert_eq!(heap.free_bytes(), initial_free);
+
+        // Add a second independent backing region and verify large allocation + reclaim.
+        let mut backing2 = vec![0u8; 128 * 1024];
+        assert!(unsafe { heap.add_region(backing2.as_mut_ptr() as usize, backing2.len()) });
+        let big = Layout::from_size_align(96 * 1024, 64).unwrap();
+        let p4 = unsafe { heap.alloc(big) };
+        assert!(!p4.is_null() && (p4 as usize) % 64 == 0);
+        unsafe {
+            heap.dealloc(p4, big);
+        }
+        assert!(heap.free_bytes() > initial_free + 100 * 1024);
     }
 }

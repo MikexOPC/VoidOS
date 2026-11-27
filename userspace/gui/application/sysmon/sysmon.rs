@@ -4,7 +4,7 @@
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use libui::draw::{Canvas, Rect};
-use libui::proto::{GuiMessage, PROTO_WIRE_BYTES};
+use libui::proto::{GuiMessage, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES};
 use libui::style::{Theme, rgb};
 
 global_asm!(
@@ -17,7 +17,6 @@ global_asm!(
 
 const WIN_W: u32 = 400;
 const WIN_H: u32 = 264;
-const SHM_PAGES: u64 = ((WIN_W as u64 * WIN_H as u64 * 4) + 4095) / 4096;
 const REFRESH_INTERVAL_MS: u64 = 250;
 
 // ====== load_theme ======
@@ -37,6 +36,12 @@ fn load_theme() -> Theme {
     }
 }
 
+// ====== pages_for_surface ======
+
+fn pages_for_surface(width: u32, height: u32) -> u64 {
+    ((width as u64).saturating_mul(height as u64).saturating_mul(4) + 4095) / 4096
+}
+
 // ====== pct_u64 ======
 
 fn pct_u64(used: u64, total: u64) -> i32 {
@@ -50,6 +55,7 @@ fn pct_u64(used: u64, total: u64) -> i32 {
 
 fn draw_meter(
     canvas: &mut Canvas<'_>,
+    win_w: i32,
     y: i32,
     label: &[u8],
     pct: i32,
@@ -59,11 +65,11 @@ fn draw_meter(
     let mut num = [0u8; 20];
     canvas.draw_text(16, y, label, theme.text_primary);
     let pct_txt = libvoid::format_u64(pct.clamp(0, 100) as u64, &mut num);
-    let right_x = (WIN_W as i32) - 16 - ((pct_txt.len() as i32 + 1) * 8);
+    let right_x = (win_w - 16 - ((pct_txt.len() as i32 + 1) * 8)).max(120);
     canvas.draw_text(right_x, y, pct_txt, theme.text_primary);
     canvas.draw_text(right_x + (pct_txt.len() as i32 * 8), y, b"%", theme.text_muted);
 
-    let track = Rect::new(16, y + 18, (WIN_W as i32) - 32, 16);
+    let track = Rect::new(16, y + 18, (win_w - 32).max(64), 16);
     canvas.fill_rounded_rect(track, 6, rgb(0x1E, 0x26, 0x36));
     let clamped = pct.clamp(0, 100);
     let fill_w = (track.w * clamped) / 100;
@@ -77,21 +83,25 @@ fn draw_meter(
 
 fn render_sysmon(
     canvas: &mut Canvas<'_>,
+    win_w: u32,
+    win_h: u32,
     theme: &Theme,
     sinfo: &libvoid::SysInfo,
     dinfo: &libvoid::DisplayInfo,
     ginfo: &libvoid::GpuInfo,
 ) {
+    let w = win_w as i32;
+    let h = win_h as i32;
     let phys_used = sinfo.total_phys_pages.saturating_sub(sinfo.free_phys_pages);
     let phys_pct = pct_u64(phys_used, sinfo.total_phys_pages);
     let heap_used = sinfo.heap_total_pages.saturating_sub(sinfo.heap_free_pages);
     let heap_pct = pct_u64(heap_used, sinfo.heap_total_pages);
 
-    canvas.fill_rect(Rect::new(0, 0, WIN_W as i32, WIN_H as i32), theme.window_bg);
+    canvas.fill_rect(Rect::new(0, 0, w, h), theme.window_bg);
     canvas.draw_text(16, 12, b"VoidOS System Monitor", theme.text_primary);
 
-    draw_meter(canvas, 38, b"PHYS RAM", phys_pct, rgb(0x22, 0xC5, 0x5E), theme);
-    draw_meter(canvas, 84, b"KERNEL HEAP", heap_pct, theme.accent, theme);
+    draw_meter(canvas, w, 38, b"PHYS RAM", phys_pct, rgb(0x22, 0xC5, 0x5E), theme);
+    draw_meter(canvas, w, 84, b"KERNEL HEAP", heap_pct, theme.accent, theme);
 
     let mut num = [0u8; 20];
     canvas.draw_text(16, 134, b"RAM KIB:", theme.text_muted);
@@ -160,23 +170,25 @@ fn send_message(ipc_handle: u64, wire: &[u8; PROTO_WIRE_BYTES]) {
 
 #[unsafe(no_mangle)]
 extern "C" fn program_main(arg: u64) -> ! {
-    // Isolation invariant: app must never acquire direct display ownership.
     let mut forbidden = libvoid::DisplayAcquireOut::default();
     if libvoid::display_acquire(&mut forbidden) >= 0 {
         libvoid::exit(100);
     }
 
     let theme = load_theme();
-    let shm_id = libvoid::shm_create(SHM_PAGES);
-    if shm_id <= 0 {
+    let mut cur_w = WIN_W;
+    let mut cur_h = WIN_H;
+    let mut shm_cap_pages = pages_for_surface(cur_w, cur_h);
+    let created = libvoid::shm_create(shm_cap_pages);
+    if created <= 0 {
         libvoid::exit(101);
     }
-    let virt = libvoid::shm_map(shm_id as u64);
-    if virt < 0x1000_0000 {
+    let mut shm_id = created as u64;
+    let mapped = libvoid::shm_map(shm_id);
+    if mapped < 0x1000_0000 {
         libvoid::exit(102);
     }
-    let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (WIN_W * WIN_H) as usize) };
-    let mut canvas = Canvas::new(pixels, WIN_W, WIN_H, WIN_W);
+    let mut virt = mapped as u64;
     let mut dinfo = libvoid::DisplayInfo::default();
     if libvoid::display_info(&mut dinfo) != 0 {
         libvoid::exit(103);
@@ -194,39 +206,85 @@ extern "C" fn program_main(arg: u64) -> ! {
         libvoid::exit(108);
     }
 
-    // Mode 1: self-verification pass (real kernel metrics + SHM rendering + clean unmap).
     if arg == 1 {
-        let px_before = canvas.pixels[(60 * WIN_W as usize) + 24];
-        render_sysmon(&mut canvas, &theme, &sinfo, &dinfo, &ginfo);
-        let px_after = canvas.pixels[(60 * WIN_W as usize) + 24];
+        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+        let px_before = canvas.pixels[(60 * cur_w as usize) + 24];
+        render_sysmon(&mut canvas, cur_w, cur_h, &theme, &sinfo, &dinfo, &ginfo);
+        let px_after = canvas.pixels[(60 * cur_w as usize) + 24];
         if px_before == px_after {
             libvoid::exit(104);
         }
-        if libvoid::shm_unmap(shm_id as u64) != 0 {
+        if libvoid::shm_unmap(shm_id) != 0 {
             libvoid::exit(105);
         }
         let _ = libvoid::write_console(b"VoidOS gui sysmon ok\n");
         libvoid::exit(0);
     }
 
-    // Live IPC window mode: arg carries the IPC channel handle to the compositor.
     let ipc_handle = arg & !(1u64 << 63);
-    if libvoid::shm_publish(shm_id as u64) != 0 {
+    if libvoid::shm_publish(shm_id) != 0 {
         libvoid::exit(107);
     }
-    let create = GuiMessage::create_window(WIN_W, WIN_H, shm_id as u64, b"System Monitor");
+    let create = GuiMessage::create_window(cur_w, cur_h, shm_id, b"System Monitor");
     send_message(ipc_handle, &create.encode());
-    render_sysmon(&mut canvas, &theme, &sinfo, &dinfo, &ginfo);
-    let commit = GuiMessage::commit_rect(1, 0, 0, WIN_W, WIN_H).encode();
-    send_message(ipc_handle, &commit);
+    {
+        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+        render_sysmon(&mut canvas, cur_w, cur_h, &theme, &sinfo, &dinfo, &ginfo);
+    }
+    send_message(ipc_handle, &GuiMessage::commit_rect(1, 0, 0, cur_w, cur_h).encode());
 
     let mut last_refresh_ms = sinfo.uptime_ms;
     let mut rx = [0u8; PROTO_WIRE_BYTES];
     loop {
         let n = libvoid::ipc_recv(ipc_handle, &mut rx);
         if n == libvoid::ERR_PEER_CLOSED {
-            let _ = libvoid::shm_unmap(shm_id as u64);
+            let _ = libvoid::shm_unmap(shm_id);
             libvoid::exit(0);
+        }
+        if n == PROTO_WIRE_BYTES as i64 {
+            if let Some(msg) = GuiMessage::decode(&rx) {
+                if msg.kind == MSG_RESIZE_WINDOW {
+                    let req_w = msg.e.clamp(240, 2048);
+                    let req_h = msg.f.clamp(160, 2048);
+                    if req_w != cur_w || req_h != cur_h {
+                        let need_pages = pages_for_surface(req_w, req_h);
+                        let mut ok = true;
+                        if need_pages > shm_cap_pages {
+                            let next_id = libvoid::shm_create(need_pages);
+                            if next_id > 0 {
+                                let next_virt = libvoid::shm_map(next_id as u64);
+                                if next_virt >= 0x1000_0000 && libvoid::shm_publish(next_id as u64) == 0 {
+                                    let _ = libvoid::shm_unmap(shm_id);
+                                    shm_id = next_id as u64;
+                                    virt = next_virt as u64;
+                                    shm_cap_pages = need_pages;
+                                } else {
+                                    if next_virt >= 0x1000_0000 {
+                                        let _ = libvoid::shm_unmap(next_id as u64);
+                                    }
+                                    ok = false;
+                                }
+                            } else {
+                                ok = false;
+                            }
+                        }
+                        if ok {
+                            cur_w = req_w;
+                            cur_h = req_h;
+                            send_message(ipc_handle, &GuiMessage::resize_window(1, cur_w, cur_h, shm_id).encode());
+                            let _ = libvoid::sys_info(&mut sinfo);
+                            let _ = libvoid::display_info(&mut dinfo);
+                            let _ = libvoid::gpu_info(&mut ginfo);
+                            let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+                            let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+                            render_sysmon(&mut canvas, cur_w, cur_h, &theme, &sinfo, &dinfo, &ginfo);
+                            send_message(ipc_handle, &GuiMessage::commit_rect(1, 0, 0, cur_w, cur_h).encode());
+                        }
+                    }
+                }
+            }
         }
         if libvoid::sys_info(&mut sinfo) == 0
             && sinfo.uptime_ms.saturating_sub(last_refresh_ms) >= REFRESH_INTERVAL_MS
@@ -234,8 +292,10 @@ extern "C" fn program_main(arg: u64) -> ! {
             last_refresh_ms = sinfo.uptime_ms;
             let _ = libvoid::display_info(&mut dinfo);
             let _ = libvoid::gpu_info(&mut ginfo);
-            render_sysmon(&mut canvas, &theme, &sinfo, &dinfo, &ginfo);
-            send_message(ipc_handle, &commit);
+            let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+            let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+            render_sysmon(&mut canvas, cur_w, cur_h, &theme, &sinfo, &dinfo, &ginfo);
+            send_message(ipc_handle, &GuiMessage::commit_rect(1, 0, 0, cur_w, cur_h).encode());
         }
         libvoid::yield_now();
     }

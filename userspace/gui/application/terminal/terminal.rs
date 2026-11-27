@@ -4,7 +4,7 @@
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use libui::draw::{Canvas, Rect};
-use libui::proto::{GuiMessage, MSG_INPUT_KEY, PROTO_WIRE_BYTES};
+use libui::proto::{GuiMessage, MSG_INPUT_KEY, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES};
 use libui::style::{Theme, rgb};
 
 global_asm!(
@@ -17,9 +17,8 @@ global_asm!(
 
 const WIN_W: u32 = 680;
 const WIN_H: u32 = 368;
-const SHM_PAGES: u64 = ((WIN_W as u64 * WIN_H as u64 * 4) + 4095) / 4096;
-const COLS: usize = 72;
-const ROWS: usize = 19;
+const MAX_COLS: usize = 144;
+const MAX_ROWS: usize = 40;
 const CELL_W: i32 = 9;
 const CELL_H: i32 = 18;
 const PAD_X: i32 = 14;
@@ -33,8 +32,10 @@ const CONSOLE_CUR: u32 = rgb(0xE6, 0xED, 0xF3);
 // ====== TerminalBuffer ======
 
 struct TerminalBuffer {
-    cells: [[u8; COLS]; ROWS],
-    prev_cells: [[u8; COLS]; ROWS],
+    cells: [[u8; MAX_COLS]; MAX_ROWS],
+    prev_cells: [[u8; MAX_COLS]; MAX_ROWS],
+    cols: usize,
+    rows: usize,
     row: usize,
     col: usize,
     prev_row: usize,
@@ -44,11 +45,15 @@ struct TerminalBuffer {
     input_len: usize,
 }
 
+static mut TERM_STATE: TerminalBuffer = TerminalBuffer::new();
+
 impl TerminalBuffer {
     const fn new() -> Self {
         Self {
-            cells: [[b' '; COLS]; ROWS],
-            prev_cells: [[b' '; COLS]; ROWS],
+            cells: [[b' '; MAX_COLS]; MAX_ROWS],
+            prev_cells: [[b' '; MAX_COLS]; MAX_ROWS],
+            cols: 72,
+            rows: 19,
             row: 0,
             col: 0,
             prev_row: 0,
@@ -59,11 +64,30 @@ impl TerminalBuffer {
         }
     }
 
-    fn clear(&mut self) {
-        for r in 0..ROWS {
-            for c in 0..COLS {
-                self.cells[r][c] = b' ';
+    fn resize(&mut self, width: u32, height: u32) {
+        let new_cols = (((width as i32) - 2 * PAD_X) / CELL_W).clamp(20, MAX_COLS as i32) as usize;
+        let new_rows = (((height as i32) - 2 * PAD_Y) / CELL_H).clamp(6, MAX_ROWS as i32) as usize;
+        if new_rows < self.rows && self.row >= new_rows {
+            let shift = self.row + 1 - new_rows;
+            for r in shift..self.rows {
+                self.cells[r - shift] = self.cells[r];
             }
+            for r in (self.rows - shift)..self.rows {
+                self.cells[r] = [b' '; MAX_COLS];
+            }
+            self.row = new_rows - 1;
+        }
+        self.cols = new_cols;
+        self.rows = new_rows;
+        if self.col >= self.cols {
+            self.col = self.cols - 1;
+        }
+        self.full_dirty = true;
+    }
+
+    fn clear(&mut self) {
+        for r in 0..MAX_ROWS {
+            self.cells[r] = [b' '; MAX_COLS];
         }
         self.row = 0;
         self.col = 0;
@@ -72,13 +96,13 @@ impl TerminalBuffer {
 
     fn newline(&mut self) {
         self.col = 0;
-        if self.row + 1 < ROWS {
+        if self.row + 1 < self.rows {
             self.row += 1;
         } else {
-            for r in 1..ROWS {
+            for r in 1..self.rows {
                 self.cells[r - 1] = self.cells[r];
             }
-            self.cells[ROWS - 1] = [b' '; COLS];
+            self.cells[self.rows - 1] = [b' '; MAX_COLS];
             self.full_dirty = true;
         }
     }
@@ -88,7 +112,7 @@ impl TerminalBuffer {
             if b == b'\n' {
                 self.newline();
             } else if b >= 0x20 && b < 0x7F {
-                if self.col >= COLS {
+                if self.col >= self.cols {
                     self.newline();
                 }
                 self.cells[self.row][self.col] = b;
@@ -213,40 +237,43 @@ impl TerminalBuffer {
     fn draw_caret(canvas: &mut Canvas<'_>, r: usize, c: usize) {
         let cx = PAD_X + (c as i32) * CELL_W;
         let cy = PAD_Y + (r as i32) * CELL_H;
-        // Console-style crisp underscore cursor (2px tall at baseline)
         canvas.fill_rect(Rect::new(cx, cy + CELL_H - 3, CELL_W - 1, 2), CONSOLE_CUR);
     }
 
-    fn render(&self, canvas: &mut Canvas<'_>, _theme: &Theme) {
-        canvas.fill_rect(Rect::new(0, 0, WIN_W as i32, WIN_H as i32), CONSOLE_BG);
-        for r in 0..ROWS {
+    fn render(&self, canvas: &mut Canvas<'_>, _theme: &Theme, cur_w: u32, cur_h: u32) {
+        canvas.fill_rect(Rect::new(0, 0, cur_w as i32, cur_h as i32), CONSOLE_BG);
+        for r in 0..self.rows {
             let y = PAD_Y + (r as i32) * CELL_H;
-            canvas.draw_text_aa(PAD_X, y, &self.cells[r], CONSOLE_FG, CONSOLE_BG);
+            canvas.draw_text_aa(PAD_X, y, &self.cells[r][..self.cols], CONSOLE_FG, CONSOLE_BG);
         }
-        Self::draw_caret(canvas, self.row.min(ROWS - 1), self.col.min(COLS - 1));
+        Self::draw_caret(canvas, self.row.min(self.rows - 1), self.col.min(self.cols - 1));
     }
 
-    fn render_dirty(&mut self, canvas: &mut Canvas<'_>, theme: &Theme) -> Rect {
-        let cur_r = self.row.min(ROWS - 1);
-        let cur_c = self.col.min(COLS - 1);
+    fn render_dirty(&mut self, canvas: &mut Canvas<'_>, theme: &Theme, cur_w: u32, cur_h: u32) -> Rect {
+        let cur_r = self.row.min(self.rows - 1);
+        let cur_c = self.col.min(self.cols - 1);
         if self.full_dirty {
-            self.render(canvas, theme);
-            self.prev_cells = self.cells;
+            self.render(canvas, theme, cur_w, cur_h);
+            for r in 0..self.rows {
+                self.prev_cells[r][..self.cols].copy_from_slice(&self.cells[r][..self.cols]);
+            }
             self.prev_row = cur_r;
             self.prev_col = cur_c;
             self.full_dirty = false;
-            return Rect::new(0, 0, WIN_W as i32, WIN_H as i32);
+            return Rect::new(0, 0, cur_w as i32, cur_h as i32);
         }
         let mut dirty = Rect::new(0, 0, 0, 0);
         if self.prev_row != cur_r || self.prev_col != cur_c {
-            let rect = Self::cell_rect(self.prev_row, self.prev_col);
-            let ch = self.cells[self.prev_row][self.prev_col];
+            let pr = self.prev_row.min(self.rows - 1);
+            let pc = self.prev_col.min(self.cols - 1);
+            let rect = Self::cell_rect(pr, pc);
+            let ch = self.cells[pr][pc];
             canvas.draw_char_aa(rect.x, rect.y, ch, CONSOLE_FG, CONSOLE_BG);
-            self.prev_cells[self.prev_row][self.prev_col] = ch;
+            self.prev_cells[pr][pc] = ch;
             dirty = dirty.union(rect);
         }
-        for r in 0..ROWS {
-            for c in 0..COLS {
+        for r in 0..self.rows {
+            for c in 0..self.cols {
                 let ch = self.cells[r][c];
                 if ch != self.prev_cells[r][c] {
                     let rect = Self::cell_rect(r, c);
@@ -283,11 +310,16 @@ fn load_theme() -> Theme {
     }
 }
 
+// ====== pages_for_surface ======
+
+fn pages_for_surface(width: u32, height: u32) -> u64 {
+    ((width as u64).saturating_mul(height as u64).saturating_mul(4) + 4095) / 4096
+}
+
 // ====== program_main ======
 
 #[unsafe(no_mangle)]
 extern "C" fn program_main(arg: u64) -> ! {
-    // Isolation invariant: a GUI app must never hold direct display ownership.
     let mut forbidden = libvoid::DisplayAcquireOut::default();
     if libvoid::display_acquire(&mut forbidden) >= 0 {
         libvoid::exit(90);
@@ -301,20 +333,26 @@ extern "C" fn program_main(arg: u64) -> ! {
         libvoid::exit(98);
     }
     let theme = load_theme();
-    let shm_id = libvoid::shm_create(SHM_PAGES);
-    if shm_id <= 0 {
+    let mut cur_w = WIN_W;
+    let mut cur_h = WIN_H;
+    let mut shm_cap_pages = pages_for_surface(cur_w, cur_h);
+    let created = libvoid::shm_create(shm_cap_pages);
+    if created <= 0 {
         libvoid::exit(91);
     }
-    let virt = libvoid::shm_map(shm_id as u64);
-    if virt < 0x1000_0000 {
+    let mut shm_id = created as u64;
+    let mapped = libvoid::shm_map(shm_id);
+    if mapped < 0x1000_0000 {
         libvoid::exit(92);
     }
-    let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (WIN_W * WIN_H) as usize) };
-    let mut canvas = Canvas::new(pixels, WIN_W, WIN_H, WIN_W);
-    let mut term = TerminalBuffer::new();
+    let mut virt = mapped as u64;
 
-    // Mode 1: self-verification pass (real VFS commands + real pixel rendering into SHM).
+    let term = unsafe { &mut *core::ptr::addr_of_mut!(TERM_STATE) };
+    term.resize(cur_w, cur_h);
+
     if arg == 1 {
+        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
         term.write_prompt();
         term.write_bytes(b"print gui_term_ok\n");
         let _ = term.exec_line(b"print gui_term_ok");
@@ -324,9 +362,8 @@ extern "C" fn program_main(arg: u64) -> ! {
         term.write_prompt();
         term.write_bytes(b"rp /HELLO.TXT\n");
         let _ = term.exec_line(b"rp /HELLO.TXT");
-        term.render(&mut canvas, &theme);
+        term.render(&mut canvas, &theme, cur_w, cur_h);
 
-        // Verify glyphs were actually rasterized into the SHM pixel buffer.
         let mut lit_pixels = 0u32;
         for &px in canvas.pixels.iter() {
             if px != CONSOLE_BG {
@@ -336,39 +373,86 @@ extern "C" fn program_main(arg: u64) -> ! {
         if lit_pixels < 100 {
             libvoid::exit(93);
         }
-        if libvoid::shm_unmap(shm_id as u64) != 0 {
+        if libvoid::shm_unmap(shm_id) != 0 {
             libvoid::exit(94);
         }
         let _ = libvoid::write_console(b"VoidOS gui terminal ok\n");
         libvoid::exit(0);
     }
 
-    // Live IPC window mode: arg carries the IPC channel handle to the compositor.
     let ipc_handle = arg & !(1u64 << 63);
-    if libvoid::shm_publish(shm_id as u64) != 0 {
+    if libvoid::shm_publish(shm_id) != 0 {
         libvoid::exit(95);
     }
-    let create = GuiMessage::create_window(WIN_W, WIN_H, shm_id as u64, b"Terminal");
-    let wire = create.encode();
-    send_message(ipc_handle, &wire);
+    let create = GuiMessage::create_window(cur_w, cur_h, shm_id, b"Terminal");
+    send_message(ipc_handle, &create.encode());
     term.write_prompt();
-    let initial_dirty = term.render_dirty(&mut canvas, &theme);
-    let initial_commit = GuiMessage::commit_rect(
-        1,
-        initial_dirty.x.max(0) as u32,
-        initial_dirty.y.max(0) as u32,
-        initial_dirty.w as u32,
-        initial_dirty.h as u32,
-    )
-    .encode();
-    send_message(ipc_handle, &initial_commit);
+    {
+        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+        let initial_dirty = term.render_dirty(&mut canvas, &theme, cur_w, cur_h);
+        let initial_commit = GuiMessage::commit_rect(
+            1,
+            initial_dirty.x.max(0) as u32,
+            initial_dirty.y.max(0) as u32,
+            initial_dirty.w as u32,
+            initial_dirty.h as u32,
+        )
+        .encode();
+        send_message(ipc_handle, &initial_commit);
+    }
 
     let mut rx = [0u8; PROTO_WIRE_BYTES];
     loop {
         let n = libvoid::ipc_recv(ipc_handle, &mut rx);
         if n == PROTO_WIRE_BYTES as i64 {
             if let Some(msg) = GuiMessage::decode(&rx) {
-                if msg.kind == MSG_INPUT_KEY {
+                if msg.kind == MSG_RESIZE_WINDOW {
+                    let req_w = msg.e.clamp(240, 2048);
+                    let req_h = msg.f.clamp(160, 2048);
+                    if req_w == cur_w && req_h == cur_h {
+                        continue;
+                    }
+                    let need_pages = pages_for_surface(req_w, req_h);
+                    if need_pages > shm_cap_pages {
+                        let next_id = libvoid::shm_create(need_pages);
+                        if next_id <= 0 {
+                            continue;
+                        }
+                        let next_virt = libvoid::shm_map(next_id as u64);
+                        if next_virt < 0x1000_0000 {
+                            let _ = libvoid::shm_unmap(next_id as u64);
+                            continue;
+                        }
+                        if libvoid::shm_publish(next_id as u64) != 0 {
+                            let _ = libvoid::shm_unmap(next_id as u64);
+                            continue;
+                        }
+                        let _ = libvoid::shm_unmap(shm_id);
+                        shm_id = next_id as u64;
+                        virt = next_virt as u64;
+                        shm_cap_pages = need_pages;
+                    }
+                    cur_w = req_w;
+                    cur_h = req_h;
+                    term.resize(cur_w, cur_h);
+                    let reply = GuiMessage::resize_window(1, cur_w, cur_h, shm_id).encode();
+                    send_message(ipc_handle, &reply);
+                    let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+                    let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+                    let dirty = term.render_dirty(&mut canvas, &theme, cur_w, cur_h);
+                    if !dirty.is_empty() {
+                        let commit = GuiMessage::commit_rect(
+                            1,
+                            dirty.x.max(0) as u32,
+                            dirty.y.max(0) as u32,
+                            dirty.w as u32,
+                            dirty.h as u32,
+                        )
+                        .encode();
+                        send_message(ipc_handle, &commit);
+                    }
+                } else if msg.kind == MSG_INPUT_KEY {
                     if msg.e & 0xffff_0000 == 0x0002_0000
                         || msg.f == 0
                         || msg.flags & libvoid::INPUT_FLAG_RESYNC != 0
@@ -383,7 +467,7 @@ extern "C" fn program_main(arg: u64) -> ! {
                         cmd_copy[..len].copy_from_slice(&term.input[..len]);
                         term.input_len = 0;
                         if !term.exec_line(&cmd_copy[..len]) {
-                            let _ = libvoid::shm_unmap(shm_id as u64);
+                            let _ = libvoid::shm_unmap(shm_id);
                             libvoid::exit(0);
                         }
                         let _ = libvoid::write_console(b"VoidOS terminal command processed\n");
@@ -401,7 +485,9 @@ extern "C" fn program_main(arg: u64) -> ! {
                         term.input_len += 1;
                         term.write_bytes(&[ch]);
                     }
-                    let dirty = term.render_dirty(&mut canvas, &theme);
+                    let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+                    let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+                    let dirty = term.render_dirty(&mut canvas, &theme, cur_w, cur_h);
                     if !dirty.is_empty() {
                         let commit = GuiMessage::commit_rect(
                             1,

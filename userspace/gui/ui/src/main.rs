@@ -401,6 +401,8 @@ extern "C" fn program_main(mode: u64) -> ! {
     ui.on_close_app(move |kind| close.borrow_mut().push_back((1, kind)));
     let minimize = requests.clone();
     ui.on_minimize_app(move |kind| minimize.borrow_mut().push_back((3, kind)));
+    let maximize = requests.clone();
+    ui.on_maximize_app(move |kind| maximize.borrow_mut().push_back((4, kind)));
     let quitting = Rc::new(Cell::new(false));
     let quit = quitting.clone();
     ui.on_quit_desktop(move || quit.set(true));
@@ -506,11 +508,19 @@ extern "C" fn program_main(mode: u64) -> ! {
     let _ = libvoid::write_console(b"VoidOS desktop ready\n");
 
     // Mode 0: live interactive Slint event loop (hardware GPU cursor when bit 31 of format is set, else 20x20 overlay).
+    #[derive(Clone, Copy)]
+    enum DragOp {
+        Move { kind: i32, off_x: f32, off_y: f32 },
+        PendingUnmax { kind: i32, start_cx: f32, start_cy: f32 },
+        Resize { kind: i32, zone: apps::HitZone, start_cx: f32, start_cy: f32, start_w: f32, start_h: f32 },
+    }
+
     let hw_cursor = (acq.format & 0x8000_0000) != 0;
     let mut cx = (acq.width as f32) * 0.5;
     let mut cy = (acq.height as f32) * 0.5;
     let mut prev_buttons = 0u32;
-    let mut dragging: Option<(i32, f32, f32)> = None;
+    let mut dragging: Option<DragOp> = None;
+    let mut last_title_click: Option<(i32, u64, f32, f32)> = None;
     let mut last_uptime_second = dinfo.uptime_ms / 1000;
     let mut cursor = cursor::CursorOverlay::new();
 
@@ -565,25 +575,76 @@ extern "C" fn program_main(mode: u64) -> ! {
                 if left_now != left_prev {
                     let pos = LogicalPosition::new(cx, cy);
                     if left_now {
-                        if let Some((kind, is_titlebar, wx, wy)) = applications.hit_test(cx, cy) {
-                            if applications.focused != kind {
-                                applications.focused = kind;
+                        if let Some(hit) = applications.hit_test(cx, cy) {
+                            if applications.focused != hit.kind {
+                                applications.focused = hit.kind;
                                 applications.refresh(&ui);
                             }
-                            if is_titlebar {
-                                dragging = Some((kind, cx - wx, cy - wy));
-                                mouse_moved = false;
-                            } else {
-                                if mouse_moved {
-                                    window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+                            match hit.zone {
+                                apps::HitZone::Titlebar => {
+                                    let is_double = last_title_click.is_some_and(|(lk, lt, lx, ly)| {
+                                        lk == hit.kind
+                                            && dinfo.uptime_ms.saturating_sub(lt) <= 360
+                                            && (cx - lx).abs() <= 8.0
+                                            && (cy - ly).abs() <= 8.0
+                                    });
+                                    if is_double {
+                                        last_title_click = None;
+                                        dragging = None;
+                                        applications.toggle_maximize(
+                                            hit.kind,
+                                            ui.get_dock_mode(),
+                                            acq.width,
+                                            acq.height,
+                                            dinfo.uptime_ms,
+                                        );
+                                        applications.refresh(&ui);
+                                    } else {
+                                        last_title_click = Some((hit.kind, dinfo.uptime_ms, cx, cy));
+                                        if hit.maximized {
+                                            dragging = Some(DragOp::PendingUnmax {
+                                                kind: hit.kind,
+                                                start_cx: cx,
+                                                start_cy: cy,
+                                            });
+                                        } else {
+                                            dragging = Some(DragOp::Move {
+                                                kind: hit.kind,
+                                                off_x: cx - hit.pos_x,
+                                                off_y: cy - hit.pos_y,
+                                            });
+                                        }
+                                    }
                                     mouse_moved = false;
                                 }
-                                window.dispatch_event(WindowEvent::PointerPressed {
-                                    position: pos,
-                                    button: PointerEventButton::Left,
-                                });
+                                apps::HitZone::ResizeRight
+                                | apps::HitZone::ResizeBottom
+                                | apps::HitZone::ResizeBottomRight => {
+                                    last_title_click = None;
+                                    dragging = Some(DragOp::Resize {
+                                        kind: hit.kind,
+                                        zone: hit.zone,
+                                        start_cx: cx,
+                                        start_cy: cy,
+                                        start_w: hit.view_w,
+                                        start_h: hit.view_h,
+                                    });
+                                    mouse_moved = false;
+                                }
+                                apps::HitZone::Client => {
+                                    last_title_click = None;
+                                    if mouse_moved {
+                                        window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+                                        mouse_moved = false;
+                                    }
+                                    window.dispatch_event(WindowEvent::PointerPressed {
+                                        position: pos,
+                                        button: PointerEventButton::Left,
+                                    });
+                                }
                             }
                         } else {
+                            last_title_click = None;
                             if mouse_moved {
                                 window.dispatch_event(WindowEvent::PointerMoved { position: pos });
                                 mouse_moved = false;
@@ -593,7 +654,12 @@ extern "C" fn program_main(mode: u64) -> ! {
                                 button: PointerEventButton::Left,
                             });
                         }
-                    } else if dragging.take().is_some() {
+                    } else if let Some(done_op) = dragging.take() {
+                        if let DragOp::Resize { kind, .. } = done_op {
+                            let _ = libvoid::display_info(&mut dinfo);
+                            platform_now.set(dinfo.uptime_ms);
+                            applications.finish_resize(kind, dinfo.uptime_ms);
+                        }
                         mouse_moved = false;
                     } else {
                         if mouse_moved {
@@ -620,13 +686,42 @@ extern "C" fn program_main(mode: u64) -> ! {
             }
         }
         if mouse_moved {
-            if let Some((kind, off_x, off_y)) = dragging {
-                had_work = true;
-                applications.move_to(kind, cx - off_x, cy - off_y, acq.width, acq.height);
-            } else {
-                window.dispatch_event(WindowEvent::PointerMoved {
-                    position: LogicalPosition::new(cx, cy),
-                });
+            match dragging {
+                Some(DragOp::Move { kind, off_x, off_y }) => {
+                    had_work = true;
+                    applications.move_to(kind, cx - off_x, cy - off_y, acq.width, acq.height);
+                }
+                Some(DragOp::PendingUnmax { kind, start_cx, start_cy }) => {
+                    if (cx - start_cx).abs() > 6.0 || (cy - start_cy).abs() > 6.0 {
+                        had_work = true;
+                        if let Some((nx, ny)) = applications.unmaximize_for_drag(kind, cx, cy, acq.width) {
+                            dragging = Some(DragOp::Move {
+                                kind,
+                                off_x: cx - nx,
+                                off_y: cy - ny,
+                            });
+                        }
+                    }
+                }
+                Some(DragOp::Resize { kind, zone, start_cx, start_cy, start_w, start_h }) => {
+                    had_work = true;
+                    let dx = cx - start_cx;
+                    let dy = cy - start_cy;
+                    let nw = match zone {
+                        apps::HitZone::ResizeRight | apps::HitZone::ResizeBottomRight => start_w + dx,
+                        _ => start_w,
+                    };
+                    let nh = match zone {
+                        apps::HitZone::ResizeBottom | apps::HitZone::ResizeBottomRight => start_h + dy,
+                        _ => start_h,
+                    };
+                    applications.resize_live(kind, nw, nh, acq.width, acq.height);
+                }
+                None => {
+                    window.dispatch_event(WindowEvent::PointerMoved {
+                        position: LogicalPosition::new(cx, cy),
+                    });
+                }
             }
         }
         while let Some((operation, kind)) = requests.borrow_mut().pop_front() {
@@ -640,14 +735,18 @@ extern "C" fn program_main(mode: u64) -> ! {
                 }
                 3 => {
                     applications.begin_minimize(kind, dinfo.uptime_ms);
-                    if kind == 0 {
-                        ui.set_terminal_open(false);
-                    } else if kind == 1 {
-                        ui.set_sysmon_open(false);
-                    } else if kind == 2 {
-                        ui.set_files_open(false);
-                    }
+                    applications.sync_dock_indicators(&ui);
                     need_refresh = false;
+                    true
+                }
+                4 => {
+                    applications.toggle_maximize(
+                        kind,
+                        ui.get_dock_mode(),
+                        acq.width,
+                        acq.height,
+                        dinfo.uptime_ms,
+                    );
                     true
                 }
                 _ => {
@@ -733,7 +832,27 @@ extern "C" fn program_main(mode: u64) -> ! {
 
 // ====== panic ======
 
+struct ConsoleBuf {
+    buf: [u8; 256],
+    len: usize,
+}
+
+impl core::fmt::Write for ConsoleBuf {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let bytes = s.as_bytes();
+        let avail = self.buf.len().saturating_sub(self.len);
+        let n = bytes.len().min(avail);
+        self.buf[self.len..self.len + n].copy_from_slice(&bytes[..n]);
+        self.len += n;
+        Ok(())
+    }
+}
+
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    use core::fmt::Write;
+    let mut out = ConsoleBuf { buf: [0; 256], len: 0 };
+    let _ = write!(out, "UI_PANIC: {}\n", info);
+    let _ = libvoid::write_console(&out.buf[..out.len]);
     libvoid::exit(99);
 }

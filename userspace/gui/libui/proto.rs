@@ -10,6 +10,7 @@ pub const MSG_INPUT_KEY: u32 = 5;
 pub const MSG_INPUT_MOUSE: u32 = 6;
 pub const MSG_FOCUS_CHANGED: u32 = 7;
 pub const MSG_DOCK_SET_MODE: u32 = 8;
+pub const MSG_RESIZE_WINDOW: u32 = 9;
 
 pub const MAX_TITLE_BYTES: usize = 48;
 pub const PROTO_WIRE_BYTES: usize = 96;
@@ -81,6 +82,14 @@ impl GuiMessage {
         msg.flags = buttons;
         msg.c = x;
         msg.d = y;
+        msg
+    }
+
+    pub fn resize_window(win_id: u32, width: u32, height: u32, shm_id: u64) -> Self {
+        let mut msg = Self::new(MSG_RESIZE_WINDOW, win_id);
+        msg.a = shm_id;
+        msg.e = width;
+        msg.f = height;
         msg
     }
 
