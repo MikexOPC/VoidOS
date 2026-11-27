@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod anim;
+pub mod console_font;
 pub mod draw;
 pub mod proto;
 pub mod style;
@@ -125,5 +126,51 @@ mod tests {
         canvas.blit_alpha_rect(4, 4, &semi, 4, 4, 4, Rect::new(0, 0, 4, 4));
         let blended = canvas.pixels[4 * 16 + 4];
         assert!(((blended >> 16) & 0xFF) > 0x70);
+    }
+
+    #[test]
+    fn canvas_draw_text_aa_lowercase_uppercase_and_clip() {
+        let bg = rgb(0x0B, 0x10, 0x16);
+        let fg = rgb(0xE6, 0xED, 0xF3);
+        let mut fb = [bg; 64 * 32];
+        let mut canvas = Canvas::new(&mut fb, 64, 32, 64);
+
+        canvas.draw_text_aa(4, 4, b"Aa ", fg, bg);
+
+        let mut cell_upper = 0usize;
+        let mut cell_lower = 0usize;
+        let mut has_aa_blend = false;
+        let mut space_dirty = 0usize;
+        for row in 0..18usize {
+            for col in 0..9usize {
+                let pu = canvas.pixels[(4 + row) * 64 + (4 + col)];
+                let pl = canvas.pixels[(4 + row) * 64 + (4 + 9 + col)];
+                let ps = canvas.pixels[(4 + row) * 64 + (4 + 18 + col)];
+                if pu != bg {
+                    cell_upper += 1;
+                    if pu != fg {
+                        has_aa_blend = true;
+                    }
+                }
+                if pl != bg {
+                    cell_lower += 1;
+                    if pl != fg {
+                        has_aa_blend = true;
+                    }
+                }
+                if ps != bg {
+                    space_dirty += 1;
+                }
+            }
+        }
+        assert!(cell_upper > 10);
+        assert!(cell_lower > 10);
+        assert_ne!(cell_upper, cell_lower);
+        assert!(has_aa_blend);
+        assert_eq!(space_dirty, 0);
+
+        canvas.set_clip(Rect::new(40, 4, 9, 18));
+        canvas.draw_text_aa(31, 4, b"HH", fg, bg);
+        assert_eq!(canvas.pixels[10 * 64 + 34], bg);
     }
 }

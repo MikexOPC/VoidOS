@@ -81,7 +81,7 @@ impl Applications {
         }
         let (init_x, init_y) = match kind {
             0 => (96.0, 84.0),
-            1 => (640.0, 84.0),
+            1 => (810.0, 84.0),
             _ => (220.0, 120.0),
         };
         self.windows.push(Application {
@@ -149,9 +149,9 @@ impl Applications {
     // ====== tick_animations ======
 
     pub fn tick_animations(&mut self, ui: &VoidDesktop, now_ms: u64) -> bool {
-        const OPEN_MS: f32 = 210.0;
-        const CLOSE_MS: f32 = 185.0;
-        const MIN_MS: f32 = 170.0;
+        const OPEN_MS: f32 = 220.0;
+        const CLOSE_MS: f32 = 170.0;
+        const MIN_MS: f32 = 190.0;
         let mut to_close = Vec::new();
         let mut any_updated = false;
         for app in &mut self.windows {
@@ -160,11 +160,17 @@ impl Applications {
             }
             let elapsed = now_ms.saturating_sub(app.anim_start_ms) as f32;
             let mut finished_min = false;
+            let cur_anim_kind = match app.anim_mode {
+                2 => 1,
+                3 => 2,
+                _ => 0,
+            };
             if app.anim_mode == 1 {
                 let t = (elapsed / OPEN_MS).clamp(0.0, 1.0);
-                // Smooth ease-out cubic
+                // Ultra-smooth ease-out quartic
                 let inv = 1.0 - t;
-                app.scale_progress = 1.0 - inv * inv * inv;
+                let inv2 = inv * inv;
+                app.scale_progress = 1.0 - inv2 * inv2;
                 if t >= 1.0 {
                     app.scale_progress = 1.0;
                     app.anim_mode = 0;
@@ -173,7 +179,7 @@ impl Applications {
             } else if app.anim_mode == 2 || app.anim_mode == 3 {
                 let dur = if app.anim_mode == 2 { CLOSE_MS } else { MIN_MS };
                 let t = (elapsed / dur).clamp(0.0, 1.0);
-                // Smooth ease-in-out cubic shrink-out towards dock
+                // Smooth ease-in-out cubic
                 let eased = if t < 0.5 {
                     4.0 * t * t * t
                 } else {
@@ -200,6 +206,7 @@ impl Applications {
                 if let Some(mut surface) = self.model.row_data(row) {
                     if surface.kind == kind {
                         surface.scale_progress = progress;
+                        surface.anim_kind = cur_anim_kind;
                         if finished_min {
                             surface.minimized = true;
                         }
@@ -511,6 +518,11 @@ impl Applications {
                 pos_y: app.pos_y,
                 minimized: app.minimized,
                 scale_progress: app.scale_progress,
+                anim_kind: match app.anim_mode {
+                    2 => 1,
+                    3 => 2,
+                    _ => 0,
+                },
             });
         }
         self.model.set_vec(surfaces);

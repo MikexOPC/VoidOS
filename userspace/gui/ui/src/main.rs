@@ -61,6 +61,34 @@ impl TargetPixel for BgrxPixel {
         self.0 = b | (g << 8) | (r << 16) | 0xFF00_0000;
     }
 
+    fn blend_slice(slice: &mut [Self], color: slint::platform::software_renderer::PremultipliedRgbaColor) {
+        let a = color.alpha as u32;
+        if a == 0 {
+            return;
+        }
+        if a == 255 {
+            let packed = Self(
+                (color.blue as u32)
+                    | ((color.green as u32) << 8)
+                    | ((color.red as u32) << 16)
+                    | 0xFF00_0000,
+            );
+            slice.fill(packed);
+            return;
+        }
+        let inv = 255 - a;
+        let cr = color.red as u32;
+        let cg = color.green as u32;
+        let cb = color.blue as u32;
+        for dst in slice.iter_mut() {
+            let v = dst.0;
+            let b = (cb + (((v & 0xFF) * inv + 128) >> 8)).min(255);
+            let g = (cg + ((((v >> 8) & 0xFF) * inv + 128) >> 8)).min(255);
+            let r = (cr + ((((v >> 16) & 0xFF) * inv + 128) >> 8)).min(255);
+            dst.0 = b | (g << 8) | (r << 16) | 0xFF00_0000;
+        }
+    }
+
     fn from_rgb(r: u8, g: u8, b: u8) -> Self {
         Self((b as u32) | ((g as u32) << 8) | ((r as u32) << 16) | 0xFF00_0000)
     }
@@ -696,7 +724,7 @@ extern "C" fn program_main(mode: u64) -> ! {
             libvoid::yield_now();
         } else {
             let wait_ms = slint::platform::duration_until_next_timer_update()
-                .map(|d| (d.as_millis() as u64).clamp(1, 8))
+                .map(|d| (d.as_millis() as u64).clamp(1, 4))
                 .unwrap_or(250);
             let _ = libvoid::gui_wait(wait_ms);
         }

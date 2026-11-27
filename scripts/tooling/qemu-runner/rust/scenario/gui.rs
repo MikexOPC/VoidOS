@@ -170,7 +170,7 @@ pub fn run(vm: &mut Vm, minutes: u32) -> Result<Value, String> {
         if cycles == 0 {
             screenshot(vm, "terminal-command")?;
         }
-        click(vm, 560, 100);
+        click(vm, 760, 100);
         std::thread::sleep(Duration::from_millis(400));
         click(vm, 341, height - 37);
         wait_text(vm, "VoidOS desktop terminal ready", terminal + 2)?;

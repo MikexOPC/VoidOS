@@ -485,6 +485,57 @@ impl<'a> Canvas<'a> {
             x += 8;
         }
     }
+
+    pub fn draw_char_aa(&mut self, x: i32, y: i32, ch: u8, fg: u32, bg: u32) {
+        let idx = if (0x20..=0x7E).contains(&ch) {
+            (ch - 0x20) as usize
+        } else {
+            (b'?' - 0x20) as usize
+        };
+        let glyph = &crate::console_font::CONSOLE_FONT[idx];
+        let fb = fg & 0xFF;
+        let fg_g = (fg >> 8) & 0xFF;
+        let fr = (fg >> 16) & 0xFF;
+        let bb = bg & 0xFF;
+        let bg_g = (bg >> 8) & 0xFF;
+        let br = (bg >> 16) & 0xFF;
+        for (row, &packed) in glyph.iter().enumerate() {
+            let py = y + row as i32;
+            if py < self.clip.y || py >= self.clip.bottom() {
+                continue;
+            }
+            let row_off = (py as usize) * (self.stride as usize);
+            for col in 0..9i32 {
+                let px = x + col;
+                if px < self.clip.x || px >= self.clip.right() {
+                    continue;
+                }
+                let a = ((packed >> ((col as u32) * 4)) & 0xF) as u32;
+                let color = if a == 0 {
+                    bg
+                } else if a == 15 {
+                    fg
+                } else {
+                    let inv = 15 - a;
+                    let b = (fb * a + bb * inv + 7) / 15;
+                    let g = (fg_g * a + bg_g * inv + 7) / 15;
+                    let r = (fr * a + br * inv + 7) / 15;
+                    0xFF00_0000 | (r << 16) | (g << 8) | b
+                };
+                self.pixels[row_off + (px as usize)] = color;
+            }
+        }
+    }
+
+    pub fn draw_text_aa(&mut self, mut x: i32, y: i32, text: &[u8], fg: u32, bg: u32) {
+        for &b in text {
+            if b == 0 {
+                break;
+            }
+            self.draw_char_aa(x, y, b, fg, bg);
+            x += 9;
+        }
+    }
 }
 
 // ====== compact 8x8 -> 8x16 bitmap font (printable ASCII) ======

@@ -12,6 +12,7 @@ export struct AppSurface {
     pos-y: length,
     minimized: bool,
     scale-progress: float,
+    anim-kind: int,
 }
 
 export component VoidDesktop inherits Window {
@@ -54,10 +55,12 @@ export component VoidDesktop inherits Window {
         property <float> p: surface.scale-progress;
         property <length> full-w: surface.client-width + 2px;
         property <length> full-h: surface.client-height + 34px;
-        property <float> scale: 0.62 + 0.38 * p;
+        property <float> min-scale: surface.anim-kind == 2 ? 0.50 : (surface.anim-kind == 1 ? 0.72 : 0.80);
+        property <float> scale: min-scale + (1.0 - min-scale) * p;
+        property <length> slide-y: surface.anim-kind == 2 ? (1.0 - p) * 44px : (surface.anim-kind == 0 ? (1.0 - p) * 16px : 0px);
         visible: !surface.minimized && p > 0.01;
         x: surface.pos-x + (1.0 - scale) * full-w * 0.5;
-        y: surface.pos-y + (1.0 - scale) * full-h * 0.5 + (1.0 - p) * 20px;
+        y: surface.pos-y + (1.0 - scale) * full-h * 0.5 + slide-y;
         width: full-w * scale;
         height: full-h * scale;
         opacity: p < 0.99 ? p : 1.0;

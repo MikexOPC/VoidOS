@@ -163,17 +163,17 @@ export component DefaultDock inherits Rectangle {
 
                     app1 := Rectangle {
                         x: term-ta.has-hover ? -2px : 0px;
-                        y: term-ta.has-hover ? -8px : 0px;
+                        y: term-ta.pressed ? -3px : (term-ta.has-hover ? -8px : 0px);
                         width: term-ta.has-hover ? 42px : 38px;
                         height: term-ta.has-hover ? 42px : 38px;
                         border-radius: term-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
                         border-color: term-ta.has-hover ? #FFFFFFCC : (root.terminal-open ? #FFFFFF88 : #FFFFFF48);
-                        background: term-ta.has-hover ? #FFFFFF96 : (root.terminal-open ? #FFFFFF58 : #FFFFFF34);
-                        animate x { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        background: term-ta.pressed ? #FFFFFFBA : (term-ta.has-hover ? #FFFFFF96 : (root.terminal-open ? #FFFFFF58 : #FFFFFF34));
+                        animate x { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate y { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate width { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate height { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate background { duration: 150ms; easing: ease-out; }
                         animate border-color { duration: 150ms; easing: ease-out; }
 
@@ -212,17 +212,17 @@ export component DefaultDock inherits Rectangle {
 
                     app2 := Rectangle {
                         x: sysmon-ta.has-hover ? -2px : 0px;
-                        y: sysmon-ta.has-hover ? -8px : 0px;
+                        y: sysmon-ta.pressed ? -3px : (sysmon-ta.has-hover ? -8px : 0px);
                         width: sysmon-ta.has-hover ? 42px : 38px;
                         height: sysmon-ta.has-hover ? 42px : 38px;
                         border-radius: sysmon-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
                         border-color: sysmon-ta.has-hover ? #FFFFFFCC : (root.sysmon-open ? #FFFFFF88 : #FFFFFF48);
-                        background: sysmon-ta.has-hover ? #FFFFFF96 : (root.sysmon-open ? #FFFFFF58 : #FFFFFF34);
-                        animate x { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        background: sysmon-ta.pressed ? #FFFFFFBA : (sysmon-ta.has-hover ? #FFFFFF96 : (root.sysmon-open ? #FFFFFF58 : #FFFFFF34));
+                        animate x { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate y { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate width { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate height { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate background { duration: 150ms; easing: ease-out; }
                         animate border-color { duration: 150ms; easing: ease-out; }
 
@@ -263,17 +263,17 @@ export component DefaultDock inherits Rectangle {
 
                     app3 := Rectangle {
                         x: files-ta.has-hover ? -2px : 0px;
-                        y: files-ta.has-hover ? -8px : 0px;
+                        y: files-ta.pressed ? -3px : (files-ta.has-hover ? -8px : 0px);
                         width: files-ta.has-hover ? 42px : 38px;
                         height: files-ta.has-hover ? 42px : 38px;
                         border-radius: files-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
                         border-color: files-ta.has-hover ? #FFFFFFCC : (root.files-open ? #FFFFFF88 : #FFFFFF48);
-                        background: files-ta.has-hover ? #FFFFFF96 : (root.files-open ? #FFFFFF58 : #FFFFFF34);
-                        animate x { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        background: files-ta.pressed ? #FFFFFFBA : (files-ta.has-hover ? #FFFFFF96 : (root.files-open ? #FFFFFF58 : #FFFFFF34));
+                        animate x { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate y { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate width { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate height { duration: 220ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         animate background { duration: 150ms; easing: ease-out; }
                         animate border-color { duration: 150ms; easing: ease-out; }
 

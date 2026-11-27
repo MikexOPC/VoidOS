@@ -15,12 +15,20 @@ global_asm!(
     "ud2",
 );
 
-const WIN_W: u32 = 480;
-const WIN_H: u32 = 280;
+const WIN_W: u32 = 680;
+const WIN_H: u32 = 368;
 const SHM_PAGES: u64 = ((WIN_W as u64 * WIN_H as u64 * 4) + 4095) / 4096;
-const COLS: usize = 56;
-const ROWS: usize = 15;
+const COLS: usize = 72;
+const ROWS: usize = 19;
+const CELL_W: i32 = 9;
+const CELL_H: i32 = 18;
+const PAD_X: i32 = 14;
+const PAD_Y: i32 = 10;
 const LINE_CAP: usize = 128;
+
+const CONSOLE_BG: u32 = rgb(0x0B, 0x10, 0x16);
+const CONSOLE_FG: u32 = rgb(0xE6, 0xED, 0xF3);
+const CONSOLE_CUR: u32 = rgb(0xE6, 0xED, 0xF3);
 
 // ====== TerminalBuffer ======
 
@@ -90,7 +98,7 @@ impl TerminalBuffer {
     }
 
     fn write_prompt(&mut self) {
-        self.write_bytes(b"void> ");
+        self.write_bytes(b"> ");
     }
 
     fn exec_line(&mut self, line: &[u8]) -> bool {
@@ -106,7 +114,7 @@ impl TerminalBuffer {
             return true;
         }
         if cmd == b"help" {
-            self.write_bytes(b"cmds: print fl rp clear exit\n");
+            self.write_bytes(b"SHELL_HELP: help | print <testo> | fl [dir] | rp <file> | write <file> <testo> | rm <file> | sync | clear | exit\n");
             return true;
         }
         if cmd == b"print" {
@@ -116,11 +124,13 @@ impl TerminalBuffer {
         }
         if cmd == b"fl" {
             let path = if rest.is_empty() { b"/" as &[u8] } else { rest };
-            let mut buf = [0u8; 256];
+            let mut buf = [0u8; 1024];
             let n = libvoid::list_dir(path, &mut buf);
             if n > 0 {
                 self.write_bytes(&buf[..(n as usize).min(buf.len())]);
-                self.write_bytes(b"\n");
+                if buf[(n as usize).min(buf.len()) - 1] != b'\n' {
+                    self.write_bytes(b"\n");
+                }
             } else {
                 self.write_bytes(b"fl: err\n");
             }
@@ -152,24 +162,68 @@ impl TerminalBuffer {
             }
             return true;
         }
-        self.write_bytes(b"unknown cmd\n");
+        if cmd == b"write" {
+            let (path, text) = libvoid::split_first_token(rest);
+            if path.is_empty() {
+                self.write_bytes(b"write: <file> <testo>\n");
+                return true;
+            }
+            let fd = libvoid::open(path, libvoid::O_WRONLY | libvoid::O_CREAT | libvoid::O_TRUNC);
+            if fd <= 0 {
+                self.write_bytes(b"write: open failed\n");
+                return true;
+            }
+            let w = libvoid::write_file(fd as u64, text);
+            let _ = libvoid::close(fd as u64);
+            if w >= 0 {
+                self.write_bytes(b"SHELL_WRITE_OK\n");
+            } else {
+                self.write_bytes(b"write: failed\n");
+            }
+            return true;
+        }
+        if cmd == b"rm" {
+            if rest.is_empty() {
+                self.write_bytes(b"rm: path required\n");
+                return true;
+            }
+            if libvoid::unlink(rest) == 0 {
+                self.write_bytes(b"SHELL_RM_OK\n");
+            } else {
+                self.write_bytes(b"rm: failed\n");
+            }
+            return true;
+        }
+        if cmd == b"sync" {
+            if libvoid::sync_fs() == 0 {
+                self.write_bytes(b"SHELL_SYNC_OK\n");
+            } else {
+                self.write_bytes(b"sync: failed\n");
+            }
+            return true;
+        }
+        self.write_bytes(b"SHELL_UNKNOWN_CMD\n");
         true
     }
 
     fn cell_rect(r: usize, c: usize) -> Rect {
-        Rect::new(10 + (c as i32) * 8, 8 + (r as i32) * 18, 8, 16)
+        Rect::new(PAD_X + (c as i32) * CELL_W, PAD_Y + (r as i32) * CELL_H, CELL_W, CELL_H)
     }
 
-    fn render(&self, canvas: &mut Canvas<'_>, theme: &Theme) {
-        let bg = rgb(0x0E, 0x13, 0x1C);
-        canvas.fill_rect(Rect::new(0, 0, WIN_W as i32, WIN_H as i32), bg);
+    fn draw_caret(canvas: &mut Canvas<'_>, r: usize, c: usize) {
+        let cx = PAD_X + (c as i32) * CELL_W;
+        let cy = PAD_Y + (r as i32) * CELL_H;
+        // Console-style crisp underscore cursor (2px tall at baseline)
+        canvas.fill_rect(Rect::new(cx, cy + CELL_H - 3, CELL_W - 1, 2), CONSOLE_CUR);
+    }
+
+    fn render(&self, canvas: &mut Canvas<'_>, _theme: &Theme) {
+        canvas.fill_rect(Rect::new(0, 0, WIN_W as i32, WIN_H as i32), CONSOLE_BG);
         for r in 0..ROWS {
-            let y = 8 + (r as i32) * 18;
-            canvas.draw_text(10, y, &self.cells[r], theme.text_primary);
+            let y = PAD_Y + (r as i32) * CELL_H;
+            canvas.draw_text_aa(PAD_X, y, &self.cells[r], CONSOLE_FG, CONSOLE_BG);
         }
-        let cx = 10 + (self.col.min(COLS - 1) as i32) * 8;
-        let cy = 8 + (self.row.min(ROWS - 1) as i32) * 18;
-        canvas.fill_rect(Rect::new(cx, cy, 8, 16), theme.accent);
+        Self::draw_caret(canvas, self.row.min(ROWS - 1), self.col.min(COLS - 1));
     }
 
     fn render_dirty(&mut self, canvas: &mut Canvas<'_>, theme: &Theme) -> Rect {
@@ -183,15 +237,11 @@ impl TerminalBuffer {
             self.full_dirty = false;
             return Rect::new(0, 0, WIN_W as i32, WIN_H as i32);
         }
-        let bg = rgb(0x0E, 0x13, 0x1C);
         let mut dirty = Rect::new(0, 0, 0, 0);
         if self.prev_row != cur_r || self.prev_col != cur_c {
             let rect = Self::cell_rect(self.prev_row, self.prev_col);
-            canvas.fill_rect(rect, bg);
             let ch = self.cells[self.prev_row][self.prev_col];
-            if ch != b' ' {
-                canvas.draw_text(rect.x, rect.y, &[ch], theme.text_primary);
-            }
+            canvas.draw_char_aa(rect.x, rect.y, ch, CONSOLE_FG, CONSOLE_BG);
             self.prev_cells[self.prev_row][self.prev_col] = ch;
             dirty = dirty.union(rect);
         }
@@ -200,17 +250,15 @@ impl TerminalBuffer {
                 let ch = self.cells[r][c];
                 if ch != self.prev_cells[r][c] {
                     let rect = Self::cell_rect(r, c);
-                    canvas.fill_rect(rect, bg);
-                    if ch != b' ' {
-                        canvas.draw_text(rect.x, rect.y, &[ch], theme.text_primary);
-                    }
+                    canvas.draw_char_aa(rect.x, rect.y, ch, CONSOLE_FG, CONSOLE_BG);
                     self.prev_cells[r][c] = ch;
                     dirty = dirty.union(rect);
                 }
             }
         }
         let cur_rect = Self::cell_rect(cur_r, cur_c);
-        canvas.fill_rect(cur_rect, theme.accent);
+        canvas.draw_char_aa(cur_rect.x, cur_rect.y, self.cells[cur_r][cur_c], CONSOLE_FG, CONSOLE_BG);
+        Self::draw_caret(canvas, cur_r, cur_c);
         self.prev_row = cur_r;
         self.prev_col = cur_c;
         dirty = dirty.union(cur_rect);
@@ -264,7 +312,6 @@ extern "C" fn program_main(arg: u64) -> ! {
     let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (WIN_W * WIN_H) as usize) };
     let mut canvas = Canvas::new(pixels, WIN_W, WIN_H, WIN_W);
     let mut term = TerminalBuffer::new();
-    term.write_bytes(b"VoidOS Terminal\n");
 
     // Mode 1: self-verification pass (real VFS commands + real pixel rendering into SHM).
     if arg == 1 {
@@ -280,10 +327,9 @@ extern "C" fn program_main(arg: u64) -> ! {
         term.render(&mut canvas, &theme);
 
         // Verify glyphs were actually rasterized into the SHM pixel buffer.
-        let bg = rgb(0x0E, 0x13, 0x1C);
         let mut lit_pixels = 0u32;
         for &px in canvas.pixels.iter() {
-            if px != bg {
+            if px != CONSOLE_BG {
                 lit_pixels += 1;
             }
         }
