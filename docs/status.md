@@ -98,10 +98,13 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
   ACPI PM. Ogni turno utente ha un budget massimo compatibile con mezzo
   periodo del contatore PM a 24 bit.
 - Heap kernel scalato dinamicamente al boot in base alla RAM fisica libera
-  (32–96 MiB in passi da 2 MiB, `kernel_heap_grow`, fino a 6 MiB di slab),
-  allocatore fisico a 4096 lease / 4096 extent (validazione hot-path O(Count))
-  e limiti SHM fino a 512 oggetti / 2048 mapping / 64 MiB per oggetto. Il primo
-  `init` resta incorporato; i programmi successivi vengono caricati dal VFS.
+  (32–96 MiB in passi da 2 MiB) ed **espandibile automaticamente a runtime**
+  su OOM (`kernel_heap_set_grow` + `x86_heap_grow_private`, segmenti multipli
+  da 2 MiB + traduzione DMA multi-segmento `x86_heap_virt_to_phys`, fino a
+  6 MiB di slab), allocatore fisico a 4096 lease / 4096 extent (validazione
+  hot-path O(Count)) e limiti SHM fino a 512 oggetti / 2048 mapping / 64 MiB
+  per oggetto. Il primo `init` resta incorporato; i programmi successivi
+  vengono caricati dal VFS.
 - La vista utente conserva le mapping supervisor minime per le transizioni.
   Le mitigazioni speculative dipendono dalle capability esposte dalla CPU.
 - Dubbio accettato il 15 novembre 2026: in 1 sessione su 21 con tre QEMU

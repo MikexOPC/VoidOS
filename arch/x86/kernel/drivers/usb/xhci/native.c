@@ -185,15 +185,14 @@ static void *transport_alloc_dma_page_private(void *context, uint64_t *phys_out)
     if (!page)
         return NULL;
 
-    uintptr_t virt = (uintptr_t)page;
-    if (virt < X86_HEAP_VIRTUAL ||
-        virt + 4096ULL > X86_HEAP_VIRTUAL + rt->HeapAuth->Data.Pages * 4096ULL)
+    uint64_t page_phys = 0ULL;
+    if (!x86_heap_virt_to_phys((uintptr_t)page, &page_phys))
         return NULL;
 
     for (uint32_t i = 0; i < 4096U; ++i)
         page[i] = 0U;
 
-    *phys_out = rt->HeapAuth->Data.Base + (virt - X86_HEAP_VIRTUAL);
+    *phys_out = page_phys;
     return page;
 }
 

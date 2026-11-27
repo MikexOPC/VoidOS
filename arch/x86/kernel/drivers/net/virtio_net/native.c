@@ -487,13 +487,9 @@ int x86_virtio_net_start(
     if (!dma_pages)
         return 0;
 
-    uintptr_t dma_virt = (uintptr_t)dma_pages;
-    uint64_t dma_bytes = (uint64_t)VIRTIO_NET_DMA_PAGES * 4096ULL;
-    if (dma_virt < X86_HEAP_VIRTUAL ||
-        dma_virt + dma_bytes > X86_HEAP_VIRTUAL + heap_auth->Data.Pages * 4096ULL)
+    uint64_t dma_phys = 0ULL;
+    if (!x86_heap_virt_to_phys((uintptr_t)dma_pages, &dma_phys))
         return 0;
-
-    uint64_t dma_phys = heap_auth->Data.Base + (dma_virt - X86_HEAP_VIRTUAL);
 
     vnet_rt.Window = env->Window;
     vnet_rt.LapicMapping = env->Mapping;

@@ -19,6 +19,7 @@
 #define X86_HEAP_STACK_STRIDE 32U
 #define X86_HEAP_STACK_BASE   (X86_LAYOUT_SLOT_ADDRESS(X86_HEAP_SLOT) + (BOOT_U64)X86_HEAP_STACK_PD * 0x200000ULL)
 #define X86_HEAP_MAX_TABLES   (2U + X86_HEAP_MAX_DATA_PTS + X86_HEAP_STACK_PTS)
+#define X86_HEAP_MAX_EXTRA    32U
 // Inventory tags (Reserved) 48..101, one per table; the table source is tag + 1.
 #define X86_HEAP_TAG          48U
 _Static_assert(X86_HEAP_MAX_TABLES <= 63U, "Heap table bitmask fits in BOOT_U64");
@@ -29,6 +30,8 @@ typedef struct {
 typedef struct {
     BOOT_U64  Self, Root, Pat;
     KERNEL_PHYSICAL_LEASE  Data, Tables;
+    KERNEL_PHYSICAL_LEASE  ExtraData[X86_HEAP_MAX_EXTRA];
+    BOOT_U32  ExtraCount, TotalDataPages;
     BOOT_U32  PhysicalBits, Ready;
 } X86_HEAP_AUTH;
 _Static_assert(sizeof(X86_HEAP_SNAPSHOT) == 48, "Heap snapshot ABI");

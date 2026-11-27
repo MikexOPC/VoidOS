@@ -529,13 +529,11 @@ int x86_virtio_blk_start(
     if (!dma_pages)
         return 0;
 
-    uintptr_t dma_virt = (uintptr_t)dma_pages;
-    if (dma_virt < X86_HEAP_VIRTUAL ||
-        dma_virt + 8192ULL > X86_HEAP_VIRTUAL + heap_auth->Data.Pages * 4096ULL)
+    uint64_t control_phys = 0ULL;
+    uint64_t data_phys = 0ULL;
+    if (!x86_heap_virt_to_phys((uintptr_t)dma_pages, &control_phys) ||
+        !x86_heap_virt_to_phys((uintptr_t)(dma_pages + 4096U), &data_phys))
         return 0;
-
-    uint64_t control_phys = heap_auth->Data.Base + (dma_virt - X86_HEAP_VIRTUAL);
-    uint64_t data_phys = control_phys + 4096ULL;
 
     if (!kernel_lock_initialize(&vblk_rt.DeviceLock, KERNEL_BLOCK_DEVICE_LOCK_RANK))
         return 0;

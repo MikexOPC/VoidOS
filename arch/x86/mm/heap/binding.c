@@ -40,7 +40,7 @@ static BOOT_U64 entry_private(const X86_HEAP_AUTH *auth, BOOT_U32 table, BOOT_U3
         if (slot >= 1 && slot <= data_pts)
             return (auth->Tables.Base + (slot + 1ULL) * 4096ULL) | 3;
         if (slot >= X86_HEAP_STACK_PD && slot < X86_HEAP_STACK_PD + X86_HEAP_STACK_PTS)
-            return (auth->Tables.Base + (2ULL + data_pts + (slot - X86_HEAP_STACK_PD)) * 4096ULL) | 3;
+            return (auth->Tables.Base + (2ULL + X86_HEAP_MAX_DATA_PTS + (slot - X86_HEAP_STACK_PD)) * 4096ULL) | 3;
         return 0;
     }
 
@@ -166,6 +166,13 @@ int x86_heap_unbind(X86_HEAP_BINDING *owner)
 
     if (owner->DataAllocated) { if (!kernel_physical_release(pool, &owner->Authority.Data)) return 0; owner->DataAllocated = 0; }
 
+    for (BOOT_U32 i = 0; i < owner->Authority.ExtraCount && i < X86_HEAP_MAX_EXTRA; ++i) {
+        if (!kernel_physical_pin(pool, &owner->Authority.ExtraData[i], 0) ||
+            !kernel_physical_release(pool, &owner->Authority.ExtraData[i]))
+            return 0;
+    }
+    owner->Authority.ExtraCount = 0;
+
     if (!kernel_physical_budget_matches(pool, owner->Budget)) return 0;
 
     for (BOOT_U32 byte = 0; byte < sizeof(*owner); ++byte) ((volatile unsigned char *)owner)[byte] = 0;
@@ -195,18 +202,22 @@ int x86_heap_bind(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window, c
     BOOT_U64 free_pages = 0;
     if (!capture(context, pool, lapic, inventory) || !kernel_physical_budget_read(pool, &free_pages)) return 0;
 
-    // Scale kernel heap to ~25% of free physical RAM (32..96 MiB in 2 MiB PT steps).
+    // Scale initial kernel heap to ~25% of free physical RAM (32..96 MiB in 2 MiB PT steps);
+    // pre-allocate all X86_HEAP_MAX_TABLES page-table pages (216 KiB) so x86_heap_grow_private
+    // can map additional 2 MiB segments on demand at runtime without reallocating table leases.
     BOOT_U32 data_pts = (BOOT_U32)((free_pages / 4ULL) / 512ULL);
     if (data_pts < X86_HEAP_MIN_DATA_PTS) data_pts = X86_HEAP_MIN_DATA_PTS;
     if (data_pts > X86_HEAP_MAX_DATA_PTS) data_pts = X86_HEAP_MAX_DATA_PTS;
     BOOT_U32 heap_pages = data_pts * 512U;
-    BOOT_U32 heap_tables = 2U + data_pts + X86_HEAP_STACK_PTS;
+    BOOT_U32 heap_tables = X86_HEAP_MAX_TABLES;
     if (!kernel_physical_budget_at_least(pool, heap_pages + heap_tables)) return 0;
 
     owner->Self = self; owner->Budget = free_pages;
     owner->Context = context; owner->Window = window; owner->Lapic = lapic; owner->Inventory = inventory; owner->Capture = capture;
     owner->Authority.Self = (BOOT_U64)&owner->Authority; owner->Authority.Root = cpu.Root;
     owner->Authority.Pat = cpu.Pat; owner->Authority.PhysicalBits = cpu.PhysicalBits;
+    owner->Authority.ExtraCount = 0;
+    owner->Authority.TotalDataPages = heap_pages;
 
     if (!kernel_physical_allocate(pool, heap_pages, &owner->Authority.Data)) goto rollback;
     owner->DataAllocated = 1;
@@ -282,6 +293,136 @@ static int selftest_private(void)
 }
 #endif
 
+// ====== grow_pt_write_private ======
+
+typedef struct {
+    BOOT_U64  PhysBase;
+} HEAP_GROW_PT_REQ;
+
+static int grow_pt_write_private(void *opaque)
+{
+    const HEAP_GROW_PT_REQ *req = (const HEAP_GROW_PT_REQ *)opaque;
+    volatile BOOT_U64 *view = (volatile BOOT_U64 *)x86_window_bytes();
+    if (!view || !req) return 0;
+    for (BOOT_U32 slot = 0; slot < 512U; ++slot) {
+        BOOT_U64 entry = (req->PhysBase + (BOOT_U64)slot * 4096ULL) | 0x8000000000000003ULL;
+        view[slot] = entry;
+        if (view[slot] != entry) return 0;
+    }
+    return 1;
+}
+
+// ====== grow_pd_link_private ======
+
+typedef struct {
+    BOOT_U32  FirstSlot;
+    BOOT_U32  Count;
+    BOOT_U64  TablesBase;
+} HEAP_GROW_PD_REQ;
+
+static int grow_pd_link_private(void *opaque)
+{
+    const HEAP_GROW_PD_REQ *req = (const HEAP_GROW_PD_REQ *)opaque;
+    volatile BOOT_U64 *view = (volatile BOOT_U64 *)x86_window_bytes();
+    if (!view || !req) return 0;
+    for (BOOT_U32 k = 0; k < req->Count; ++k) {
+        BOOT_U32 slot = req->FirstSlot + k;
+        BOOT_U64 entry = (req->TablesBase + (BOOT_U64)(slot + 1U) * 4096ULL) | 3ULL;
+        view[slot] = entry;
+        if (view[slot] != entry) return 0;
+    }
+    return 1;
+}
+
+// ====== x86_heap_grow_private ======
+
+static int x86_heap_grow_private(
+    void *context,
+    uint32_t current_pages,
+    uint32_t min_additional_pages,
+    uint32_t *added_pages_out
+)
+{
+    X86_HEAP_BINDING *owner = (X86_HEAP_BINDING *)context;
+    if (!owner || owner->Self != (BOOT_U64)owner || !owner->Window || !owner->Window->Pool ||
+        !added_pages_out || !min_additional_pages)
+        return 0;
+
+    X86_HEAP_AUTH *auth = &owner->Authority;
+    if (auth->Ready != 1 || auth->ExtraCount >= X86_HEAP_MAX_EXTRA || current_pages != auth->TotalDataPages)
+        return 0;
+
+    BOOT_U32 cur_pts = current_pages / 512U;
+    BOOT_U32 add_pts = (min_additional_pages + 511U) / 512U;
+    if (!add_pts) add_pts = 1U;
+    if (cur_pts + add_pts > X86_HEAP_MAX_DATA_PTS)
+        return 0;
+
+    BOOT_U32 add_pages = add_pts * 512U;
+    KERNEL_PHYSICAL_ALLOCATOR *pool = owner->Window->Pool;
+    KERNEL_PHYSICAL_LEASE lease = {0};
+    if (!kernel_physical_allocate(pool, add_pages, &lease))
+        return 0;
+    if (!kernel_physical_pin(pool, &lease, 1)) {
+        (void)kernel_physical_release(pool, &lease);
+        return 0;
+    }
+
+    uint64_t saved_if = ks_irq_save();
+    int ok = 1;
+    for (BOOT_U32 k = 0; k < add_pts && ok; ++k) {
+        HEAP_GROW_PT_REQ pt_req = {lease.Base + (BOOT_U64)k * 512ULL * 4096ULL};
+        BOOT_U64 pt_phys = auth->Tables.Base + (BOOT_U64)(2U + cur_pts + k) * 4096ULL;
+        ok = x86_apic_borrow(owner->Window, pt_phys, 0, 1, grow_pt_write_private, &pt_req);
+    }
+    if (ok) {
+        // Intel SDM Vol. 3A §4.10.2.3: previously not-present PDEs are not cached in TLB.
+        HEAP_GROW_PD_REQ pd_req = {1U + cur_pts, add_pts, auth->Tables.Base};
+        ok = x86_apic_borrow(owner->Window, auth->Tables.Base + 4096ULL, 0, 1, grow_pd_link_private, &pd_req);
+    }
+    _mm_mfence();
+    ks_irq_restore(saved_if);
+
+    if (!ok) {
+        (void)kernel_physical_pin(pool, &lease, 0);
+        (void)kernel_physical_release(pool, &lease);
+        return 0;
+    }
+
+    auth->ExtraData[auth->ExtraCount] = lease;
+    ++auth->ExtraCount;
+    auth->TotalDataPages += add_pages;
+    *added_pages_out = add_pages;
+    return 1;
+}
+
+// ====== x86_heap_virt_to_phys ======
+
+int x86_heap_virt_to_phys(uintptr_t virt, uint64_t *phys_out)
+{
+    const X86_HEAP_AUTH *auth = x86_heap_owner();
+    if (!auth || !phys_out || virt < X86_HEAP_VIRTUAL)
+        return 0;
+    BOOT_U64 byte_off = (BOOT_U64)(virt - X86_HEAP_VIRTUAL);
+    if (byte_off >= (BOOT_U64)auth->TotalDataPages * 4096ULL)
+        return 0;
+    BOOT_U64 page_idx = byte_off / 4096ULL;
+    BOOT_U64 in_page = byte_off & 4095ULL;
+    if (page_idx < auth->Data.Pages) {
+        *phys_out = auth->Data.Base + page_idx * 4096ULL + in_page;
+        return 1;
+    }
+    BOOT_U64 off = page_idx - auth->Data.Pages;
+    for (BOOT_U32 i = 0; i < auth->ExtraCount && i < X86_HEAP_MAX_EXTRA; ++i) {
+        if (off < auth->ExtraData[i].Pages) {
+            *phys_out = auth->ExtraData[i].Base + off * 4096ULL + in_page;
+            return 1;
+        }
+        off -= auth->ExtraData[i].Pages;
+    }
+    return 0;
+}
+
 // ====== x86_heap_kernel_start ======
 
 int x86_heap_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *window,
@@ -289,7 +430,8 @@ int x86_heap_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *w
 {
     if (started || !kernel_section("heap kernel") ||
         !x86_heap_bind(context, window, lapic, inventory, x86_paging_inventory_capture_lapic, &binding) ||
-        !kernel_heap_init(&heap, (void *)X86_HEAP_VIRTUAL, (uint32_t)binding.Authority.Data.Pages)
+        !kernel_heap_init(&heap, (void *)X86_HEAP_VIRTUAL, (uint32_t)binding.Authority.Data.Pages) ||
+        !kernel_heap_set_grow(&heap, x86_heap_grow_private, &binding)
     )
     return 0;
 
