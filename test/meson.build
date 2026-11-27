@@ -525,3 +525,13 @@ net_protocol_rust = executable(
     override_options: ['b_sanitize=none'],
 )
 test('net_protocol_rust', net_protocol_rust)
+
+# ====== NVMe storage driver ======
+
+nvme_host = executable(
+    'nvme_host',
+    repo / 'kernel/drivers/storage/nvme/nvme.c',
+    'kernel/drivers/storage/nvme_test.c',
+    include_directories: inc,
+)
+test('nvme_host', nvme_host, env: runtime)
