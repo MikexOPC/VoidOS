@@ -180,9 +180,13 @@ int  kernel_vfs_write_file(
     int truncate,
     uint32_t *bytes_written_out
 );
+typedef uint32_t (*KERNEL_VFS_CLOCK_FN)(void);
+
+void kernel_vfs_set_clock(KERNEL_VFS_CLOCK_FN fn);
 int  kernel_vfs_unlink(KERNEL_VFS *vfs, const char *path);
 int  kernel_vfs_mkdir(KERNEL_VFS *vfs, const char *path);
 int  kernel_vfs_rmdir(KERNEL_VFS *vfs, const char *path);
+int  kernel_vfs_rename(KERNEL_VFS *vfs, const char *old_path, const char *new_path);
 int  kernel_vfs_sync(KERNEL_VFS *vfs);
 
 int  kernel_vfs_open(

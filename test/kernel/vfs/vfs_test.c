@@ -24,6 +24,13 @@ static RAM_DISK fat32_disk;
 static KERNEL_BLOCK_DEVICE fat32_dev;
 static KERNEL_BLOCK_CACHE fat32_cache;
 
+static uint32_t test_clock_value = 0x5D7B9123U;
+
+static uint32_t test_vfs_clock_fn(void)
+{
+    return test_clock_value;
+}
+
 #define CHECK(cond) do { \
     if (!(cond)) { \
         printf("FAIL vfs_fat_host line %d\n", __LINE__); \
@@ -362,6 +369,78 @@ int main(void)
         CHECK(kernel_vfs_sync(&vfs) == KERNEL_STORAGE_OK);
     }
 
+    // Test rename (8.3 -> LFN, cross-directory move, directory rename + ".." update, cycle rejection) & RTC timestamps
+    {
+        kernel_vfs_set_clock(test_vfs_clock_fn);
+        test_clock_value = 0x5D7B9123U; // 2026-11-27 18:09:06
+
+        CHECK(kernel_vfs_mkdir(&vfs, "/SRC") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_mkdir(&vfs, "/DST") == KERNEL_STORAGE_OK);
+
+        const char *payload = "rename_payload_verify";
+        uint32_t mv_written = 0U;
+        CHECK(kernel_vfs_write_file(&vfs, "/SRC/OLD.TXT", 0U, payload, (uint32_t)strlen(payload), 1, 1, &mv_written) == KERNEL_STORAGE_OK);
+        CHECK(mv_written == (uint32_t)strlen(payload));
+        CHECK(kernel_vfs_sync(&vfs) == KERNEL_STORAGE_OK);
+
+        // Verify FAT32 timestamps written into /SRC directory entry on disk
+        KERNEL_VFS_STAT src_st;
+        CHECK(kernel_vfs_stat(&vfs, "/SRC", &src_st) == KERNEL_STORAGE_OK);
+        uint64_t src_lba = kfat_cluster_to_lba(&vfs.Mounts[0].Geometry, src_st.FirstCluster);
+        CHECK(src_lba != 0ULL);
+        const uint8_t *raw_dir = fat32_disk.Storage + src_lba * 512U;
+        // Slot 0 = ".", Slot 1 = "..", Slot 2 = "OLD     TXT"
+        const uint8_t *old_ent = raw_dir + 2U * 32U;
+        uint16_t crt_time = (uint16_t)old_ent[14] | ((uint16_t)old_ent[15] << 8);
+        uint16_t crt_date = (uint16_t)old_ent[16] | ((uint16_t)old_ent[17] << 8);
+        uint16_t wrt_time = (uint16_t)old_ent[22] | ((uint16_t)old_ent[23] << 8);
+        uint16_t wrt_date = (uint16_t)old_ent[24] | ((uint16_t)old_ent[25] << 8);
+        CHECK(crt_date == 0x5D7BU && crt_time == 0x9123U);
+        CHECK(wrt_date == 0x5D7BU && wrt_time == 0x9123U);
+
+        // Rename 8.3 -> LFN in same directory
+        CHECK(kernel_vfs_rename(&vfs, "/SRC/OLD.TXT", "/SRC/Documento Rinominato.txt") == KERNEL_STORAGE_OK);
+        KERNEL_VFS_STAT mv_st;
+        CHECK(kernel_vfs_stat(&vfs, "/SRC/OLD.TXT", &mv_st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+        CHECK(kernel_vfs_stat(&vfs, "/SRC/Documento Rinominato.txt", &mv_st) == KERNEL_STORAGE_OK);
+        CHECK(mv_st.Size == (uint32_t)strlen(payload));
+
+        // Cross-directory move of LFN file
+        CHECK(kernel_vfs_rename(&vfs, "/SRC/Documento Rinominato.txt", "/DST/Spostato Finale.txt") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_stat(&vfs, "/SRC/Documento Rinominato.txt", &mv_st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+        char mv_rbuf[64] = {0};
+        uint32_t rbytes = 0U;
+        CHECK(kernel_vfs_read_file(&vfs, "/DST/Spostato Finale.txt", 0U, mv_rbuf, sizeof(mv_rbuf) - 1U, &rbytes) == KERNEL_STORAGE_OK);
+        CHECK(rbytes == (uint32_t)strlen(payload) && strcmp(mv_rbuf, payload) == 0);
+
+        // Directory rename + move into another directory (must update ".." cluster)
+        CHECK(kernel_vfs_rename(&vfs, "/DST", "/SRC/Destinazione") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_stat(&vfs, "/DST", &mv_st) == KERNEL_STORAGE_ERR_NOT_FOUND);
+        CHECK(kernel_vfs_read_file(&vfs, "/SRC/Destinazione/Spostato Finale.txt", 0U, mv_rbuf, sizeof(mv_rbuf) - 1U, &rbytes) == KERNEL_STORAGE_OK);
+        CHECK(rbytes == (uint32_t)strlen(payload) && strcmp(mv_rbuf, payload) == 0);
+        CHECK(kernel_vfs_sync(&vfs) == KERNEL_STORAGE_OK);
+
+        KERNEL_VFS_STAT moved_dir_st;
+        CHECK(kernel_vfs_stat(&vfs, "/SRC/Destinazione", &moved_dir_st) == KERNEL_STORAGE_OK);
+        uint64_t moved_lba = kfat_cluster_to_lba(&vfs.Mounts[0].Geometry, moved_dir_st.FirstCluster);
+        const uint8_t *dotdot = fat32_disk.Storage + moved_lba * 512U + 32U;
+        uint32_t dotdot_cluster = ((uint32_t)dotdot[26] | ((uint32_t)dotdot[27] << 8))
+            | (((uint32_t)dotdot[20] | ((uint32_t)dotdot[21] << 8)) << 16);
+        CHECK(dotdot_cluster == src_st.FirstCluster);
+
+        // Negative cases: cycle, root, missing source, existing destination
+        CHECK(kernel_vfs_rename(&vfs, "/SRC", "/SRC/Destinazione/ciclo") == KERNEL_STORAGE_ERR_ARG);
+        CHECK(kernel_vfs_rename(&vfs, "/", "/ROOT2") == KERNEL_STORAGE_ERR_ARG);
+        CHECK(kernel_vfs_rename(&vfs, "/NON_ESISTE", "/ALTRO") == KERNEL_STORAGE_ERR_NOT_FOUND);
+        CHECK(kernel_vfs_rename(&vfs, "/SRC/Destinazione", "/SRC") == KERNEL_STORAGE_ERR_ARG);
+
+        // Cleanup
+        CHECK(kernel_vfs_unlink(&vfs, "/SRC/Destinazione/Spostato Finale.txt") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_rmdir(&vfs, "/SRC/Destinazione") == KERNEL_STORAGE_OK);
+        CHECK(kernel_vfs_rmdir(&vfs, "/SRC") == KERNEL_STORAGE_OK);
+        kernel_vfs_set_clock(NULL);
+        CHECK(kernel_vfs_sync(&vfs) == KERNEL_STORAGE_OK);
+    }
     kernel_vfs_destroy(&vfs);
     kernel_block_cache_destroy(&fat32_cache);
 

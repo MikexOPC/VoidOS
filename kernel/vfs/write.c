@@ -1,5 +1,51 @@
 #include "internal.h"
 
+// Microsoft FAT32 File System Specification v1.03, §6:
+// Default fallback timestamp: 2026-11-27 00:00:00 -> date=(46<<9)|(11<<5)|27=0x5D7B, time=0.
+#define FAT_DEFAULT_TIMESTAMP 0x5D7B0000U
+
+static KERNEL_VFS_CLOCK_FN vfs_clock_fn;
+
+// ====== kernel_vfs_set_clock ======
+
+void kernel_vfs_set_clock(KERNEL_VFS_CLOCK_FN fn)
+{
+    vfs_clock_fn = fn;
+}
+
+// ====== fat_timestamp_now_private ======
+
+static uint32_t fat_timestamp_now_private(void)
+{
+    if (vfs_clock_fn) {
+        uint32_t ts = vfs_clock_fn();
+        if (ts)
+            return ts;
+    }
+    return FAT_DEFAULT_TIMESTAMP;
+}
+
+// ====== stamp_fat_entry_private ======
+
+static void stamp_fat_entry_private(uint8_t entry[32], int set_create)
+{
+    uint32_t ts = fat_timestamp_now_private();
+    uint16_t fat_date = (uint16_t)((ts >> 16) & 0xFFFFU);
+    uint16_t fat_time = (uint16_t)(ts & 0xFFFFU);
+    if (set_create) {
+        entry[14] = (uint8_t)(fat_time & 0xFFU);
+        entry[15] = (uint8_t)((fat_time >> 8) & 0xFFU);
+        entry[16] = (uint8_t)(fat_date & 0xFFU);
+        entry[17] = (uint8_t)((fat_date >> 8) & 0xFFU);
+    }
+    entry[18] = (uint8_t)(fat_date & 0xFFU);
+    entry[19] = (uint8_t)((fat_date >> 8) & 0xFFU);
+    entry[22] = (uint8_t)(fat_time & 0xFFU);
+    entry[23] = (uint8_t)((fat_time >> 8) & 0xFFU);
+    entry[24] = (uint8_t)(fat_date & 0xFFU);
+    entry[25] = (uint8_t)((fat_date >> 8) & 0xFFU);
+}
+
 // ====== zero_bytes ======
 
 static void zero_bytes(void *pointer, size_t bytes)
@@ -201,6 +247,7 @@ static int update_dir_entry_private(
     entry[29] = (uint8_t)((file_size >> 8) & 0xFFU);
     entry[30] = (uint8_t)((file_size >> 16) & 0xFFU);
     entry[31] = (uint8_t)((file_size >> 24) & 0xFFU);
+    stamp_fat_entry_private(entry, 0);
 
     return kernel_block_cache_write_sectors(mount->Cache, lba, 1U, sector);
 }
@@ -358,6 +405,7 @@ static int create_dir_entry_private(
     uint32_t name_len,
     uint8_t attr,
     uint32_t first_cluster,
+    uint32_t file_size,
     FAT_NODE_LOC *out_node
 )
 {
@@ -491,6 +539,11 @@ static int create_dir_entry_private(
     short_entry[21] = (uint8_t)((hi >> 8) & 0xFFU);
     short_entry[26] = (uint8_t)(lo & 0xFFU);
     short_entry[27] = (uint8_t)((lo >> 8) & 0xFFU);
+    short_entry[28] = (uint8_t)(file_size & 0xFFU);
+    short_entry[29] = (uint8_t)((file_size >> 8) & 0xFFU);
+    short_entry[30] = (uint8_t)((file_size >> 16) & 0xFFU);
+    short_entry[31] = (uint8_t)((file_size >> 24) & 0xFFU);
+    stamp_fat_entry_private(short_entry, 1);
 
     int status = write_slot_private(mount, slot_lba[lfn_count], slot_off[lfn_count], short_entry);
     if (status != KERNEL_STORAGE_OK)
@@ -500,6 +553,7 @@ static int create_dir_entry_private(
     out_node->DirEntryLba = slot_lba[lfn_count];
     out_node->DirEntryByteOffset = slot_off[lfn_count];
     out_node->FirstCluster = first_cluster;
+    out_node->FileSize = file_size;
     out_node->Attr = attr;
     out_node->NameLen = name_len;
     copy_bytes(out_node->Name, name, name_len);
@@ -637,6 +691,7 @@ int kernel_vfs_write_file(
             file_name,
             name_len,
             FAT_ATTR_ARCHIVE,
+            0U,
             0U,
             &node
         );
@@ -913,6 +968,7 @@ int kernel_vfs_mkdir(KERNEL_VFS *vfs, const char *path)
     sector[21] = (uint8_t)((new_cluster >> 24) & 0xFFU);
     sector[26] = (uint8_t)(new_cluster & 0xFFU);
     sector[27] = (uint8_t)((new_cluster >> 8) & 0xFFU);
+    stamp_fat_entry_private(sector, 1);
 
     // ".." entry (cluster 0 when parent is root)
     uint32_t dotdot_cluster = parent_node.DirEntryLba == 0ULL ? 0U : parent_node.FirstCluster;
@@ -925,6 +981,7 @@ int kernel_vfs_mkdir(KERNEL_VFS *vfs, const char *path)
     sector[32 + 21] = (uint8_t)((dotdot_cluster >> 24) & 0xFFU);
     sector[32 + 26] = (uint8_t)(dotdot_cluster & 0xFFU);
     sector[32 + 27] = (uint8_t)((dotdot_cluster >> 8) & 0xFFU);
+    stamp_fat_entry_private(sector + 32U, 1);
 
     status = kernel_block_cache_write_sectors(mount->Cache, new_lba, 1U, sector);
     if (status != KERNEL_STORAGE_OK) {
@@ -941,6 +998,7 @@ int kernel_vfs_mkdir(KERNEL_VFS *vfs, const char *path)
         name_len,
         FAT_ATTR_DIRECTORY,
         new_cluster,
+        0U,
         &created
     );
     if (status != KERNEL_STORAGE_OK)
@@ -999,6 +1057,147 @@ int kernel_vfs_rmdir(KERNEL_VFS *vfs, const char *path)
     if (status == KERNEL_STORAGE_OK && old_first >= 2U)
         status = free_cluster_chain_private(mount, old_first);
 
+    vfs_leave_private(&access);
+    return status;
+}
+
+// ====== ascii_lower_private ======
+
+static char ascii_lower_private(char c)
+{
+    if (c >= 'A' && c <= 'Z')
+        return (char)(c + ('a' - 'A'));
+    return c;
+}
+
+// ====== path_is_same_or_child_private ======
+
+static int path_is_same_or_child_private(const char *parent, const char *candidate)
+{
+    uint32_t plen = string_len(parent, KERNEL_VFS_PATH_CAPACITY);
+    uint32_t clen = string_len(candidate, KERNEL_VFS_PATH_CAPACITY);
+    while (plen > 1U && parent[plen - 1U] == '/')
+        --plen;
+    while (clen > 1U && candidate[clen - 1U] == '/')
+        --clen;
+    if (clen < plen)
+        return 0;
+    for (uint32_t i = 0; i < plen; ++i) {
+        if (ascii_lower_private(parent[i]) != ascii_lower_private(candidate[i]))
+            return 0;
+    }
+    return clen == plen || candidate[plen] == '/';
+}
+
+// ====== kernel_vfs_rename ======
+
+int kernel_vfs_rename(KERNEL_VFS *vfs, const char *old_path, const char *new_path)
+{
+    if (!vfs || !old_path || !new_path)
+        return KERNEL_STORAGE_ERR_ARG;
+
+    VFS_ACCESS access;
+    if (!vfs_enter_private(vfs, &access))
+        return KERNEL_STORAGE_ERR_ARG;
+
+    const char *old_sub = NULL;
+    const char *new_sub = NULL;
+    const KERNEL_VFS_MOUNT *old_mount = vfs_resolve_mount_private(vfs, old_path, &old_sub);
+    const KERNEL_VFS_MOUNT *new_mount = vfs_resolve_mount_private(vfs, new_path, &new_sub);
+    if (!old_mount || !new_mount) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_NOT_FOUND;
+    }
+    if (old_mount != new_mount) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+    if (old_mount->Cache->Device->ReadOnly) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_READ_ONLY;
+    }
+
+    FAT_NODE_LOC old_node;
+    int status = vfs_resolve_path_private(old_mount, old_sub, &old_node);
+    if (status != KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return status;
+    }
+    if (!old_node.DirEntryLba) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    FAT_NODE_LOC existing;
+    status = vfs_resolve_path_private(new_mount, new_sub, &existing);
+    if (status == KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+    if (status != KERNEL_STORAGE_ERR_NOT_FOUND) {
+        vfs_leave_private(&access);
+        return status;
+    }
+
+    char new_parent_path[KERNEL_VFS_PATH_CAPACITY];
+    char new_name[KERNEL_VFS_NAME_CAPACITY];
+    uint32_t new_name_len = 0U;
+    if (!split_parent_and_name_private(new_sub, new_parent_path, new_name, &new_name_len)) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    if ((old_node.Attr & FAT_ATTR_DIRECTORY) &&
+        path_is_same_or_child_private(old_sub, new_parent_path)) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    FAT_NODE_LOC new_parent;
+    status = vfs_resolve_path_private(new_mount, new_parent_path, &new_parent);
+    if (status != KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return status;
+    }
+    if (!(new_parent.Attr & FAT_ATTR_DIRECTORY)) {
+        vfs_leave_private(&access);
+        return KERNEL_STORAGE_ERR_ARG;
+    }
+
+    FAT_NODE_LOC created;
+    status = create_dir_entry_private(
+        new_mount,
+        new_parent.FirstCluster,
+        new_name,
+        new_name_len,
+        (uint8_t)(old_node.Attr & 0xFFU),
+        old_node.FirstCluster,
+        old_node.FileSize,
+        &created
+    );
+    if (status != KERNEL_STORAGE_OK) {
+        vfs_leave_private(&access);
+        return status;
+    }
+
+    if ((old_node.Attr & FAT_ATTR_DIRECTORY) && old_node.FirstCluster >= 2U) {
+        uint64_t dir_lba = kfat_cluster_to_lba(&old_mount->Geometry, old_node.FirstCluster);
+        if (dir_lba) {
+            uint8_t sector[512];
+            if (kernel_block_cache_read_sectors(old_mount->Cache, dir_lba, 1U, sector) == KERNEL_STORAGE_OK &&
+                sector[32] == '.' && sector[33] == '.') {
+                uint32_t dotdot_cluster = new_parent.DirEntryLba == 0ULL ? 0U : new_parent.FirstCluster;
+                sector[32 + 20] = (uint8_t)((dotdot_cluster >> 16) & 0xFFU);
+                sector[32 + 21] = (uint8_t)((dotdot_cluster >> 24) & 0xFFU);
+                sector[32 + 26] = (uint8_t)(dotdot_cluster & 0xFFU);
+                sector[32 + 27] = (uint8_t)((dotdot_cluster >> 8) & 0xFFU);
+                stamp_fat_entry_private(sector + 32U, 0);
+                (void)kernel_block_cache_write_sectors(old_mount->Cache, dir_lba, 1U, sector);
+            }
+        }
+    }
+
+    status = delete_dir_entry_private(old_mount, &old_node);
     vfs_leave_private(&access);
     return status;
 }
