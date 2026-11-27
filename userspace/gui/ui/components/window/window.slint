@@ -164,20 +164,23 @@ export component VoidWindow inherits Rectangle {
                             mouse-cursor: pointer;
                             clicked => { root.close-clicked(); }
                         }
-                        // Pixel-centered geometric X (22x22 box, 1.5px stroke matching - and [])
-                        Rectangle { x: 7.25px;  y: 7.25px;  width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 8.25px;  y: 8.25px;  width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 9.25px;  y: 9.25px;  width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 10.25px; y: 10.25px; width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 11.25px; y: 11.25px; width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 12.25px; y: 12.25px; width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 13.25px; y: 13.25px; width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 13.25px; y: 7.25px;  width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 12.25px; y: 8.25px;  width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 11.25px; y: 9.25px;  width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 9.25px;  y: 11.25px; width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 8.25px;  y: 12.25px; width: 1.5px; height: 1.5px; background: #22283A; }
-                        Rectangle { x: 7.25px;  y: 13.25px; width: 1.5px; height: 1.5px; background: #22283A; }
+                        // Pixel-centered geometric X (1px diagonal step -> ~1.41px visual stroke matching - and [])
+                        Rectangle { x: 7px;  y: 7px;  width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 8px;  y: 8px;  width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 9px;  y: 9px;  width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 10px; y: 10px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 11px; y: 11px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 12px; y: 12px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 13px; y: 13px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 14px; y: 14px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 14px; y: 7px;  width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 13px; y: 8px;  width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 12px; y: 9px;  width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 11px; y: 10px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 10px; y: 11px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 9px;  y: 12px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 8px;  y: 13px; width: 1px; height: 1px; background: #22283A; }
+                        Rectangle { x: 7px;  y: 14px; width: 1px; height: 1px; background: #22283A; }
                     }
                 }
             }

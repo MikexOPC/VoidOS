@@ -29,7 +29,7 @@ export component DefaultDock inherits Rectangle {
     border-radius: 16px;
     background: transparent;
 
-    // Clipped native blurred wallpaper backdrop + iOS Liquid Glass tint
+    // Clipped native blurred wallpaper backdrop (clean blur, no Liquid Glass sheen)
     Rectangle {
         width: 100%;
         height: 100%;
@@ -43,43 +43,22 @@ export component DefaultDock inherits Rectangle {
             image-fit: fill;
         }
 
-        // Translucent crystal iOS Liquid Glass gradient overlay (more transparent)
+        // Subtle uniform neutral frost veil so icons and text stay crisp on any wallpaper
         Rectangle {
             width: 100%;
             height: 100%;
-            background: @linear-gradient(180deg, #FFFFFF5A 0%, #EEF3FC2E 48%, #DCE5F824 100%);
-            border-radius: 16px;
-            border-width: 1px;
-            border-color: #FFFFFFB8;
+            background: #F4F7FC38;
         }
+    }
 
-        // Top Liquid Glass specular highlight rim
-        Rectangle {
-            x: 12px;
-            y: 1px;
-            width: parent.width - 24px;
-            height: 1px;
-            background: #FFFFFFF2;
-        }
-
-        // Bottom subtle glass reflection rim
-        Rectangle {
-            x: 18px;
-            y: parent.height - 2px;
-            width: parent.width - 36px;
-            height: 1px;
-            background: #FFFFFF52;
-        }
-
-        // Subtle outer rim for contrast on any wallpaper
-        Rectangle {
-            width: 100%;
-            height: 100%;
-            border-radius: 16px;
-            border-width: 1px;
-            border-color: #4F64903A;
-            background: transparent;
-        }
+    // Crisp single outer border around the dock
+    Rectangle {
+        width: 100%;
+        height: 100%;
+        border-radius: 16px;
+        border-width: 1px;
+        border-color: #FFFFFF7A;
+        background: transparent;
     }
 
     dock-content := HorizontalLayout {
@@ -189,17 +168,14 @@ export component DefaultDock inherits Rectangle {
                         height: term-ta.has-hover ? 42px : 38px;
                         border-radius: term-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
-                        border-color: term-ta.has-hover ? #FFFFFFF4 : (root.terminal-open ? #FFFFFFC0 : #FFFFFF7A);
-                        background: term-ta.has-hover
-                            ? @linear-gradient(180deg, #FFFFFFD8 0%, #EBF1FCB8 100%)
-                            : (root.terminal-open
-                                ? @linear-gradient(180deg, #FFFFFF8C 0%, #E6EEFB64 100%)
-                                : @linear-gradient(180deg, #FFFFFF58 0%, #E6EEFB38 100%));
-                        animate x { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate y { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate width { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate height { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate border-color { duration: 160ms; easing: ease-out; }
+                        border-color: term-ta.has-hover ? #FFFFFFCC : (root.terminal-open ? #FFFFFF88 : #FFFFFF48);
+                        background: term-ta.has-hover ? #FFFFFF96 : (root.terminal-open ? #FFFFFF58 : #FFFFFF34);
+                        animate x { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate background { duration: 150ms; easing: ease-out; }
+                        animate border-color { duration: 150ms; easing: ease-out; }
 
                         term-ta := TouchArea {
                             mouse-cursor: pointer;
@@ -211,8 +187,8 @@ export component DefaultDock inherits Rectangle {
                             y: (parent.height - self.height) / 2;
                             width: term-ta.has-hover ? 26px : 24px;
                             height: term-ta.has-hover ? 26px : 24px;
-                            animate width { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                            animate height { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                             source: @image-url("../../../../application/terminal/icon/terminal.png");
                         }
 
@@ -223,7 +199,7 @@ export component DefaultDock inherits Rectangle {
                             height: 2px;
                             border-radius: 1px;
                             background: #1E2436;
-                            animate width { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         }
                     }
                 }
@@ -241,17 +217,14 @@ export component DefaultDock inherits Rectangle {
                         height: sysmon-ta.has-hover ? 42px : 38px;
                         border-radius: sysmon-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
-                        border-color: sysmon-ta.has-hover ? #FFFFFFF4 : (root.sysmon-open ? #FFFFFFC0 : #FFFFFF7A);
-                        background: sysmon-ta.has-hover
-                            ? @linear-gradient(180deg, #FFFFFFD8 0%, #EBF1FCB8 100%)
-                            : (root.sysmon-open
-                                ? @linear-gradient(180deg, #FFFFFF8C 0%, #E6EEFB64 100%)
-                                : @linear-gradient(180deg, #FFFFFF58 0%, #E6EEFB38 100%));
-                        animate x { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate y { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate width { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate height { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate border-color { duration: 160ms; easing: ease-out; }
+                        border-color: sysmon-ta.has-hover ? #FFFFFFCC : (root.sysmon-open ? #FFFFFF88 : #FFFFFF48);
+                        background: sysmon-ta.has-hover ? #FFFFFF96 : (root.sysmon-open ? #FFFFFF58 : #FFFFFF34);
+                        animate x { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate background { duration: 150ms; easing: ease-out; }
+                        animate border-color { duration: 150ms; easing: ease-out; }
 
                         sysmon-ta := TouchArea {
                             mouse-cursor: pointer;
@@ -277,7 +250,7 @@ export component DefaultDock inherits Rectangle {
                             height: 2px;
                             border-radius: 1px;
                             background: #1E2436;
-                            animate width { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         }
                     }
                 }
@@ -295,17 +268,14 @@ export component DefaultDock inherits Rectangle {
                         height: files-ta.has-hover ? 42px : 38px;
                         border-radius: files-ta.has-hover ? 13px : 11px;
                         border-width: 1px;
-                        border-color: files-ta.has-hover ? #FFFFFFF4 : (root.files-open ? #FFFFFFC0 : #FFFFFF7A);
-                        background: files-ta.has-hover
-                            ? @linear-gradient(180deg, #FFFFFFD8 0%, #EBF1FCB8 100%)
-                            : (root.files-open
-                                ? @linear-gradient(180deg, #FFFFFF8C 0%, #E6EEFB64 100%)
-                                : @linear-gradient(180deg, #FFFFFF58 0%, #E6EEFB38 100%));
-                        animate x { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate y { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate width { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate height { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
-                        animate border-color { duration: 160ms; easing: ease-out; }
+                        border-color: files-ta.has-hover ? #FFFFFFCC : (root.files-open ? #FFFFFF88 : #FFFFFF48);
+                        background: files-ta.has-hover ? #FFFFFF96 : (root.files-open ? #FFFFFF58 : #FFFFFF34);
+                        animate x { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate y { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate height { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                        animate background { duration: 150ms; easing: ease-out; }
+                        animate border-color { duration: 150ms; easing: ease-out; }
 
                         files-ta := TouchArea {
                             mouse-cursor: pointer;
@@ -331,38 +301,29 @@ export component DefaultDock inherits Rectangle {
                             height: 2px;
                             border-radius: 1px;
                             background: #1E2436;
-                            animate width { duration: 200ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
+                            animate width { duration: 190ms; easing: cubic-bezier(0.22, 1.0, 0.36, 1.0); }
                         }
                     }
                 }
             }
 
-            // Full-height Liquid Glass vertical divider before Utility Zone
-            Rectangle {
-                width: 1px;
-                height: 36px;
-                y: 1px;
-                background: @linear-gradient(180deg, #FFFFFF18 0%, #FFFFFFB8 50%, #FFFFFF18 100%);
-            }
-
-            // 4) utility-content: real RTC clock & date from kernel (crystal Liquid Glass pill)
+            // 4) utility-content: Italian RTC clock & date (enlarged crisp typography, no divider bar)
             utility-content := HorizontalLayout {
-                width: 118px;
+                width: 132px;
                 height: 100%;
-                spacing: 6px;
+                spacing: 0px;
                 alignment: end;
 
-                // Real RTC Clock & Date box (bridged from kernel CMOS RTC)
+                // Real RTC Clock & Date box (Europe/Rome CET/CEST)
                 Rectangle {
-                    width: 114px;
-                    height: 34px;
-                    y: 2px;
+                    width: 128px;
+                    height: 38px;
+                    y: 0px;
                     border-radius: 11px;
                     border-width: 1px;
-                    border-color: clock-ta.has-hover ? #FFFFFFEE : #FFFFFF80;
-                    background: clock-ta.has-hover
-                        ? @linear-gradient(180deg, #FFFFFFAC 0%, #EBF1FB88 100%)
-                        : @linear-gradient(180deg, #FFFFFF62 0%, #E6EEFB40 100%);
+                    border-color: clock-ta.has-hover ? #FFFFFFBB : #FFFFFF55;
+                    background: clock-ta.has-hover ? #FFFFFF84 : #FFFFFF44;
+                    animate background { duration: 150ms; easing: ease-out; }
                     animate border-color { duration: 150ms; easing: ease-out; }
 
                     clock-ta := TouchArea {
@@ -374,16 +335,18 @@ export component DefaultDock inherits Rectangle {
                         spacing: 1px;
                         Text {
                             text: root.clock-text;
-                            color: #182032;
-                            font-size: 11px;
+                            color: #0F172A;
+                            font-size: 13px;
                             font-weight: 700;
+                            letter-spacing: 0.4px;
                             horizontal-alignment: center;
                         }
                         Text {
                             text: root.sub-clock-text;
-                            color: #46506A;
-                            font-size: 9px;
+                            color: #1E293B;
+                            font-size: 10px;
                             font-weight: 600;
+                            letter-spacing: 0.2px;
                             horizontal-alignment: center;
                         }
                     }

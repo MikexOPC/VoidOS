@@ -131,6 +131,58 @@ fn present_rects(
     libvoid::display_present(&wire[..rects.len()]) == 0
 }
 
+// ====== is_leap_year / days_in_month / day_of_week / utc_to_rome ======
+
+fn is_leap_year(y: u32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+}
+
+fn days_in_month(y: u32, m: u32) -> u32 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => if is_leap_year(y) { 29 } else { 28 },
+        _ => 30,
+    }
+}
+
+// Sakamoto's algorithm: 0 = Sunday, 1 = Monday, ..., 6 = Saturday.
+fn day_of_week(y: u32, m: u32, d: u32) -> u32 {
+    const T: [u32; 12] = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    let yy = if m < 3 { y - 1 } else { y };
+    (yy + yy / 4 - yy / 100 + yy / 400 + T[(m - 1) as usize] + d) % 7
+}
+
+fn last_sunday_of(y: u32, m: u32) -> u32 {
+    let dim = days_in_month(y, m);
+    let dow = day_of_week(y, m, dim);
+    dim - dow
+}
+
+// Europe/Rome timezone: CET (UTC+1) in winter, CEST (UTC+2) from last Sunday of March 01:00 UTC
+// to last Sunday of October 01:00 UTC.
+fn utc_to_rome(mut year: u32, mut month: u32, mut day: u32, mut hour: u32) -> (u32, u32, u32, u32) {
+    let dst_start_day = last_sunday_of(year, 3);
+    let dst_end_day = last_sunday_of(year, 10);
+    let after_start = month > 3 || (month == 3 && (day > dst_start_day || (day == dst_start_day && hour >= 1)));
+    let before_end = month < 10 || (month == 10 && (day < dst_end_day || (day == dst_end_day && hour < 1)));
+    let offset = if after_start && before_end { 2 } else { 1 };
+    hour += offset;
+    if hour >= 24 {
+        hour -= 24;
+        day += 1;
+        if day > days_in_month(year, month) {
+            day = 1;
+            month += 1;
+            if month > 12 {
+                month = 1;
+                year += 1;
+            }
+        }
+    }
+    (year, month, day, hour)
+}
+
 // ====== format_rtc_labels ======
 
 fn format_rtc_labels(dinfo: &libvoid::DisplayInfo, width: u32, height: u32) -> (slint::SharedString, slint::SharedString) {
@@ -138,7 +190,8 @@ fn format_rtc_labels(dinfo: &libvoid::DisplayInfo, width: u32, height: u32) -> (
         "Gen", "Feb", "Mar", "Apr", "Mag", "Giu",
         "Lug", "Ago", "Set", "Ott", "Nov", "Dic",
     ];
-    if let Some((year, month, day, hour, minute, _second)) = dinfo.rtc_date_time() {
+    if let Some((y_utc, m_utc, d_utc, h_utc, minute, _second)) = dinfo.rtc_date_time() {
+        let (year, month, day, hour) = utc_to_rome(y_utc as u32, m_utc as u32, d_utc as u32, h_utc as u32);
         let mon = MONTHS.get((month as usize).saturating_sub(1)).copied().unwrap_or("---");
         (
             format!("{:02}:{:02}", hour, minute).into(),
@@ -247,15 +300,7 @@ fn build_dock_blur(
 
     let mut buf = SharedPixelBuffer::<Rgb8Pixel>::new(dw, dh);
     for (dst, src) in buf.make_mut_slice().iter_mut().zip(cur.iter()) {
-        // iOS Liquid Glass vibrancy boost (+22% saturation, +5% lift) so wallpaper colors glow through the glass.
-        let r = src[0] as i32;
-        let g = src[1] as i32;
-        let b = src[2] as i32;
-        let lum = (r * 77 + g * 150 + b * 29) >> 8;
-        let vr = (lum + ((r - lum) * 122) / 100 + 8).clamp(0, 255) as u8;
-        let vg = (lum + ((g - lum) * 122) / 100 + 8).clamp(0, 255) as u8;
-        let vb = (lum + ((b - lum) * 122) / 100 + 8).clamp(0, 255) as u8;
-        *dst = Rgb8Pixel::new(vr, vg, vb);
+        *dst = Rgb8Pixel::new(src[0], src[1], src[2]);
     }
     Image::from_rgb8(buf)
 }
@@ -566,7 +611,7 @@ extern "C" fn program_main(mode: u64) -> ! {
                     applications.begin_close(kind, dinfo.uptime_ms)
                 }
                 3 => {
-                    applications.minimize(kind);
+                    applications.begin_minimize(kind, dinfo.uptime_ms);
                     if kind == 0 {
                         ui.set_terminal_open(false);
                     } else if kind == 1 {

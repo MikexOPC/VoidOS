@@ -123,6 +123,23 @@ impl Applications {
         true
     }
 
+    // ====== begin_minimize ======
+
+    pub fn begin_minimize(&mut self, kind: i32, now_ms: u64) {
+        if self.verify {
+            self.minimize(kind);
+            return;
+        }
+        if let Some(app) = self.windows.iter_mut().find(|a| a.kind == kind) {
+            if app.commits == 0 || app.minimized {
+                app.minimized = true;
+                return;
+            }
+            app.anim_mode = 3;
+            app.anim_start_ms = now_ms;
+        }
+    }
+
     // ====== has_active_animations ======
 
     pub fn has_active_animations(&self) -> bool {
@@ -134,6 +151,7 @@ impl Applications {
     pub fn tick_animations(&mut self, ui: &VoidDesktop, now_ms: u64) -> bool {
         const OPEN_MS: f32 = 210.0;
         const CLOSE_MS: f32 = 185.0;
+        const MIN_MS: f32 = 170.0;
         let mut to_close = Vec::new();
         let mut any_updated = false;
         for app in &mut self.windows {
@@ -141,6 +159,7 @@ impl Applications {
                 continue;
             }
             let elapsed = now_ms.saturating_sub(app.anim_start_ms) as f32;
+            let mut finished_min = false;
             if app.anim_mode == 1 {
                 let t = (elapsed / OPEN_MS).clamp(0.0, 1.0);
                 // Smooth ease-out cubic
@@ -151,8 +170,9 @@ impl Applications {
                     app.anim_mode = 0;
                 }
                 any_updated = true;
-            } else if app.anim_mode == 2 {
-                let t = (elapsed / CLOSE_MS).clamp(0.0, 1.0);
+            } else if app.anim_mode == 2 || app.anim_mode == 3 {
+                let dur = if app.anim_mode == 2 { CLOSE_MS } else { MIN_MS };
+                let t = (elapsed / dur).clamp(0.0, 1.0);
                 // Smooth ease-in-out cubic shrink-out towards dock
                 let eased = if t < 0.5 {
                     4.0 * t * t * t
@@ -162,9 +182,15 @@ impl Applications {
                 };
                 app.scale_progress = (1.0 - eased).max(0.0);
                 if t >= 1.0 {
+                    let was_close = app.anim_mode == 2;
                     app.scale_progress = 0.0;
                     app.anim_mode = 0;
-                    to_close.push(app.kind);
+                    if was_close {
+                        to_close.push(app.kind);
+                    } else {
+                        app.minimized = true;
+                        finished_min = true;
+                    }
                 }
                 any_updated = true;
             }
@@ -174,6 +200,9 @@ impl Applications {
                 if let Some(mut surface) = self.model.row_data(row) {
                     if surface.kind == kind {
                         surface.scale_progress = progress;
+                        if finished_min {
+                            surface.minimized = true;
+                        }
                         self.model.set_row_data(row, surface);
                         break;
                     }
@@ -200,7 +229,7 @@ impl Applications {
             .filter(|app| app.kind == self.focused)
             .chain(self.windows.iter().rev().filter(|app| app.kind != self.focused));
         for app in ordered {
-            if app.minimized || app.commits == 0 {
+            if app.minimized || app.commits == 0 || app.anim_mode == 2 || app.anim_mode == 3 {
                 continue;
             }
             let total_w = app.width as f32 + 2.0;
