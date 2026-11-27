@@ -73,7 +73,7 @@ jobs:
 
       - name: Build QEMU runner and boot ordinary image
         run: |
-          meson setup kernel/build/meson-qemu-runner scripts/tooling/qemu-runner --vsenv
+          meson setup kernel/build/meson-qemu-runner test/tooling/qemu-runner --vsenv
           meson compile -C kernel/build/meson-qemu-runner
           meson test -C kernel/build/meson-qemu-runner --print-errorlogs
           ./kernel/build/meson-qemu-runner/qemu_runner.exe --image kernel/build/meson-kernel/kernel.elf --ordinary-shell --smp 4 --boots 1

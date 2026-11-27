@@ -141,7 +141,7 @@ impl TerminalBuffer {
             return true;
         }
         if cmd == b"help" {
-            self.write_bytes(b"SHELL_HELP: help | print | fl [dir] | rp <file> | write <file> <txt> | rm | mkdir | rmdir | sync | clip <txt> | paste | net | ping | http | clear | exit\n");
+            self.write_bytes(b"SHELL_HELP: help | print | fl [dir] | rp <file> | write <file> <txt> | rm | mkdir | rmdir | mv <old> <new> | sync | clip <txt> | paste | net | ping | http | clear | exit\n");
             return true;
         }
         if cmd == b"net" {
@@ -340,6 +340,19 @@ impl TerminalBuffer {
                 self.write_bytes(b"SHELL_RMDIR_OK\n");
             } else {
                 self.write_bytes(b"rmdir: failed\n");
+            }
+            return true;
+        }
+        if cmd == b"mv" {
+            let (old_p, new_p) = libvoid::split_first_token(rest);
+            if old_p.is_empty() || new_p.is_empty() {
+                self.write_bytes(b"mv: usage: mv <old> <new>\n");
+                return true;
+            }
+            if libvoid::rename(old_p, new_p) == 0 {
+                self.write_bytes(b"SHELL_MV_OK\n");
+            } else {
+                self.write_bytes(b"mv: failed\n");
             }
             return true;
         }

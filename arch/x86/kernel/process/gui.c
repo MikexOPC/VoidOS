@@ -909,6 +909,67 @@ static void init_cmos_rtc_base_private(void)
     x86_gui_rtc_last_sec = x86_gui_rtc_base_uptime_sec;
 }
 
+// ====== x86_rtc_fat_timestamp ======
+
+// Microsoft FAT32 File System Specification v1.03, §6 & MC146818 CMOS RTC (ports 0x70/0x71).
+BOOT_U32 x86_rtc_fat_timestamp(void)
+{
+    uint8_t sec = 0, min = 0, hour = 0, day = 0, month = 0, year = 0, reg_b = 0;
+    uint8_t sec2 = 0, min2 = 0, hour2 = 0, day2 = 0, month2 = 0, year2 = 0;
+    int consistent = 0;
+    for (uint32_t attempt = 0; attempt < 8U; ++attempt) {
+        uint32_t spin = 0;
+        while ((read_cmos_reg_private(0x0AU) & 0x80U) != 0U && spin < 10000U)
+            ++spin;
+        if (spin >= 10000U)
+            return 0U;
+        sec = read_cmos_reg_private(0x00U);
+        min = read_cmos_reg_private(0x02U);
+        hour = read_cmos_reg_private(0x04U);
+        day = read_cmos_reg_private(0x07U);
+        month = read_cmos_reg_private(0x08U);
+        year = read_cmos_reg_private(0x09U);
+        reg_b = read_cmos_reg_private(0x0BU);
+        sec2 = read_cmos_reg_private(0x00U);
+        min2 = read_cmos_reg_private(0x02U);
+        hour2 = read_cmos_reg_private(0x04U);
+        day2 = read_cmos_reg_private(0x07U);
+        month2 = read_cmos_reg_private(0x08U);
+        year2 = read_cmos_reg_private(0x09U);
+        if (sec == sec2 && min == min2 && hour == hour2 &&
+            day == day2 && month == month2 && year == year2) {
+            consistent = 1;
+            break;
+        }
+    }
+    if (!consistent)
+        return 0U;
+    uint8_t pm = (uint8_t)(hour & 0x80U);
+    hour = (uint8_t)(hour & 0x7FU);
+    if ((reg_b & 0x04U) == 0U) {
+        sec = bcd_to_bin_private(sec);
+        min = bcd_to_bin_private(min);
+        hour = bcd_to_bin_private(hour);
+        day = bcd_to_bin_private(day);
+        month = bcd_to_bin_private(month);
+        year = bcd_to_bin_private(year);
+    }
+    if ((reg_b & 0x02U) == 0U) {
+        if (pm)
+            hour = (uint8_t)((hour % 12U) + 12U);
+        else if (hour == 12U)
+            hour = 0U;
+    }
+    uint32_t full_year = 2000U + (uint32_t)year;
+    if (full_year < 1980U || full_year > 2107U ||
+        month < 1U || month > 12U || day < 1U || day > 31U ||
+        hour > 23U || min > 59U || sec > 59U)
+        return 0U;
+    uint32_t fat_date = ((full_year - 1980U) << 9) | ((uint32_t)month << 5) | (uint32_t)day;
+    uint32_t fat_time = ((uint32_t)hour << 11) | ((uint32_t)min << 5) | ((uint32_t)sec >> 1);
+    return (fat_date << 16) | fat_time;
+}
+
 // ====== x86_gui_sys_display_info ======
 
 BOOT_U64 x86_gui_sys_display_info(X86_PROCESS_CPU *cpu, BOOT_U64 info_ptr)

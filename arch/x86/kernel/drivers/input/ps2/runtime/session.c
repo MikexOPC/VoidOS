@@ -226,6 +226,7 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
     if (!x86_virtio_net_start(env, directory, clock)) {
         kernel_log(3, "VIRTIO_NET_START_FAILED"); return 0;
     }
+    kernel_vfs_set_clock(x86_rtc_fat_timestamp);
     if (!kernel_vfs_system_start(kernel_heap(), x86_virtio_blk_cache(), x86_ahci_cache(), x86_xhci_msc_cache(), x86_nvme_cache())) {
         kernel_log(3, "VFS_START_FAILED"); return 0;
     }
@@ -276,11 +277,12 @@ int x86_ps2_session_run(const X86_WATCHDOG_ENV *env, const X86_PM_CLOCK *clock,
         }
         kernel_log(0, "KERNEL_VFS_EXEC_OK");
 
-        // Verify interactive Ring 3 shell (/bin/sh.elf) via console_read, VFS (including mkdir/rmdir/LFN), and SYS_SPAWN/SYS_WAIT_PID.
+        // Verify interactive Ring 3 shell (/bin/sh.elf) via console_read, VFS (including mkdir/mv/rmdir/LFN), and SYS_SPAWN/SYS_WAIT_PID.
         static const unsigned char sh_script[] =
             "print sh_ok\nfl /\nwrite shnote ok\nrp /SHNOTE\nrm /SHNOTE\n"
             "mkdir /lfn_test_dir\nwrite /lfn_test_dir/long_note_file.txt lfn_ok\n"
-            "rp /lfn_test_dir/long_note_file.txt\nrm /lfn_test_dir/long_note_file.txt\n"
+            "mv /lfn_test_dir/long_note_file.txt /lfn_test_dir/renamed_note.txt\n"
+            "rp /lfn_test_dir/renamed_note.txt\nrm /lfn_test_dir/renamed_note.txt\n"
             "rmdir /lfn_test_dir\nsync\nrun /bin/init.elf\nexit\n";
         BOOT_U64 sh_free_before = 0;
         uint64_t sh_pid = 0;

@@ -290,6 +290,32 @@ static BOOT_U64 sys_rmdir(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path
     return kernel_vfs_rmdir(vfs, path) == KERNEL_STORAGE_OK ? 0ULL : RESULT_UNKNOWN;
 }
 
+// ====== sys_rename ======
+
+typedef struct {
+    BOOT_U64  OldPtr;
+    BOOT_U64  OldLen;
+    BOOT_U64  NewPtr;
+    BOOT_U64  NewLen;
+} X86_RENAME_ARGS;
+
+static BOOT_U64 sys_rename(X86_PROCESS_CPU *cpu, BOOT_U64 args_ptr)
+{
+    KERNEL_VFS *vfs = kernel_vfs();
+    if (!vfs || !cpu->Pid) return RESULT_UNKNOWN;
+    X86_RENAME_ARGS args = {0};
+    if (x86_process_copy_range(args_ptr, sizeof(args)) != 1 ||
+        copy_checked(cpu, &args, (const void *)args_ptr, args_ptr, sizeof(args), 0))
+        return RESULT_RANGE;
+    char old_path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    char new_path[KERNEL_VFS_PATH_CAPACITY] = {0};
+    BOOT_U64 err = copy_user_path_private(cpu, args.OldPtr, args.OldLen, old_path);
+    if (err) return err;
+    err = copy_user_path_private(cpu, args.NewPtr, args.NewLen, new_path);
+    if (err) return err;
+    return kernel_vfs_rename(vfs, old_path, new_path) == KERNEL_STORAGE_OK ? 0ULL : RESULT_UNKNOWN;
+}
+
 // ====== sys_spawn ======
 
 static BOOT_U64 sys_spawn(X86_PROCESS_CPU *cpu, BOOT_U64 path_ptr, BOOT_U64 path_len, BOOT_U64 args_ptr)
@@ -809,6 +835,9 @@ int x86_process_syscall_dispatch(BOOT_U64 *frame)
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else if (number == SYS_RMDIR) {
         GPR(frame, GPR_RAX) = sys_rmdir(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI));
+        outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
+    } else if (number == SYS_RENAME) {
+        GPR(frame, GPR_RAX) = sys_rename(cpu, GPR(frame, GPR_RDI));
         outcome = process_budget_expired(IRET(frame, 0)) ? 2 : 1;
     } else {
         GPR(frame, GPR_RAX) = number == SYS_WRITE ? sys_write(cpu, GPR(frame, GPR_RDI), GPR(frame, GPR_RSI)) : RESULT_UNKNOWN;

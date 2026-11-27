@@ -46,6 +46,7 @@ pub const SYS_NET_TCP_RECV: u64 = 35;
 pub const SYS_NET_TCP_CLOSE: u64 = 36;
 pub const SYS_MKDIR: u64 = 37;
 pub const SYS_RMDIR: u64 = 38;
+pub const SYS_RENAME: u64 = 39;
 
 // ====== flags and errors ======
 
@@ -711,6 +712,27 @@ pub fn mkdir(path: &[u8]) -> i64 {
 #[inline]
 pub fn rmdir(path: &[u8]) -> i64 {
     raw_syscall(SYS_RMDIR, path.as_ptr() as u64, path.len() as u64, 0)
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct RenameArgs {
+    pub old_ptr: u64,
+    pub old_len: u64,
+    pub new_ptr: u64,
+    pub new_len: u64,
+}
+
+#[cfg(not(test))]
+#[inline]
+pub fn rename(old_path: &[u8], new_path: &[u8]) -> i64 {
+    let args = RenameArgs {
+        old_ptr: old_path.as_ptr() as u64,
+        old_len: old_path.len() as u64,
+        new_ptr: new_path.as_ptr() as u64,
+        new_len: new_path.len() as u64,
+    };
+    raw_syscall(SYS_RENAME, (&args as *const RenameArgs) as u64, 0, 0)
 }
 
 // ====== format_ipv4 ======
