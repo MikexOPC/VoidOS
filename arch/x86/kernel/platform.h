@@ -10,4 +10,6 @@ __declspec(noreturn) void x86_kernel_stop(BOOT_U64 marker);
 __declspec(noreturn) void x86_kernel_idle(void);
 int x86_serial_initialize(void);
 int x86_serial_character(char value);
+int x86_serial_present(void);
+void x86_serial_flush_gop_early(void);
 #endif

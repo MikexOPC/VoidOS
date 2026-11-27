@@ -6,7 +6,7 @@ __declspec(noreturn) void kernel_main(const BOOT_START_INFO *info, BOOT_U64 root
 
 __declspec(noreturn) void kernel_entry(const BOOT_START_INFO *info)
 {
-    if (!x86_serial_initialize()) x86_kernel_stop(0x4b53455249410001ULL);
+    (void)x86_serial_initialize();
     if (!kernel_section("ingresso kernel x86") || !kernel_log(1, "KERNEL_ENTERED"))
         kernel_panic("SERIAL_UNAVAILABLE");
     if ((BOOT_U64)info != X86_BOOT_INFO_VIRTUAL) kernel_panic("BOOT_POINTER_INVALID");

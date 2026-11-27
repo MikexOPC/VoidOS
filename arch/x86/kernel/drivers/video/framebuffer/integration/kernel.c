@@ -139,7 +139,7 @@ int x86_fb_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *win
 #endif
     BOOT_U64 live_budget;
     if (!kernel_physical_budget_read(window->Pool, &live_budget)) return 0;
-    return kernel_text("KERNEL_FB_ROOT: ") && kernel_number(mapping.Authority.Root) &&
+    int logged = kernel_text("KERNEL_FB_ROOT: ") && kernel_number(mapping.Authority.Root) &&
         kernel_text("\nKERNEL_FB_OWNER: ") && kernel_number((BOOT_U64)&mapping) &&
         kernel_text("\nKERNEL_FB_VIRTUAL: ") && kernel_number(X86_FB_VIRTUAL) &&
         kernel_text("\nKERNEL_FB_TABLE0: ") && kernel_number(mapping.Authority.Tables[0].Base) &&
@@ -150,6 +150,9 @@ int x86_fb_kernel_start(const KERNEL_BOOT_CONTEXT *context, X86_PAGE_WINDOW *win
         kernel_text("\nKERNEL_FB_BUDGET_LIVE: ") && kernel_number(live_budget) &&
         kernel_text("\nKERNEL_FB_MAPPING_INVENTORY: ") && kernel_number((BOOT_U64)inventory) &&
         kernel_text("\n") && kernel_log(0, "KERNEL_FB_MAPPING_LIVE");
+    if (logged && !x86_serial_present())
+        x86_serial_flush_gop_early();
+    return logged;
 }
 
 // ====== x86_fb_kernel_group ======
