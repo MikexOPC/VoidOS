@@ -357,6 +357,8 @@ ordinary	c	kernel/drivers/usb/xhci/hub.c	xhci-hub.obj
 ordinary	c	arch/x86/kernel/drivers/usb/xhci/native.c	xhci-native.obj
 ordinary	c	kernel/drivers/net/virtio_net/virtio_net.c	virtio-net.obj
 ordinary	c	arch/x86/kernel/drivers/net/virtio_net/native.c	virtio-net-native.obj
+ordinary	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	net_protocol	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	{repo}/kernel/net/rust/protocol.rs	-o	{out}/net-protocol.obj
+ordinary	c	kernel/net/net.c	kernel-net.obj
 user	rustc.exe	--edition=2024	--crate-type=lib	--crate-name	vfs_fat	--emit=obj	--target	x86_64-pc-windows-msvc	-D	warnings	-C	panic=abort	-C	opt-level=2	{repo}/kernel/vfs/rust/fat.rs	-o	{out}/vfs-fat.obj
 user	c	kernel/vfs/vfs.c	kernel-vfs.obj
 user	c	kernel/vfs/write.c	kernel-vfs-write.obj

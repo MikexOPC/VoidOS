@@ -8,6 +8,7 @@
 #include "arch/x86/mm/paging/heap/authority.h"
 #include "arch/x86/mm/window/access.h"
 #include "kernel/diagnostics/log.h"
+#include "kernel/net/net.h"
 #include "kernel/sync/internal.h"
 
 typedef struct {
@@ -532,10 +533,23 @@ int x86_virtio_net_start(
         | ((uint64_t)vnet_rt.Driver.NetDevice.Mac[4] << 8)
         | (uint64_t)vnet_rt.Driver.NetDevice.Mac[5];
 
-    return kernel_text("KERNEL_VIRTIO_NET_BDF: ") && kernel_number(bdf) &&
+    if (!(kernel_text("KERNEL_VIRTIO_NET_BDF: ") && kernel_number(bdf) &&
         kernel_text("\nKERNEL_VIRTIO_NET_IRQ: ") && kernel_number(vnet_rt.IrqEnabled ? X86_VIRTIO_NET_VECTOR : 0ULL) &&
         kernel_text("\nKERNEL_VIRTIO_NET_MAC: ") && kernel_number(mac_packed) &&
-        kernel_text("\n") && kernel_log(0, "KERNEL_VIRTIO_NET_READY");
+        kernel_text("\n") && kernel_log(0, "KERNEL_VIRTIO_NET_READY")))
+        return 0;
+
+    KERNEL_CLOCK net_clock = {transport_clock_private, &vnet_rt, clock->Mask, KERNEL_PM_TIMER_HZ};
+    (void)kernel_net_start(&vnet_rt.Driver.NetDevice, &net_clock);
+    KERNEL_NET_INFO ninfo;
+    if (kernel_net_info(&ninfo) && ninfo.Configured && ninfo.Gateway) {
+        uint32_t rtt_ms = 0U;
+        if (kernel_net_ping(ninfo.Gateway, 1500U, &rtt_ms) == KERNEL_NET_OK) {
+            (void)(kernel_text("KERNEL_NET_PING_GW_MS: ") && kernel_number(rtt_ms) &&
+                kernel_text("\n") && kernel_log(0, "KERNEL_NET_PING_GW_OK"));
+        }
+    }
+    return 1;
 }
 
 // ====== x86_virtio_net_device ======

@@ -517,3 +517,11 @@ virtio_net_host = executable(
     include_directories: inc,
 )
 test('virtio_net_host', virtio_net_host, env: runtime)
+
+net_protocol_rust = executable(
+    'net_protocol_rust',
+    repo / 'kernel/net/rust/protocol.rs',
+    rust_args: ['--test', '-C', 'overflow-checks=yes'],
+    override_options: ['b_sanitize=none'],
+)
+test('net_protocol_rust', net_protocol_rust)
