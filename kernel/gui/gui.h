@@ -125,6 +125,7 @@ int kernel_gui_set_display_geometry(KERNEL_GUI *gui,
     uint32_t width, uint32_t height, uint32_t stride, uint32_t format);
 int kernel_gui_display_info(KERNEL_GUI *gui, uint64_t uptime_ms, KERNEL_DISPLAY_INFO *out);
 int kernel_gui_display_acquire(KERNEL_GUI *gui, uint64_t pid, uint64_t backbuffer_shm_id);
+int kernel_gui_display_rebind(KERNEL_GUI *gui, uint64_t pid, uint64_t backbuffer_shm_id, uint64_t *old_shm_out);
 int kernel_gui_display_release(KERNEL_GUI *gui, uint64_t pid, uint64_t *backbuffer_shm_out);
 uint64_t kernel_gui_display_owner(KERNEL_GUI *gui);
 int kernel_gui_take_console_restore(KERNEL_GUI *gui);

@@ -917,6 +917,8 @@ BOOT_U64 x86_gui_sys_display_info(X86_PROCESS_CPU *cpu, BOOT_U64 info_ptr)
         return RESULT_UNKNOWN;
     if (x86_process_copy_range(info_ptr, sizeof(KERNEL_DISPLAY_INFO)) != 1)
         return RESULT_RANGE;
+    if (cpu == &x86_process_cpus[0] && x86_gui_display.Ops && x86_gui_display.Ops->Poll)
+        (void)x86_gui_display.Ops->Poll(x86_gui_display.Self);
     if (!refresh_display_geometry_private(NULL, NULL, NULL, NULL, NULL))
         return RESULT_UNKNOWN;
     if (cpu == &x86_process_cpus[0]) {
@@ -966,6 +968,8 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
     if (!kernel_process_get_budget(cpu->Table, cpu->Pid, &budget) ||
         !(budget.Flags & KERNEL_BUDGET_FLAG_DISPLAY))
         return RESULT_QUOTA;
+    if (x86_gui_display.Ops && x86_gui_display.Ops->Poll)
+        (void)x86_gui_display.Ops->Poll(x86_gui_display.Self);
     BOOT_U32 w = 0, h = 0, stride = 0, fmt = 0;
     if (!refresh_display_geometry_private(NULL, &w, &h, &stride, &fmt))
         return RESULT_UNKNOWN;
@@ -976,6 +980,7 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
     X86_PROCESS_SLOT *slot = x86_process_slot_for_pid(cpu->Pid);
     if (!slot)
         return RESULT_UNKNOWN;
+    int already_owner = (kernel_gui_display_owner(&x86_gui_state) == cpu->Pid);
     KERNEL_PHYSICAL_LEASE lease = {0};
     uint64_t saved_if = ks_irq_save();
     int alloc_ok = x86_page_window_allocate_lease(process_rt.Window, pages, &lease);
@@ -1005,6 +1010,13 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
         free_shm_backing_private(shm_id);
         return RESULT_QUOTA;
     }
+    if (already_owner) {
+        uint64_t cur_if = ks_irq_save();
+        x86_gui_cursor.Drawn = 0U;
+        x86_gui_cursor.SurfaceReady = 0U;
+        ks_irq_restore(cur_if);
+        gui_kunmap_backbuffer_private();
+    }
     if (!gui_kmap_backbuffer_private(lease.Base, pages)) {
         int freed = 0;
         (void)kernel_gui_shm_unmap_record(&x86_gui_state, cpu->Pid, shm_id, NULL, NULL, NULL, &freed);
@@ -1013,7 +1025,11 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
             free_shm_backing_private(shm_id);
         return RESULT_QUOTA;
     }
-    if (!kernel_gui_display_acquire(&x86_gui_state, cpu->Pid, shm_id)) {
+    uint64_t old_shm_id = 0;
+    int bound = already_owner
+        ? kernel_gui_display_rebind(&x86_gui_state, cpu->Pid, shm_id, &old_shm_id)
+        : kernel_gui_display_acquire(&x86_gui_state, cpu->Pid, shm_id);
+    if (!bound) {
         gui_kunmap_backbuffer_private();
         int freed = 0;
         (void)kernel_gui_shm_unmap_record(&x86_gui_state, cpu->Pid, shm_id, NULL, NULL, NULL, &freed);
@@ -1022,22 +1038,40 @@ BOOT_U64 x86_gui_sys_display_acquire(X86_PROCESS_CPU *cpu, BOOT_U64 out_ptr)
             free_shm_backing_private(shm_id);
         return RESULT_QUOTA;
     }
-    x86_gui_present_calls = 0ULL;
-    x86_gui_present_ticks_total = 0ULL;
-    x86_gui_present_ticks_max = 0U;
-    x86_gui_cursor.X = (int32_t)(w / 2U);
-    x86_gui_cursor.Y = (int32_t)(h / 2U);
-    x86_gui_cursor.Drawn = 0U;
-    x86_gui_cursor.RequestedX = x86_gui_cursor.X;
-    x86_gui_cursor.RequestedY = x86_gui_cursor.Y;
-    x86_gui_cursor.Presenting = 0U;
-    x86_gui_cursor.SurfaceReady = 0U;
-    x86_gui_cursor.BackbufferShmId = shm_id;
-    x86_gui_cursor.Moves = 0ULL;
-    x86_gui_cursor.IrqOffTicksTotal = 0ULL;
-    x86_gui_cursor.IrqOffTicksMax = 0U;
-    x86_gui_cursor.Retries = 0U;
-    x86_gui_cursor.Active = 1U;
+    if (already_owner && old_shm_id) {
+        int freed = 0;
+        if (kernel_gui_shm_unmap_record(&x86_gui_state, cpu->Pid, old_shm_id, NULL, NULL, NULL, &freed)) {
+            unmap_pt_from_slot_private(cpu->Pid, slot, old_shm_id);
+            if (freed)
+                free_shm_backing_private(old_shm_id);
+        }
+        uint64_t cur_if = ks_irq_save();
+        if (x86_gui_cursor.X >= (int32_t)w)
+            x86_gui_cursor.X = (int32_t)w - 1;
+        if (x86_gui_cursor.Y >= (int32_t)h)
+            x86_gui_cursor.Y = (int32_t)h - 1;
+        x86_gui_cursor.RequestedX = x86_gui_cursor.X;
+        x86_gui_cursor.RequestedY = x86_gui_cursor.Y;
+        x86_gui_cursor.BackbufferShmId = shm_id;
+        ks_irq_restore(cur_if);
+    } else {
+        x86_gui_present_calls = 0ULL;
+        x86_gui_present_ticks_total = 0ULL;
+        x86_gui_present_ticks_max = 0U;
+        x86_gui_cursor.X = (int32_t)(w / 2U);
+        x86_gui_cursor.Y = (int32_t)(h / 2U);
+        x86_gui_cursor.Drawn = 0U;
+        x86_gui_cursor.RequestedX = x86_gui_cursor.X;
+        x86_gui_cursor.RequestedY = x86_gui_cursor.Y;
+        x86_gui_cursor.Presenting = 0U;
+        x86_gui_cursor.SurfaceReady = 0U;
+        x86_gui_cursor.BackbufferShmId = shm_id;
+        x86_gui_cursor.Moves = 0ULL;
+        x86_gui_cursor.IrqOffTicksTotal = 0ULL;
+        x86_gui_cursor.IrqOffTicksMax = 0U;
+        x86_gui_cursor.Retries = 0U;
+        x86_gui_cursor.Active = 1U;
+    }
     X86_DISPLAY_ACQUIRE_OUT out = {0};
     out.ShmId = shm_id;
     out.UserVirt = user_virt;

@@ -116,6 +116,15 @@ static void test_display_ownership_and_rects(KERNEL_HEAP *heap)
     assert(!kernel_gui_display_acquire(&gui, 11, disp_shm));
     assert(kernel_gui_display_owner(&gui) == 10);
 
+    // Owner can rebind backbuffer SHM on live display resize; non-owner and non-display SHM rejected.
+    uint64_t disp_shm2 = 0, old_shm = 0;
+    assert(kernel_gui_shm_create(&gui, 10, 1024, 0x300000ULL, 1, &disp_shm2));
+    assert(!kernel_gui_display_rebind(&gui, 11, disp_shm2, &old_shm));
+    assert(!kernel_gui_display_rebind(&gui, 10, regular_shm, &old_shm));
+    assert(kernel_gui_display_rebind(&gui, 10, disp_shm2, &old_shm));
+    assert(old_shm == disp_shm);
+    disp_shm = disp_shm2;
+
     // Non-owner cannot release.
     uint64_t released_shm = 0;
     assert(!kernel_gui_display_release(&gui, 11, &released_shm));

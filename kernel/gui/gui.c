@@ -307,6 +307,31 @@ int kernel_gui_display_acquire(KERNEL_GUI *gui, uint64_t pid, uint64_t backbuffe
     return ok;
 }
 
+// ====== kernel_gui_display_rebind ======
+
+int kernel_gui_display_rebind(KERNEL_GUI *gui, uint64_t pid, uint64_t backbuffer_shm_id, uint64_t *old_shm_out)
+{
+    if (!pid || !backbuffer_shm_id)
+        return 0;
+    GUI_ACCESS access;
+    if (!enter_private(gui, &access))
+        return 0;
+    int ok = 0;
+    uint64_t prev_shm = 0;
+    if (gui->DisplayReady && gui->DisplayOwnerPid == pid) {
+        KERNEL_SHM_OBJECT *obj = find_shm_object_private(gui, backbuffer_shm_id);
+        if (obj && obj->IsDisplay && backbuffer_shm_id != gui->BackbufferShmId) {
+            prev_shm = gui->BackbufferShmId;
+            gui->BackbufferShmId = backbuffer_shm_id;
+            ok = 1;
+        }
+    }
+    leave_private(&access);
+    if (ok && old_shm_out)
+        *old_shm_out = prev_shm;
+    return ok;
+}
+
 // ====== kernel_gui_display_release ======
 
 int kernel_gui_display_release(KERNEL_GUI *gui, uint64_t pid, uint64_t *backbuffer_shm_out)
