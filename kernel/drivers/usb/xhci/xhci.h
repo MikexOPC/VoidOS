@@ -109,6 +109,8 @@
 #define XHCI_MAX_HID_DEVICES    16U
 // Up to 4 simultaneous USB Mass Storage drives (/usb, /usb1, /usb2, /usb3) within KERNEL_VFS_MAX_MOUNTS (8).
 #define XHCI_MAX_MSC_DEVICES    4U
+// xHCI 1.2 §6.2.2: Route String is 20 bits (5 tiers x 4 bits, ports 1..15).
+#define XHCI_MAX_HUB_TIERS      5U
 
 #define XHCI_KEY_MOD_SHIFT      (1U << 0)
 #define XHCI_KEY_MOD_CTRL       (1U << 1)
@@ -301,11 +303,15 @@ int kernel_xhci_ep0_transfer(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id,
     uint64_t setup_pkt, uint64_t data_phys, uint32_t data_len, int dir_in);
 int kernel_xhci_wait_transfer(KERNEL_XHCI_DEVICE *dev, uint32_t slot_id, uint32_t ep_dci, uint32_t timeout_ms);
 int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx,
-    uint32_t speed, uint32_t route_string, uint32_t tt_info, int allow_hub);
+    uint32_t speed, uint32_t route_string, uint32_t tt_info, uint32_t tier_depth);
 
-// USB 2.0 External Hub (Class 0x09)
+// USB 2.0 External Hub (Class 0x09, multi-tier cascade 1..5)
+uint32_t kernel_xhci_hub_child_route(uint32_t parent_route, uint32_t tier_depth, uint32_t port);
+uint32_t kernel_xhci_hub_child_tt(uint32_t parent_tt, uint32_t hub_slot_id,
+    uint32_t hub_speed, uint32_t dev_speed, uint32_t port);
 int kernel_xhci_hub_probe(KERNEL_XHCI_DEVICE *dev, uint32_t hub_slot_id, uint32_t root_port_idx,
-    uint32_t hub_speed, uint8_t config_val, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
+    uint32_t hub_speed, uint32_t hub_route_string, uint32_t hub_tt_info, uint32_t tier_depth,
+    uint8_t config_val, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
     uint32_t *ep0_enq, uint8_t *ep0_cycle);
 
 // USB Mass Storage (Bulk-Only Transport + SCSI)

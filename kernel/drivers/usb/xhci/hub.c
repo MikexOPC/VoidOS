@@ -68,13 +68,37 @@ static int hub_get_port_status_private(KERNEL_XHCI_DEVICE *dev, uint32_t hub_slo
     return 1;
 }
 
+// ====== kernel_xhci_hub_child_route ======
+
+// xHCI 1.2 §6.2.2: Route String encodes 4-bit downstream port numbers (1..15) per tier (0..4).
+uint32_t kernel_xhci_hub_child_route(uint32_t parent_route, uint32_t tier_depth, uint32_t port)
+{
+    if (tier_depth >= XHCI_MAX_HUB_TIERS || port == 0U || port > 15U)
+        return 0U;
+    return (parent_route & 0xFFFFFU) | ((port & 0xFU) << (tier_depth * 4U));
+}
+
+// ====== kernel_xhci_hub_child_tt ======
+
+// xHCI 1.2 §6.2.2.2: preserve ancestor HS TT if already behind one, else set this HS hub as TT for LS/FS.
+uint32_t kernel_xhci_hub_child_tt(uint32_t parent_tt, uint32_t hub_slot_id,
+    uint32_t hub_speed, uint32_t dev_speed, uint32_t port)
+{
+    if (parent_tt != 0U)
+        return parent_tt;
+    if (hub_speed == 3U && (dev_speed == 1U || dev_speed == 2U))
+        return (hub_slot_id & 0xFFU) | ((port & 0xFFU) << 8);
+    return 0U;
+}
+
 // ====== kernel_xhci_hub_probe ======
 
 int kernel_xhci_hub_probe(KERNEL_XHCI_DEVICE *dev, uint32_t hub_slot_id, uint32_t root_port_idx,
-    uint32_t hub_speed, uint8_t config_val, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
+    uint32_t hub_speed, uint32_t hub_route_string, uint32_t hub_tt_info, uint32_t tier_depth,
+    uint8_t config_val, XHCI_TRB *ep0_ring, uint64_t ep0_phys,
     uint32_t *ep0_enq, uint8_t *ep0_cycle)
 {
-    if (!dev || !hub_slot_id || !ep0_ring)
+    if (!dev || !hub_slot_id || !ep0_ring || tier_depth >= XHCI_MAX_HUB_TIERS)
         return 0;
 
     // 1) SET_CONFIGURATION on the hub.
@@ -104,8 +128,9 @@ int kernel_xhci_hub_probe(KERNEL_XHCI_DEVICE *dev, uint32_t hub_slot_id, uint32_
     uint32_t *icc = (uint32_t *)dev->InCtx;
     icc[1] = (1U << 0);
     uint32_t *slot_ctx = (uint32_t *)(dev->InCtx + csz);
-    slot_ctx[0] = (1U << 27) | (1U << 26) | (hub_speed << 20);
+    slot_ctx[0] = (1U << 27) | (1U << 26) | (hub_speed << 20) | (hub_route_string & 0xFFFFFU);
     slot_ctx[1] = ((root_port_idx + 1U) << 16) | (num_ports << 24);
+    slot_ctx[2] = hub_tt_info;
     XHCI_TRB ev = {0};
     (void)kernel_xhci_submit_cmd(dev, dev->InCtxPhys, 0U,
         (XHCI_TRB_EVALUATE_CTX << 10) | (hub_slot_id << 24), &ev);
@@ -154,12 +179,11 @@ int kernel_xhci_hub_probe(KERNEL_XHCI_DEVICE *dev, uint32_t hub_slot_id, uint32_
         else if (status & USB_HUB_STAT_HIGH_SPEED)
             dev_speed = 3U;
 
-        // xHCI 1.2 §6.2.2.2: TT Parent Hub Slot ID + Parent Port Number for LS/FS behind HS hub.
-        uint32_t tt_info = 0U;
-        if (hub_speed == 3U && (dev_speed == 1U || dev_speed == 2U))
-            tt_info = (hub_slot_id & 0xFFU) | ((port & 0xFFU) << 8);
+        uint32_t child_route = kernel_xhci_hub_child_route(hub_route_string, tier_depth, port);
+        uint32_t child_tt = kernel_xhci_hub_child_tt(hub_tt_info, hub_slot_id, hub_speed, dev_speed, port);
 
-        if (kernel_xhci_enumerate_device(dev, root_port_idx, dev_speed, port & 0xFU, tt_info, 0))
+        if (child_route && kernel_xhci_enumerate_device(dev, root_port_idx, dev_speed,
+            child_route, child_tt, tier_depth + 1U))
             found_any = 1;
     }
 

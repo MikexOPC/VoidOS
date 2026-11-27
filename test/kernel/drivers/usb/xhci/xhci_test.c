@@ -528,6 +528,28 @@ static void test_parse_hub_descriptor(void)
     assert(cfg_val == 1U);
     assert(kernel_xhci_parse_hub_config(fake_kbd_cfg, sizeof(fake_kbd_cfg), &cfg_val) == 0);
     assert(kernel_xhci_parse_hub_config(fake_msc_cfg, sizeof(fake_msc_cfg), &cfg_val) == 0);
+
+    // Multi-tier Route String (xHCI 1.2 §6.2.2): 5 tiers x 4 bits (ports 1..15).
+    uint32_t r1 = kernel_xhci_hub_child_route(0U, 0U, 2U);
+    assert(r1 == 0x00002U);
+    uint32_t r2 = kernel_xhci_hub_child_route(r1, 1U, 5U);
+    assert(r2 == 0x00052U);
+    uint32_t r3 = kernel_xhci_hub_child_route(r2, 2U, 15U);
+    assert(r3 == 0x00F52U);
+    uint32_t r4 = kernel_xhci_hub_child_route(r3, 3U, 1U);
+    assert(r4 == 0x01F52U);
+    uint32_t r5 = kernel_xhci_hub_child_route(r4, 4U, 3U);
+    assert(r5 == 0x31F52U);
+    // Tier 5 overflow and invalid port 0/16 must be rejected.
+    assert(kernel_xhci_hub_child_route(r5, 5U, 1U) == 0U);
+    assert(kernel_xhci_hub_child_route(r1, 1U, 0U) == 0U);
+    assert(kernel_xhci_hub_child_route(r1, 1U, 16U) == 0U);
+
+    // TT propagation: HS hub -> FS child sets TT; FS hub behind HS hub inherits ancestor TT.
+    uint32_t tt_hs_to_fs = kernel_xhci_hub_child_tt(0U, 4U, 3U, 1U, 2U);
+    assert(tt_hs_to_fs == (4U | (2U << 8)));
+    assert(kernel_xhci_hub_child_tt(tt_hs_to_fs, 7U, 1U, 2U, 3U) == tt_hs_to_fs);
+    assert(kernel_xhci_hub_child_tt(0U, 4U, 3U, 3U, 2U) == 0U);
 }
 
 // ====== test_hid_report_tablet_and_rel_pointer ======

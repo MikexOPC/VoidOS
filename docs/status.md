@@ -87,10 +87,11 @@ perdite di memoria) è **chiuso** su QEMU TCG. L'ingresso interattivo è `gui`.
 - Hardware fisico non è ancora stato provato (inclusi driver NIC fisici Intel/Realtek).
 - Lo stack di rete supporta solo IPv4, client TCP (niente listen/accept né
   TLS/HTTPS) e un solo NIC `VirtIO-net`, verificato su QEMU SLIRP (`-netdev user`).
-- USB xHCI supporta un livello di hub USB 2.0 esterni (niente hub a cascata
-  multi-livello né hotplug dinamico sulle porte downstream di un hub) e fino a
-  4 dispositivi USB Mass Storage simultanei (`/usb`, `/usb1`, `/usb2`, `/usb3`,
-  settori 512 byte, LUN 0) con hotplug VFS live.
+- USB xHCI supporta hub USB 2.0 esterni in cascata fino a 5 livelli (tier 1..5,
+  Route String 20 bit + propagazione TT; hotplug dinamico sulle porte downstream
+  degli hub non ancora abilitato) e fino a 4 dispositivi USB Mass Storage
+  simultanei (`/usb`, `/usb1`, `/usb2`, `/usb3`, settori 512 byte, LUN 0) con
+  hotplug VFS live.
 - Lo scheduler usa ancora un ticket lock condiviso (rank 900). La contesa
   misurata su 4 CPU è 0,45% in boot ordinario e 0,63% (`172.650 / 27.271.834`)
   su 60 minuti di soak (30 min attivi + 30 min idle, picco 25.856 poll); la

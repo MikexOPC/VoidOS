@@ -711,7 +711,7 @@ static XHCI_HID_SLOT *alloc_hid_slot_private(KERNEL_XHCI_DEVICE *dev)
 // ====== kernel_xhci_enumerate_device ======
 
 int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx,
-    uint32_t speed, uint32_t route_string, uint32_t tt_info, int allow_hub)
+    uint32_t speed, uint32_t route_string, uint32_t tt_info, uint32_t tier_depth)
 {
     const KERNEL_XHCI_TRANSPORT *t = &dev->Transport;
     XHCI_HID_SLOT *hid = alloc_hid_slot_private(dev);
@@ -785,7 +785,7 @@ int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx
             }
         }
         uint8_t hub_cfg = 0U;
-        if (allow_hub && kernel_xhci_parse_hub_config(scratch, 255U, &hub_cfg)) {
+        if (tier_depth < XHCI_MAX_HUB_TIERS && kernel_xhci_parse_hub_config(scratch, 255U, &hub_cfg)) {
             // Detach DevCtx & Ep0Ring from temporary HID slot before probing downstream devices.
             XHCI_TRB *hub_ep0 = hid->Ep0Ring;
             uint64_t hub_ep0_phys = hid->Ep0RingPhys;
@@ -793,7 +793,8 @@ int kernel_xhci_enumerate_device(KERNEL_XHCI_DEVICE *dev, uint32_t root_port_idx
             hid->DevCtxPhys = 0ULL;
             hid->Ep0Ring = NULL;
             hid->Ep0RingPhys = 0ULL;
-            return kernel_xhci_hub_probe(dev, slot_id, root_port_idx, speed, hub_cfg,
+            return kernel_xhci_hub_probe(dev, slot_id, root_port_idx, speed,
+                route_string, tt_info, tier_depth, hub_cfg,
                 hub_ep0, hub_ep0_phys, &ep0_enq, &ep0_cycle);
         }
         disable_slot_cmd_private(dev, slot_id);
@@ -924,7 +925,7 @@ static int probe_port_private(KERNEL_XHCI_DEVICE *dev, uint32_t port_idx)
     (void)t->Write32(t->Context, portsc_off, (portsc & XHCI_PORTSC_PP) | XHCI_PORTSC_W1C_MASK);
 
     uint32_t speed = (portsc & XHCI_PORTSC_SPEED_MASK) >> XHCI_PORTSC_SPEED_SHIFT;
-    return kernel_xhci_enumerate_device(dev, port_idx, speed, 0U, 0U, 1);
+    return kernel_xhci_enumerate_device(dev, port_idx, speed, 0U, 0U, 0U);
 }
 
 // ====== handle_port_change_private ======
