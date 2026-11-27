@@ -6,6 +6,19 @@ void kernel_ps2_mouse_reset(KERNEL_PS2_MOUSE_DECODER *decoder)
 {
     if (decoder != 0) {
         decoder->State = 0;
+        decoder->PendingWheel = 0;
+        decoder->PendingOutput = 0;
+    }
+}
+
+// ====== kernel_ps2_mouse_set_wheel ======
+
+void kernel_ps2_mouse_set_wheel(KERNEL_PS2_MOUSE_DECODER *decoder, int enabled)
+{
+    if (decoder != 0) {
+        decoder->HasWheel = enabled ? 1U : 0U;
+        decoder->PendingWheel = 0;
+        decoder->PendingOutput = 0;
     }
 }
 
@@ -36,6 +49,23 @@ KERNEL_PS2_MOUSE_RESULT kernel_ps2_mouse_feed(
     event->DeltaX = 0;
     event->DeltaY = 0;
     event->Buttons = 0;
+    event->Wheel = 0;
+    if (decoder->PendingWheel != 0U) {
+        output = decoder->PendingOutput;
+        decoder->PendingWheel = 0U;
+        decoder->PendingOutput = 0U;
+        if (byte > 255U) {
+            return KERNEL_PS2_MOUSE_REJECTED;
+        }
+        if ((output & KERNEL_PS2_MOUSE_OVERFLOW) != 0U) {
+            return KERNEL_PS2_MOUSE_SATURATED;
+        }
+        event->DeltaX = kernel_ps2_mouse_signed_delta(output);
+        event->DeltaY = kernel_ps2_mouse_signed_delta(output >> 9);
+        event->Buttons = (output >> 18) & 7U;
+        event->Wheel = (int32_t)(int8_t)(byte & 0xFFU);
+        return KERNEL_PS2_MOUSE_EVENT_READY;
+    }
     transition = kernel_ps2_mouse_decode(decoder->State, byte);
     decoder->State = (uint32_t)(transition >> 32);
     output = (uint32_t)transition;
@@ -43,6 +73,11 @@ KERNEL_PS2_MOUSE_RESULT kernel_ps2_mouse_feed(
         return KERNEL_PS2_MOUSE_REJECTED;
     }
     if ((output & KERNEL_PS2_MOUSE_PENDING) != 0) {
+        return KERNEL_PS2_MOUSE_WAIT;
+    }
+    if (decoder->HasWheel != 0U) {
+        decoder->PendingOutput = output;
+        decoder->PendingWheel = 1U;
         return KERNEL_PS2_MOUSE_WAIT;
     }
     if ((output & KERNEL_PS2_MOUSE_OVERFLOW) != 0) {

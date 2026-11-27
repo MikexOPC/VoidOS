@@ -17,6 +17,8 @@ int x86_ps2_mouse_open(X86_PS2_SESSION *owner)
         (owner->Env.Capabilities->Io[mouse->Route.Io].Address == watchdog->IoAddress &&
         mouse->Route.Pin == watchdog->Pin) || !kernel_ps2_mouse_prepare(&owner->Controller) ||
         !x86_ps2_mouse_route_apply(owner,1)) return 0;
+    if (kernel_ps2_mouse_enable_wheel(&owner->Controller))
+        kernel_ps2_mouse_set_wheel(&mouse->Decoder, 1);
     mouse->Binding = kernel_scheduler_irq_bind(6,(BOOT_U64)mouse);
     return mouse->Binding && kernel_scheduler_payload_open(6,(BOOT_U64)mouse,mouse->Binding,3) &&
         x86_irq_registry_bind(x86_irq_registry(),0x42,x86_ps2_mouse_handle,x86_ps2_mouse_quiet,&mouse->Token);

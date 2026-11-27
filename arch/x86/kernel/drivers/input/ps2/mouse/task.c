@@ -146,6 +146,8 @@ void x86_ps2_mouse_task(void)
                 gui_pending = 1;
                 flush_gui_mouse_private(mouse, &gui_dx, &gui_dy, gui_buttons, &gui_pending);
                 gui_last_flushed_buttons = gui_buttons;
+                if (event.Wheel != 0)
+                    (void)kernel_gui_input_push_scroll(kernel_gui_global(), event.Wheel);
             } else {
                 gui_dx = 0;
                 gui_dy = 0;

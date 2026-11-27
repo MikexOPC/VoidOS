@@ -9,12 +9,16 @@
 
 typedef struct {
     uint32_t  State;
+    uint32_t  HasWheel;
+    uint32_t  PendingWheel;
+    uint32_t  PendingOutput;
 } KERNEL_PS2_MOUSE_DECODER;
 
 typedef struct {
     int32_t   DeltaX;
     int32_t   DeltaY;
     uint32_t  Buttons;
+    int32_t   Wheel;
 } KERNEL_PS2_MOUSE_EVENT;
 
 typedef enum {
@@ -26,6 +30,7 @@ typedef enum {
 
 uint64_t kernel_ps2_mouse_decode(uint32_t state, uint32_t byte);
 void kernel_ps2_mouse_reset(KERNEL_PS2_MOUSE_DECODER *decoder);
+void kernel_ps2_mouse_set_wheel(KERNEL_PS2_MOUSE_DECODER *decoder, int enabled);
 KERNEL_PS2_MOUSE_RESULT kernel_ps2_mouse_feed(
     KERNEL_PS2_MOUSE_DECODER *decoder, uint32_t byte,
     KERNEL_PS2_MOUSE_EVENT *event);

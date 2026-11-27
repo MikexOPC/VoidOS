@@ -80,3 +80,30 @@ failed:
     kernel_ps2_close(owner);
     return 0;
 }
+
+// ====== kernel_ps2_mouse_enable_wheel ======
+
+// Microsoft IntelliMouse PS/2 Extension: Set Sample Rate 200 -> 100 -> 80, then Get Device ID (0xF2).
+// If device replies ID 0x03, 4-byte packets [status, dx, dy, int8 wheel] are active.
+int kernel_ps2_mouse_enable_wheel(KERNEL_PS2_CONTROLLER *owner)
+{
+    uint8_t id = 0;
+    int enabled = 0;
+    if (!owner || owner->Phase != KERNEL_PS2_PREPARED || owner->Error || !owner->Auxiliary)
+        return 0;
+    if (!kernel_ps2_send(owner, 0x64, 0xa8))
+        return 0;
+    if (kernel_ps2_mouse_command(owner, 0xf3) && kernel_ps2_mouse_command(owner, 200) &&
+        kernel_ps2_mouse_command(owner, 0xf3) && kernel_ps2_mouse_command(owner, 100) &&
+        kernel_ps2_mouse_command(owner, 0xf3) && kernel_ps2_mouse_command(owner, 80) &&
+        kernel_ps2_mouse_command(owner, 0xf2) && kernel_ps2_receive_channel(owner, 1, &id) &&
+        id == 0x03U) {
+        enabled = 1;
+    }
+    owner->Error = 0;
+    (void)kernel_ps2_send(owner, 0x64, 0xa7);
+    (void)kernel_ps2_drain(owner);
+    (void)kernel_ps2_mode(owner, (uint8_t)((owner->Mode & 4U) | 0x30U));
+    owner->Phase = KERNEL_PS2_PREPARED;
+    return enabled;
+}
