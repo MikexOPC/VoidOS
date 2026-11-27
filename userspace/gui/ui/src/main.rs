@@ -358,6 +358,25 @@ fn cache_screen_wallpaper(
     Image::from_rgb8(buf)
 }
 
+// ====== match_search_app ======
+
+fn match_search_app(query: &str) -> Option<(i32, &'static str)> {
+    let q = query.trim().to_ascii_lowercase();
+    if q.is_empty() {
+        return Some((0, "Terminale | Monitor | File"));
+    }
+    if "terminale".contains(&q) || "shell".contains(&q) || "cmd".contains(&q) {
+        return Some((0, "Apri: Terminale (Invio)"));
+    }
+    if "monitor di sistema".contains(&q) || "sysmon".contains(&q) || "cpu".contains(&q) {
+        return Some((1, "Apri: Monitor di Sistema (Invio)"));
+    }
+    if "file manager".contains(&q) || "files".contains(&q) || "cartelle".contains(&q) {
+        return Some((2, "Apri: File Manager (Invio)"));
+    }
+    None
+}
+
 // ====== program_main ======
 
 #[unsafe(no_mangle)]
@@ -408,6 +427,17 @@ extern "C" fn program_main(mode: u64) -> ! {
     let quitting = Rc::new(Cell::new(false));
     let quit = quitting.clone();
     ui.on_quit_desktop(move || quit.set(true));
+    let search_active = Rc::new(Cell::new(false));
+    let search_toggle = search_active.clone();
+    let search_ui = ui.as_weak();
+    ui.on_toggle_search(move || {
+        let next = !search_toggle.get();
+        search_toggle.set(next);
+        if let Some(u) = search_ui.upgrade() {
+            u.set_search_active(next);
+        }
+    });
+    let mut search_query = alloc::string::String::new();
     let mut applications = apps::Applications::new(mode == 1);
     ui.set_surfaces(applications.model().into());
     applications.refresh(&ui);
@@ -615,6 +645,12 @@ extern "C" fn program_main(mode: u64) -> ! {
                 libvoid::exit(96);
             }
             had_work = true;
+            if ev.kind == libvoid::INPUT_SCROLL {
+                if ev.delta_y != 0 && applications.send_scroll(cx, cy, ev.delta_y) {
+                    had_work = true;
+                }
+                continue;
+            }
             if ev.kind == libvoid::INPUT_MOUSE {
                 let previous_position = (cx, cy);
                 if (ev.flags & libvoid::INPUT_FLAG_ABSOLUTE) != 0 {
@@ -634,6 +670,10 @@ extern "C" fn program_main(mode: u64) -> ! {
                     let pos = LogicalPosition::new(cx, cy);
                     if left_now {
                         if let Some(hit) = applications.hit_test(cx, cy) {
+                            if search_active.get() {
+                                search_active.set(false);
+                                ui.set_search_active(false);
+                            }
                             if applications.focused != hit.kind {
                                 applications.focused = hit.kind;
                                 applications.refresh(&ui);
@@ -738,7 +778,42 @@ extern "C" fn program_main(mode: u64) -> ! {
                     0x110003 => 10,
                     value => value,
                 };
-                if !applications.key(ev.code, scalar, ev.flags) {
+                if search_active.get() {
+                    if (ev.code & 0xffff_0000) == 0x0002_0000 || scalar == 0 {
+                        continue;
+                    }
+                    if scalar == 27 {
+                        search_active.set(false);
+                        search_query.clear();
+                        ui.set_search_active(false);
+                        ui.set_search_query("".into());
+                        ui.set_search_hint("Terminale | Monitor | File".into());
+                    } else if scalar == 8 {
+                        search_query.pop();
+                        ui.set_search_query(search_query.as_str().into());
+                        let hint = match_search_app(&search_query)
+                            .map(|(_, h)| h)
+                            .unwrap_or("Nessuna app trovata");
+                        ui.set_search_hint(hint.into());
+                    } else if scalar == 10 || scalar == 13 {
+                        if let Some((kind, _)) = match_search_app(&search_query) {
+                            requests.borrow_mut().push_back((0, kind));
+                        }
+                        search_active.set(false);
+                        search_query.clear();
+                        ui.set_search_active(false);
+                        ui.set_search_query("".into());
+                        ui.set_search_hint("Terminale | Monitor | File".into());
+                    } else if scalar >= 0x20 && scalar < 0x7F && search_query.len() < 24 {
+                        search_query.push((scalar as u8) as char);
+                        ui.set_search_query(search_query.as_str().into());
+                        let hint = match_search_app(&search_query)
+                            .map(|(_, h)| h)
+                            .unwrap_or("Nessuna app trovata");
+                        ui.set_search_hint(hint.into());
+                    }
+                    had_work = true;
+                } else if !applications.key(ev.code, scalar, ev.flags) {
                     ui.set_status("Coda tastiera piena".into());
                 }
             }

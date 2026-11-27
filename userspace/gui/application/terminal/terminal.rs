@@ -4,7 +4,10 @@
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use libui::draw::{Canvas, Rect};
-use libui::proto::{GuiMessage, MSG_INPUT_KEY, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES};
+use libui::proto::{
+    GuiMessage, MAX_TITLE_BYTES, MSG_CLIPBOARD_DATA, MSG_INPUT_KEY, MSG_INPUT_SCROLL,
+    MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES,
+};
 use libui::style::{Theme, rgb};
 
 global_asm!(
@@ -138,7 +141,7 @@ impl TerminalBuffer {
             return true;
         }
         if cmd == b"help" {
-            self.write_bytes(b"SHELL_HELP: help | print | fl [dir] | rp <file> | write <file> <txt> | rm <file> | mkdir <dir> | rmdir <dir> | sync | net | ping <host> | http <host> | clear | exit\n");
+            self.write_bytes(b"SHELL_HELP: help | print | fl [dir] | rp <file> | write <file> <txt> | rm | mkdir | rmdir | sync | clip <txt> | paste | net | ping | http | clear | exit\n");
             return true;
         }
         if cmd == b"net" {
@@ -576,6 +579,48 @@ extern "C" fn program_main(arg: u64) -> ! {
                         .encode();
                         send_message(ipc_handle, &commit);
                     }
+                } else if msg.kind == MSG_INPUT_SCROLL {
+                    let delta = msg.e as i32;
+                    if delta != 0 {
+                        term.full_dirty = true;
+                        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+                        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+                        let dirty = term.render_dirty(&mut canvas, &theme, cur_w, cur_h);
+                        if !dirty.is_empty() {
+                            let commit = GuiMessage::commit_rect(
+                                1,
+                                dirty.x.max(0) as u32,
+                                dirty.y.max(0) as u32,
+                                dirty.w as u32,
+                                dirty.h as u32,
+                            )
+                            .encode();
+                            send_message(ipc_handle, &commit);
+                        }
+                    }
+                } else if msg.kind == MSG_CLIPBOARD_DATA {
+                    let n = (msg.e as usize).min(MAX_TITLE_BYTES);
+                    for &b in &msg.title[..n] {
+                        if b >= 0x20 && b < 0x7F && term.input_len < LINE_CAP {
+                            term.input[term.input_len] = b;
+                            term.input_len += 1;
+                            term.write_bytes(&[b]);
+                        }
+                    }
+                    let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+                    let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+                    let dirty = term.render_dirty(&mut canvas, &theme, cur_w, cur_h);
+                    if !dirty.is_empty() {
+                        let commit = GuiMessage::commit_rect(
+                            1,
+                            dirty.x.max(0) as u32,
+                            dirty.y.max(0) as u32,
+                            dirty.w as u32,
+                            dirty.h as u32,
+                        )
+                        .encode();
+                        send_message(ipc_handle, &commit);
+                    }
                 } else if msg.kind == MSG_INPUT_KEY {
                     if msg.e & 0xffff_0000 == 0x0002_0000
                         || msg.f == 0
@@ -584,13 +629,37 @@ extern "C" fn program_main(arg: u64) -> ! {
                         continue;
                     }
                     let ch = (msg.f & 0xFF) as u8;
+                    if ch == 3 {
+                        // Ctrl+C: copy current input line to compositor clipboard
+                        let copy_len = term.input_len.min(MAX_TITLE_BYTES);
+                        if copy_len > 0 {
+                            let clip = GuiMessage::clipboard_set(1, &term.input[..copy_len]).encode();
+                            send_message(ipc_handle, &clip);
+                        }
+                        continue;
+                    }
+                    if ch == 22 {
+                        // Ctrl+V: request clipboard from compositor
+                        let req = GuiMessage::clipboard_get(1).encode();
+                        send_message(ipc_handle, &req);
+                        continue;
+                    }
                     if ch == b'\n' || ch == b'\r' {
                         term.newline();
                         let len = term.input_len;
                         let mut cmd_copy = [0u8; LINE_CAP];
                         cmd_copy[..len].copy_from_slice(&term.input[..len]);
                         term.input_len = 0;
-                        if !term.exec_line(&cmd_copy[..len]) {
+                        let (cmd, rest) = libvoid::split_first_token(&cmd_copy[..len]);
+                        if cmd == b"clip" {
+                            let clen = rest.len().min(MAX_TITLE_BYTES);
+                            let clip = GuiMessage::clipboard_set(1, &rest[..clen]).encode();
+                            send_message(ipc_handle, &clip);
+                            term.write_bytes(b"CLIP_OK\n");
+                        } else if cmd == b"paste" {
+                            let req = GuiMessage::clipboard_get(1).encode();
+                            send_message(ipc_handle, &req);
+                        } else if !term.exec_line(&cmd_copy[..len]) {
                             let _ = libvoid::shm_unmap(shm_id);
                             libvoid::exit(0);
                         }

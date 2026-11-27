@@ -11,6 +11,10 @@ pub const MSG_INPUT_MOUSE: u32 = 6;
 pub const MSG_FOCUS_CHANGED: u32 = 7;
 pub const MSG_DOCK_SET_MODE: u32 = 8;
 pub const MSG_RESIZE_WINDOW: u32 = 9;
+pub const MSG_CLIPBOARD_SET: u32 = 10;
+pub const MSG_CLIPBOARD_GET: u32 = 11;
+pub const MSG_CLIPBOARD_DATA: u32 = 12;
+pub const MSG_INPUT_SCROLL: u32 = 13;
 
 pub const MAX_TITLE_BYTES: usize = 48;
 pub const PROTO_WIRE_BYTES: usize = 96;
@@ -90,6 +94,34 @@ impl GuiMessage {
         msg.a = shm_id;
         msg.e = width;
         msg.f = height;
+        msg
+    }
+
+    pub fn clipboard_set(win_id: u32, data: &[u8]) -> Self {
+        let mut msg = Self::new(MSG_CLIPBOARD_SET, win_id);
+        let n = data.len().min(MAX_TITLE_BYTES);
+        msg.e = n as u32;
+        msg.title[..n].copy_from_slice(&data[..n]);
+        msg
+    }
+
+    pub fn clipboard_get(win_id: u32) -> Self {
+        Self::new(MSG_CLIPBOARD_GET, win_id)
+    }
+
+    pub fn clipboard_data(win_id: u32, data: &[u8]) -> Self {
+        let mut msg = Self::new(MSG_CLIPBOARD_DATA, win_id);
+        let n = data.len().min(MAX_TITLE_BYTES);
+        msg.e = n as u32;
+        msg.title[..n].copy_from_slice(&data[..n]);
+        msg
+    }
+
+    pub fn input_scroll(win_id: u32, x: i32, y: i32, delta_y: i32) -> Self {
+        let mut msg = Self::new(MSG_INPUT_SCROLL, win_id);
+        msg.c = x;
+        msg.d = y;
+        msg.e = delta_y as u32;
         msg
     }
 

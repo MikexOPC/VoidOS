@@ -3,7 +3,8 @@ use alloc::collections::VecDeque;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
 use libui::proto::{
-    GuiMessage, MSG_COMMIT_RECT, MSG_CREATE_WINDOW, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES,
+    GuiMessage, MAX_TITLE_BYTES, MSG_CLIPBOARD_GET, MSG_CLIPBOARD_SET, MSG_COMMIT_RECT,
+    MSG_CREATE_WINDOW, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES,
 };
 use slint::{Image, Model, Rgb8Pixel, SharedPixelBuffer, VecModel};
 
@@ -116,6 +117,8 @@ pub struct Applications {
     rr_cursor: usize,
     pub focused: i32,
     verify: bool,
+    clipboard: [u8; MAX_TITLE_BYTES],
+    clipboard_len: usize,
 }
 
 impl Applications {
@@ -128,6 +131,8 @@ impl Applications {
             rr_cursor: 0,
             focused: 0,
             verify,
+            clipboard: [0u8; MAX_TITLE_BYTES],
+            clipboard_len: 0,
         }
     }
 
@@ -135,6 +140,23 @@ impl Applications {
 
     pub fn model(&self) -> Rc<VecModel<AppSurface>> {
         self.model.clone()
+    }
+
+    // ====== send_scroll ======
+
+    pub fn send_scroll(&mut self, x: f32, y: f32, delta_y: i32) -> bool {
+        let target_kind = self.hit_test(x, y).map(|h| h.kind).unwrap_or(self.focused);
+        for app in &mut self.windows {
+            if app.kind == target_kind && !app.minimized {
+                if app.pending.len() < 4096 {
+                    app.pending.push_back(
+                        GuiMessage::input_scroll(1, x as i32, y as i32, delta_y).encode(),
+                    );
+                }
+                return true;
+            }
+        }
+        false
     }
 
     // ====== launch ======
@@ -798,6 +820,21 @@ impl Applications {
                         let result = libvoid::ipc_recv(app.child.endpoint, &mut wire);
                         if result == PROTO_WIRE_BYTES as i64 {
                             let valid = GuiMessage::decode(&wire).is_some_and(|message| {
+                                if message.kind == MSG_CLIPBOARD_SET {
+                                    let n = (message.e as usize).min(MAX_TITLE_BYTES);
+                                    self.clipboard[..n].copy_from_slice(&message.title[..n]);
+                                    self.clipboard_len = n;
+                                    return true;
+                                }
+                                if message.kind == MSG_CLIPBOARD_GET {
+                                    let reply = GuiMessage::clipboard_data(
+                                        1,
+                                        &self.clipboard[..self.clipboard_len],
+                                    )
+                                    .encode();
+                                    app.pending.push_back(reply);
+                                    return true;
+                                }
                                 if message.kind == MSG_COMMIT_RECT || message.kind == MSG_RESIZE_WINDOW {
                                     for row in 0..self.model.row_count() {
                                         if let Some(mut surface) = self.model.row_data(row) {

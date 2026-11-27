@@ -220,6 +220,8 @@ void kernel_xhci_decode_hid_mouse(const uint8_t *report, uint32_t len,
     if (!report || len < 3U || !on_mouse)
         return;
     uint32_t buttons = (uint32_t)(report[0] & 0x07U);
+    if (len >= 4U && report[3] != 0U)
+        buttons |= ((uint32_t)report[3] << 8);
     int32_t dx = (int32_t)(int8_t)report[1];
     int32_t dy = (int32_t)(int8_t)report[2];
     on_mouse(ctx, dx, dy, buttons);

@@ -4,7 +4,10 @@
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use libui::draw::{Canvas, Rect};
-use libui::proto::{GuiMessage, MSG_INPUT_KEY, MSG_RESIZE_WINDOW, PROTO_WIRE_BYTES};
+use libui::proto::{
+    GuiMessage, MAX_TITLE_BYTES, MSG_INPUT_KEY, MSG_INPUT_SCROLL, MSG_RESIZE_WINDOW,
+    PROTO_WIRE_BYTES,
+};
 use libui::style::{Theme, rgb};
 
 global_asm!(
@@ -312,6 +315,21 @@ extern "C" fn program_main(arg: u64) -> ! {
                             send_message(ipc_handle, &GuiMessage::commit_rect(1, 0, 0, cur_w, cur_h).encode());
                         }
                     }
+                } else if msg.kind == MSG_INPUT_SCROLL {
+                    let delta = msg.e as i32;
+                    let prev = browser.selected;
+                    if delta > 0 {
+                        browser.selected = browser.selected.saturating_sub(delta as usize);
+                    } else if delta < 0 && browser.count > 0 {
+                        let step = (-delta) as usize;
+                        browser.selected = (browser.selected + step).min(browser.count - 1);
+                    }
+                    if browser.selected != prev {
+                        let pixels = unsafe { core::slice::from_raw_parts_mut(virt as *mut u32, (cur_w * cur_h) as usize) };
+                        let mut canvas = Canvas::new(pixels, cur_w, cur_h, cur_w);
+                        browser.render(&mut canvas, cur_w, cur_h, &theme);
+                        send_message(ipc_handle, &GuiMessage::commit_rect(1, 0, 0, cur_w, cur_h).encode());
+                    }
                 } else if msg.kind == MSG_INPUT_KEY {
                     if msg.e & 0xffff_0000 == 0x0002_0000
                         || msg.f == 0
@@ -335,6 +353,25 @@ extern "C" fn program_main(arg: u64) -> ! {
                         browser.set_path(b"/");
                     } else if scalar == 10 || scalar == 13 {
                         browser.open_selected();
+                    } else if scalar == b'c' as u32 || scalar == 3 {
+                        if browser.selected < browser.count {
+                            let ent = &browser.entries[browser.selected];
+                            let mut full = [0u8; MAX_TITLE_BYTES];
+                            let mut pos = 0usize;
+                            let plen = browser.path_len.min(MAX_TITLE_BYTES);
+                            full[..plen].copy_from_slice(&browser.path[..plen]);
+                            pos += plen;
+                            if pos > 0 && full[pos - 1] != b'/' && pos < MAX_TITLE_BYTES {
+                                full[pos] = b'/';
+                                pos += 1;
+                            }
+                            let nlen = ent.len.min(MAX_TITLE_BYTES - pos);
+                            full[pos..pos + nlen].copy_from_slice(&ent.name[..nlen]);
+                            pos += nlen;
+                            let clip = GuiMessage::clipboard_set(1, &full[..pos]).encode();
+                            send_message(ipc_handle, &clip);
+                        }
+                        dirty = false;
                     } else {
                         dirty = false;
                     }

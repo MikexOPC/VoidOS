@@ -259,7 +259,10 @@ static void on_usb_mouse_private(void *context, int32_t dx, int32_t dy, uint32_t
     if (gui && kernel_gui_display_owner(gui) != 0) {
         int32_t screen_dx = kernel_pointer_scale_delta(dx, &rt->ScaleRemainderX);
         int32_t screen_dy = kernel_pointer_scale_delta(dy, &rt->ScaleRemainderY);
-        (void)kernel_gui_input_push_mouse(gui, screen_dx, screen_dy, buttons);
+        int32_t wheel = (int32_t)(int8_t)((buttons >> 8) & 0xFFU);
+        (void)kernel_gui_input_push_mouse(gui, screen_dx, screen_dy, buttons & 7U);
+        if (wheel != 0)
+            (void)kernel_gui_input_push_scroll(gui, wheel);
         int32_t x = 0, y = 0;
         if (kernel_gui_pointer_position(gui, &x, &y))
             x86_gui_cursor_position(x, y);

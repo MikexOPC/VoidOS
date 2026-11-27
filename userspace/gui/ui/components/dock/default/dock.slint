@@ -18,11 +18,14 @@ export component DefaultDock inherits Rectangle {
     in property <image> backdrop-image;
     in property <string> clock-text: "15:44";
     in property <string> sub-clock-text: "24 Nov 2026";
+    in property <bool> search-active: false;
+    in property <string> search-query: "";
 
     callback toggle-terminal();
     callback toggle-sysmon();
     callback toggle-files();
     callback shutdown-clicked();
+    callback search-clicked();
 
     x: 44px;
     y: root.screen-height - 62px;
@@ -108,14 +111,15 @@ export component DefaultDock inherits Rectangle {
                     width: 100%;
                     height: 34px;
                     border-radius: 17px;
-                    border-width: 1px;
-                    border-color: search-ta.has-hover ? #5E6E94AA : #8896B278;
-                    background: search-ta.has-hover ? #FFFFFF84 : #FFFFFF60;
+                    border-width: root.search-active ? 2px : 1px;
+                    border-color: root.search-active ? #3B82F6CC : (search-ta.has-hover ? #5E6E94AA : #8896B278);
+                    background: root.search-active ? #FFFFFFC8 : (search-ta.has-hover ? #FFFFFF84 : #FFFFFF60);
                     animate background { duration: 160ms; easing: ease-out; }
                     animate border-color { duration: 160ms; easing: ease-out; }
 
                     search-ta := TouchArea {
                         mouse-cursor: pointer;
+                        clicked => { root.search-clicked(); }
                     }
 
                     HorizontalLayout {
@@ -136,16 +140,16 @@ export component DefaultDock inherits Rectangle {
                                 width: 14px;
                                 height: 14px;
                                 source: @image-url("../../../../libui/icons/search.png");
-                                colorize: #3A435E;
+                                colorize: root.search-active ? #2563EB : #3A435E;
                             }
                         }
 
-                        input := TextInput {
+                        Text {
                             vertical-alignment: center;
                             font-size: 12px;
                             font-weight: 600;
-                            color: #1E2436;
-                            text: "Search...";
+                            color: root.search-active ? #0F172A : #1E2436;
+                            text: root.search-active ? (root.search-query == "" ? "|" : root.search-query + "|") : "Search...";
                         }
                     }
                 }

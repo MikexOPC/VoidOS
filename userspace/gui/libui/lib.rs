@@ -117,6 +117,19 @@ mod tests {
         assert_eq!(rdec.a, 42);
         assert_eq!(rdec.e, 1278);
         assert_eq!(rdec.f, 616);
+
+        let cmsg = GuiMessage::clipboard_set(1, b"/HELLO.TXT");
+        let cdec = GuiMessage::decode(&cmsg.encode()).expect("valid clipboard set");
+        assert_eq!(cdec.kind, crate::proto::MSG_CLIPBOARD_SET);
+        assert_eq!(cdec.e, 10);
+        assert_eq!(&cdec.title[..10], b"/HELLO.TXT");
+
+        let smsg = GuiMessage::input_scroll(1, 120, 240, -3);
+        let sdec = GuiMessage::decode(&smsg.encode()).expect("valid scroll");
+        assert_eq!(sdec.kind, crate::proto::MSG_INPUT_SCROLL);
+        assert_eq!(sdec.c, 120);
+        assert_eq!(sdec.d, 240);
+        assert_eq!(sdec.e as i32, -3);
     }
 
     #[test]

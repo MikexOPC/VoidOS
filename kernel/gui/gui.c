@@ -467,6 +467,29 @@ int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_
     return ok;
 }
 
+// ====== kernel_gui_input_push_scroll ======
+
+int kernel_gui_input_push_scroll(KERNEL_GUI *gui, int32_t wheel_delta)
+{
+    if (!wheel_delta)
+        return 1;
+    GUI_ACCESS access;
+    if (!enter_private(gui, &access))
+        return 0;
+    int ok = 0;
+    if (gui->DisplayOwnerPid) {
+        KERNEL_INPUT_EVENT event = {0};
+        event.Kind = KERNEL_INPUT_SCROLL;
+        event.Flags = KERNEL_INPUT_FLAG_ABSOLUTE;
+        event.Code = (uint32_t)gui->MouseX;
+        event.Value = (uint32_t)gui->MouseY;
+        event.DeltaY = wheel_delta;
+        ok = push_input_locked(gui, &event);
+    }
+    leave_private(&access);
+    return ok;
+}
+
 // ====== kernel_gui_pointer_position ======
 
 int kernel_gui_pointer_position(KERNEL_GUI *gui, int32_t *x, int32_t *y)

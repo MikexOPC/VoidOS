@@ -47,12 +47,16 @@ export component VoidDesktop inherits Window {
     in-out property <string> uptime-label: "24 Nov 2026";
     in-out property <length> cursor-x: 540px;
     in-out property <length> cursor-y: 380px;
+    in-out property <bool> search-active: false;
+    in-out property <string> search-query: "";
+    in-out property <string> search-hint: "Terminale | Monitor | File";
 
     callback launch-app(int);
     callback close-app(int);
     callback minimize-app(int);
     callback maximize-app(int);
     callback quit-desktop();
+    callback toggle-search();
 
     // Layer 0: Wallpaper background (1:1 screen-cached after startup for lag-free window drag)
     DesktopBackground {
@@ -144,6 +148,29 @@ export component VoidDesktop inherits Window {
         }
     }
 
+    // Search suggestion popup above the dock search bar
+    if root.dock-visible && root.search-active: Rectangle {
+        x: 96px;
+        y: root.height - 104px;
+        width: 240px;
+        height: 34px;
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: #3B82F6AA;
+        background: #F8FAFFE8;
+
+        Text {
+            x: 12px;
+            width: parent.width - 24px;
+            height: 100%;
+            vertical-alignment: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #0F172A;
+            text: root.search-hint;
+        }
+    }
+
     // Layer 2: Default Dock
     DefaultDock {
         visible: root.dock-visible;
@@ -159,6 +186,11 @@ export component VoidDesktop inherits Window {
         files-minimized: root.files-minimized;
         clock-text: root.display-label;
         sub-clock-text: root.uptime-label;
+        search-active: root.search-active;
+        search-query: root.search-query;
+        search-clicked => {
+            root.toggle-search();
+        }
         toggle-terminal => {
             if (root.terminal-open) {
                 root.terminal-open = false;

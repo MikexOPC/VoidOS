@@ -23,6 +23,7 @@
 #define KERNEL_INPUT_NONE             0U
 #define KERNEL_INPUT_KEY              1U
 #define KERNEL_INPUT_MOUSE            2U
+#define KERNEL_INPUT_SCROLL           3U
 #define KERNEL_INPUT_FLAG_RESYNC      0x80000000U
 #define KERNEL_INPUT_FLAG_ABSOLUTE    0x40000000U
 
@@ -137,6 +138,7 @@ uint64_t kernel_gui_epoch_to_rtc_packed(uint64_t epoch_sec);
 
 int kernel_gui_input_push_key(KERNEL_GUI *gui, uint32_t code, uint32_t scalar, uint32_t flags);
 int kernel_gui_input_push_mouse(KERNEL_GUI *gui, int32_t dx, int32_t dy, uint32_t buttons);
+int kernel_gui_input_push_scroll(KERNEL_GUI *gui, int32_t wheel_delta);
 int kernel_gui_pointer_position(KERNEL_GUI *gui, int32_t *x, int32_t *y);
 int kernel_gui_input_poll(KERNEL_GUI *gui, uint64_t pid, KERNEL_INPUT_EVENT *out);
 int kernel_gui_has_input(KERNEL_GUI *gui, uint64_t pid);
